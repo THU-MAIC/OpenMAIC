@@ -89,11 +89,12 @@ function App(){const [index,setIndex]=useState(0);const p=usePlayback(scenes,ind
 import {PlaybackEngine} from './lib/playback/engine';
 import {AudioPlayer} from './lib/utils/audio-player';
 import {useWidgetIframeStore} from './lib/store/widget-iframe';
-import {GENUI_LOGICAL_WIDTH,GENUI_LOGICAL_HEIGHT,fitGenUiViewport} from './lib/interactive/logical-viewport';
+import {GENUI_LOGICAL_WIDTH,GENUI_LOGICAL_HEIGHT} from './lib/interactive/logical-viewport';
+import {GENUI_FIT_REPORT_REQUEST,GENUI_FIT_SCROLL_REQUEST,useGenUiFit} from './lib/interactive/use-genui-fit';
 import {intersectClientBoxes} from './lib/edit/visible-client-rect';
 const useI18n=()=>({t:k=>k});const useCanvasStore={use:{pickTarget:()=>null}};const useElementRefsStore={use:{refs:()=>[]}};
 const runtime={errors:{},clearScene(){}};const useSceneRuntimeErrors=Object.assign(s=>s(runtime),{getState:()=>runtime});
-const InteractiveRuntimeErrorBanner=()=>null;const resolveInteractivePickerMode=()=>null;const createObservationSession=()=>null;
+const InteractiveRuntimeErrorBanner=()=>null;const InteractiveMoreBelowCue=()=>null;const resolveInteractivePickerMode=()=>null;const createObservationSession=()=>null;
 ${sourceFunction(hostPath, 'PooledIframe')}
 const lectureSessionIdRef={current:'lecture'};const chatAreaRef={current:{pauseBuffer(){window.bufferPauses=(window.bufferPauses||0)+1}}};
 const pauseInteractiveMedia=${sourceFunction(playbackPath, 'pauseInteractiveMedia')};

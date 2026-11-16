@@ -1,7 +1,7 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
 import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
-import { useState, type MouseEvent } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import {
   Check,
   Copy,
@@ -189,6 +189,7 @@ function ConversationEntry({
   ) : entry.speaker === 'user' ? (
     <UserBubble
       key={entry.id}
+      tone="primary"
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
@@ -204,11 +205,13 @@ export function LearningConversation({
   onOpenFile,
   onOpenReport,
   onOpenTask,
+  overview,
 }: {
   view: LearningView;
   onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
   onOpenTask?: () => void;
+  overview?: ReactNode;
   sent: number;
   requesting?: boolean;
   modalActive?: boolean;
@@ -249,6 +252,16 @@ export function LearningConversation({
   return (
     <ConversationViewport
       key={view.id}
+      header={overview}
+      startAtOverview={
+        view.state.position.milestoneIndex === 0 &&
+        view.state.position.stageIndex === 0 &&
+        view.state.status !== 'completed' &&
+        (!entries.length || view.needsOpening) &&
+        !pendingMessage &&
+        !entries.some((entry) => entry.speaker === 'user') &&
+        !view.conversationHistory?.length
+      }
       sent={sent}
       hidden={modalActive}
       generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
@@ -257,6 +270,7 @@ export function LearningConversation({
       <ConversationHistory
         id={view.id}
         sources={view.conversationHistory ?? []}
+        milestones={view.milestones}
         renderEntry={(entry, dismiss) => (
           <div onClick={(event) => openReference(event, dismiss)}>
             <ConversationEntry

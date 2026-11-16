@@ -21,7 +21,7 @@ import zhTW from '@/lib/i18n/locales/zh-TW.json';
  * The ported editor chrome (`components/edit/**`, `components/workbench/**`,
  * `lib/workbench/**`) renders its copy through `t('...')`. When a key is
  * missing from a locale, i18next falls back to the raw key string and the user
- * sees `edit.roster.shortTitle` instead of text. That regression shipped once;
+ * sees `edit.roster.title` instead of text. That regression shipped once;
  * this test makes it impossible to ship again.
  *
  * It statically extracts the `t(...)` string literals from those directories,
@@ -184,7 +184,7 @@ describe('editor chrome i18n keys', () => {
   it('finds a non-trivial set of keys to guard', () => {
     // Sanity: the scan must actually see the chrome's copy calls, including the
     // keys the acceptance test found leaking.
-    expect(keys).toContain('edit.roster.shortTitle');
+    expect(keys).toContain('edit.roster.title');
     expect(keys).toContain('edit.elementRef.startPicking');
     expect(keys).toContain('edit.elementRef.exitPicking');
     expect(keys.length).toBeGreaterThan(100);

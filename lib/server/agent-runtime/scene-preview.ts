@@ -146,6 +146,7 @@ export function buildScenePreviewTools(deps: ScenePreviewDeps): AgentTool<never,
       label: 'Render page preview',
       description: 'Render one persisted page to PNG for visual inspection.',
       parameters: Params,
+      capability: 'render_service',
       async execute(_callId, params, signal) {
         if (signal?.aborted) return failure(params.sceneId, 'operation aborted');
         const access = await deps.stageAccess(params.stageId);

@@ -1,5 +1,6 @@
 'use client';
 
+import { emitQuizReviewed } from '@/lib/classroom/quiz-reviewed';
 import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { answerIncludesOption } from '@/lib/quiz/grading';
@@ -830,6 +831,7 @@ export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
       if (cancelled) return;
       setResults(ordered);
       setPhase('reviewing');
+      emitQuizReviewed(sceneId);
     })();
 
     return () => {

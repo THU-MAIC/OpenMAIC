@@ -5,12 +5,9 @@
  * that is also a light editor for the scene's playback `actions`.
  *
  * This WAS the whole bottom bar. It is now the body of `EditDock`, which owns
- * the surface (border, blur, fold) and the global edit bar above it; the
- * timeline still renders its own header row — the row's controls and the body
- * share one piece of state — and drives the dock's fold through `useEditDock`.
- * Nothing about the timeline's own behaviour or geometry changed in the move.
- * (The height-drag handle was removed per product decision: only the fold moves
- * the dock's height, so the timeline no longer sizes itself.)
+ * the surface (border, blur, height, fold) and the global edit bar above it, where
+ * the timeline shows its own controls through `useEditDock`, since they and the body
+ * share one piece of state.
  *
  * The scene's `actions` ARE the timeline: walked left→right, each `speech`
  * becomes an editable clip block (one spoken line, numbered) and every non-speech
@@ -29,16 +26,22 @@
  * Reactive to the stage store; collapse and height belong to the dock.
  */
 import { commitCourseEdit, stampGeneratedAudio } from '@/lib/edit/course-edit';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from 'react';
 import { createPortal } from 'react-dom';
 import {
+  AudioLines,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Flag,
-  FoldVertical,
+  CircleAlert,
   GripVertical,
   Loader2,
   Play,
@@ -46,8 +49,9 @@ import {
   RefreshCw,
   Square,
   Trash2,
-  UnfoldVertical,
   Volume2,
+  VolumeX,
+  type LucideIcon,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import { cn } from '@/lib/utils/cn';
@@ -55,7 +59,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { flushStageSave, useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import {
   Select,
@@ -66,7 +70,7 @@ import {
 } from '@/components/ui/select';
 import type { Action, DiscussionAction } from '@/lib/types/action';
 import type { SceneType } from '@/lib/types/stage';
-import { ELEMENT_BOUND, cueLabel, cueMeta, elementLabel } from './cue-meta';
+import { ELEMENT_BOUND, cueLabel, cueMeta, cueSummary, elementLabel } from './cue-meta';
 import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
 import {
   appendDiscussion,
@@ -82,8 +86,10 @@ import {
   setDiscussionTopicById,
   setSpeechTextClearAudioById,
 } from './actions-edit';
-import { useEditDock } from '@/components/edit/EditDock/dock-context';
+import { DOCK_BAR_ACTION, DockBarTip, useEditDock } from '@/components/edit/EditDock/dock-context';
 import { ActionPicker } from './ActionPicker';
+import { QuietTextarea } from './QuietTextarea';
+import { revealScrollLeft } from './reveal-card';
 import type { PickerType } from './picker-options';
 import {
   audioExists,
@@ -130,7 +136,7 @@ function useClearCuePreviewOnUnmount() {
  */
 const INCOMPLETE_CLIP = 'border-dashed border-amber-400/70';
 
-const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang below it)
+const AXIS_FROM_TOP = 12; // px from track top to the axis center (nodes hang below it)
 
 // Radix Select forbids an empty-string item value, so the discussion's
 // "unspecified agent" choice rides a sentinel that maps back to '' on change.
@@ -150,6 +156,9 @@ function propsOf(a: Action, t: TFn): Array<[string, string]> {
   const el = (a as { elementId?: string }).elementId;
   if (el) rows.push([t('edit.timeline.fieldElement'), el]);
   const content = (a as { content?: string }).content;
+  const target = (a as { target?: string }).target;
+  if (target) rows.push([t('edit.timeline.fieldElement'), target]);
+  if (a.type === 'widget_setState') rows.push([t('edit.timeline.fieldState'), cueSummary(a)]);
   if (content)
     rows.push([
       t('edit.timeline.fieldContent'),
@@ -203,6 +212,25 @@ function setBlankDragImage(e: React.DragEvent) {
 }
 
 /** Shared delete button — prominent, top-right of a card. */
+/**
+ * A card's secondary controls: out of sight until the card is hovered or holds the
+ * focus, so a card at rest is its words. Opacity, not display: they stay in the tab
+ * order and in place, and a screen without hover keeps them shown.
+ */
+const CARD_SECONDARY =
+  'flex shrink-0 items-center opacity-0 transition-opacity [[data-cue-card]:hover_&]:opacity-100 [[data-cue-card]:focus-within_&]:opacity-100 [@media(hover:none)]:opacity-100';
+/**
+ * One line, the same on every card, so their text lines up. 24 inside its divider, an
+ * even height, so a 14px icon lands on a whole pixel rather than half a pixel high. The
+ * right padding puts the delete icon's ink on the right edge of the text below (12px).
+ */
+const CARD_HEADER =
+  'flex h-[25px] shrink-0 items-center gap-1 border-b border-border/60 bg-muted/40 px-2';
+/** Every control in a card's header: one hit area, one icon size. */
+const CARD_ICON = 'size-3.5';
+/** The narration line's text; its height is whole, so the field can be cut to whole lines. */
+const SPEECH_LINE_PX = 19;
+
 function DeleteButton({ onDelete }: { onDelete: () => void }) {
   const { t } = useI18n();
   return (
@@ -272,7 +300,14 @@ type TtsStatus = 'none' | 'ready' | 'generating' | 'error';
 /** TTS preview lifecycle: idle → loading (awaiting the blob URL) → playing → idle. */
 type PreviewPhase = 'idle' | 'loading' | 'playing';
 
-/** Audio status + preview / regenerate row, shown when managed TTS is on. */
+const STATUS_ICON: Record<TtsStatus, LucideIcon> = {
+  ready: Volume2,
+  none: VolumeX,
+  generating: Loader2,
+  error: CircleAlert,
+};
+
+/** Audio status + preview / regenerate, in the card's header, when managed TTS is on. */
 export function SpeechTtsBar({
   actionId,
   audioId,
@@ -501,53 +536,75 @@ export function SpeechTtsBar({
   const PreviewIcon =
     previewPhase === 'loading' ? Loader2 : previewPhase === 'playing' ? Square : Play;
 
+  const StatusIcon = STATUS_ICON[effStatus];
+  const playable = effStatus === 'ready';
+
   return (
-    <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1">
-      <Volume2 className="size-3 shrink-0 text-muted-foreground/40" />
-      <span className={cn('text-[10px] font-medium', s.cls)}>{s.label}</span>
-      <span className="ml-auto" />
-      <button
-        type="button"
-        onClick={previewPhase === 'idle' ? () => void preview() : stopPreview}
-        disabled={effStatus !== 'ready'}
-        className={cn(
-          'grid size-5 place-items-center rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent',
-          previewPhase === 'playing'
-            ? 'text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400'
-            : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
-        )}
-        aria-label={previewLabel}
-        title={previewLabel}
+    <>
+      <span
+        data-testid="speech-tts-status"
+        data-status={effStatus}
+        title={s.label}
+        className={cn('flex min-w-0 flex-1 items-center gap-1', s.cls)}
       >
-        <PreviewIcon className={cn('size-3', previewPhase === 'loading' && 'animate-spin')} />
-      </button>
-      {mayRegenerate ? (
+        <StatusIcon
+          className={cn(CARD_ICON, 'shrink-0', effStatus === 'generating' && 'animate-spin')}
+          aria-hidden="true"
+        />
+        {/* The label when there is room, not a piece of it: what does not fit on
+            the empty first line wraps out of the clipped one. */}
+        <span className="flex h-3.5 min-w-0 flex-1 flex-wrap items-center overflow-hidden">
+          <span className="h-3.5 w-0" />
+          <span className="-translate-y-[0.5px] whitespace-nowrap text-[10px] font-medium leading-[14px]">
+            {s.label}
+          </span>
+        </span>
+      </span>
+      {/* Play is there at rest once there is something to hear. */}
+      <span className={playable ? 'flex shrink-0 items-center' : CARD_SECONDARY}>
         <button
           type="button"
-          onClick={regenerate}
-          disabled={effStatus === 'generating' || !text.trim()}
-          className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
-          aria-label={t('edit.tts.regenerate')}
-          title={t('edit.tts.regenerate')}
+          onClick={previewPhase === 'idle' ? () => void preview() : stopPreview}
+          disabled={!playable}
+          className={cn(
+            'grid size-5 place-items-center rounded-md transition-colors disabled:opacity-30 disabled:hover:bg-transparent',
+            previewPhase === 'playing'
+              ? 'text-rose-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400'
+              : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
+          )}
+          aria-label={previewLabel}
+          title={previewLabel}
         >
-          <RefreshCw className={cn('size-3', effStatus === 'generating' && 'animate-spin')} />
+          <PreviewIcon className={cn(CARD_ICON, previewPhase === 'loading' && 'animate-spin')} />
         </button>
+      </span>
+      {mayRegenerate ? (
+        <span className={CARD_SECONDARY}>
+          <button
+            type="button"
+            onClick={regenerate}
+            disabled={effStatus === 'generating' || !text.trim()}
+            className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
+            aria-label={t('edit.tts.regenerate')}
+            title={t('edit.tts.regenerate')}
+          >
+            <RefreshCw className={CARD_ICON} />
+          </button>
+        </span>
       ) : null}
-    </div>
+    </>
   );
 }
 
 /** One spoken line — a numbered, editable clip block. */
 function SpeechClip({
   text,
-  index,
   actionId,
   audioId,
   audioUrl,
   audioInvalidated,
   sceneOrder,
   language,
-  autoFocus,
   ttsActive,
   ttsRefresh,
   regenerating,
@@ -560,17 +617,14 @@ function SpeechClip({
   canMoveRight,
   onDragStart,
   onDragEnd,
-  onFocused,
 }: {
   text: string;
-  index: number;
   actionId: string;
   audioId?: string;
   audioUrl?: string;
   audioInvalidated?: boolean;
   sceneOrder: number;
   language?: string;
-  autoFocus: boolean;
   ttsActive: boolean;
   ttsRefresh?: number;
   regenerating?: boolean;
@@ -583,7 +637,6 @@ function SpeechClip({
   canMoveRight: boolean;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
-  onFocused: () => void;
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -601,56 +654,61 @@ function SpeechClip({
     }
   }, [text]);
 
-  useEffect(() => {
-    if (autoFocus) {
-      ref.current?.focus();
-      onFocused();
-    }
-  }, [autoFocus, onFocused]);
-
   const commit = () => {
     if (dirtyRef.current && val !== text) onCommit(val);
     dirtyRef.current = false;
   };
 
-  const SpeechIcon = cueMeta('speech').icon;
   const needsText = !text.trim();
 
   return (
     <div
+      data-cue-card=""
       className={cn(
-        'group/clip relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/85 bg-white/75 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
+        'relative flex h-full w-[340px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/85 bg-white/75 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
         needsText && INCOMPLETE_CLIP,
       )}
     >
-      <span className="absolute inset-x-0 top-0 h-[3px] bg-primary/35" />
-      <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 py-1">
+      <div className={CARD_HEADER}>
         <span
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          className="cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+          className="flex shrink-0 cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
           aria-label={t('edit.timeline.reorder')}
         >
-          <GripVertical className="size-3.5" />
+          <GripVertical className={CARD_ICON} />
         </span>
-        <span className="font-mono text-[10px] font-semibold tabular-nums text-muted-foreground/55">
-          {String(index).padStart(2, '0')}
+        {ttsActive ? (
+          <SpeechTtsBar
+            actionId={actionId}
+            audioId={audioId}
+            audioUrl={audioUrl}
+            audioInvalidated={audioInvalidated}
+            sceneOrder={sceneOrder}
+            language={language}
+            text={val}
+            refreshKey={ttsRefresh}
+            regenerating={regenerating}
+            onGenerated={onGenerated}
+          />
+        ) : (
+          <span className="ml-auto" />
+        )}
+        <span className={CARD_SECONDARY}>
+          <MoveButtons
+            onLeft={onMoveLeft}
+            onRight={onMoveRight}
+            canLeft={canMoveLeft}
+            canRight={canMoveRight}
+          />
+          <DeleteButton onDelete={onDelete} />
         </span>
-        <SpeechIcon className="size-3 text-primary/45" />
-        <span className="ml-auto mr-0.5 text-[8.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/50">
-          {t('edit.cue.speech')}
-        </span>
-        <MoveButtons
-          onLeft={onMoveLeft}
-          onRight={onMoveRight}
-          canLeft={canMoveLeft}
-          canRight={canMoveRight}
-        />
-        <DeleteButton onDelete={onDelete} />
       </div>
-      <textarea
+      <QuietTextarea
         ref={ref}
+        lineHeightPx={SPEECH_LINE_PX}
+        wrapperClassName="mt-1"
         value={val}
         onChange={(e) => {
           dirtyRef.current = true;
@@ -658,22 +716,105 @@ function SpeechClip({
         }}
         onBlur={commit}
         placeholder={t('edit.timeline.speechPlaceholder')}
-        className="flex-1 resize-none bg-transparent px-3 py-2 text-[12.5px] leading-[1.7] text-foreground/90 outline-none placeholder:text-muted-foreground/40 [scrollbar-width:thin]"
+        className="px-3 text-[12.5px] leading-[19px] text-foreground/90 placeholder:text-muted-foreground/40"
       />
-      {ttsActive && (
-        <SpeechTtsBar
-          actionId={actionId}
-          audioId={audioId}
-          audioUrl={audioUrl}
-          audioInvalidated={audioInvalidated}
-          sceneOrder={sceneOrder}
-          language={language}
-          text={val}
-          refreshKey={ttsRefresh}
-          regenerating={regenerating}
-          onGenerated={onGenerated}
-        />
+    </div>
+  );
+}
+
+/** Who opens the discussion: an avatar and a name, quiet until it is pointed at. */
+function DiscussionAgentSelect({
+  agentId,
+  agents,
+  onChange,
+}: {
+  agentId: string;
+  agents: { id: string; name: string; avatar?: string }[];
+  onChange: (agentId: string) => void;
+}) {
+  const { t } = useI18n();
+  const avatar = (a: { avatar?: string; name: string }) => (
+    <span className="size-5 shrink-0 overflow-hidden rounded-full bg-muted">
+      {a.avatar ? <AvatarDisplay src={a.avatar} alt={a.name} /> : null}
+    </span>
+  );
+  return (
+    <Select
+      value={agentId || DISCUSSION_AGENT_NONE}
+      onValueChange={(v) => onChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
+    >
+      <SelectTrigger
+        size="sm"
+        data-testid="discussion-agent"
+        aria-label={t('edit.timeline.discussionAgent')}
+        className="min-w-0 max-w-[112px] data-[size=sm]:h-[22px] gap-0.5 rounded-md border-0 bg-transparent px-1 py-0 text-[11px] text-foreground/80 shadow-none transition-colors hover:bg-gray-500/[0.08] focus-visible:ring-1 focus-visible:ring-primary/50 dark:bg-transparent dark:hover:bg-gray-400/[0.08] [&_svg]:size-3 [&_svg]:opacity-60 [&>span]:flex [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-1"
+      >
+        <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
+      </SelectTrigger>
+      <SelectContent className="max-h-56">
+        <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[12px]">
+          <span className="text-muted-foreground">{t('edit.timeline.discussionAgentUnset')}</span>
+        </SelectItem>
+        {agents.map((a) => (
+          <SelectItem key={a.id} value={a.id} className="text-[12px]">
+            <span className="flex min-w-0 items-center gap-1.5">
+              {avatar(a)}
+              <span className="truncate">{a.name}</span>
+            </span>
+          </SelectItem>
+        ))}
+        {/* keep a set agent visible even if it's no longer in the scene roster */}
+        {agentId && !agents.some((a) => a.id === agentId) && (
+          <SelectItem value={agentId} className="text-[12px]">
+            <span className="truncate font-mono">{agentId}</span>
+          </SelectItem>
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * One row of the discussion card, the same shape as the initiator in its header: a grey
+ * name on the left, its value on the right. The rows share the name column, which is as
+ * wide as the longest word of either name, so a name only ever breaks between words. On
+ * a low dock there is room for two tight lines of name and the row centers on them;
+ * otherwise `labelClassName` puts the name's first baseline on the text's.
+ */
+function DiscussionField({
+  label,
+  labelClassName,
+  rowClassName,
+  className,
+  ...field
+}: ComponentProps<typeof QuietTextarea> & {
+  label: string;
+  labelClassName: string;
+  rowClassName?: string;
+}) {
+  const id = useId();
+  return (
+    <div
+      className={cn(
+        'group/field col-span-2 grid min-h-0 grid-cols-subgrid grid-rows-[minmax(0,1fr)] overflow-hidden pb-1 pl-3 pr-1.5 pt-[5px] transition-colors hover:bg-muted/70 focus-within:bg-primary/[0.05] hover:focus-within:bg-primary/[0.05] dark:focus-within:bg-primary/[0.12] [@container(max-height:90px)]:py-px',
+        rowClassName,
       )}
+    >
+      <label
+        htmlFor={id}
+        className={cn(
+          'text-[10px] font-medium leading-[14px] text-muted-foreground [word-break:keep-all] group-focus-within/field:text-primary supports-[word-break:auto-phrase]:[word-break:auto-phrase] [@container(max-height:90px)]:self-center [@container(max-height:90px)]:pt-0 [@container(max-height:90px)]:leading-3',
+          labelClassName,
+        )}
+      >
+        {label}
+      </label>
+      <QuietTextarea
+        {...field}
+        id={id}
+        wrapperClassName="[@container(max-height:90px)]:flex [@container(max-height:90px)]:items-center"
+        className={cn('pr-1.5', className)}
+      />
     </div>
   );
 }
@@ -705,7 +846,6 @@ function DiscussionClip({
   onDelete: () => void;
 }) {
   const { t } = useI18n();
-  const m = cueMeta('discussion');
   const needsTopic = !topic.trim();
   // Local drafts committed on blur; synced from props when not mid-edit so a
   // concurrent store update can't clobber an in-flight edit (mirrors SpeechClip).
@@ -724,95 +864,66 @@ function DiscussionClip({
 
   return (
     <div
+      data-cue-card=""
       className={cn(
-        'group/disc relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-yellow-500/40',
+        'relative flex h-full w-[240px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
         needsTopic && INCOMPLETE_CLIP,
       )}
     >
-      {/* The empty state reads from the amber dashed frame + the "topic
-          (required)" placeholder; the discussion keeps its Flag glyph identity. */}
-      <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
-      <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-1 dark:border-yellow-500/25 dark:bg-yellow-500/10">
-        <span className="flex size-4 items-center justify-center rounded-md bg-yellow-400 text-yellow-950 dark:bg-yellow-500 dark:text-slate-900">
-          <Flag className="size-2.5" />
-        </span>
-        <span className="text-[8.5px] font-semibold uppercase tracking-[0.12em] text-yellow-700 dark:text-yellow-400">
+      {/* The empty state reads from the amber dashed frame and the topic's "required"
+          placeholder; the node above it is the Flag. pl-3 puts the header's name on the
+          12px edge of the labels below. */}
+      <div className={cn(CARD_HEADER, 'pl-3')}>
+        <span
+          title={t('edit.timeline.discussionTerminalHint')}
+          className="-translate-y-[0.5px] truncate text-[10px] font-medium leading-[14px] text-foreground/70"
+        >
           {t('edit.cue.discussion')}
         </span>
-        <span
-          className="ml-auto text-[8.5px] font-medium uppercase tracking-[0.1em] text-yellow-600/70 dark:text-yellow-500/60"
-          title={t('edit.timeline.discussionTerminalHint')}
-        >
-          {t('edit.timeline.discussionTerminal')}
+        <span className="ml-auto flex min-w-0 items-center gap-1">
+          <span className="-translate-y-[0.5px] shrink-0 text-[10px] leading-[14px] text-muted-foreground/70">
+            {t('edit.timeline.discussionAgent')}
+          </span>
+          <DiscussionAgentSelect agentId={agentId} agents={agents} onChange={onAgentChange} />
         </span>
-        <DeleteButton onDelete={onDelete} />
+        <span className={CARD_SECONDARY}>
+          <DeleteButton onDelete={onDelete} />
+        </span>
       </div>
-      <textarea
-        value={topicVal}
-        onChange={(e) => {
-          topicDirty.current = true;
-          setTopicVal(e.target.value);
-        }}
-        onBlur={() => {
-          if (topicDirty.current) onTopicChange(topicVal);
-          topicDirty.current = false;
-        }}
-        placeholder={t('edit.timeline.discussionTopicPlaceholder')}
-        className="h-[46px] shrink-0 resize-none bg-transparent px-3 pt-2 text-[12.5px] font-medium leading-[1.55] text-foreground/85 outline-none placeholder:font-normal placeholder:text-amber-500/60 [scrollbar-width:thin]"
-      />
-      <textarea
-        value={promptVal}
-        onChange={(e) => {
-          promptDirty.current = true;
-          setPromptVal(e.target.value);
-        }}
-        onBlur={() => {
-          if (promptDirty.current) onPromptChange(promptVal);
-          promptDirty.current = false;
-        }}
-        placeholder={t('edit.timeline.discussionPromptPlaceholder')}
-        className="min-h-0 flex-1 resize-none bg-transparent px-3 text-[11px] leading-[1.6] text-muted-foreground outline-none placeholder:text-muted-foreground/35 [scrollbar-width:thin]"
-      />
-      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
-        <span className="shrink-0 text-[9px] text-muted-foreground/50">
-          {t('edit.timeline.discussionAgent')}
-        </span>
-        <Select
-          value={agentId || DISCUSSION_AGENT_NONE}
-          onValueChange={(v) => onAgentChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
-        >
-          <SelectTrigger
-            size="sm"
-            className="ml-auto h-6 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
-          >
-            <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
-          </SelectTrigger>
-          <SelectContent className="max-h-56">
-            <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[11px]">
-              <span className="text-muted-foreground">
-                {t('edit.timeline.discussionAgentUnset')}
-              </span>
-            </SelectItem>
-            {agents.map((a) => (
-              <SelectItem key={a.id} value={a.id} className="text-[11px]">
-                <span className="flex items-center gap-1.5">
-                  {a.avatar && (
-                    <span className="size-4 shrink-0 overflow-hidden rounded-full bg-muted">
-                      <AvatarDisplay src={a.avatar} alt={a.name} />
-                    </span>
-                  )}
-                  {a.name}
-                </span>
-              </SelectItem>
-            ))}
-            {/* keep a set agent visible even if it's no longer in the scene roster */}
-            {agentId && !agents.some((a) => a.id === agentId) && (
-              <SelectItem value={agentId} className="text-[11px]">
-                {agentId}
-              </SelectItem>
-            )}
-          </SelectContent>
-        </Select>
+      <div className="grid min-h-0 flex-1 grid-cols-[fit-content(58px)_minmax(0,1fr)] grid-rows-[minmax(0,55fr)_minmax(29px,45fr)] gap-x-2 [container-type:size]">
+        <DiscussionField
+          label={t('edit.timeline.discussionTopicLabel')}
+          labelClassName="pt-[3px]"
+          lineHeightPx={19}
+          value={topicVal}
+          onChange={(e) => {
+            topicDirty.current = true;
+            setTopicVal(e.target.value);
+          }}
+          onBlur={() => {
+            if (topicDirty.current) onTopicChange(topicVal);
+            topicDirty.current = false;
+          }}
+          placeholder={t('edit.timeline.discussionTopicPlaceholder')}
+          className="text-[12.5px] font-medium leading-[19px] text-foreground/90 placeholder:font-normal placeholder:text-amber-600/70 dark:placeholder:text-amber-400/70"
+        />
+        <DiscussionField
+          label={t('edit.timeline.discussionPromptLabel')}
+          labelClassName="pt-[2px]"
+          lineHeightPx={17}
+          rowClassName="border-t border-border/60"
+          value={promptVal}
+          onChange={(e) => {
+            promptDirty.current = true;
+            setPromptVal(e.target.value);
+          }}
+          onBlur={() => {
+            if (promptDirty.current) onPromptChange(promptVal);
+            promptDirty.current = false;
+          }}
+          placeholder={t('edit.timeline.discussionPromptPlaceholder')}
+          className="text-[12px] leading-[17px] text-foreground/70 placeholder:text-muted-foreground/50"
+        />
       </div>
     </div>
   );
@@ -852,16 +963,20 @@ function CueMarker({
   useClearCuePreviewOnUnmount();
   const m = cueMeta(action.type);
   const label = cueLabel(action.type, t);
-  const Icon = m.icon;
   const bound = ELEMENT_BOUND.has(action.type);
   const elementId = (action as { elementId?: string }).elementId ?? '';
   const needsTarget = bound && !elementId;
   // Bound cue → show what it's actually pointing at, not a generic "bound";
   // the element may have been deleted since binding, so fall back gracefully.
   const boundEl = elementId ? elements.find((e) => e.id === elementId) : undefined;
+  const summary = cueSummary(action);
+  const targetLine = needsTarget
+    ? t('edit.timeline.pickElement')
+    : `→ ${boundEl ? elementLabel(boundEl, t) : t('edit.timeline.bound')}`;
 
   return (
     <div
+      data-cue-card=""
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -877,7 +992,7 @@ function CueMarker({
         if (bound) onPick();
       }}
       className={cn(
-        'group/cue relative flex h-full w-[108px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/65 shadow-sm transition-colors dark:border-gray-700/60 dark:bg-slate-800/40',
+        'relative flex h-full w-[104px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/65 shadow-sm transition-colors dark:border-gray-700/60 dark:bg-slate-800/40',
         bound
           ? 'cursor-pointer hover:border-violet-300/70 dark:hover:border-violet-500/40'
           : 'cursor-grab active:cursor-grabbing',
@@ -885,19 +1000,18 @@ function CueMarker({
       )}
       aria-label={label}
     >
-      <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
-      <div className="flex items-center gap-0.5 px-1 pt-1">
+      <div className={CARD_HEADER}>
         <span
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
           onClick={(e) => e.stopPropagation()}
-          className="cursor-grab text-muted-foreground/35 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+          className="flex shrink-0 cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
           aria-label={t('edit.timeline.reorder')}
         >
-          <GripVertical className="size-3.5" />
+          <GripVertical className={CARD_ICON} />
         </span>
-        <span className="ml-auto flex items-center">
+        <span className={cn(CARD_SECONDARY, 'ml-auto')}>
           <MoveButtons
             onLeft={onMoveLeft}
             onRight={onMoveRight}
@@ -907,23 +1021,33 @@ function CueMarker({
           <DeleteButton onDelete={onDelete} />
         </span>
       </div>
-      <div className="flex flex-1 flex-col items-center justify-center gap-1.5 px-1 pb-1">
-        <span className={cn('flex size-8 items-center justify-center rounded-full', m.glyph)}>
-          <Icon className="size-4" />
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-0.5 px-2 text-center">
+        <span
+          title={label}
+          className="line-clamp-2 max-w-full text-[12px] font-medium leading-[16px] text-foreground/85 [overflow-wrap:anywhere]"
+        >
+          {label}
         </span>
-        <span className="text-[10px] font-medium text-foreground/70">{label}</span>
+        {!bound && summary ? (
+          <span
+            data-testid="cue-summary"
+            title={summary}
+            className="max-w-full truncate text-[11px] leading-[16px] text-muted-foreground"
+          >
+            {summary}
+          </span>
+        ) : null}
         {bound && (
           <span
+            title={targetLine}
             className={cn(
-              'text-[9px]',
+              'max-w-full truncate text-[11px] leading-[16px]',
               needsTarget
                 ? 'font-medium text-amber-600 dark:text-amber-400'
-                : 'text-muted-foreground/45',
+                : 'text-muted-foreground',
             )}
           >
-            {needsTarget
-              ? t('edit.timeline.pickElement')
-              : `→ ${boundEl ? elementLabel(boundEl, t) : t('edit.timeline.bound')}`}
+            {targetLine}
           </span>
         )}
       </div>
@@ -980,7 +1104,7 @@ function NodeDot({
         if (bound) onPick();
       }}
       className={cn(
-        'grid size-6 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        'grid size-5 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
         isDiscussion ? 'rounded-[7px]' : 'rounded-full',
         needsTarget
           ? 'text-amber-600 bg-amber-100 ring-amber-200 animate-pulse dark:bg-amber-500/20 dark:text-amber-400'
@@ -995,7 +1119,7 @@ function NodeDot({
       )}
       aria-label={label}
     >
-      <Icon className="size-3.5" />
+      <Icon className="size-3" />
     </span>
   );
 }
@@ -1029,7 +1153,7 @@ function DropZone({
         onDrop();
       }}
       className={cn(
-        'group/ins relative flex h-full shrink-0 items-start justify-center pt-2 transition-all',
+        'group/ins relative flex h-full shrink-0 items-start justify-center pt-px transition-all',
         flex ? 'flex-1' : active ? 'w-10' : 'w-4',
       )}
     >
@@ -1091,22 +1215,21 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // which is correct since an unset `agentId` is never skipped.
   const agentsRecord = useAgentRegistry((s) => s.agents);
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
+  // Who the room sees, by the names it sees them by: the course's roster, or the
+  // default roster's localized names.
   const discussionAgents = useMemo(
     () =>
-      selectedAgentIds
-        .map((id) => agentsRecord[id])
-        .filter(Boolean)
-        .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar })),
-    [selectedAgentIds, agentsRecord],
+      selectedAgentIds.some((id) => agentsRecord[id])
+        ? agentsToParticipants(selectedAgentIds, t).filter((p) => p.role !== 'user')
+        : [],
+    [selectedAgentIds, agentsRecord, t],
   );
 
-  // Collapsed = the dock's own fold, which this bar's title and its trailing
-  // toggle both drive. The timeline's collapsed form is its axis of node icons,
-  // so it reads `collapsed` rather than being hidden by the shell.
-  const { collapsed: lineMode, toggleCollapsed } = useEditDock();
+  const { expand: expandDock, barActions: dockBarSlot } = useEditDock();
   const [tip, setTip] = useState<TooltipState | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
-  const [focusId, setFocusId] = useState<string | null>(null);
+  const [revealId, setRevealId] = useState<string | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
   const [regenAll, setRegenAll] = useState(false);
   const [pickerAt, setPickerAt] = useState<{ slot: number; rect: DOMRect } | null>(null);
   // Ids of speech lines currently being (re)generated by "Voice all", so each
@@ -1184,10 +1307,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     }
   }, [regenAll, sceneId, language]);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const panViewport = (dir: -1 | 1) =>
-    scrollRef.current?.scrollBy({ left: dir * 280, behavior: 'smooth' });
-
   const newId = () =>
     typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
 
@@ -1198,15 +1317,17 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const insertActionAt = useCallback(
     (type: PickerType, slot: number) => {
       const id = newId();
+      setRevealId(id);
+      // A new card is no use behind a folded dock.
+      expandDock();
       if (type === 'discussion') {
         commit((cur) => appendDiscussion(cur, id));
         return;
       }
       const action = makeAction(type, id);
       commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
-      if (type === 'speech') setFocusId(id);
     },
-    [commit],
+    [commit, expandDock],
   );
 
   const handleDrop = useCallback(
@@ -1220,9 +1341,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     [commit],
   );
 
-  const speechCount = actions.filter((a) => a.type === 'speech').length;
-  const cueCount = actions.length - speechCount;
-
   // A discussion is pinned at the end (at most one), so ordinary actions can move
   // right only up to the slot before it; the discussion node itself can't move.
   const discussionPresent = hasDiscussion(actions);
@@ -1234,95 +1352,91 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     return { action, index, key: (action.id ?? `a-${index}`) as string, speechIndex };
   });
 
-  const header = (
+  // The timeline's own actions, in the dock's control bar: its left flank, where
+  // playback has the volume and the speed.
+  const barActions = (
     <>
-      {/* The title is also the fold: it was a click target long before there was
-          a toggle beside it, so the cursor already knows this spot. */}
-      <button
-        type="button"
-        data-testid="edit-timeline-title"
-        onClick={toggleCollapsed}
-        className="flex shrink-0 items-center gap-2.5"
-      >
-        <span className="size-1.5 rounded-full bg-primary" />
-        <span className="text-[12px] font-medium tracking-[0.18em] text-foreground/80">
-          {t('edit.timeline.title')}
-        </span>
-      </button>
-
-      {!lineMode && (
+      <DockBarTip label={t('edit.timeline.addAction')}>
         <button
           type="button"
+          data-testid="edit-add-action"
+          aria-haspopup="menu"
           onClick={(e) => {
             const slot = discussionPresent ? actions.length - 1 : actions.length;
             setPickerAt({ slot, rect: e.currentTarget.getBoundingClientRect() });
           }}
-          className="ml-1.5 inline-flex shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+          aria-label={t('edit.timeline.addAction')}
+          className={cn(DOCK_BAR_ACTION, 'w-8 gap-px')}
         >
-          <Plus className="size-3" />
-          {t('edit.timeline.addAction')}
-          <ChevronDown className="size-3 opacity-70" />
+          <Plus className="size-3.5" />
+          <ChevronDown className="size-2.5 opacity-60" />
         </button>
-      )}
-
-      {!lineMode && ttsActive && mayGenerate && (
-        <button
-          type="button"
-          onClick={regenerateAllAudio}
-          disabled={regenAll}
-          title={t('edit.timeline.regenAllTts')}
-          aria-label={t('edit.timeline.regenAllTts')}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
-        >
-          <RefreshCw className={cn('size-3', regenAll && 'animate-spin')} />
-          {t('edit.timeline.voiceAll')}
-        </button>
-      )}
-
-      <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/60">
-        {t('edit.timeline.counts', { speech: speechCount, cue: cueCount })}
-      </span>
-      {/* pan the timeline viewport left/right */}
-      {!lineMode && (
-        <div className="flex shrink-0 items-center border-l border-gray-200/70 pl-1 dark:border-gray-700/60">
+      </DockBarTip>
+      {ttsActive && mayGenerate ? (
+        <DockBarTip label={t('edit.timeline.regenAllTts')}>
           <button
             type="button"
-            onClick={() => panViewport(-1)}
-            title={t('edit.timeline.panLeft')}
-            aria-label={t('edit.timeline.panLeft')}
-            className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+            data-testid="edit-voice-all"
+            onClick={regenerateAllAudio}
+            disabled={regenAll}
+            aria-label={t('edit.timeline.regenAllTts')}
+            className={cn(DOCK_BAR_ACTION, 'w-6')}
           >
-            <ChevronsLeft className="size-4" />
+            <AudioLines className={cn('size-3.5', regenAll && 'animate-pulse')} />
           </button>
-          <button
-            type="button"
-            onClick={() => panViewport(1)}
-            title={t('edit.timeline.panRight')}
-            aria-label={t('edit.timeline.panRight')}
-            className="grid size-7 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <ChevronsRight className="size-4" />
-          </button>
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={toggleCollapsed}
-        title={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
-        aria-label={lineMode ? t('edit.timeline.expandTrack') : t('edit.timeline.collapseAxis')}
-        className="ml-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-      >
-        {lineMode ? <UnfoldVertical className="size-4" /> : <FoldVertical className="size-4" />}
-      </button>
+        </DockBarTip>
+      ) : null}
     </>
   );
 
+  // What was just added: bring it into view, ready to type in, and say which it is.
+  useEffect(() => {
+    if (!revealId) return;
+    setRevealId(null);
+    const track = trackRef.current;
+    const card = track?.querySelector<HTMLElement>(
+      `[data-action-key="${CSS.escape(revealId)}"] [data-cue-card]`,
+    );
+    if (!track || !card) return;
+    const box = track.getBoundingClientRect();
+    const rect = card.getBoundingClientRect();
+    const left = revealScrollLeft({
+      scrollLeft: track.scrollLeft,
+      trackLeft: box.left,
+      trackWidth: box.width,
+      cardLeft: rect.left,
+      cardWidth: rect.width,
+    });
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (left !== track.scrollLeft) {
+      track.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+    }
+    card.querySelector<HTMLElement>('textarea')?.focus({ preventScroll: true });
+    card.animate?.(
+      [
+        { boxShadow: '0 0 0 2px rgb(139 92 246 / 0.6)' },
+        { boxShadow: '0 0 0 2px rgb(139 92 246 / 0)' },
+      ],
+      { duration: 1400, easing: 'ease-out' },
+    );
+  }, [revealId, actions]);
+
+  /** A mouse wheel has no sideways: over the track it scrolls the track. */
+  const onTrackWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    const field = event.target instanceof HTMLTextAreaElement ? event.target : null;
+    if (field && field.scrollHeight > field.clientHeight) return;
+    event.currentTarget.scrollLeft += event.deltaY;
+  };
+
   return (
     <>
-      {/* The timeline's own header row: what it is, what it can insert, how much
-          it holds, and its fold. Geometry unchanged from the standalone bar. */}
-      <div className="flex h-10 shrink-0 items-center gap-2 px-6">{header}</div>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+      {dockBarSlot ? createPortal(barActions, dockBarSlot) : barActions}
+      <div
+        ref={trackRef}
+        onWheel={onTrackWheel}
+        className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:thin]"
+      >
         <div className="relative h-full min-w-max">
           {/* the timeline axis (top) — nodes hang below it; hidden when empty
                 so the placeholder hint doesn't collide with the line */}
@@ -1332,7 +1446,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
               style={{ top: AXIS_FROM_TOP - 1, height: 2 }}
             />
           )}
-          <div className="relative flex h-full items-stretch px-3.5">
+          <div className="relative flex h-full items-stretch px-3.5 pb-1">
             {actions.length === 0 && (
               <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-muted-foreground/60">
                 {t('edit.timeline.emptyHint')}
@@ -1383,7 +1497,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                 />
               );
               return (
-                <div key={key} className="relative flex h-full items-stretch">
+                <div key={key} data-action-key={key} className="relative flex h-full items-stretch">
                   <motion.div
                     initial={reduce ? false : { opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -1393,91 +1507,93 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                       ease: 'easeOut',
                     }}
                     className="flex h-full flex-col items-center"
-                    style={{ paddingTop: AXIS_FROM_TOP - 12 }}
+                    style={{ paddingTop: AXIS_FROM_TOP - 10 }}
                   >
-                    {lineMode ? (
-                      <div className="w-9">{dot}</div>
-                    ) : (
-                      <>
-                        {dot}
-                        <div className="my-1 h-2.5 w-px bg-border" />
-                        <div className="min-h-0 w-full flex-1">
-                          {action.type === 'speech' ? (
-                            <SpeechClip
-                              text={(action as { text?: string }).text ?? ''}
-                              index={si}
-                              actionId={key}
-                              audioId={(action as { audioId?: string }).audioId}
-                              audioUrl={(action as { audioUrl?: string }).audioUrl}
-                              audioInvalidated={
-                                (action as { audioInvalidated?: boolean }).audioInvalidated
-                              }
-                              sceneOrder={sceneOrder}
-                              language={language}
-                              ttsActive={ttsActive}
-                              ttsRefresh={ttsRefresh}
-                              regenerating={regeneratingIds.has(key)}
-                              autoFocus={key === focusId}
-                              onFocused={() => setFocusId(null)}
-                              onCommit={(text) => {
-                                // The new wording has no audio until regenerated. The old
-                                // clip's local copy stays: an undo brings its reference
-                                // back, and nothing resolves it while the line names no id.
-                                commit((cur) => setSpeechTextClearAudioById(cur, key, text));
-                                setTtsRefresh((n) => n + 1);
-                              }}
-                              onGenerated={(assetId, sourceText) => {
-                                stampGeneratedAudio(sceneId, key, sourceText, assetId);
-                                // Stage persistence is debounced; flush so the
-                                // stamped reference is durable once the row
-                                // settles (pool bytes persist first, stamp last).
-                                void flushStageSave().catch(() => undefined);
-                              }}
-                              onDelete={() => {
-                                commit((cur) => removeById(cur, key));
-                              }}
-                              onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
-                              onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
-                              canMoveLeft={index > 0}
-                              canMoveRight={index < lastMovableIndex}
-                              onDragStart={onDragStart}
-                              onDragEnd={onDragEnd}
-                            />
-                          ) : isDiscussion ? (
-                            <DiscussionClip
-                              topic={(action as DiscussionAction).topic ?? ''}
-                              prompt={(action as DiscussionAction).prompt ?? ''}
-                              agentId={(action as DiscussionAction).agentId ?? ''}
-                              agents={discussionAgents}
-                              onTopicChange={(v) =>
-                                commit((cur) => setDiscussionTopicById(cur, key, v))
-                              }
-                              onPromptChange={(v) =>
-                                commit((cur) => setDiscussionPromptById(cur, key, v))
-                              }
-                              onAgentChange={(v) =>
-                                commit((cur) => setDiscussionAgentById(cur, key, v))
-                              }
-                              onDelete={() => commit((cur) => removeById(cur, key))}
-                            />
-                          ) : (
-                            <CueMarker
-                              action={action}
-                              elements={sceneElements}
-                              onTip={setTip}
-                              onDelete={() => commit((cur) => removeById(cur, key))}
-                              onPick={onPick}
-                              onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
-                              onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
-                              canMoveLeft={index > 0}
-                              canMoveRight={index < lastMovableIndex}
-                              onDragStart={onDragStart}
-                              onDragEnd={onDragEnd}
-                            />
-                          )}
-                        </div>
-                      </>
-                    )}
+                    <div className="relative">
+                      {dot}
+                      {action.type === 'speech' ? (
+                        <span
+                          data-testid="speech-number"
+                          // The axis runs behind it; the dock's own ground lets the digits read.
+                          className="absolute left-full top-1/2 ml-1 -translate-y-1/2 rounded-sm bg-[#fdfdfd] px-0.5 font-mono text-[10px] font-semibold leading-[14px] tabular-nums text-muted-foreground dark:bg-[#182332]"
+                        >
+                          {String(si).padStart(2, '0')}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="my-px h-1 w-px bg-border" />
+                    <div className="min-h-0 w-full flex-1">
+                      {action.type === 'speech' ? (
+                        <SpeechClip
+                          text={(action as { text?: string }).text ?? ''}
+                          actionId={key}
+                          audioId={(action as { audioId?: string }).audioId}
+                          audioUrl={(action as { audioUrl?: string }).audioUrl}
+                          audioInvalidated={
+                            (action as { audioInvalidated?: boolean }).audioInvalidated
+                          }
+                          sceneOrder={sceneOrder}
+                          language={language}
+                          ttsActive={ttsActive}
+                          ttsRefresh={ttsRefresh}
+                          regenerating={regeneratingIds.has(key)}
+                          onCommit={(text) => {
+                            // The new wording has no audio until regenerated. The old
+                            // clip's local copy stays: an undo brings its reference
+                            // back, and nothing resolves it while the line names no id.
+                            commit((cur) => setSpeechTextClearAudioById(cur, key, text));
+                            setTtsRefresh((n) => n + 1);
+                          }}
+                          onGenerated={(assetId, sourceText) => {
+                            stampGeneratedAudio(sceneId, key, sourceText, assetId);
+                            // Stage persistence is debounced; flush so the
+                            // stamped reference is durable once the row
+                            // settles (pool bytes persist first, stamp last).
+                            void flushStageSave().catch(() => undefined);
+                          }}
+                          onDelete={() => {
+                            commit((cur) => removeById(cur, key));
+                          }}
+                          onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
+                          onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
+                          canMoveLeft={index > 0}
+                          canMoveRight={index < lastMovableIndex}
+                          onDragStart={onDragStart}
+                          onDragEnd={onDragEnd}
+                        />
+                      ) : isDiscussion ? (
+                        <DiscussionClip
+                          topic={(action as DiscussionAction).topic ?? ''}
+                          prompt={(action as DiscussionAction).prompt ?? ''}
+                          agentId={(action as DiscussionAction).agentId ?? ''}
+                          agents={discussionAgents}
+                          onTopicChange={(v) =>
+                            commit((cur) => setDiscussionTopicById(cur, key, v))
+                          }
+                          onPromptChange={(v) =>
+                            commit((cur) => setDiscussionPromptById(cur, key, v))
+                          }
+                          onAgentChange={(v) =>
+                            commit((cur) => setDiscussionAgentById(cur, key, v))
+                          }
+                          onDelete={() => commit((cur) => removeById(cur, key))}
+                        />
+                      ) : (
+                        <CueMarker
+                          action={action}
+                          elements={sceneElements}
+                          onTip={setTip}
+                          onDelete={() => commit((cur) => removeById(cur, key))}
+                          onPick={onPick}
+                          onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
+                          onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
+                          canMoveLeft={index > 0}
+                          canMoveRight={index < lastMovableIndex}
+                          onDragStart={onDragStart}
+                          onDragEnd={onDragEnd}
+                        />
+                      )}
+                    </div>
                   </motion.div>
                   <DropZone
                     active={dragOver === index + 1}

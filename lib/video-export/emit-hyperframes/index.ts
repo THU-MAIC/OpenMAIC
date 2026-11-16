@@ -1066,7 +1066,7 @@ function coverCardCss(width: number): string {
   // Hairlines must survive the round-trip at 720p, hence the 1px floor.
   const px = (value: number): string => `${Math.max(1, Math.round(value * scale))}px`;
   return [
-    `  .cover-card { position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:5.2%;background:#07111f;color:#f8fafc;font-family:Inter,system-ui,sans-serif; }`,
+    `  .cover-card { position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:5.2%;background:#07111f;color:#f8fafc;font-family:"OpenMAIC Inter",system-ui,sans-serif; }`,
     `  .cover-card * { overflow-wrap:anywhere; }`,
     `  .cover-quiz { background:linear-gradient(145deg,#071426 0%,#102a43 56%,#133f4b 100%); }`,
     `  .cover-pbl { background:linear-gradient(145deg,#0b1020 0%,#161b35 54%,#232042 100%); }`,
@@ -1318,7 +1318,7 @@ export function emitHyperframes(
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #000; }
-  #${compositionId} { font-family:Inter,system-ui,sans-serif; }
+  #${compositionId} { font-family:"OpenMAIC Inter",system-ui,sans-serif; }
 ${coverCardCss(width)}${hasQuizQuestionList ? `\n${quizQuestionListCss(width)}` : ''}
 </style>
 </head>

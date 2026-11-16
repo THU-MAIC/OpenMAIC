@@ -14,11 +14,33 @@ export interface ProHomeSessionItem {
    */
   readonly title?: string | null;
   readonly status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  /** Started beside an existing course (the session's durable flag); absent on older rows. */
+  readonly existingCourse?: boolean;
+  /**
+   * The agent asked the user a question (`ask_user`) that nothing has answered
+   * yet, and no run is in flight. Derived server-side from the event log (see
+   * `@openmaic/storage`'s `AgentSessionMeta.awaitingAnswer`); absent means no.
+   */
+  readonly awaitingAnswer?: boolean;
   readonly createdAt: number;
   readonly updatedAt: number;
 }
 
 export type ProHomeSessionStatus = ProHomeSessionItem['status'];
+
+function isLiveStatus(status: ProHomeSessionStatus): boolean {
+  return status === 'queued' || status === 'running';
+}
+
+/** A row with its status and awaiting flag replaced; `awaitingAnswer` is kept absent when false. */
+function withStatus(
+  item: ProHomeSessionItem,
+  status: ProHomeSessionStatus,
+  awaitingAnswer: boolean,
+): ProHomeSessionItem {
+  const { awaitingAnswer: _previous, ...rest } = item;
+  return awaitingAnswer ? { ...rest, status, awaitingAnswer: true } : { ...rest, status };
+}
 
 /**
  * Overlay the attached conversation's live fold onto the owner-event list.
@@ -34,6 +56,12 @@ export type ProHomeSessionStatus = ProHomeSessionItem['status'];
  * Ignoring both prevents a session switch — or a new-chat press, which detaches —
  * from erasing a real queued or running indication before the meta/event replay
  * catches up.
+ *
+ * `awaitingAnswer` rides the same overlay: the fold's open question card is the
+ * same fact the server derives, seen earlier, so answering in the attached chat
+ * clears the row's mark at once instead of after the owner event. Leave it
+ * undefined (e.g. while the backlog is still replaying) to keep the row's own
+ * value. A live status never awaits an answer.
  */
 export function reconcileAttachedSessionStatus(
   sessions: readonly ProHomeSessionItem[],
@@ -43,23 +71,40 @@ export function reconcileAttachedSessionStatus(
     readonly status: ProHomeSessionStatus | 'connecting' | 'idle';
     readonly connected?: boolean;
     readonly pendingWork?: boolean;
+    readonly awaitingAnswer?: boolean;
   },
 ): readonly ProHomeSessionItem[] {
-  const { paneId, attachedId, status, connected = true, pendingWork = false } = attached;
+  const {
+    paneId,
+    attachedId,
+    status,
+    connected = true,
+    pendingWork = false,
+    awaitingAnswer,
+  } = attached;
   if (!connected || !paneId || attachedId !== paneId) return sessions;
   if (status === 'connecting' || status === 'idle') return sessions;
   const index = sessions.findIndex((session) => session.id === attachedId);
-  if (index < 0 || sessions[index]?.status === status) return sessions;
+  if (index < 0) return sessions;
+  const row = sessions[index]!;
   // A queued follow-up opens work in the fold before the next run emits
   // session_resumed. In that window the fresh live list row must win over the
   // previous terminal lifecycle event. Otherwise the attached event fold is
   // authoritative: unlike the row's generic updatedAt (also advanced by
   // heartbeats and transcript saves), pendingWork has the same lifecycle
   // meaning as the status being reconciled.
-  const rowIsLive = sessions[index]!.status === 'queued' || sessions[index]!.status === 'running';
-  const foldIsTerminal = status === 'succeeded' || status === 'failed' || status === 'cancelled';
-  if (rowIsLive && foldIsTerminal && pendingWork) return sessions;
-  return sessions.map((session, current) => (current === index ? { ...session, status } : session));
+  const foldIsTerminal = !isLiveStatus(status);
+  const keepRow = isLiveStatus(row.status) && foldIsTerminal && pendingWork;
+  const nextStatus = keepRow ? row.status : status;
+  const nextAwaiting = isLiveStatus(nextStatus)
+    ? false
+    : keepRow || awaitingAnswer === undefined
+      ? row.awaitingAnswer === true
+      : awaitingAnswer;
+  if (row.status === nextStatus && (row.awaitingAnswer === true) === nextAwaiting) return sessions;
+  return sessions.map((session, current) =>
+    current === index ? withStatus(session, nextStatus, nextAwaiting) : session,
+  );
 }
 
 interface OwnerSessionEventBase {
@@ -74,6 +119,8 @@ export type OwnerSessionEvent =
       readonly type: 'session_created' | 'session_status';
       readonly status: ProHomeSessionStatus;
       readonly attempt: number;
+      /** The server's verdict for the recorded status; absent means no. */
+      readonly awaitingAnswer?: boolean;
     })
   | (OwnerSessionEventBase & {
       readonly type: 'session_deleted' | 'session_cancel_requested';
@@ -124,7 +171,14 @@ export function reduceOwnerSessionEvent(
   }
   const changed: ProHomeSessionItem =
     event.type === 'session_status' || event.type === 'session_created'
-      ? { ...current, status: event.status, updatedAt: event.ts }
+      ? {
+          ...withStatus(
+            current,
+            event.status,
+            !isLiveStatus(event.status) && event.awaitingAnswer === true,
+          ),
+          updatedAt: event.ts,
+        }
       : event.type === 'session_active_stage'
         ? { ...current, stageId: event.activeStageId, updatedAt: event.ts }
         : event.type === 'session_title'
@@ -179,6 +233,24 @@ export function reduceOwnerStreamSignal(
     reconnect: false,
     initializedNow: !state.initialized,
   };
+}
+
+export type SessionRowMarkKind = 'running' | 'queued' | 'awaiting' | 'failed';
+
+/**
+ * The one mark a rail chat row shows in place of its time, by precedence: a run
+ * waiting its turn (queued, a still clock) or under way (a spinner) outranks a question waiting on the teacher, which outranks a
+ * failure (a question asked after a failed attempt is the newer fact). `null`
+ * is the row at rest, which shows its relative time.
+ */
+export function sessionRowMark(
+  session: Pick<ProHomeSessionItem, 'status' | 'awaitingAnswer'>,
+): SessionRowMarkKind | null {
+  if (session.status === 'queued') return 'queued';
+  if (isLiveStatus(session.status)) return 'running';
+  if (session.awaitingAnswer) return 'awaiting';
+  if (session.status === 'failed') return 'failed';
+  return null;
 }
 
 /** Course ids whose attached sessions are still doing work. */

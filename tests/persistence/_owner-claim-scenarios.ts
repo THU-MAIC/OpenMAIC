@@ -28,6 +28,7 @@ import {
   registerClaimParticipant,
   resetClaimParticipantsForTests,
 } from '@/lib/persistence/owner-claims';
+import { guideCourseIdFor } from '@/lib/persistence/guide-course-id';
 import { bindLegacyImport } from '@/lib/persistence/legacy-import-bindings';
 import { reassignMaterialFolders, registerOwnerMaterial } from '@/lib/persistence/owner-materials';
 import {
@@ -856,4 +857,90 @@ export async function rootedMaterialClaimScenario(h: ClaimHarness): Promise<void
   });
   expect(await roots()).toEqual(rootsBefore);
   expect(await lifecycle()).toEqual({ ...before, principal: assetPrincipalForOwner(ACCOUNT).key });
+}
+
+/**
+ * The guide course across a claim (`lib/persistence/guide-courses.ts`): a
+ * claim never retires a copy. An account without one ends with the visitor's
+ * copy alone, because its own late seed is refused; an account that had one
+ * keeps both.
+ */
+export async function guideCourseClaimScenario(h: ClaimHarness): Promise<void> {
+  const guide = (owner: string) => guideCourseIdFor(owner);
+  const docs = (owner: string) =>
+    h.documents(owner.startsWith('anon:') ? anonymousPrincipal(owner) : accountPrincipal(owner));
+  const seed = (owner: string) => docs(owner).saveDocument(courseNaming(guide(owner)) as never);
+  const activeGuides = async (owner: string) =>
+    (
+      await h.pool.query<{ stage_id: string }>(
+        `SELECT stage_id FROM stage_meta
+          WHERE owner_id = $1 AND deleted_at IS NULL AND stage_id LIKE 'stage-guide-%'
+          ORDER BY stage_id`,
+        [owner],
+      )
+    ).rows.map((row) => row.stage_id);
+  const claim = (from: string, to: string) => claimOwner(from, to, { provider: h.provider });
+  const anon = (n: number) => `anon:${n.toString(16)}b5a3f4e-8c1d-4e2f-9a3b-1c2d3e4f5a6b`;
+
+  // Both had a copy: both stay, nothing is retired.
+  await seed(anon(1));
+  await seed('user:g1');
+  await expect(claim(anon(1), 'user:g1')).resolves.toMatchObject({ moved: { courses: 1 } });
+  expect(await activeGuides('user:g1')).toEqual([guide(anon(1)), guide('user:g1')].sort());
+
+  // The account had none: the visitor's copy moves in...
+  await seed(anon(2));
+  await expect(claim(anon(2), 'user:g2')).resolves.toMatchObject({ moved: { courses: 1 } });
+  expect(await activeGuides('user:g2')).toEqual([guide(anon(2))]);
+  // ...and the account's own seed, landing after the claim, is refused rather
+  // than making a second copy.
+  await expect(seed('user:g2')).rejects.toMatchObject({ code: 'GUIDE_COURSE_EXISTS' });
+  expect(await activeGuides('user:g2')).toEqual([guide(anon(2))]);
+  // A deleted guide course does not stand in the way of a new one, and other
+  // courses are never refused.
+  await docs('user:g2').deleteDocument(guide(anon(2)));
+  await seed('user:g2');
+  expect(await activeGuides('user:g2')).toEqual([guide('user:g2')]);
+  await docs('user:g2').saveDocument(courseNaming('user-g2-course') as never);
+
+  // The account deleted its copy: the visitor's copy moves in, and the
+  // account's deleted one stays deleted.
+  await seed(anon(3));
+  await seed('user:g3');
+  await docs('user:g3').deleteDocument(guide('user:g3'));
+  await claim(anon(3), 'user:g3');
+  expect(await activeGuides('user:g3')).toEqual([guide(anon(3))]);
+
+  // A conversation about the visitor's copy arrives still bound to a course
+  // the library shows.
+  await seed(anon(4));
+  const talk = await h.sessions.createSession({
+    ownerId: anon(4),
+    prompt: 'explain this course',
+    stageId: guide(anon(4)),
+    existingCourse: true,
+  });
+  await seed('user:g4');
+  await expect(claim(anon(4), 'user:g4')).resolves.toMatchObject({
+    moved: { courses: 1, 'agent-sessions': 1 },
+  });
+  expect(await activeGuides('user:g4')).toEqual([guide(anon(4)), guide('user:g4')].sort());
+  await expect(h.sessions.getSession(talk.id)).resolves.toMatchObject({
+    ownerId: 'user:g4',
+    stageId: guide(anon(4)),
+  });
+
+  // A copy of an older seed generation is an ordinary course: it does not
+  // refuse the current generation's seed, and a claim moves it like any other.
+  const older = (owner: string) => guideCourseIdFor(owner, 'g0');
+  await docs('user:g5').saveDocument(courseNaming(older('user:g5')) as never);
+  await seed('user:g5');
+  expect(await activeGuides('user:g5')).toEqual([guide('user:g5'), older('user:g5')].sort());
+  await docs(anon(6)).saveDocument(courseNaming(older(anon(6))) as never);
+  await seed(anon(6));
+  await docs('user:g6').saveDocument(courseNaming(older('user:g6')) as never);
+  await expect(claim(anon(6), 'user:g6')).resolves.toMatchObject({ moved: { courses: 2 } });
+  expect(await activeGuides('user:g6')).toEqual(
+    [guide(anon(6)), older(anon(6)), older('user:g6')].sort(),
+  );
 }

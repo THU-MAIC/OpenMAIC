@@ -1,6 +1,7 @@
 import 'server-only';
 import { sandboxConflict } from '@/lib/sandbox/errors';
 import type { LearningStore, Study } from './store';
+import { currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import { digest, projectFor, stageFor } from './runtime';
 
 /** Plans preserve previously approved incremental chapters. */
@@ -11,9 +12,21 @@ export async function assertLearningPlan(
   completing = false,
 ) {
   const stage = stageFor(row);
-  if (stage.kind !== 'produce' || stage.writes !== 'plan' || stage.planUpdateMode !== 'incremental')
+  const { definition } = projectFor(row);
+  const repairing = stage.kind === 'check' && stage.checker === 'tests';
+  if (repairing && !text.trim()) throw sandboxConflict('PLAN.md must contain the learner’s plan.');
+  const planning = repairing
+    ? currentMilestone(definition, row.state)?.stages.find(
+        (step) => step.kind === 'produce' && step.writes === 'plan',
+      )
+    : stage;
+  if (
+    planning?.kind !== 'produce' ||
+    planning.writes !== 'plan' ||
+    planning.planUpdateMode !== 'incremental'
+  )
     return;
-  const previous = projectFor(row).definition.milestones[row.state.position.milestoneIndex - 1];
+  const previous = definition.milestones[row.state.position.milestoneIndex - 1];
   if (!previous) return;
   const approved = row.state.collected[previous.id]?.plan;
   let length = approved?.contentLength;
@@ -28,7 +41,7 @@ export async function assertLearningPlan(
     !approved ||
     !length ||
     digest(text.slice(0, length)) !== approved.contentHash ||
-    (completing && !text.slice(length).trim())
+    ((completing || repairing) && !text.slice(length).trim())
   )
     throw sandboxConflict(
       'Preserve the approved earlier plan and append the current milestone section.',

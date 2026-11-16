@@ -700,6 +700,22 @@ export function resetUnloadWriteStateForTests(): void {
  */
 export async function loadStageData(stageId: string): Promise<StageStoreData | null> {
   try {
+    // Chat runtime data lives in a separate IndexedDB database. Keep the
+    // document available when that independent store is temporarily
+    // unavailable; a later chat load/save can recover without treating the
+    // already-loaded stage as missing. Read alongside the document, not after
+    // it: the chat read is several round trips of its own, and nothing about it
+    // depends on the document.
+    let chatSnapshot: ChatStorageSnapshot = { sessions: [], restoreMarker: undefined };
+    const chatsLoad = loadChatSessions(stageId, {
+      onSnapshot: (snapshot) => {
+        chatSnapshot = snapshot;
+      },
+    }).catch((error: unknown): ChatSession[] => {
+      log.warn(`Failed to load chat sessions for stage ${stageId}:`, error);
+      return [];
+    });
+
     const access = await accessDocument(stageId);
     const document = access.document;
     if (!document) {
@@ -708,22 +724,7 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
     }
     if (!access.readOnlyLegacy) storedDocuments.add(stageId);
     const currentScene = await loadCurrentScene(stageId);
-
-    // Chat runtime data lives in a separate IndexedDB database. Keep the
-    // document available when that independent store is temporarily
-    // unavailable; a later chat load/save can recover without treating the
-    // already-loaded stage as missing.
-    let chats: ChatSession[] = [];
-    let chatSnapshot: ChatStorageSnapshot = { sessions: [], restoreMarker: undefined };
-    try {
-      chats = await loadChatSessions(stageId, {
-        onSnapshot: (snapshot) => {
-          chatSnapshot = snapshot;
-        },
-      });
-    } catch (error) {
-      log.warn(`Failed to load chat sessions for stage ${stageId}:`, error);
-    }
+    const chats = await chatsLoad;
 
     log.info(`Loaded stage: ${stageId}, scenes: ${document.scenes.length}, chats: ${chats.length}`);
 

@@ -10,7 +10,7 @@ import type {
   AgentToolResult,
   StreamFn,
 } from '@earendil-works/pi-agent-core';
-import { buildAgent } from './build-agent';
+import { buildAgent, type BuildAgentOptions } from './build-agent';
 
 const EMPTY_USAGE = {
   input: 0,
@@ -40,6 +40,7 @@ export interface RunNativeChildOptions {
   tools: AgentTool[];
   allowedToolNames: ReadonlySet<string>;
   history?: AgentMessage[];
+  transformContext?: BuildAgentOptions['transformContext'];
   abortSignal?: AbortSignal;
   timeoutMs?: number;
   maxProviderTransports?: number;
@@ -249,6 +250,7 @@ export async function runNativeChild(opts: RunNativeChildOptions): Promise<Nativ
     tools: trackedTools,
     allowedToolNames: opts.allowedToolNames,
     history: opts.history,
+    transformContext: opts.transformContext,
     afterToolCall: (context) => {
       if (
         !context.isError &&

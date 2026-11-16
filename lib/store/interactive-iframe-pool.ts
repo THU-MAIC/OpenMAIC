@@ -48,7 +48,7 @@ export interface IframePoolEntry {
   readonly sourceHtml?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
-  /** Full available slot rect. The host contain-fits one fixed logical viewport inside it. */
+  /** Full available slot rect. The host scales a logical viewport of at least 1280×720 to fill it. */
   readonly rect: IframeRect | null;
   /** Visible intersection of the slot with overflow ancestors. The host clips to this. */
   readonly clip: IframeRect | null;

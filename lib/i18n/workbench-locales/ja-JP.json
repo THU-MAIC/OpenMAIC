@@ -48,7 +48,9 @@
     "fileTooLargeWithLimit": "ファイルが大きすぎます。{{limit}} MB 以下のファイルを選択してください。",
     "unsupportedType": "このファイル形式には対応していません。対応しているファイルを選択してください。",
     "quotaExceeded": "資料のアップロード上限に達しました。",
-    "storageFull": "ストレージの上限に達したため、この資料をアップロードできません。"
+    "storageFull": "ストレージの上限に達したため、この資料をアップロードできません。",
+    "uploadFailedShort": "アップロードに失敗しました",
+    "retryFailed": "再解析を開始できませんでした。もう一度お試しください。"
   },
   "skill": {
     "listFailed": "スキル一覧を読み込めませんでした",
@@ -139,9 +141,7 @@
     "listSeparator": "、",
     "group": {
       "tools": "{{count}} 件のツール呼び出し",
-      "skills": "{{count}} 件のスキル",
-      "running": "実行中",
-      "error": "エラーあり",
+      "failed": "{{count}} 件失敗",
       "done": "完了"
     },
     "section": {

@@ -146,7 +146,7 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
            FROM openmaic_schema_migrations GROUP BY store ORDER BY store`,
       );
       expect(recorded.rows).toEqual([
-        { store: 'agent-session', versions: [1, 2, 3] },
+        { store: 'agent-session', versions: [1, 2, 3, 4] },
         { store: 'agent-session-material', versions: [1, 2] },
         { store: 'asset', versions: [1, 2, 3, 4] },
         { store: 'document', versions: [1, 2] },

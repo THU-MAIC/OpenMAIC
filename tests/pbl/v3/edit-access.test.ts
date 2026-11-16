@@ -46,9 +46,13 @@ describe('OpenPBL editing boundaries', () => {
     expect(projectEditAccess(context(3), 'greeting.py').canEdit).toBe(true);
     expect(projectEditAccess(context(3), 'PLAN.md').reason).toBe('planLocked');
   });
-  it('opens failed-test code repair in the same test step, but locks it during tests and Agent activity', () => {
+  it('opens plan and code repair in the same test step, with test and Agent writer locks', () => {
     const repair = context(4, true);
     expect(projectEditAccess(repair, 'greeting.py').canEdit).toBe(true);
+    expect(projectEditAccess(repair, 'PLAN.md')).toMatchObject({ canEdit: true, mode: 'repair' });
+    expect(projectEditAccess(context(4), 'PLAN.md').reason).toBe('assessment');
+    expect(projectEditAccess({ ...repair, busy: true }, 'PLAN.md').reason).toBe('agent');
+    expect(projectEditAccess({ ...repair, evaluation: {} }, 'PLAN.md').reason).toBe('testing');
     expect(repair.stage.kind).toBe('check');
     expect(projectEditAccess({ ...repair, busy: true }, 'greeting.py').reason).toBe('agent');
     expect(projectEditAccess({ ...repair, evaluation: {} }, 'greeting.py').reason).toBe('testing');

@@ -40,6 +40,7 @@ import { Check, HelpCircle } from 'lucide-react';
 import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
+import { TextBlock } from './text-block';
 import { isFreeTextOption, useQuestionAnswer } from './question-card-state';
 
 /** What the surfaces say about whose move it is. */
@@ -118,7 +119,11 @@ export function QuestionCard({
           </span>
         ) : null}
       </div>
-      {summaryOnly ? null : <p className={styles.questionCard.question}>{node.text}</p>}
+      {summaryOnly ? null : (
+        <div className={styles.questionCard.question}>
+          <TextBlock text={node.text} />
+        </div>
+      )}
       {options.length > 0 && !summaryOnly ? (
         <div className={styles.questionCard.options} role="group" aria-label={node.text}>
           {options.map((option) => {

@@ -12,9 +12,8 @@ import { BaseLatexElement } from '../components/element/LatexElement/BaseLatexEl
 import { BaseTableElement } from '../components/element/TableElement/BaseTableElement';
 import { BaseVideoElement } from '../components/element/VideoElement/BaseVideoElement';
 import { BaseCodeElement } from '../components/element/CodeElement/BaseCodeElement';
-import { useSceneSelector } from '@/lib/contexts/scene-context';
-import type { SceneContent } from '@/lib/types/stage';
 import { maicElementIdAttributes, screenElementDomId } from '../element-dom';
+import { useSlideTextStyle } from '../use-slide-text-style';
 
 interface ScreenElementProps {
   readonly elementInfo: PPTElement;
@@ -47,17 +46,7 @@ export function ScreenElement({
     return elementTypeMap[elementInfo.type] || null;
   }, [elementInfo.type]);
 
-  const theme = useSceneSelector<SceneContent, { fontColor: string; fontName: string }>(
-    (content) => {
-      if (content.type === 'slide') {
-        return content.canvas.theme;
-      }
-      return {
-        fontColor: '#333333',
-        fontName: 'Microsoft YaHei',
-      };
-    },
-  );
+  const textStyle = useSlideTextStyle();
 
   if (!CurrentElementComponent) {
     return null;
@@ -70,8 +59,7 @@ export function ScreenElement({
       {...maicElementIdAttributes(elementInfo.id)}
       style={{
         zIndex: elementIndex,
-        color: theme.fontColor,
-        fontFamily: theme.fontName,
+        ...textStyle,
       }}
     >
       <CurrentElementComponent

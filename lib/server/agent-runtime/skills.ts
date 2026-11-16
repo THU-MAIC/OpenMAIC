@@ -227,18 +227,17 @@ function virtualSkillFile(skill: {
 }
 
 /** Load builtin filesystem skills once; database skills remain owner-scoped and live. */
-async function listBuiltinSkills(): Promise<LoadedSkill[]> {
-  if (builtinCache) return builtinCache;
-  if (!existsSync(skillsDir)) return (builtinCache = []);
+async function loadBuiltinSkills(directory: string): Promise<LoadedSkill[]> {
+  if (!existsSync(directory)) return [];
 
-  const posixSkillsDir = toPosixPath(skillsDir);
+  const posixSkillsDir = toPosixPath(directory);
   const env = new PosixNormalizingEnv({ cwd: posixSkillsDir });
   const { skills, diagnostics } = await loadSkills(env, posixSkillsDir);
   for (const d of diagnostics) {
     log.warn(`${d.code}: ${d.message} (${d.path})`);
   }
 
-  builtinCache = skills.map((skill: Skill) => {
+  return skills.map((skill: Skill) => {
     // The constraint file is a sibling of SKILL.md. Deliberately a separate
     // file rather than more frontmatter: the frontmatter is the model-visible
     // contract, this is the checker's, and mixing them means every schema
@@ -264,7 +263,17 @@ async function listBuiltinSkills(): Promise<LoadedSkill[]> {
       source: 'builtin' as const,
     };
   });
-  return builtinCache;
+}
+
+async function listBuiltinSkills(): Promise<LoadedSkill[]> {
+  return (builtinCache ??= await loadBuiltinSkills(skillsDir));
+}
+
+let classroomCache: LoadedSkill[] | null = null;
+
+/** Classroom guidance uses the shared discovery/read protocol, outside the authoring catalog. */
+export async function listClassroomSkills(): Promise<LoadedSkill[]> {
+  return (classroomCache ??= await loadBuiltinSkills(agentRuntimeConfig.classroomSkillsDir));
 }
 
 /** Builtins plus the current owner's user-authored skills. */

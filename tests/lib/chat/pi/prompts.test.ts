@@ -212,6 +212,24 @@ describe('Pi director prompt closure routing', () => {
     expect(prompt).toContain('preserve its sceneId, revision, and source provenance');
   });
 
+  it.each([
+    ['teacher', 70],
+    ['assistant', 60],
+    ['student', 40],
+  ] as const)(
+    'keeps the existing %s total speech limit alongside read-aloud and learner-language rules',
+    (role, limit) => {
+      const body = makeBody();
+      body.storeState.stage!.languageDirective = 'Deliver the course in English.';
+      const prompt = buildNativeChildPrompt(body, { ...agents[0], role }, [], ['read']);
+      expect(prompt).toContain(`TOTAL visible speech around ${limit} Chinese characters`);
+      expect(prompt).toContain('including text before a tool call');
+      expect(prompt).toContain("learner's language takes precedence over the course language");
+      expect(prompt).toContain('internal IDs, tool names');
+      expect(prompt).not.toContain('Start with one short, substantive answer');
+    },
+  );
+
   it('keeps the Native prompt tool-native and evidence-bound', () => {
     const system = buildNativeChildPrompt(makeBody(), agents[0], [], ['spotlight']);
     const turn = buildNativeChildTurnPrompt('Explain the current element.', 'teacher', {
@@ -277,13 +295,20 @@ describe('Pi director prompt closure routing', () => {
     expect(system).not.toContain('- wb_edit_code');
     expect(system).toContain('# Native whiteboard behavior');
     expect(system).toContain(
+      'Before each model request, a fresh whiteboard state is appended as data at the end of the context',
+    );
+    expect(system).toContain(
+      'The tail contains `whiteboard.lastSeq`, not a `nextMutation` receipt',
+    );
+    expect(system).not.toContain('read again between successful mutations');
+    expect(system).toContain(
       'visibility result of `closed` means the Browser whiteboard is currently hidden',
     );
     expect(system).toContain('it does not mean whiteboard tools are unavailable');
     expect(system).toContain(
-      'copy `nextMutation.expectedLastSeq` from the latest `wb_read` result exactly into `expectedLastSeq`',
+      'copy `nextMutation.expectedLastSeq` exactly from the latest successful `wb_read` or mutation result',
     );
-    expect(system).toContain('use `null` only when that value itself is `null`');
+    expect(system).toContain('use `null` only when that value is `null`');
     expect(system).toContain('A `closed` visibility must not stop the requested mutation');
     expect(system).toContain('call `wb_open` before the first mutation');
     expect(system).toContain('even when you have not observed the current visibility');
@@ -953,4 +978,13 @@ describe('Pi history keeps the human turn distinct from agent turns (#511)', () 
     expect(historyText(history[2])).toBe(challenge);
     expect(buildUserPrompt(makeBody({ messages }))).toContain(`Latest user message: ${challenge}`);
   });
+});
+
+it('only claims hidden board tools are available when a board service exists', () => {
+  const without = buildDirectorPrompt(makeBody(), agents, true, false);
+  expect(without).toContain('request-start scene/panel context');
+  expect(without).not.toContain('A hidden panel');
+  expect(buildDirectorPrompt(makeBody(), agents, true, true)).toContain(
+    'A hidden panel does not mean drawing tools are unavailable.',
+  );
 });

@@ -20,7 +20,7 @@
  * the pill is hovered — a row of six bright ✕ glyphs is the loudest thing on a
  * surface whose loudest thing should be the send button.
  */
-import { Loader2, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils/cn';
 
@@ -103,6 +103,10 @@ export function ComposerPill({
   onMouseLeave,
   testId,
   className,
+  progress,
+  action,
+  status,
+  pinMeta = false,
 }: {
   readonly tone?: ComposerPillTone;
   readonly icon?: ReactNode;
@@ -116,11 +120,26 @@ export function ComposerPill({
   readonly onMouseLeave?: () => void;
   readonly testId?: string;
   readonly className?: string;
+  /**
+   * A hairline along the pill's foot: the share done (0 to 1), or
+   * `'indeterminate'` while the work has no measure (a file being parsed).
+   */
+  readonly progress?: number | 'indeterminate';
+  /** One more control before the remove ✕ (a failed upload's retry). */
+  readonly action?: ReactNode;
+  /** What the subject is doing, for tests and styling hooks (`data-status`). */
+  readonly status?: string;
+  /**
+   * The meta is a short status ("Parsing…", "42%") that must stay whole: the
+   * label truncates instead.
+   */
+  readonly pinMeta?: boolean;
 }) {
   return (
     <span
       data-testid={testId}
       data-tone={tone}
+      data-status={status}
       title={title}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
@@ -128,6 +147,7 @@ export function ComposerPill({
         'group/pill inline-flex max-w-[220px] items-center gap-1 rounded-[7px] border py-[1px] pl-1.5 pr-1 text-[11px] leading-[17px] transition-colors duration-150',
         'motion-safe:animate-[composer-pill-in_160ms_cubic-bezier(0.16,1,0.3,1)]',
         TONE[tone],
+        progress !== undefined && 'relative overflow-hidden',
         className,
       )}
     >
@@ -151,7 +171,14 @@ export function ComposerPill({
           the pill's max width — the text ran on and the ✕ ended up floating
           outside the rounded ground, which is what made the skill pill read as
           a different species from the material pill beside it. */}
-      {meta ? <span className="min-w-0 truncate opacity-60">{meta}</span> : null}
+      {meta ? (
+        <span
+          className={cn('opacity-60', pinMeta ? 'shrink-0 whitespace-nowrap' : 'min-w-0 truncate')}
+        >
+          {meta}
+        </span>
+      ) : null}
+      {action}
       {onRemove ? (
         <button
           type="button"
@@ -167,24 +194,47 @@ export function ComposerPill({
       ) : (
         <span className="w-px shrink-0" />
       )}
+      {progress === undefined ? null : (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px]"
+        >
+          {progress === 'indeterminate' ? (
+            <span className="block h-full w-full bg-primary/40 motion-safe:animate-pulse" />
+          ) : (
+            <span
+              className="block h-full bg-primary/70 transition-[width] duration-200 ease-out"
+              style={{ width: `${Math.round(Math.min(1, Math.max(0, progress)) * 100)}%` }}
+            />
+          )}
+        </span>
+      )}
     </span>
   );
 }
 
-/** A pill whose subject is still settling (an upload in flight). */
-export function ComposerPendingPill({
+/** The small square control a pill can carry before its ✕ (see `action`). */
+export function ComposerPillAction({
   label,
+  onClick,
+  children,
   testId,
 }: {
-  readonly label: ReactNode;
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly children: ReactNode;
   readonly testId?: string;
 }) {
   return (
-    <ComposerPill
-      tone="pending"
-      testId={testId}
-      icon={<Loader2 size={10} className="animate-spin motion-reduce:animate-none" />}
-      label={label}
-    />
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      data-testid={testId}
+      onClick={onClick}
+      className="ml-px grid size-[15px] shrink-0 place-items-center rounded-[4px] opacity-70 transition-[opacity,background-color] duration-150 hover:bg-current/15 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-current"
+    >
+      {children}
+    </button>
   );
 }

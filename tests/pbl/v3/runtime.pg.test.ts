@@ -190,9 +190,18 @@ vi.mock('@/lib/server/sandbox/providers/e2b-compatible', () => ({
       }
     }
     async initializeWorkspace() {}
-    async readText(id: string, _operation: string, path: string) {
+    async readText(id: string, _operation: string, path: string, _signal?: AbortSignal) {
       path = path.replace(/^\/home\/user\/project\//, '');
       return readFile(join(mocked.root, id, path), 'utf8');
+    }
+    async readTexts(id: string, operation: string, paths: readonly string[], signal?: AbortSignal) {
+      const pairs: [string, string][] = [];
+      for (const path of paths) {
+        signal?.throwIfAborted();
+        pairs.push([path, await this.readText(id, operation, path, signal)]);
+        signal?.throwIfAborted();
+      }
+      return Object.fromEntries(pairs);
     }
     async writeText(id: string, _operation: string, path: string, text: string) {
       path = path.replace(/^\/home\/user\/project\//, '');
@@ -4801,6 +4810,61 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     15_000,
   );
 
+  it('opens earlier milestone history without mixing it into the live transcript', async () => {
+    const lab = installedProject({ id: 'greeting-python-lab', version: '1.2.0' });
+    const study = await unpreparedStudy(lab);
+    const [first, second] = lab.definition.milestones;
+    const position = { milestoneId: second.id, milestoneIndex: 1, stageIndex: 0 };
+    await pool.query(
+      "UPDATE pbl_v3_studies SET state=jsonb_set(state,'{position}',$2::jsonb) WHERE id=$1",
+      [study.id, JSON.stringify(position)],
+    );
+    const addDiscussion = async (milestoneId: string, text: string) => {
+      const sessionId = `history-${randomUUID()}`;
+      await agents.createSession({
+        id: sessionId,
+        ownerId: principal.ownerId,
+        stageId: 'classroom',
+        prompt: 'Teaching history',
+        status: 'succeeded',
+      });
+      await pool.query(
+        `INSERT INTO pbl_v3_roles(session_id,study_id,role,context_key,stage_key)
+         VALUES($1,$2,'discussion',$3,$4)`,
+        [sessionId, study.id, milestoneId, `${milestoneId}:0`],
+      );
+      await agents.appendControlEvent(sessionId, {
+        ts: Date.now(),
+        type: 'user_message',
+        data: { text },
+      });
+      return {
+        sessionId,
+        milestoneId,
+        role: 'discussion',
+        through: await agents.lastEventSeq(sessionId),
+      };
+    };
+    const older = await addDiscussion(first.id, 'Earlier learner message');
+    const current = await addDiscussion(second.id, 'Current learner message');
+    const view = await learningView(principal, study.id, { passive: true });
+    expect(view.conversationHistory).toEqual([current, older]);
+    expect(JSON.stringify(view.conversation)).toContain('Current learner message');
+    expect(JSON.stringify(view.conversation)).not.toContain('Earlier learner message');
+
+    const { conversationPage } = await import('@/lib/server/pbl-v3/conversation-page');
+    const page = await conversationPage(
+      principal,
+      new URLSearchParams({
+        id: study.id,
+        sessionId: older.sessionId,
+        through: String(older.through),
+      }),
+    );
+    expect(JSON.stringify(page.conversation)).toContain('Earlier learner message');
+    expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(position);
+  });
+
   it('bounds a multi-call turn and pages every saved message without replaying snapshots', async () => {
     const study = await freshStudy();
     onTestFinished(async () => {
@@ -4879,6 +4943,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       sessionId: queued.sessionId,
       through,
       role: 'discussion',
+      milestoneId: view.state.position.milestoneId,
     });
 
     // New updates must not move the frozen history window or change its cursors.
@@ -5055,6 +5120,95 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       failure: 'timeout',
       failureCode: 'MODEL_REQUEST_IDLE_TIMEOUT',
     });
+  });
+
+  it('rejects feedback for an unopened section instead of silently reopening the first lesson', async () => {
+    const study = await freshStudy(),
+      opening = (await study.send('begin')) as { sessionId: string };
+    const claim = await agents.claimNextSession('unopened-review-worker', process.pid, {
+      sessionId: opening.sessionId,
+      leaseTtlMs: 10000,
+      maxAttempts: 5,
+    });
+    const config = await teachingRunnerConfig({
+      sessionId: opening.sessionId,
+      ownerId: principal.ownerId,
+      workerId: 'unopened-review-worker',
+      attempt: claim!.attempt,
+      signal: new AbortController().signal,
+    });
+    await expect(
+      invoke(config, 'read_next_skill', { studentFeedback: 'The learner answered section C.' }),
+    ).rejects.toThrow('No active section is open');
+    expect((await store.binding(opening.sessionId))?.guided?.activeFile).toBeFalsy();
+    await invoke(config, 'request_skill_review', {
+      response: 'Project welcome.\n\nReady to begin?',
+    });
+    await agents.finishSession(opening.sessionId, 'unopened-review-worker', {
+      status: 'succeeded',
+      expectedAttempt: claim!.attempt,
+    });
+  });
+  it('gives the correct next action for missing evidence before any cloud read and preserves review recovery', async () => {
+    const original = studyId,
+      study = await freshTeachingStudy();
+    studyId = study.id;
+    try {
+      await runTools('Please continue.', async (config) => {
+        const read = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readTexts');
+        try {
+          for (const reuseFeedback of [false, true])
+            await expect(
+              invoke(config, 'read_next_skill', {
+                studentFeedback: 'An old unrelated answer is enough.',
+                reuseFeedback,
+              }),
+            ).rejects.toThrow('feedbackSource=null');
+          expect(read).not.toHaveBeenCalled();
+        } finally {
+          read.mockRestore();
+        }
+        await invoke(config, 'request_skill_review', {
+          response: 'Current explanation.\n\nHow will the caller use the returned value?',
+        });
+      });
+    } finally {
+      studyId = original;
+    }
+  });
+
+  it('binds a learner review to one fresh bulk snapshot and displays its committed response immediately', async () => {
+    const original = studyId,
+      study = await freshTeachingStudy();
+    studyId = study.id;
+    try {
+      await runTools('Please explain this section.', async (config) => {
+        const batch = vi.spyOn(E2BCompatibleSandboxProvider.prototype, 'readTexts');
+        const response =
+          'Look at the current program.\n\nWhich behavior should the next change preserve?';
+        try {
+          await invoke(config, 'request_skill_review', { response });
+          expect(batch).toHaveBeenCalledTimes(1);
+        } finally {
+          batch.mockRestore();
+        }
+        const binding = (await store.binding((await store.roles(study.id))[0].session_id))!;
+        expect(binding.guided?.pending?.displayText).toBe(response);
+        const row = await store.get(study.id, principal.ownerId);
+        const sandbox = await SandboxService.forOwner(principal);
+        const expected = filesFingerprint(await readFiles(sandbox, row));
+        expect(binding.guided?.pending?.artifactDigest).toBe(expected);
+        const view = await learningView(principal, study.id, { passive: true });
+        expect(
+          view.conversation
+            ?.flatMap((e) => e.parts)
+            .some((p) => p.kind === 'text' && p.text === response),
+        ).toBe(true);
+        expect(config.isTurnComplete()).toBe(true);
+      });
+    } finally {
+      studyId = original;
+    }
   });
 
   it('keeps a large reply whole while the committed review question awaits its display event', async () => {
@@ -5296,14 +5450,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await expect(command('next')).rejects.toThrow('not available');
     await runTools('Please help me fix the failed greeting test.', async (config) => {
       expect(config.systemPrompt).toContain('observed test failure');
+      expect(config.systemPrompt).toContain('repair the permitted source directly');
+      expect(config.systemPrompt).toContain('Do not require a PLAN.md edit');
       const current = await service.readText(environmentId, 'greeting.py');
-      await expect(
-        invoke(config, 'write_file', {
-          path: 'PLAN.md',
-          text: 'overwrite',
-          expectedHash: digest(''),
-        }),
-      ).rejects.toThrow('cannot write');
       await invoke(config, 'write_file', {
         path: 'greeting.py',
         text: code + '\n# repaired\n',
@@ -6479,13 +6628,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const ready = new Promise<void>((resolve) => {
       entered = resolve;
     });
-    const original = SandboxService.prototype.readText;
+    const original = SandboxService.prototype.readTexts;
     const read = vi
-      .spyOn(SandboxService.prototype, 'readText')
-      .mockImplementationOnce(async function (this: SandboxService, id, path) {
+      .spyOn(SandboxService.prototype, 'readTexts')
+      .mockImplementationOnce(async function (this: SandboxService, id, paths, signal) {
         entered();
         await gate;
-        return original.call(this, id, path);
+        return original.call(this, id, paths, signal);
       });
     try {
       const tool = config.tools.find((t) => t.name === 'request_skill_review')!;
@@ -7577,6 +7726,105 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(await service.readText(row.environment_id!, 'greeting.py')).toBe(
       original + '# learner repair\n',
     );
+  });
+  it('retests a learner-amended plan and restores its passing checkpoint', async () => {
+    const previousStudyId = studyId;
+    const previousEvaluation = project.evaluations.greeting!;
+    onTestFinished(() => {
+      studyId = previousStudyId;
+      project.evaluations.greeting = previousEvaluation;
+    });
+    studyId = (await freshStudy()).id;
+    const row = await store.get(studyId, principal.ownerId);
+    const environmentId = row.environment_id!;
+    const service = await SandboxService.forOwner(principal);
+    const originalPlan = await service.readText(environmentId, 'PLAN.md');
+    const originalCode = await service.readText(environmentId, 'greeting.py');
+    const originalPlanId = randomUUID();
+    const collected = row.state.collected.greeting!;
+    row.state.position.stageIndex = 4;
+    row.state.milestones[0]!.stageIndex = 4;
+    collected.plan = {
+      kind: 'plan',
+      id: originalPlanId,
+      milestoneId: 'greeting',
+      revision: 0,
+      contentHash: digest(originalPlan),
+      contentLength: originalPlan.length,
+    };
+    collected.planReviewCompleted = true;
+    collected.code = {
+      kind: 'code',
+      id: randomUUID(),
+      milestoneId: 'greeting',
+      revision: 0,
+      workspaceRevisionId: 'before-repair',
+      value: 'Reviewed sandbox files',
+    };
+    await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+    project.evaluations.greeting = {
+      ...previousEvaluation,
+      cases: [
+        {
+          id: 'plan-record',
+          label: 'Plan record',
+          argv: [
+            'python3',
+            '-c',
+            'from pathlib import Path; print("pass" if "CHOICE = format" in Path("PLAN.md").read_text() else "missing")',
+          ],
+          stdout: 'pass\n',
+        },
+      ],
+    };
+    const save = (text: string, expectedHash: string) =>
+      command('save', { path: 'PLAN.md', text, expectedHash });
+    await expect(save('Early plan edit', digest(originalPlan))).rejects.toThrow('not available');
+    await command('evaluate');
+    await command('collect');
+    expect((await learningView(principal, studyId)).state.collected.greeting!.tests?.status).toBe(
+      'failed',
+    );
+    const learnerEdit = originalPlan + '\nClarify the chosen formatting approach.\n';
+    await save(learnerEdit, digest(originalPlan));
+    await expect(save('Stale plan edit', digest(originalPlan))).rejects.toThrow('changed');
+    const amendedPlan = learnerEdit + '\nCHOICE = format\n';
+    await runTools('Please add my selected format record to PLAN.md.', async (config) => {
+      await invoke(config, 'read_file', { path: 'PLAN.md' });
+      await invoke(config, 'write_file', {
+        path: 'PLAN.md',
+        text: amendedPlan,
+        expectedHash: digest(learnerEdit),
+      });
+    });
+    await command('evaluate');
+    await expect(save('Edit during evaluation', digest(amendedPlan))).rejects.toMatchObject({
+      reason: 'WORKBENCH_ACCESS_DENIED',
+    });
+    await command('collect');
+    const tested = (await learningView(principal, studyId)).state.collected.greeting!;
+    expect(tested.plan).toMatchObject({ contentHash: digest(amendedPlan), revision: 1 });
+    expect(tested.plan!.id).not.toBe(originalPlanId);
+    expect(tested.tests).toMatchObject({ status: 'passed', planArtifactId: tested.plan!.id });
+    expect(tested.planReviewCompleted).toBe(false);
+    expect(await service.readText(environmentId, 'greeting.py')).toBe(originalCode);
+    expect(
+      (
+        await pool.query(
+          "SELECT actor FROM pbl_v3_evidence WHERE study_id=$1 AND kind='file-edit' AND detail->>'path'='PLAN.md' ORDER BY id",
+          [studyId],
+        )
+      ).rows,
+    ).toEqual([{ actor: 'learner' }, { actor: 'coder' }]);
+    await expect(save('Late plan edit', digest(amendedPlan))).rejects.toThrow('not available');
+    await command('next');
+    mocked.missing.add(environmentId);
+    await rm(join(mocked.root, environmentId), { recursive: true });
+    await command('prepare');
+    const restored = await store.get(studyId, principal.ownerId);
+    expect(restored.state.position.stageIndex).toBe(5);
+    expect(restored.state.collected.greeting!.tests?.id).toBe(tested.tests!.id);
+    expect(await service.readText(restored.environment_id!, 'PLAN.md')).toBe(amendedPlan);
   });
   it('integrates scoped files, command evidence, terminal controls and recovery without project previews', async () => {
     const fresh = await freshStudy();
@@ -10788,8 +11036,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const original = SandboxService.prototype.readText;
-    const read = vi.spyOn(SandboxService.prototype, 'readText').mockImplementation(async function (
+    const original = SandboxService.prototype.readTexts;
+    const read = vi.spyOn(SandboxService.prototype, 'readTexts').mockImplementation(async function (
       this: SandboxService,
       ...args
     ) {

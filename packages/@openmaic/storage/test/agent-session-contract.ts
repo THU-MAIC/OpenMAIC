@@ -255,6 +255,101 @@ export function runAgentSessionStoreContract(
       expect(await store.getSession('session-1')).toMatchObject({ status: 'cancelled' });
     });
 
+    async function lastStatusSummary(store: AgentSessionContractStore) {
+      const events = await store.readAfter('owner-a', BigInt(0));
+      return events.filter((event) => event.type === 'session_status').at(-1);
+    }
+
+    test('a session settled on an unanswered question awaits an answer, in the list and the projection', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+
+      expect(await store.getSession('session-1')).toMatchObject({ awaitingAnswer: true });
+      expect(await store.listSessionsByOwner('owner-a')).toEqual([
+        expect.objectContaining({ id: 'session-1', awaitingAnswer: true }),
+      ]);
+      expect(await lastStatusSummary(store)).toMatchObject({
+        status: 'succeeded',
+        awaitingAnswer: true,
+      });
+    });
+
+    test('an answer clears the awaiting mark, and a run that ends without asking keeps it clear', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      await store.postUserMessage('session-1', { text: 'Yes, continue' });
+
+      expect(await store.getSession('session-1')).not.toHaveProperty('awaitingAnswer');
+      const requeued = await lastStatusSummary(store);
+      expect(requeued).toMatchObject({ status: 'queued' });
+      expect(requeued).not.toHaveProperty('awaitingAnswer');
+
+      const claim = await store.claimNextSession('answer-worker', 102, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      await store.finishSession('session-1', 'answer-worker', {
+        status: 'succeeded',
+        resetAttempt: true,
+        expectedAttempt: claim!.attempt,
+      });
+      expect(await store.getSession('session-1')).not.toHaveProperty('awaitingAnswer');
+      expect(await lastStatusSummary(store)).not.toHaveProperty('awaitingAnswer');
+    });
+
+    test('an attached material is not an answer, and a queued or running session never awaits', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      await store.postUserMessage('session-1', { text: '', materials: [{ materialId: 'm1' }] });
+      // The run is queued (behind the ask), so the row is not "waiting for you".
+      expect(await store.getSession('session-1')).toMatchObject({ status: 'queued' });
+      expect(await store.getSession('session-1')).not.toHaveProperty('awaitingAnswer');
+      // Cancelling the queued attachment settles the row again: the question
+      // it was asked is still the open one.
+      await store.requestCancel('session-1', { settle: true });
+      expect(await store.getSession('session-1')).toMatchObject({
+        status: 'cancelled',
+        awaitingAnswer: true,
+      });
+      expect(await lastStatusSummary(store)).toMatchObject({
+        status: 'cancelled',
+        awaitingAnswer: true,
+      });
+    });
+
+    test('a new run started on the session clears the mark while it runs', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      expect(await store.requeueForRetry('session-1')).toBe(true);
+      expect(await store.getSession('session-1')).not.toHaveProperty('awaitingAnswer');
+      expect(await lastStatusSummary(store)).not.toHaveProperty('awaitingAnswer');
+    });
+
+    test('a session asked again after an answer awaits the new question', async () => {
+      const store = makeStore();
+      await settleOnQuestion(store);
+      await store.postUserMessage('session-1', { text: 'Option A' });
+      const claim = await store.claimNextSession('second-ask', 102, {
+        leaseTtlMs: 10_000,
+        maxAttempts: 3,
+      });
+      await store.appendRunEvent('session-1', 'second-ask', {
+        ts: 5,
+        attempt: claim!.attempt,
+        type: AGENT_SESSION_LIFECYCLE.userQuestion,
+        data: { question: 'And the title?' },
+      });
+      expect(await store.getSession('session-1')).not.toHaveProperty('awaitingAnswer');
+      await store.finishSession('session-1', 'second-ask', {
+        status: 'failed',
+        expectedAttempt: claim!.attempt,
+      });
+      expect(await store.getSession('session-1')).toMatchObject({
+        status: 'failed',
+        awaitingAnswer: true,
+      });
+    });
+
     test('appends ordered events and compacts only middle message updates on replay', async () => {
       const store = makeStore();
       await store.createSession(makeAgentSessionInput());

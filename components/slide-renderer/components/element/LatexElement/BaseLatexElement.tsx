@@ -70,7 +70,7 @@ const ALIGN_MAP = {
   right: 'flex-end',
 } as const;
 
-function KatexContent({
+export function KatexContent({
   html,
   width,
   height,

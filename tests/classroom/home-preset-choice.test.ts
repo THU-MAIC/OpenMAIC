@@ -4,7 +4,7 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import HomePage from '@/app/page';
+import { ClassicHomePage as HomePage } from '@/app/classic-home';
 import { selectedRunAgents } from '@/lib/generation-run-client/start';
 import { I18nProvider } from '@/lib/hooks/use-i18n';
 import { useRestorePresetAgentChoice } from '@/lib/hooks/use-restore-preset-agent-choice';

@@ -41,7 +41,11 @@ export interface DirectorCompactionTrace {
 }
 
 export interface DirectorCompactionRuntime {
-  transformContext: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
+  transformContext: (
+    messages: AgentMessage[],
+    signal?: AbortSignal,
+    transientTokens?: number,
+  ) => Promise<AgentMessage[]>;
   getTrace: () => DirectorCompactionTrace;
   dispose: () => void;
 }
@@ -170,13 +174,14 @@ export function createDirectorCompactionRuntime(opts: {
   };
 
   return {
-    transformContext: async (messages, signal) => {
+    transformContext: async (messages, signal, transientTokens = 0) => {
       if (disposed || !settings.enabled) return messages;
       const session = await syncSession(messages);
       const beforeContext = await session.buildContext();
       const tokensBefore = estimateDirectorContextTokens(beforeContext.messages);
       trace.checkCount += 1;
-      if (!shouldCompact(tokensBefore, contextWindow, settings)) {
+      // Count transient input without saving it in the session or its summary.
+      if (!shouldCompact(tokensBefore + transientTokens, contextWindow, settings)) {
         return beforeContext.messages;
       }
 

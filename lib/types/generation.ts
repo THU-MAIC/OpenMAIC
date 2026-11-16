@@ -155,6 +155,8 @@ export interface SceneOutline {
   title: string;
   description: string; // 1-2 sentences describing the purpose
   keyPoints: string[]; // 3-5 core key points
+  /** Slide only: a designer brief for the page's look, never page text. */
+  design?: string;
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
   order: number;

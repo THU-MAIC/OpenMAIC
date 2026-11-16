@@ -27,8 +27,91 @@ function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root
   );
 }
 
-function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+/**
+ * What last moved the user's focus, recorded at the document in the capture
+ * phase so it is known before any focus that input causes.
+ *
+ * `:focus-visible` alone cannot tell keyboard navigation from programmatic
+ * focus: a browser keeps it set when a script moves focus after keyboard
+ * input, so a dialog opened with Enter (its auto-focus) or closed with Escape
+ * (focus handed back to its trigger) would still pop a tooltip. A focus right
+ * after a navigation key (Tab, arrows, Home/End) is the user moving focus; a
+ * focus after any other key (Enter, Space, Escape, a shortcut) or after a
+ * pointer press is a script reacting to that input.
+ */
+type FocusCause = 'none' | 'navigation-key' | 'other-key' | 'pointer';
+
+const NAVIGATION_KEYS = new Set([
+  'Tab',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Fn']);
+
+let lastFocusCause: FocusCause = 'none';
+let focusCauseTracked = false;
+
+function trackFocusCause() {
+  if (focusCauseTracked || typeof document === 'undefined') return;
+  focusCauseTracked = true;
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      // A modifier pressed on its own (Shift before Shift+Tab) moves nothing.
+      if (MODIFIER_KEYS.has(event.key)) return;
+      lastFocusCause = NAVIGATION_KEYS.has(event.key) ? 'navigation-key' : 'other-key';
+    },
+    true,
+  );
+  document.addEventListener(
+    'pointerdown',
+    () => {
+      lastFocusCause = 'pointer';
+    },
+    true,
+  );
+}
+trackFocusCause();
+
+/**
+ * Whether a focus on a tooltip trigger should open its tooltip: only keyboard
+ * navigation does. Hover is handled separately and is unaffected. Before any
+ * input has been seen, `:focus-visible` decides, and an engine without it
+ * keeps the old behaviour (open).
+ */
+export function focusOpensTooltip(el: Element, cause: FocusCause = lastFocusCause): boolean {
+  if (cause === 'navigation-key') return true;
+  if (cause === 'other-key' || cause === 'pointer') return false;
+  try {
+    return el.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
+
+function TooltipTrigger({
+  onFocus,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      onFocus={(event) => {
+        onFocus?.(event);
+        // Radix skips its own focus handler for a default-prevented event.
+        if (!event.defaultPrevented && !focusOpensTooltip(event.currentTarget)) {
+          event.preventDefault();
+        }
+      }}
+      {...props}
+    />
+  );
 }
 
 function TooltipContent({

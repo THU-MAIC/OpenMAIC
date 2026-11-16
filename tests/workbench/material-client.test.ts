@@ -91,6 +91,61 @@ describe('workbench material client', () => {
     );
   });
 
+  it('reports the share of the bytes sent when asked for progress', async () => {
+    const sent: number[] = [];
+    const opened: { method?: string; url?: string; headers: Record<string, string> } = {
+      headers: {},
+    };
+    class FakeXhr {
+      status = 0;
+      responseText = '';
+      upload: { onprogress?: (event: Partial<ProgressEvent>) => void } = {};
+      onload?: () => void;
+      onerror?: () => void;
+      open(method: string, url: string) {
+        opened.method = method;
+        opened.url = url;
+      }
+      setRequestHeader(name: string, value: string) {
+        opened.headers[name] = value;
+      }
+      getResponseHeader() {
+        return null;
+      }
+      send() {
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 4 });
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 4, total: 4 });
+        this.status = 201;
+        this.responseText = JSON.stringify({
+          materialId: material.materialId,
+          originalName: material.name,
+          bytes: material.bytes,
+          mime: material.mimeType,
+          extraction: { status: 'pending' },
+        });
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', FakeXhr);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const file = new File(['hello'], material.name, { type: material.mimeType });
+    await expect(
+      uploadWorkbenchMaterial(file, { onProgress: (share) => sent.push(share) }),
+    ).resolves.toEqual({ ...material, extractionStatus: 'pending' });
+    expect(sent).toEqual([0.25, 1]);
+    expect(opened).toEqual({
+      method: 'POST',
+      url: '/api/materials?scope=library',
+      headers: {
+        'content-type': 'application/pdf',
+        'x-material-filename': encodeURIComponent(material.name),
+      },
+    });
+    // Only the size policy may be read through fetch; the bytes are not.
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/materials?scope=library', expect.anything());
+  });
+
   it('keeps the pending extraction a composer upload now starts with', async () => {
     vi.stubGlobal(
       'fetch',

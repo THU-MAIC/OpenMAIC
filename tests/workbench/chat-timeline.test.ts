@@ -156,125 +156,113 @@ describe('groupChat', () => {
 });
 
 describe('rowsForRender tool-run aggregation', () => {
-  it('keeps the tool-run aggregate when a thinking bar follows the tools', () => {
-    // Regression: tools + a trailing thinking bar used to land in one mixed
-    // cluster, where ActionCluster aggregated only when EVERY bar was a tool
-    // — so the "2 tool calls" head dissolved into three loose cards.
-    const rows = rowsForRender([
-      tool('read_scene', 'r1'),
-      tool('read_scene', 'r2'),
-      thinking('th1', '再想一步'),
-    ]);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.group?.map((n) => n.kind)).toEqual(['tool', 'tool']);
-    expect(rows[1]?.node).toMatchObject({ kind: 'thinking', key: 'th1' });
-  });
-
-  it('keeps the tool-run aggregate when a thinking bar precedes the tools', () => {
-    const rows = rowsForRender([
-      thinking('th1', '先看一眼'),
-      tool('read_scene', 'r1'),
-      tool('read_scene', 'r2'),
-    ]);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.node?.kind).toBe('thinking');
-    expect(rows[1]?.group?.map((n) => n.kind)).toEqual(['tool', 'tool']);
-  });
-
-  it('splits a cluster when thinking sits between two tool calls — no aggregate across the bar', () => {
-    // The two tools are not consecutive, so they are not one run: each renders
-    // on its own with the thinking bar between them.
+  it('makes one row of thinking and tools however they alternate', () => {
     const rows = rowsForRender([
       tool('read_scene', 'r1'),
       thinking('th1'),
       tool('read_scene', 'r2'),
+      thinking('th2'),
+      tool('read_scene', 'r3'),
     ]);
-    expect(rows).toHaveLength(3);
-    expect(kindsOf(rows)).toEqual(['read_scene', 'thinking', 'read_scene']);
-    expect(rows[0]?.group).toBeUndefined();
-    expect(rows[2]?.group).toBeUndefined();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.group?.map((n) => n.kind)).toEqual([
+      'tool',
+      'thinking',
+      'tool',
+      'thinking',
+      'tool',
+    ]);
   });
 
-  it('keeps a SKILL.md read out of the ordinary tool-call aggregate', () => {
-    const rows = rowsForRender([
-      skillRead('pptx-import', 's1'),
-      tool('edit_deck', 'i1'),
-      tool('list_scenes', 'g1'),
-    ]);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.node).toMatchObject({ toolName: 'read', key: 's1' });
-    expect(rows[1]?.group?.map((node) => node.toolName)).toEqual(['edit_deck', 'list_scenes']);
+  it('ends the row at anything that means something on its own', () => {
+    for (const breaker of [
+      { key: 'x', kind: 'assistant', text: '说一句' },
+      { key: 'x', kind: 'question', text: '选哪个' },
+      { key: 'x', kind: 'system', text: '出错了' },
+      { key: 'x', kind: 'course', text: '' },
+      { key: 'x', kind: 'boundary', text: '' },
+      { key: 'x', kind: 'user', text: '插一句' },
+    ] as ChatNode[]) {
+      const rows = rowsForRender([
+        tool('read_scene', 'r1'),
+        thinking('th1'),
+        breaker,
+        thinking('th2'),
+        tool('read_scene', 'r2'),
+      ]);
+      expect(rows.map((r) => r.group?.length ?? r.node?.kind)).toEqual([2, breaker.kind, 2]);
+    }
   });
 
-  it('aggregates consecutive skill loads separately from tools', () => {
-    const rows = rowsForRender([
-      skillRead('pptx-import', 's1'),
-      skillRead('pro-editing', 's2'),
-      tool('patch_stage', 'e1'),
-    ]);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.group?.map((node) => node.key)).toEqual(['s1', 's2']);
-    expect(rows[1]?.node?.toolName).toBe('patch_stage');
-  });
-
-  it('renders a skill load as its own bar, not folded into N 个工具调用', () => {
+  it('folds a skill load in with the rest, and lets a lone one keep its bar', () => {
+    const rows = rowsForRender([skillRead('pptx-import', 's1'), tool('edit_deck', 'i1')]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.group?.map((n) => n.key)).toEqual(['s1', 'i1']);
     const html = renderToStaticMarkup(
-      createElement(ChatTimeline, {
-        chat: [skillRead('pptx-import', 's1'), tool('edit_deck', 'i1'), tool('list_scenes', 'g1')],
-        plan: [],
-      }),
+      createElement(ChatTimeline, { chat: [skillRead('pptx-import', 's1')], plan: [] }),
     );
     expect(html).toContain('workbench-skill-card');
-    expect(html).toContain('加载 skill');
-    expect(html).toContain('pptx-import');
-    expect(html).toContain('data-kind="skill"');
-    expect(html).toContain('2 个工具调用');
-    expect(html).toContain('workbench-tool-group');
-    expect(html).not.toContain('3 个工具调用');
-    expect(html).not.toContain('workbench-skill-group');
+    expect(html).not.toContain('workbench-activity-group');
   });
 
-  it('renders consecutive skill loads as a skill group, not a tool group', () => {
-    const html = renderToStaticMarkup(
+  it('keeps one row identity as a run streams in', () => {
+    const one = rowsForRender([thinking('th1')]);
+    const two = rowsForRender([thinking('th1'), tool('read_scene', 'r1')]);
+    const three = rowsForRender([
+      thinking('th1'),
+      tool('read_scene', 'r1'),
+      { key: 'w', kind: 'waiting', text: '' },
+    ]);
+    expect(two[0]?.key).toBe(one[0]?.key);
+    expect(three[0]?.key).toBe(one[0]?.key);
+  });
+
+  it('says only the step under way while the stretch runs', () => {
+    const thinkingNow = renderToStaticMarkup(
       createElement(ChatTimeline, {
-        chat: [skillRead('pptx-import', 's1'), skillRead('pro-editing', 's2')],
+        chat: [
+          tool('read_scene', 'r1'),
+          tool('read_scene', 'r2'),
+          { ...thinking('th1'), streaming: true },
+        ],
         plan: [],
       }),
     );
-    expect(html).toContain('workbench-skill-group');
-    expect(html).toContain('2 个 skill');
-    expect(html).not.toContain('2 个工具调用');
-    expect(html).not.toContain('workbench-tool-group');
-  });
+    const head = (html: string) => html.slice(0, html.indexOf('</button>'));
+    expect(head(thinkingNow)).toContain('思考中…');
+    expect(head(thinkingNow)).not.toContain('已思考');
+    expect(head(thinkingNow)).not.toContain('个工具调用');
 
-  it('renders the aggregate head plus the thinking bar when thinking follows the tools', () => {
-    const html = renderToStaticMarkup(
+    const toolNow = renderToStaticMarkup(
       createElement(ChatTimeline, {
-        chat: [tool('read_scene', 'r1'), tool('read_scene', 'r2'), thinking('th1', '再想一步')],
+        chat: [
+          thinking('th1'),
+          tool('read_scene', 'r1'),
+          { ...tool('read_scene', 'r2'), toolState: 'running' },
+        ],
         plan: [],
       }),
     );
-    expect(html).toContain('workbench-tool-group');
+    expect(head(toolNow)).toContain('workbench-activity-live');
+    expect(head(toolNow)).not.toContain('思考中…');
+    expect(head(toolNow)).not.toContain('已思考');
+    expect(head(toolNow)).not.toContain('个工具调用');
+  });
+
+  it('says what the stretch came to, with its bars clipped rather than unmounted', () => {
+    const html = renderToStaticMarkup(
+      createElement(ChatTimeline, {
+        chat: [tool('read_scene', 'r1'), thinking('th1', '再想一步'), tool('read_scene', 'r2')],
+        plan: [],
+      }),
+    );
+    expect(html).toContain('workbench-activity-group');
+    expect(html).toContain('已思考');
     expect(html).toContain('2 个工具调用');
     expect(html).toContain('已完成');
-    expect(html).toContain('workbench-thinking-bar');
-  });
-
-  it('mounts a settled group folded, with its cards clipped rather than unmounted', () => {
-    const html = renderToStaticMarkup(
-      createElement(ChatTimeline, {
-        chat: [tool('read_scene', 'r1'), tool('read_scene', 'r2')],
-        plan: [],
-      }),
-    );
-    // A replayed timeline is folded on its first frame (nothing animates at
-    // mount), but the cards stay in the DOM behind a clipped `0fr` row — that
-    // row is what the collapse/expand transition animates — and the folded
-    // subtree is inert so it keeps no tab stops.
     expect(html).toContain('data-open="false"');
-    expect(html).toContain('grid-rows-[0fr]');
     expect(html).toContain('workbench-tool-card');
-    expect(html).toContain('inert');
+    expect(html).toContain('workbench-thinking-bar');
   });
 
   it('renders quiet material states without leaking internal payloads', () => {
@@ -314,7 +302,7 @@ describe('rowsForRender tool-run aggregation', () => {
         plan: [],
       }),
     );
-    expect(html).not.toContain('有错误');
+    expect(html).not.toContain('个失败');
     expect(html).toContain('已完成');
   });
 
@@ -327,7 +315,7 @@ describe('rowsForRender tool-run aggregation', () => {
         plan: [],
       }),
     );
-    expect(html).toContain('有错误');
+    expect(html).toContain('1 个失败');
   });
 });
 

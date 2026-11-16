@@ -289,6 +289,6 @@ describe('classroom surfaces feed the sidecar into the gate', () => {
     expect(assignment?.[1]).not.toMatch(/mayGenerate|mayRegenerate/);
     // Both regenerate affordances are withheld rather than merely refused.
     expect(bar).toMatch(/\{mayRegenerate \?/);
-    expect(bar).toMatch(/ttsActive && mayGenerate &&/);
+    expect(bar).toMatch(/ttsActive && mayGenerate \?/);
   });
 });

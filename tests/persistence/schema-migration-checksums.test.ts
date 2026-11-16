@@ -173,6 +173,13 @@ const SHIPPED: readonly (readonly [
     'f0cacce08a67451848878babbe0499f10982a706e50c3b3bfeee591aa6433d49',
   ],
   [
+    'agent-session',
+    4,
+    'open_question_seq',
+    true,
+    '857da1dbde2235b46e7a94e7c93ec59c217f7b8a9df6571027d5ae00c9fab96f',
+  ],
+  [
     'agent-session-material',
     1,
     'baseline',

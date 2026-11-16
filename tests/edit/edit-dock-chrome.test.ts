@@ -20,6 +20,8 @@ describe('global edit control bar', () => {
       createElement(DockEditBar, {
         sceneId: 'scene-1',
         canPickElements: true,
+        collapsed: false,
+        onToggleCollapsed: vi.fn(),
         pager: {
           index: 1,
           count: 3,
@@ -34,12 +36,18 @@ describe('global edit control bar', () => {
     expect(html).toContain('data-testid="edit-dock-bar"');
     expect(html).toContain('data-testid="edit-dock-roster"');
     expect(html).toContain('data-testid="element-lasso"');
-    expect(html).toContain('2 / 3');
+    expect(html).toContain('data-testid="edit-rail-toggle"');
+    expect(html.replace(/<[^>]+>/g, '')).toContain('2/3');
   });
 
   it('omits the lasso when the current surface cannot perform that action', () => {
     const html = renderToStaticMarkup(
-      createElement(DockEditBar, { sceneId: 'scene-1', canPickElements: false }),
+      createElement(DockEditBar, {
+        sceneId: 'scene-1',
+        canPickElements: false,
+        collapsed: false,
+        onToggleCollapsed: vi.fn(),
+      }),
     );
     expect(html).not.toContain('data-testid="element-lasso"');
   });

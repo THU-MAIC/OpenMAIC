@@ -31,6 +31,11 @@ vi.mock('react', async (importOriginal) => ({
   useRef: <T>(value: T) => ({ current: value }),
   useState: <T>(value: T) => [value, () => {}] as const,
 }));
+// The busy flag is a zustand hook; with React mocked, read the store directly.
+vi.mock('@/lib/store/export-busy', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/store/export-busy')>();
+  return { ...actual, useExportBusy: actual.isExportBusy };
+});
 vi.mock('file-saver', () => ({ saveAs: mocks.saveAs }));
 vi.mock('sonner', () => ({ toast: mocks.toast }));
 vi.mock('@/lib/store', () => ({

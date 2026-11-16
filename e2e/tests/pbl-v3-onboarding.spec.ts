@@ -32,6 +32,7 @@ async function project(
     staleWorkbench = false,
     priorProgress,
     openingText = '',
+    finishedWork,
   }: {
     started?: boolean;
     secondScene?: boolean;
@@ -54,6 +55,7 @@ async function project(
     staleWorkbench?: boolean;
     priorProgress?: 'stage' | 'reset' | 'discard';
     openingText?: string;
+    finishedWork?: string;
   } = {},
 ) {
   await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
@@ -213,6 +215,7 @@ async function project(
           hero: {
             title: view.title,
             description: 'A synthetic project for the workspace guide.',
+            ...(finishedWork ? { finishedWork } : {}),
             gains: ['Read, decide and review'],
             instructorName: 'Project tutor',
             milestoneCount: 1,
@@ -270,6 +273,247 @@ async function project(
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();
+
+test('keeps the authored overview visible while its workbench guide toggles independently', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, {
+    application: false,
+    openingText: 'Welcome. First, we will work through the opening concepts together.',
+    finishedWork: 'The complete greeting application with saved history.',
+  });
+  fixture.view.milestones![0].goal = 'Connect a name to a greeting.';
+  fixture.view.milestones![0].outcome = 'A working greeting application.';
+  fixture.view.revision++;
+  await fixture.publish();
+  const overview = page.locator('#pbl-project-overview');
+  await expect(tour(page)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(tour(page)).toHaveCount(0);
+  const guideDetails = overview.locator('details');
+  const guideToggle = guideDetails.locator('summary');
+  await expect(guideDetails).not.toHaveAttribute('open');
+  await expect(overview.getByRole('heading', { level: 3 })).toBeVisible();
+  await expect(overview).toContainText('A synthetic project for the workspace guide.');
+  await expect(overview).toContainText('Connect a name to a greeting.');
+  await expect(overview).toContainText('A working greeting application.');
+  await expect(overview.locator('.pbl-overview-result')).toContainText(
+    'The complete greeting application with saved history.',
+  );
+  await expect(overview.locator('.pbl-overview-result')).not.toContainText(
+    'A working greeting application.',
+  );
+  await expect(overview.getByRole('list', { name: 'Project roadmap' })).toContainText('Greeting');
+  await expect(overview).not.toContainText('Current learning step');
+  await expect(overview).not.toContainText('Current goal');
+  const opening = page.getByTestId('pbl-agent-turn').first();
+  await expect(opening.getByRole('link', { name: 'Project overview' })).toHaveCount(0);
+  const geometry = await overview.evaluate((el) => {
+    const viewport = el.closest('.pbl-conversation-scroll');
+    const content = el.querySelector('.pbl-overview-content');
+    const outer = viewport!.getBoundingClientRect(),
+      card = el.getBoundingClientRect();
+    return {
+      left: card.left - outer.left,
+      right: outer.right - card.right,
+      overflow: getComputedStyle(content!).overflowY,
+      maxHeight: getComputedStyle(content!).maxHeight,
+    };
+  });
+  expect(geometry.left).toBeGreaterThanOrEqual(16);
+  expect(geometry.right).toBeGreaterThanOrEqual(16);
+  // The card fills the transcript at wide sizes too; only its content is compact.
+  await page.getByRole('button', { name: 'Toggle code workspace', exact: true }).click();
+  await expect
+    .poll(() =>
+      overview.evaluate((el) => el.parentElement!.clientWidth - el.getBoundingClientRect().width),
+    )
+    .toBeLessThanOrEqual(1);
+  expect(geometry.overflow).toBe('visible');
+  expect(geometry.maxHeight).toBe('none');
+  await guideToggle.click();
+  await expect(guideDetails).toHaveAttribute('open');
+  await expect(guideDetails.locator('ol')).toBeVisible();
+  await expect(overview).toContainText('Connect a name to a greeting.');
+  // Server updates do not close a guide the learner is reading.
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(guideDetails).toHaveAttribute('open');
+  await guideToggle.focus();
+  await page.keyboard.press('Enter');
+  await expect(guideDetails).not.toHaveAttribute('open');
+  await expect(guideToggle).toBeFocused();
+  await expect(guideDetails.locator('ol')).not.toBeVisible();
+  await expect(overview.getByRole('list', { name: 'Project roadmap' })).toBeVisible();
+  await expect(overview).toContainText('A working greeting application.');
+  expect(fixture.commands).toEqual([]);
+});
+
+test('shows only the current milestone goal and outcome in the drawer from its first step', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  fixture.view.milestones = [
+    {
+      id: 'greeting',
+      title: 'First milestone',
+      goal: 'First goal',
+      outcome: 'First result',
+      stages: ['teaching', 'dialogue', 'plan', 'code', 'tests', 'quiz', 'recap'],
+    },
+    {
+      id: 'second',
+      title: 'Second milestone',
+      goal: 'Second goal',
+      outcome: 'Second result',
+      stages: ['teaching', 'dialogue', 'plan', 'code', 'tests', 'quiz', 'recap'],
+    },
+  ];
+  fixture.view.revision++;
+  await fixture.publish();
+  const toggle = page.getByRole('button', { name: 'Current task', exact: true });
+  const drawer = page.getByRole('region', { name: 'Current task details' });
+  await toggle.click();
+  // Legacy packages keep milestone results without copying one into the final work.
+  await expect(page.locator('.pbl-overview-result')).toHaveCount(0);
+  const summary = drawer.getByTestId('pbl-current-milestone-summary');
+  await expect(summary).toContainText('Current milestone');
+  await expect(summary.getByText('Goal:', { exact: true })).toHaveCSS('display', 'inline');
+  await expect(summary.getByText('Outcome:', { exact: true })).toHaveCSS('display', 'inline');
+  await expect(summary).toContainText('First goal');
+  await expect(summary).toContainText('First result');
+  await expect(summary).not.toContainText('Second goal');
+  expect(await drawer.locator('.overflow-y-auto > *').first().getAttribute('data-testid')).toBe(
+    'pbl-current-milestone-summary',
+  );
+  await page.keyboard.press('Escape');
+  await expect(toggle).toBeFocused();
+  fixture.view.state.position = { milestoneIndex: 1, milestoneId: 'second', stageIndex: 0 };
+  fixture.view.revision++;
+  await fixture.publish();
+  await toggle.click();
+  await expect(summary).toContainText('Second goal');
+  await expect(summary).toContainText('Second result');
+  await expect(summary).not.toContainText('First goal');
+  expect(fixture.commands).toEqual([]);
+});
+
+for (const [width, guideCompleted] of [
+  [1365, false],
+  [390, false],
+  [1365, true],
+] as const) {
+  test(`first entry keeps the overview visible through the welcome until the learner follows at ${width}px (tour completed: ${guideCompleted})`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const fixture = await project(page, learningEvents, {
+      application: false,
+      guideCompleted,
+    });
+    fixture.view.messages = [{ role: 'assistant', text: 'Opening background.\n\n'.repeat(60) }];
+    fixture.view.revision++;
+    await fixture.publish();
+    if (!guideCompleted) {
+      await expect(tour(page)).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
+    await expect(tour(page)).toHaveCount(0);
+    const viewport = page.locator('.pbl-conversation-scroll');
+    await expect(page.locator('#pbl-project-overview')).toBeVisible();
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
+    for (let chunk = 0; chunk < 3; chunk++) {
+      fixture.view.messages[0].text += `Welcome chunk ${chunk}.\n\n`.repeat(20);
+      fixture.view.revision++;
+      await fixture.publish();
+      await expect(viewport).toContainText(`Welcome chunk ${chunk}.`);
+      await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
+    }
+    const latest = page.getByTestId('pbl-conversation-scroll-button');
+    await latest.click();
+    fixture.view.messages[0].text += 'After choosing Latest.\n\n'.repeat(20);
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(viewport).toContainText('After choosing Latest.');
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    const box = (await viewport.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -200);
+    await expect(latest).toBeVisible();
+    const reading = await viewport.evaluate((el) => el.scrollTop);
+    fixture.view.messages[0].text += 'While reading earlier text.\n\n'.repeat(20);
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(viewport).toContainText('While reading earlier text.');
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+    await page.getByLabel('Your message', { exact: true }).fill('I am ready.');
+    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await expect
+      .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
+      .toBeLessThanOrEqual(8);
+    expect(fixture.commands).toEqual(['chat']);
+  });
+}
+
+test('highlights the existing next action only when progression is available', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  const advance = page.getByTestId('pbl-advance-bar');
+  await expect(advance).toHaveCount(0);
+  await expect(page.locator('#pbl-project-overview details')).not.toHaveAttribute('open');
+  fixture.view.actions = ['chat', 'next'];
+  fixture.view.revision++;
+  await fixture.publish();
+  const advanceButton = advance.getByRole('button', { name: 'Continue to Make your decisions' });
+  await expect(advanceButton).toBeEnabled();
+  await expect(advance).toHaveAttribute('data-attention', 'true');
+  await advanceButton.hover();
+  await expect(advance).toHaveAttribute('data-attention', 'false');
+  await page.mouse.move(0, 0);
+  fixture.view.revision++;
+  await fixture.publish();
+  await expect(advance).toHaveAttribute('data-attention', 'false');
+  const barBox = (await advance.boundingBox())!;
+  const buttonBox = (await advanceButton.boundingBox())!;
+  const composerBox = (await page
+    .locator('[data-pbl-tour="composer"] textarea')
+    .locator('..')
+    .boundingBox())!;
+  expect(buttonBox.height).toBe(40);
+  expect(buttonBox.width).toBeCloseTo(barBox.width, 0);
+  expect(buttonBox.x).toBeCloseTo(composerBox.x, 0);
+  expect(buttonBox.width).toBeCloseTo(composerBox.width, 0);
+  expect(fixture.commands).toEqual([]);
+  await advanceButton.click({ position: { x: 4, y: 20 } });
+  await expect.poll(() => fixture.commands).toEqual(['next']);
+});
+
+test('stops next-step attention after eight seconds and respects reduced motion', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  await page.clock.install();
+  fixture.view.actions = ['chat', 'next'];
+  fixture.view.revision++;
+  await fixture.publish();
+  const advance = page.getByTestId('pbl-advance-bar');
+  await expect(advance).toHaveAttribute('data-attention', 'true');
+  await expect(advance).toHaveCSS('animation-name', 'none');
+  await page.clock.fastForward(8_001);
+  await expect(advance).toHaveAttribute('data-attention', 'false');
+  await expect(advance.getByRole('button')).toBeEnabled();
+  expect(fixture.commands).toEqual([]);
+});
+
 async function finish(page: Page) {
   while (await tour(page).count()) {
     const last = (await tour(page).getAttribute('data-step')) === 'replay';
@@ -848,10 +1092,11 @@ test('narrow conversation jump control stays centered without widening either me
   expect(control.x + control.width / 2).toBeCloseTo(viewport.x + viewport.width / 2, 0);
   expect(bubble.x - viewport.x).toBeCloseTo(16, 0);
   expect(viewport.contentRight - bubble.x - bubble.width).toBeCloseTo(16, 0);
-  const learner = (await assistant
-    .getByText('Learner question', { exact: true })
-    .locator('..')
-    .boundingBox())!;
+  const learnerBubble = assistant.getByText('Learner question', { exact: true }).locator('..');
+  await expect(learnerBubble).toHaveCSS('background-color', 'rgb(11, 122, 82)');
+  await expect(learnerBubble).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(learnerBubble).toHaveCSS('padding', '8px 12px');
+  const learner = (await learnerBubble.boundingBox())!;
   expect(viewport.contentRight - learner.x - learner.width).toBeCloseTo(16, 0);
   expect(control.y + control.height).toBeLessThanOrEqual(viewport.y + viewport.height);
 });
@@ -872,6 +1117,9 @@ for (const [width, height, locale, docked] of [
     await finish(page);
     if (docked) await page.getByTestId('pbl-workspace-size').click();
     await page.locator('[data-pbl-tour="replay"]').click();
+    await expect
+      .poll(() => page.getByTestId('pbl-v3-workspace').evaluate((owner) => owner.scrollTop))
+      .toBe(0);
     const selectors = [
       '[data-pbl-tour="task"]',
       '[data-pbl-tour="conversation"]',
@@ -1087,10 +1335,11 @@ test('hides Latest during the guide and restores the working control after dismi
     .toBeGreaterThan(8);
   const latest = page.getByTestId('pbl-conversation-scroll-button');
   await expect(latest).toHaveCount(0);
-  const height = await viewport.evaluate((el) => el.clientHeight);
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
+  await expect(page.locator('#pbl-project-overview details')).not.toHaveAttribute('open');
   await expect(latest).toBeVisible();
+  const height = await viewport.evaluate((el) => el.clientHeight);
   await latest.click();
   await expect
     .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
@@ -1215,6 +1464,8 @@ for (const [width, height] of [
     const viewport = page.locator('.pbl-conversation-scroll');
     const latest = page.getByTestId('pbl-conversation-scroll-button');
     const before = await viewport.evaluate((el) => el.clientHeight);
+    // A fresh study opens at its overview; Latest explicitly opts into following.
+    await latest.click();
     await expect
       .poll(() => viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop))
       .toBeLessThanOrEqual(1);

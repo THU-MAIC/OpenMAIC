@@ -47,8 +47,10 @@ const useElementRefsStore={use:{refs:()=>[]}};
 const runtimeErrorState={errors:{},clearScene(){}};
 const useSceneRuntimeErrors=Object.assign((selector)=>selector(runtimeErrorState),{getState:()=>runtimeErrorState});
 const InteractiveRuntimeErrorBanner=()=>null;
+const InteractiveMoreBelowCue=()=>null;
 const resolveInteractivePickerMode=()=>null;
-import { GENUI_LOGICAL_WIDTH, GENUI_LOGICAL_HEIGHT, fitGenUiViewport } from './lib/interactive/logical-viewport';
+import { GENUI_LOGICAL_WIDTH, GENUI_LOGICAL_HEIGHT } from './lib/interactive/logical-viewport';
+import { GENUI_FIT_REPORT_REQUEST, GENUI_FIT_SCROLL_REQUEST, useGenUiFit } from './lib/interactive/use-genui-fit';
 import { intersectClientBoxes } from './lib/edit/visible-client-rect';
 ${component}
 window.sample=()=>sampleInteractiveState(

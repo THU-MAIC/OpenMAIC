@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
-import pptxgen from 'pptxgenjs';
+import { isExportBusy, setExportBusy, useExportBusy } from '@/lib/store/export-busy';
+import { useCallback } from 'react';
+import type pptxgen from 'pptxgenjs';
 import { validateShapeGeometry, RENDER_PATH_LIMITS, shapeToTextFallback } from '@openmaic/geometry';
 import tinycolor from 'tinycolor2';
 import { saveAs } from 'file-saver';
@@ -24,7 +25,6 @@ import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/li
 import { type AST, toAST } from '@/lib/export/html-parser';
 import { type SvgPoints, toPoints, getSvgPathRange } from '@/lib/export/svg-path-parser';
 import { svg2Base64 } from '@/lib/export/svg2base64';
-import { latexToOmml } from '@/lib/export/latex-to-omml';
 import { inlineMathSource, proseToPlainText } from '@/lib/export/pptx-rich-text';
 import { createLogger } from '@/lib/logger';
 import { collectSpeechText } from './narration';
@@ -551,7 +551,13 @@ export async function buildPptxBlob(
   stageId?: string,
   deck: readonly PptxDeckEntry[] = slidesOnlyDeck(slides.length),
 ): Promise<Blob> {
-  const pptx = new pptxgen();
+  // Loaded here, not at the top of the module: this hook sits in the header of
+  // every classroom, and these libraries are only ever needed to export one.
+  const [{ default: PptxGen }, { latexToOmml }] = await Promise.all([
+    import('pptxgenjs'),
+    import('@/lib/export/latex-to-omml'),
+  ]);
+  const pptx = new PptxGen();
   const documentElements = slides.flatMap((slide) => slide.elements);
   const manifestRefs = derivePptxMediaReferenceSet(slides);
   assertPptxMediaReferenceParity(slides, manifestRefs);
@@ -1423,8 +1429,7 @@ export interface PptxExportChoice {
 }
 
 export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
-  const [exporting, setExporting] = useState(false);
-  const exportingRef = useRef(false);
+  const exporting = useExportBusy('pptx');
   const { t } = useI18n();
 
   const scenes = useStageStore((s) => s.scenes);
@@ -1455,13 +1460,12 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   // get a toast instead of silence.
   const withExportGuard = useCallback(
     (action: () => Promise<void>, hasPptxContent = true) => {
-      if (exportingRef.current) return;
+      if (isExportBusy('pptx')) return;
       if (!hasPptxContent) {
         toast.warning(t('export.noSlides'));
         return;
       }
-      exportingRef.current = true;
-      setExporting(true);
+      setExportBusy('pptx', true);
       setTimeout(async () => {
         try {
           await action();
@@ -1469,8 +1473,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
           log.error('Export failed:', err);
           toast.error(t('export.exportFailed'));
         } finally {
-          exportingRef.current = false;
-          setExporting(false);
+          setExportBusy('pptx', false);
         }
       }, 100);
     },

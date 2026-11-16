@@ -40,9 +40,9 @@ All preset IDs:
 | Video | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Web search | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `deepseek-token-plan`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Web fetch | `builtin`, `deepseek`, `deepseek-token-plan`, `firecrawl`, `kimi`, `kimi-coding-plan` |
-| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+| Document parsing | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind`, `minicpm-ocr` |
 
-`azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
+`azure`, `openai-compatible`, `searxng` and `mineru` need a `baseUrl`; `alidocmind` authenticates with `credentials` (a key pair). `minicpm-ocr` defaults to the hosted API and takes a `baseUrl` for a self-hosted web demo. Self-hosted TTS, ASR, image, search and document presets, key-pair presets and Bedrock can only be configured in `openmaic.yml`; see [Configuration](./configuration.mdx).
 
 ## LLM models
 
@@ -150,6 +150,7 @@ Saved legacy profiles and their reference samples are retained, but there is no 
 | MinerU       | `mineru`       | Text, images, tables, formulas, layout analysis |
 | MinerU Cloud | `mineru-cloud` | Text, images, tables, formulas, layout analysis |
 | AliDocMind   | `alidocmind`   | Text, images, tables, formulas, layout analysis, OCR |
+| MiniCPM-OCR  | `minicpm-ocr`  | Text, tables, formulas, layout analysis, OCR |
 
 ## Web Search providers
 

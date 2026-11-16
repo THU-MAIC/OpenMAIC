@@ -472,7 +472,26 @@ BEGIN
   END IF;
 END
 $agent_session_owner_event_type_validation$;
-ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS locale TEXT;`;
+ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS locale TEXT;
+ALTER TABLE agent_sessions ADD COLUMN IF NOT EXISTS open_question_seq INTEGER;
+
+UPDATE agent_sessions s
+SET open_question_seq = pending.seq
+FROM (
+  SELECT question.session_id, max(question.seq) AS seq
+  FROM agent_session_events question
+  WHERE question.type = 'user_question'
+    AND NOT EXISTS (
+      SELECT 1 FROM agent_session_events answer
+      WHERE answer.session_id = question.session_id
+        AND answer.seq > question.seq
+        AND answer.type = 'user_message'
+        AND length(btrim(COALESCE(answer.data->>'text', ''))) > 0
+    )
+  GROUP BY question.session_id
+) pending
+WHERE s.id = pending.session_id AND s.open_question_seq IS NULL;
+`;
 
 const EXPECTED_USER_SKILL_PG_SCHEMA = `
 CREATE TABLE IF NOT EXISTS agent_user_skill (
@@ -763,8 +782,14 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
       // so an embedded semicolon would send two statements as one query.
       expect(statement.includes(';'), `not a single statement: ${statement}`).toBe(false);
       const sql = statement.trim();
+      // The open-question backfill only fills rows still NULL, from the same
+      // event-log rule the append path maintains, so a replay changes nothing.
+      const openQuestionBackfill =
+        /^UPDATE agent_sessions s\s+SET open_question_seq = pending\.seq\s/.test(sql) &&
+        /AND s\.open_question_seq IS NULL$/.test(sql);
       expect(
         /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
+          openQuestionBackfill ||
           /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql),
         `ASSET_PG_SCHEMA statement is not an idempotent create or additive migration: ${statement}`,
       ).toBe(true);
@@ -900,8 +925,14 @@ describe.each(schemas)('$name is a pinned contract', ({ name, actual, expected, 
         (sql.match(/ALTER TABLE/g) ?? []).length ===
           (sql.match(/IF EXISTS \(\s*SELECT 1\s+FROM pg_attribute/g) ?? []).length &&
         !/DROP COLUMN/.test(sql);
+      // The open-question backfill only fills rows still NULL, from the same
+      // event-log rule the append path maintains, so a replay changes nothing.
+      const openQuestionBackfill =
+        /^UPDATE agent_sessions s\s+SET open_question_seq = pending\.seq\s/.test(sql) &&
+        /AND s\.open_question_seq IS NULL$/.test(sql);
       expect(
         /^CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS /.test(sql) ||
+          openQuestionBackfill ||
           /^ALTER TABLE [a-z_]+\s+ADD COLUMN IF NOT EXISTS /.test(sql) ||
           localConstraintMigration ||
           constraintValidation ||

@@ -24,7 +24,14 @@ import { resolve } from 'node:path';
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { ResizeHandle } from '@/components/workbench/workspace/ResizeHandle';
+import {
+  ResizeHandle,
+  RESIZE_FOLD_HYSTERESIS,
+} from '@/components/workbench/workspace/ResizeHandle';
+import {
+  createResizeDragOwner,
+  type ResizeDragOwner,
+} from '@/components/workbench/workspace/resize-drag-owner';
 import { PaneFoldButton } from '@/components/workbench/workspace/PaneFoldButton';
 
 beforeAll(() => {
@@ -45,8 +52,11 @@ afterEach(async () => {
   document.documentElement.removeAttribute('data-ws-resizing');
 });
 
+// A move carries the held primary button: a move with none means the pointer
+// was released where the window could not hear it.
 function pointerEvent(type: string, init: MouseEventInit = {}) {
-  const event = new MouseEvent(type, { bubbles: true, button: 0, ...init });
+  const buttons = type === 'pointermove' ? 1 : 0;
+  const event = new MouseEvent(type, { bubbles: true, button: 0, buttons, ...init });
   Object.defineProperty(event, 'pointerId', { value: 1 });
   return event;
 }
@@ -148,6 +158,346 @@ describe('the pane seam', () => {
   });
 });
 
+describe('drag-to-collapse on a seam (live, one gesture)', () => {
+  async function renderFoldableSeam(folded = false, drag?: ResizeDragOwner) {
+    const calls = {
+      commit: [] as number[],
+      preview: [] as number[],
+      events: [] as string[],
+    };
+    const host = mount();
+    if (folded) host.style.width = '60px';
+    await act(async () => {
+      root?.render(
+        createElement(ResizeHandle, {
+          testId: 'rail-seam',
+          label: 'resize the rail',
+          edge: 'right',
+          current: () => 280,
+          clamp: (width: number) => Math.min(360, Math.max(200, width)),
+          onPreview: (width: number) => calls.preview.push(width),
+          onCommit: (width: number) => calls.commit.push(width),
+          onReset: () => undefined,
+          collapseBelow: 120,
+          onCollapse: () => calls.events.push('collapse'),
+          onExpand: () => calls.events.push('expand'),
+          folded,
+          drag,
+        }),
+      );
+    });
+    const seam = host.querySelector('[data-testid="rail-seam"]') as HTMLElement;
+    return { seam, calls };
+  }
+
+  it('folds the moment the drag passes the threshold, and keeps the remembered width', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 150, clientY: 50 }));
+    });
+    // 150px: past the minimum, not past the threshold — held at the minimum.
+    expect(calls.events).toEqual([]);
+    expect(calls.preview.at(-1)).toBe(200);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 100, clientY: 50 }));
+    });
+    // Folded mid-drag, before any release; the width goes back to 280.
+    expect(calls.events).toEqual(['collapse']);
+    expect(calls.preview.at(-1)).toBe(280);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 100, clientY: 50 }));
+    });
+    expect(calls.commit).toEqual([]);
+  });
+
+  it('unfolds when the same drag comes back out, then follows the pointer', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 60, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 330, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 330, clientY: 50 }));
+    });
+    expect(calls.events).toEqual(['collapse', 'expand']);
+    expect(calls.preview.at(-1)).toBe(330);
+    expect(calls.commit).toEqual([330]);
+  });
+
+  it('does not flicker at the boundary: unfolding needs the hysteresis margin', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 119, clientY: 50 }));
+      // Back to just over the threshold, inside the margin: still folded.
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 124, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 118, clientY: 50 }));
+    });
+    expect(calls.events).toEqual(['collapse']);
+    await act(async () => {
+      seam.dispatchEvent(
+        pointerEvent('pointermove', { clientX: 120 + RESIZE_FOLD_HYSTERESIS, clientY: 50 }),
+      );
+    });
+    expect(calls.events).toEqual(['collapse', 'expand']);
+  });
+
+  it('starts from a folded pane’s edge and unfolds outward, following the pointer', async () => {
+    const { seam, calls } = await renderFoldableSeam(true);
+    await act(async () => {
+      // jsdom has no layout: the folded pane's width reads as 0 here.
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 60, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 100, clientY: 50 }));
+    });
+    expect(calls.events).toEqual([]);
+    await act(async () => {
+      seam.dispatchEvent(
+        pointerEvent('pointermove', { clientX: 60 + 120 + RESIZE_FOLD_HYSTERESIS, clientY: 50 }),
+      );
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 60 + 260, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 60 + 260, clientY: 50 }));
+    });
+    expect(calls.events).toEqual(['expand']);
+    expect(calls.commit).toEqual([260]);
+  });
+
+  it('a click on a folded pane’s edge does nothing', async () => {
+    const { seam, calls } = await renderFoldableSeam(true);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 60, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 60, clientY: 50 }));
+    });
+    expect(calls.events).toEqual([]);
+    expect(calls.commit).toEqual([]);
+  });
+
+  it('still widens outward, up to the clamp', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 320, clientY: 50 }));
+    });
+    expect(calls.preview.at(-1)).toBe(320);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 500, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 500, clientY: 50 }));
+    });
+    expect(calls.commit).toEqual([360]);
+    expect(calls.events).toEqual([]);
+  });
+
+  it('leaves things as they are when the pointer is cancelled', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 40, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointercancel', { clientX: 40, clientY: 50 }));
+    });
+    // Folded at that moment: it stays folded, nothing is undone or committed.
+    expect(calls.events).toEqual(['collapse']);
+    expect(calls.commit).toEqual([]);
+  });
+
+  it('an open drag that is cancelled keeps the width it reached', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointercancel', { clientX: 300, clientY: 50 }));
+    });
+    expect(calls.commit).toEqual([300]);
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+  });
+
+  it('keeps tracking after the handle unmounts mid-drag, under an owner that outlives it', async () => {
+    // The shell's owner: it outlives the rail's edges.
+    const owner = createResizeDragOwner();
+    const { seam, calls } = await renderFoldableSeam(false, owner);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+    });
+    await act(async () => root?.render(createElement('div')));
+    await act(async () => {
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointerup', { clientX: 300, clientY: 50 }));
+    });
+    expect(calls.commit).toEqual([300]);
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+    // Ended on its own: the owner holds nothing to abort any more.
+    owner.abort();
+    expect(calls.commit).toEqual([300]);
+  });
+
+  it('aborts the drag as its owner unmounts, without committing', async () => {
+    const { seam, calls } = await renderFoldableSeam();
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+    });
+    // No owner given: the handle owns its drag.
+    await act(async () => root?.render(createElement('div')));
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+    await act(async () => {
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 320, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointerup', { clientX: 320, clientY: 50 }));
+    });
+    expect(calls.preview).toEqual([300]);
+    expect(calls.commit).toEqual([]);
+  });
+
+  it('an owner that outlives the handle aborts the drag when it goes', async () => {
+    const owner = createResizeDragOwner();
+    const { seam, calls } = await renderFoldableSeam(false, owner);
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+    });
+    await act(async () => root?.render(createElement('div')));
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(true);
+    owner.abort();
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+    window.dispatchEvent(pointerEvent('pointerup', { clientX: 300, clientY: 50 }));
+    expect(calls.commit).toEqual([]);
+  });
+
+  describe('ends a drag released outside the window', () => {
+    async function dragTo300() {
+      const { seam, calls } = await renderFoldableSeam();
+      await act(async () => {
+        seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+        window.dispatchEvent(pointerEvent('pointermove', { clientX: 300, clientY: 50 }));
+      });
+      expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(true);
+      return { seam, calls };
+    }
+
+    async function expectEndedAt300(calls: { commit: number[]; preview: number[] }) {
+      expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+      expect(calls.commit).toEqual([300]);
+      // A stale drag does not continue on later events with the same pointer.
+      await act(async () => {
+        window.dispatchEvent(pointerEvent('pointermove', { clientX: 340, clientY: 50 }));
+        window.dispatchEvent(pointerEvent('pointerup', { clientX: 340, clientY: 50 }));
+      });
+      expect(calls.preview).toEqual([300]);
+      expect(calls.commit).toEqual([300]);
+    }
+
+    it('when the pointer comes back with no button held', async () => {
+      const { seam, calls } = await dragTo300();
+      await act(async () => {
+        window.dispatchEvent(
+          pointerEvent('pointermove', { clientX: 360, clientY: 50, buttons: 0 }),
+        );
+      });
+      expect(seam.hasAttribute('data-ws-drag')).toBe(false);
+      await expectEndedAt300(calls);
+    });
+
+    it('when the window loses focus', async () => {
+      const { calls } = await dragTo300();
+      await act(async () => {
+        window.dispatchEvent(new Event('blur'));
+      });
+      await expectEndedAt300(calls);
+    });
+
+    it('when the page is hidden', async () => {
+      const { calls } = await dragTo300();
+      const visibility = Object.getOwnPropertyDescriptor(Document.prototype, 'visibilityState');
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => 'hidden',
+      });
+      try {
+        await act(async () => {
+          document.dispatchEvent(new Event('visibilitychange'));
+        });
+      } finally {
+        delete (document as { visibilityState?: unknown }).visibilityState;
+        if (visibility) expect(document.visibilityState).toBe('visible');
+      }
+      await expectEndedAt300(calls);
+    });
+  });
+
+  it('sets the document resizing flag once per drag, not once per move', async () => {
+    const { seam } = await renderFoldableSeam();
+    // Each mutation's value before it: absent, then set, and nothing else.
+    const before: (string | null)[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) before.push(record.oldValue);
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ['data-ws-resizing'],
+    });
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 280, clientY: 50 }));
+      // Within range, across the fold, and back out again.
+      for (const x of [300, 250, 200, 150, 100, 60, 100, 200, 300, 320]) {
+        window.dispatchEvent(pointerEvent('pointermove', { clientX: x, clientY: 50 }));
+      }
+      window.dispatchEvent(pointerEvent('pointerup', { clientX: 320, clientY: 50 }));
+    });
+    await Promise.resolve();
+    observer.disconnect();
+    expect(before).toEqual([null, 'true']);
+    expect(document.documentElement.hasAttribute('data-ws-resizing')).toBe(false);
+  });
+
+  it('never gates the rail’s entrance fade on the per-drag resizing flag', () => {
+    const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+    // An animation switched off while `[data-ws-resizing]` is set replays when
+    // the flag clears: the rail faded in from nothing at the end of every drag.
+    const css = read('components/workbench/workspace-shell.css').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(css).not.toMatch(/\[data-ws-resizing\][^{]*\.ws-enter-rail/);
+    // Instead the rail decides as it mounts: a drag-unfolded rail has no fade.
+    const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
+    expect(rail).toContain("fadeIn && 'ws-enter-rail'");
+    expect(rail).not.toMatch(/className="[^"]*ws-enter-rail/);
+    const shell = read('components/workbench/workspace/WorkspaceShell.tsx');
+    expect(shell).toContain('fadeIn={!railUnfoldedByDrag}');
+    const expand = shell.slice(shell.indexOf('const expandRail'));
+    expect(expand.slice(0, expand.indexOf('}, []);'))).toContain('setRailUnfoldedByDrag(true)');
+  });
+
+  it('never folds a seam that did not opt in', async () => {
+    const { host, calls } = await renderSeam();
+    const seam = host.querySelector('[data-testid="seam"]') as HTMLElement;
+    await act(async () => {
+      seam.dispatchEvent(pointerEvent('pointerdown', { clientX: 400, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointermove', { clientX: 0, clientY: 50 }));
+      seam.dispatchEvent(pointerEvent('pointerup', { clientX: 0, clientY: 50 }));
+    });
+    expect(calls.commit).toBe(1);
+  });
+
+  it('is wired on the rail seams only, folding and unfolding through the rail’s own toggle', () => {
+    const shell = readFileSync(
+      resolve(process.cwd(), 'components/workbench/workspace/WorkspaceShell.tsx'),
+      'utf8',
+    );
+    const railSeam = shell.slice(shell.indexOf('pro-rail-resize-handle'));
+    const railProps = railSeam.slice(0, railSeam.indexOf('/>'));
+    expect(railProps).toContain('collapseBelow={RAIL_COLLAPSE_THRESHOLD}');
+    expect(railProps).toContain('onCollapse={collapseRail}');
+    expect(railProps).toContain('onExpand={expandRail}');
+    const miniSeam = shell.slice(shell.indexOf('pro-rail-mini-resize-handle'));
+    const miniProps = miniSeam.slice(0, miniSeam.indexOf('/>'));
+    expect(miniProps).toContain('folded');
+    expect(miniProps).toContain('onExpand={expandRail}');
+    // Both rail edges hand their drag to the shell, which outlives the swap.
+    expect(railProps).toContain('drag={railDrag}');
+    expect(miniProps).toContain('drag={railDrag}');
+    expect(shell).toContain('const railDrag = useResizeDragOwner();');
+    // The chat seam stays a pure resize.
+    expect(shell.match(/collapseBelow=/g)).toHaveLength(2);
+  });
+});
+
 describe('a pane’s own fold button', () => {
   it('is one labelled control pointing the way the pane leaves', async () => {
     let folded = 0;
@@ -234,8 +584,8 @@ describe('fold placement', () => {
     expect(shell).toContain('setClassroom(false)');
     expect(shell).toContain('collapse.collapseChat');
     expect(shell).toContain('collapse.collapseClassroom');
-    expect(pane).toMatch(
-      /<WorkbenchPanelProvider\s+visible=\{!hidden\}\s+playback=\{playback\}\s+learning=\{learning\}/,
+    expect(pane).toContain(
+      '<WorkbenchPanelProvider visible={!hidden} learning={learning} historySlot={historySlot}>',
     );
     // The chat learns only whether a pane sits beside it, never the
     // classroom's own visibility (it also carries the knowledge base hand-over).
@@ -259,16 +609,17 @@ describe('fold placement', () => {
 
   it('anchors the rail’s fold to the trailing edge of its header, not beside the logo', () => {
     const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
-    // The header row owns all three controls, but auto margin pushes the fold
-    // to the rail boundary instead of pinning it beside the PRO badge.
+    // The header row owns the wordmark and the fold, and auto margin pushes
+    // the fold to the rail boundary instead of pinning it beside the logo.
     const row =
-      /<div className="flex h-16 shrink-0 items-center gap-2 px-4">([\s\S]*?)<\/div>/.exec(rail);
+      /<div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-3">([\s\S]*?)<\/div>/.exec(
+        rail,
+      );
     expect(row, 'the rail’s header row').not.toBeNull();
     expect(row![1]).toContain('testId="pro-nav-home"');
-    expect(row![1]).toContain('<ProBadge');
     expect(row![1]).toContain('testId="pro-nav-collapse"');
     expect(row![1]).toContain('className="ml-auto"');
-    expect(row![1].indexOf('pro-nav-collapse')).toBeGreaterThan(row![1].indexOf('<ProBadge'));
+    expect(row![1].indexOf('pro-nav-collapse')).toBeGreaterThan(row![1].indexOf('pro-nav-home'));
 
     // And it is the same button the other two panes fold with — one fold
     // language, not a rail-specific grip.
@@ -304,7 +655,7 @@ describe('fold placement', () => {
    * COLLAPSED, the top brand is replaced by an explicit expand action in the
    * same header slot. Destination glyphs still expand into their own sections.
    */
-  it('replaces the collapsed wordmark with an explicit expand button', () => {
+  it('keeps an explicit expand button and the same items as the expanded rail', () => {
     const rail = read('components/workbench/workspace/WorkspaceRail.tsx');
     const mini = rail.slice(rail.indexOf('pro-nav-rail-mini'), rail.indexOf('renderCourseRow'));
 
@@ -312,18 +663,23 @@ describe('fold placement', () => {
     expect(mini).toContain("label={t('workspace.expandNav')}");
     expect(mini).toContain('direction="right"');
     expect(mini).toContain('onClick={onToggleCollapsed}');
-    expect(mini).not.toContain('pro-nav-home-mini');
+    // The mark, not the wordmark: 60px holds the square logo only.
+    expect(mini).toContain('testId="pro-nav-home-mini"');
+    expect(mini).toContain('brand.markSrc');
     // The strip is the list of destinations, and saved courses are not one any
     // more: the drawer is gone, so there is no glyph that opens it.
     expect(mini).not.toContain('pro-nav-mini-saved');
+    // New chat, search, the destinations and the account, as in the expanded rail.
+    expect(mini).toContain('pro-workspace-new-session-mini');
+    expect(mini).toContain('pro-nav-search-mini');
+    expect(mini).toContain('<RailDestinationButton key={item.id} item={item} mini />');
+    expect(mini).toContain('<WorkspaceAccountBlock mini');
 
-    // Each destination glyph expands, and says so on top of naming its tab.
-    for (const glyph of ['pro-nav-mini-sessions', 'pro-nav-mini-courses']) {
-      const button = new RegExp(`data-testid="${glyph}"[\\s\\S]*?/>\\s*</button>`).exec(mini);
-      expect(button, glyph).not.toBeNull();
-      expect(button![0], glyph).toContain('expandLabel(');
-      expect(button![0], glyph).toContain('aria-expanded={false}');
-      expect(button![0], glyph).toContain('expandInto(');
-    }
+    // The chat list's glyph expands, and says so on top of naming the list.
+    const button = /data-testid="pro-nav-mini-sessions"[\s\S]*?\/>\s*<\/button>/.exec(mini);
+    expect(button).not.toBeNull();
+    expect(button![0]).toContain('expandLabel(');
+    expect(button![0]).toContain('aria-expanded={false}');
+    expect(button![0]).toContain('onClick={onToggleCollapsed}');
   });
 });

@@ -23,10 +23,20 @@
  *
  * The message text is also the session's prompt, so the conversation is named by
  * what was asked in it rather than by whatever course happened to be on screen.
+ *
+ * That is the conversation ABOUT a course (`stageId`: the course the composer
+ * named when it opened, still named at send). With no course to be about, the
+ * first message starts an ordinary new conversation the way the home composer
+ * does — one create that carries the message, its materials and its named
+ * courses, and starts the run. Element refs have no place on that path.
  */
 
 import { openWorkbenchForExistingCourse } from './existing-course';
-import { postWorkbenchMessage, type WorkbenchMaterial } from './session-store';
+import {
+  createWorkbenchSession,
+  postWorkbenchMessage,
+  type WorkbenchMaterial,
+} from './session-store';
 import type { ElementRef } from './element-refs';
 import type { CourseRef } from './course-refs';
 
@@ -39,10 +49,10 @@ export interface FirstMessageResult {
 export async function startConversationWithFirstMessage(
   input: {
     /**
-     * The classroom on screen. Required: an idle session is minted against a
-     * stage, and this flow only exists on a surface that has one open.
+     * The course this conversation is about: an idle session is minted against
+     * it (`existingCourse`). Absent, the conversation is an ordinary new one.
      */
-    readonly stageId: string;
+    readonly stageId?: string;
     readonly text: string;
     readonly materials?: readonly WorkbenchMaterial[];
     readonly elementRefs?: readonly ElementRef[];
@@ -56,8 +66,24 @@ export async function startConversationWithFirstMessage(
   deps: {
     readonly create?: typeof openWorkbenchForExistingCourse;
     readonly post?: typeof postWorkbenchMessage;
+    readonly launch?: typeof createWorkbenchSession;
   } = {},
 ): Promise<FirstMessageResult> {
+  if (!input.stageId) {
+    const launch = deps.launch ?? createWorkbenchSession;
+    const courseRefs = input.courseRefs ?? [];
+    const session = await launch({
+      prompt: input.text,
+      ...(input.materials?.length ? { materials: [...input.materials] } : {}),
+      ...(courseRefs.length ? { courseRefs } : {}),
+    });
+    input.onCreated?.(session.id);
+    return {
+      sessionId: session.id,
+      elementRefsAccepted: (input.elementRefs?.length ?? 0) === 0,
+      courseRefsAccepted: session.courseRefsAccepted !== false,
+    };
+  }
   const create = deps.create ?? openWorkbenchForExistingCourse;
   const post = deps.post ?? postWorkbenchMessage;
   const meta = await create({ stageId: input.stageId, prompt: input.text });

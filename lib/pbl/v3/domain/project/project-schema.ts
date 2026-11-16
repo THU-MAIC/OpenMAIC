@@ -276,6 +276,7 @@ export const projectSchema = z
         hero: z
           .object({
             description: z.string().trim().min(1).max(2000),
+            finishedWork: z.string().trim().min(1).max(2000).optional(),
             gains: z.array(z.string().trim().min(1).max(240)).min(1).max(8).optional(),
             instructorName: z.string().trim().min(1).max(100).optional(),
           })

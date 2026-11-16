@@ -40,9 +40,9 @@ description: Встроенные модели и список провайде�
 | Видео | `seedance`, `kling`, `minimax-video`, `grok-video`, `happyhorse`, `openrouter-video` |
 | Веб-поиск | `tavily`, `exa`, `firecrawl`, `bocha`, `brave`, `baidu`, `claude`, `minimax-search`, `doubao-search`, `deepseek`, `deepseek-token-plan`, `kimi`, `kimi-coding-plan`, `searxng` |
 | Загрузка веб-страниц | `builtin`, `deepseek`, `deepseek-token-plan`, `firecrawl`, `kimi`, `kimi-coding-plan` |
-| Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind` |
+| Разбор документов | `unpdf`, `mineru`, `mineru-cloud`, `alidocmind`, `minicpm-ocr` |
 
-`azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей). Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
+`azure`, `openai-compatible`, `searxng` и `mineru` требуют `baseUrl`; `alidocmind` аутентифицируется через `credentials` (пару ключей); `minicpm-ocr` по умолчанию использует размещённый API, а `baseUrl` указывает на самостоятельно размещённую веб-демонстрацию. Собственные (self-hosted) пресеты TTS, ASR, изображений, поиска и документов, пресеты с парой ключей и Bedrock настраиваются только в `openmaic.yml`; см. [Конфигурацию](./configuration.mdx).
 
 ## LLM модели
 
@@ -140,6 +140,7 @@ description: Встроенные модели и список провайде�
 | MinerU          | `mineru`       | Текст, изображения, таблицы, формулы, анализ макета |
 | MinerU Cloud    | `mineru-cloud` | Текст, изображения, таблицы, формулы, анализ макета |
 | AliDocMind      | `alidocmind`   | Текст, изображения, таблицы, формулы, анализ макета, OCR |
+| MiniCPM-OCR     | `minicpm-ocr`  | Текст, таблицы, формулы, анализ макета, OCR |
 
 ## Провайдеры веб-поиска
 

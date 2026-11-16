@@ -48,7 +48,9 @@
     "fileTooLargeWithLimit": "Fichier trop volumineux. Sélectionnez un fichier de {{limit}} Mo maximum.",
     "unsupportedType": "Type de fichier non pris en charge. Choisissez un fichier compatible.",
     "quotaExceeded": "Limite de téléversement de ressources atteinte.",
-    "storageFull": "L’espace de stockage est plein. Impossible de téléverser cette ressource."
+    "storageFull": "L’espace de stockage est plein. Impossible de téléverser cette ressource.",
+    "uploadFailedShort": "Échec du téléversement",
+    "retryFailed": "Impossible de relancer l’analyse. Veuillez réessayer."
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",
@@ -139,9 +141,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "{{count}} appels de tool",
-      "skills": "{{count}} skills",
-      "running": "En cours",
-      "error": "Avec erreurs",
+      "failed": "{{count}} en échec",
       "done": "Terminé"
     },
     "section": {

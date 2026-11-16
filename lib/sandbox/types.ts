@@ -1,6 +1,8 @@
 /** Public sandbox values are provider-neutral and contain no SDK handles or access tokens. */
 export const MAX_TEXT_FILE_BYTES = 1024 * 1024;
 export const MAX_COMMAND_BYTES = 32 * 1024;
+/** Separate file transport budget for server-generated assessments. */
+export const MAX_ASSESSMENT_SCRIPT_BYTES = 1024 * 1024;
 export type SandboxProfile = 'code' | 'desktop';
 
 export type SandboxState =
@@ -127,6 +129,13 @@ export interface SandboxProvider {
     path: string,
     signal?: AbortSignal,
   ): Promise<string>;
+  /** One bounded UTF-8 source snapshot; providers may retain the single-file fallback. */
+  readTexts?(
+    resourceId: string,
+    operationId: string,
+    paths: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<Record<string, string>>;
   writeText(resourceId: string, operationId: string, path: string, text: string): Promise<void>;
   mutateFile?(
     resourceId: string,
@@ -140,6 +149,11 @@ export interface SandboxProvider {
     },
   ): Promise<void>;
   startCommand(resourceId: string, operationId: string, input: SandboxCommandInput): Promise<void>;
+  prepareAssessmentCommand?(
+    resourceId: string,
+    operationId: string,
+    input: SandboxCommandInput,
+  ): Promise<() => Promise<void>>;
   readCommand(
     resourceId: string,
     operationId: string,

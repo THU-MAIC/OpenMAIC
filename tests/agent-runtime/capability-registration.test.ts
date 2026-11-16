@@ -3,6 +3,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import {
   assembleCapabilityRuntime,
   createCapabilityMap,
+  isCapabilityTool,
   NO_TTS_PROMPT_BLOCK,
   NO_IMAGE_PROMPT_BLOCK,
   noTtsPromptBlock,
@@ -34,6 +35,9 @@ import {
 } from '@/lib/server/agent-runtime/fetch-url';
 import { searchPromptBlock } from '@/lib/server/agent-runtime/web-search';
 import { generateTtsPromptBlock } from '@/lib/server/agent-runtime/course-edit/tools';
+import { buildScenePreviewTools } from '@/lib/server/agent-runtime/scene-preview';
+import type { CourseStore } from '@/lib/server/agent-runtime/course-tools';
+import * as renderServiceModule from '@/lib/server/render-service';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 import * as mediaModule from '@/lib/server/model-config/media';
 import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
@@ -396,6 +400,7 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(caps.isAvailable('video')).toBe(false);
       expect(caps.isAvailable('tts')).toBe(false);
       expect(caps.isAvailable('voice_registration')).toBe(false);
+      expect(caps.isAvailable('render_service')).toBe(false);
     });
   });
 
@@ -585,6 +590,71 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(prompt).toContain('generate_video');
       expect(prompt).not.toContain(NO_IMAGE_PROMPT_BLOCK);
       expect(prompt).not.toContain('Image-generation steps described in skills');
+    });
+  });
+
+  describe('render_service capability (#2108)', () => {
+    const previewTools = () =>
+      buildScenePreviewTools({
+        store: {} as CourseStore,
+        stageAccess: async () => ({ kind: 'owned' as const }),
+        ownerId: 'user:u1',
+        renderService: { url: 'http://render-service:9000' },
+      });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    });
+
+    it('render_scene_preview declares the render_service capability', () => {
+      const [preview] = previewTools();
+      expect(preview?.name).toBe('render_scene_preview');
+      expect(isCapabilityTool(preview)).toBe(true);
+      expect((preview as unknown as CapabilityDependentTool).capability).toBe('render_service');
+    });
+
+    it('is unavailable when RENDER_SERVICE_URL is not set', async () => {
+      vi.stubEnv('RENDER_SERVICE_URL', '');
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(capabilities.isAvailable('render_service')).toBe(false);
+    });
+
+    it('drops render_scene_preview when the URL is set but the health probe fails', async () => {
+      vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000');
+      const probe = vi
+        .spyOn(renderServiceModule, 'getRenderServiceCapability')
+        .mockResolvedValue({ enabled: false });
+
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(probe).toHaveBeenCalledOnce();
+      expect(capabilities.isAvailable('render_service')).toBe(false);
+
+      const runtime = assembleCapabilityRuntime({
+        capabilities,
+        candidateTools: [baseTools, previewTools()],
+      });
+      expect(runtime.tools.some((t) => t.name === 'render_scene_preview')).toBe(false);
+      expect(runtime.allowedToolNames.has('render_scene_preview')).toBe(false);
+      expect(runtime.tools.map((t) => t.name)).toEqual(['read_stage', 'patch_stage', 'ask_user']);
+    });
+
+    it('registers render_scene_preview when the health probe reports the service enabled', async () => {
+      vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000');
+      vi.spyOn(renderServiceModule, 'getRenderServiceCapability').mockResolvedValue({
+        enabled: true,
+        accepting: false,
+      });
+
+      const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
+      expect(capabilities.isAvailable('render_service')).toBe(true);
+
+      const runtime = assembleCapabilityRuntime({
+        capabilities,
+        candidateTools: [baseTools, previewTools()],
+      });
+      expect(runtime.tools.some((t) => t.name === 'render_scene_preview')).toBe(true);
+      expect(runtime.allowedToolNames.has('render_scene_preview')).toBe(true);
     });
   });
 });

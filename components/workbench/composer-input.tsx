@@ -1,261 +1,525 @@
 'use client';
 
 /**
- * The composer's input, in two layers: a real `<textarea>` over a mirror that
- * draws the skill handles in it as inline pills.
+ * The composer's input: a small ProseMirror editor whose `/skill` handles and `@`
+ * mentions are inline chips (`lib/workbench/composer-doc`).
  *
- * WHY A MIRROR AND NOT A RICH EDITOR. A `contenteditable` would let a handle be
- * a real node — and would put IME composition, the undo stack, paste, autosize
- * and `placeholder` on us. This product is Chinese-first; breaking composition to
- * win a rounded rectangle is not a trade. So the textarea stays exactly what it
- * was (same value, same events, same native everything) and a `pointer-events-none`
- * div behind it lays out the SAME string with the handles wrapped in spans.
+ * THE CALLER STILL HOLDS A PLAIN STRING. `value` and `onValueChange` carry the same
+ * text a textarea would, `/deep-interactive` and `@name` included, so what is sent,
+ * the drafts, the triggers and the send state know nothing of the editor. The
+ * handle has a textarea's vocabulary for the same reason: `selectionStart`,
+ * `setSelectionRange`, `focus`, all in offsets into that string.
  *
- * WHAT THE MIRROR CONTRIBUTES IS ONLY THE GROUND. Its own text is transparent:
- * every glyph on screen is still the textarea's. The obvious variant — hide the
- * textarea's text and let the mirror draw it — loses three things at once: the
- * caret (it inherits `color`), the native selection highlight (it would cover a
- * layer with nothing in it, so a selection reads as blank blue blocks), and, worst,
- * the in-flight IME composition, which lives in the element and not in `value` —
- * i.e. invisible Chinese typing. Drawing only the pill's ground keeps all three
- * native and costs one thing: the handle's glyphs stay the composer's text colour
- * instead of the accent, so the pill reads as a highlight rather than as a chip.
+ * AN EDIT THAT COMES FROM OUTSIDE (a pick, a restore) arrives as a `value` that
+ * differs from the document. It is applied as the smallest replacement, so a pick
+ * is one undo step. An empty `value` starts over, undo history included: the
+ * draft was sent or abandoned.
  *
- * THE PILL IS METRIC-NEUTRAL. No padding, no border, no margin — horizontal
- * padding/border on an inline box changes the advance width, which would slide
- * the mirror's text off the textarea's by a few pixels per pill and misalign
- * everything after it. The inset is faked with a spread `box-shadow` in the pill's
- * own colour, with `box-decoration-break: clone` so a handle broken across two
- * lines is rounded on both halves. Anyone adding `px-1` here breaks the alignment
- * of every composer; `composer-inline-pill.test.ts` fails if they do.
- *
- * ONE METRIC SOURCE. Both layers get the SAME `className` — the caller's — so
- * font, size, weight, leading and padding cannot drift, and the three composers
- * (whose paddings and font sizes all differ) each stay self-consistent without
- * this file knowing any of their numbers. The mirror then adds only what it must:
- * position, clipping, wrapping, transparent ink.
- *
- * Visually the pill is a HIGHLIGHT, not a member of the composer's standalone
- * pill family (`composer-pill.tsx`): those are nodes in a flex row and may carry
- * a border and real padding, this is a span in a text flow and may carry
- * neither. It shares no layout code with them, and it deliberately does not
- * share their outline either — a lined box drawn around words mid-sentence is
- * the thing this stopped doing.
+ * THE IME IS PROSEMIRROR'S, and nothing here may disturb it. While a composition
+ * is open nothing rewrites the document: chips are worked out when it ends, and
+ * ProseMirror does not call `handleKeyDown` for a key that belongs to it, so the
+ * Enter that commits a candidate cannot send.
  */
+import { useEffect, useLayoutEffect, useMemo, useRef, type RefObject } from 'react';
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ComponentPropsWithoutRef,
-  type RefObject,
-} from 'react';
+  chainCommands,
+  deleteSelection,
+  joinBackward,
+  joinForward,
+  selectAll,
+  splitBlock,
+} from 'prosemirror-commands';
+import { closeHistory, history, redo, undo } from 'prosemirror-history';
+import { keydownHandler } from 'prosemirror-keymap';
+import {
+  EditorState,
+  Plugin,
+  TextSelection,
+  type Command,
+  type Transaction,
+} from 'prosemirror-state';
+import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
-import { useAgentSkills } from '@/lib/workbench/agent-skills';
-import { segmentSkillHandles } from '@/lib/workbench/composer-skills';
+import { useSkillChipNames } from '@/lib/workbench/use-skill-chip-names';
+import {
+  composerClipboardSerializer,
+  composerSchema,
+  docFromPlain,
+  normalizeComposerDoc,
+  offsetOfPos,
+  plainOfDoc,
+  plainOfSlice,
+  posOfOffset,
+  replaceComposerDoc,
+  sliceOfPlainText,
+  type ComposerChipSource,
+} from '@/lib/workbench/composer-doc';
+import type { InlineMention } from '@/lib/workbench/composer-mentions';
+import { composerMentionIcon } from './composer-chip';
 
-/**
- * The pill itself: A SOFT HIGHLIGHT IN A TEXT FLOW, not a chip.
- *
- * ONE ring, not two. It used to stack a 2px ring in the fill's own colour
- * (the fake padding) and a 3px ring in a stronger tone behind it (a hairline)
- * — which paints a visible outline one pixel outside the fake padding, i.e. a
- * DOUBLE-LINED box around a run of words. In a sentence that reads as noise,
- * so the outline is gone: the only ring left is the fake padding, in the fill's
- * own colour, so pill and inset are one shape. Softer ground and a wider radius
- * for the same reason — the highlight must sit under the prose, not compete
- * with it (Notion's mention / an inline code span are the reference).
- *
- * DO NOT ADD THE OUTLINE BACK. `composer-inline-pill.test.ts` fails if a second
- * ring appears in this shadow.
- *
- * Tones come from `--primary` the same way `--wb-accent-soft` does, so this
- * works on the homepage composer too — `.wbchat`'s own tokens do not exist
- * there. Dark mode gets the SAME token at a slightly higher mix, because a 9%
- * wash of an accent that is itself darker disappears against a dark ground; no
- * colour is written down in either mode.
- */
-export const SKILL_PILL_CLASS = cn(
-  '[--skill-pill-ground:color-mix(in_srgb,var(--primary)_9%,transparent)]',
-  'dark:[--skill-pill-ground:color-mix(in_srgb,var(--primary)_17%,transparent)]',
-  'rounded-[7px] bg-[var(--skill-pill-ground)]',
-  'shadow-[0_0_0_2px_var(--skill-pill-ground)]',
-  '[-webkit-box-decoration-break:clone] [box-decoration-break:clone]',
-);
-
-/**
- * What the mirror adds on top of the shared metric class. Everything here is
- * either invisibility (transparent ink, no hit testing, hidden from the a11y
- * tree) or geometry the textarea gets from its UA stylesheet instead
- * (`white-space: pre-wrap`, `overflow-wrap: break-word`).
- */
-const MIRROR_CLASS =
-  'pointer-events-none absolute inset-0 z-0 select-none overflow-hidden whitespace-pre-wrap break-words text-transparent';
-
-export type ComposerTextareaProps = Omit<
-  ComponentPropsWithoutRef<'textarea'>,
-  'value' | 'children' | 'ref'
-> & {
+/** A textarea's vocabulary, in offsets into the composer's string. */
+export interface ComposerInputHandle {
   readonly value: string;
-  /** The caller's handle on the real element — autosize and caret placement need it. */
-  readonly textareaRef?: RefObject<HTMLTextAreaElement | null>;
-  /**
-   * Where the caret is now, reported on every way it can move: typing, clicking,
-   * arrow keys, selection changes.
-   *
-   * It lives HERE rather than in each composer because both triggers read the
-   * token around the caret (`lib/workbench/composer-tokens`), and a composer that
-   * wired only `onChange` would still be deciding on a stale offset the moment the
-   * user pressed ←. Three composers, one place to get it right.
-   */
-  readonly onCaretChange?: (caret: number) => void;
-  readonly className?: string;
-  readonly mirrorTestId?: string;
-};
+  readonly selectionStart: number;
+  readonly selectionEnd: number;
+  setSelectionRange(start: number, end: number): void;
+  focus(): void;
+  /** Type at the selection, as a keystroke would. For tests and programmatic input. */
+  insertText(text: string): void;
+}
 
-export function ComposerTextarea({
+/** The element's handle: how a test, which has no keyboard, drives the real editor. */
+const HANDLE = Symbol.for('openmaic.composer-input-handle');
+
+export function composerInputHandleOf(element: Element): ComposerInputHandle | undefined {
+  return (element as Element & { [HANDLE]?: ComposerInputHandle })[HANDLE];
+}
+
+/** A composer's input element, whichever the surface. */
+export const COMPOSER_INPUT_SELECTOR = '[data-composer-input]';
+
+const NO_MENTIONS: readonly InlineMention[] = [];
+/** A transaction whose text came from outside: it must not be reported back as an edit. */
+const EXTERNAL = 'composer-external';
+/** A transaction whose text should become chips at once, caret or no caret. */
+const SETTLE = 'composer-settle';
+/** No edit of its own: the document owes a pass of the chip rule (a composition ended). */
+const RECHECK = 'composer-recheck';
+
+/**
+ * Backspace or Delete beside a chip takes the chip. Backspace past the one space
+ * a chip keeps after it takes the chip too: that space is the chip's gap, not a
+ * thing the person typed, and a key that seems to do nothing is the wrong answer.
+ */
+function deleteChip(direction: -1 | 1): Command {
+  return (state, dispatch) => {
+    const { selection, tr } = state;
+    if (!selection.empty) return false;
+    const { $from, from } = selection;
+    const chipType = composerSchema.nodes.chip;
+    let start = from;
+    let end = from;
+    if (direction > 0) {
+      if ($from.nodeAfter?.type !== chipType) return false;
+      end = from + $from.nodeAfter.nodeSize;
+    } else if ($from.nodeBefore?.type === chipType) {
+      start = from - $from.nodeBefore.nodeSize;
+    } else if ($from.nodeBefore?.text === ' ' && $from.textOffset === 0) {
+      const chip = state.doc.resolve(from - 1).nodeBefore;
+      if (chip?.type !== chipType) return false;
+      start = from - 1 - chip.nodeSize;
+    } else {
+      return false;
+    }
+    // Its own undo step, however quickly it follows the last edit.
+    if (dispatch) dispatch(closeHistory(tr).delete(start, end).scrollIntoView());
+    return true;
+  };
+}
+
+/** Pasted or dropped text: plain, whatever else the clipboard offered. */
+function pasteText(view: EditorView, text: string): void {
+  const slice = sliceOfPlainText(text);
+  if (slice.size === 0) return;
+  view.dispatch(view.state.tr.replaceSelection(slice).setMeta(SETTLE, true).scrollIntoView());
+}
+
+/**
+ * Home and End on a line that a chip begins or ends. The browser will not put the
+ * caret outside a non-editable node at the edge of a line, so Home would stop after
+ * a leading chip and Delete could never reach it. Declines where no chip is at the
+ * edge: the browser's own movement stands.
+ */
+function moveToLineEdge(direction: -1 | 1): Command {
+  return (state, dispatch, view) => {
+    if (!view || !state.selection.empty) return false;
+    const { $head } = state.selection;
+    const start = $head.start();
+    const end = $head.end();
+    const lineTop = (pos: number) => view.coordsAtPos(pos, direction).top;
+    const top = lineTop($head.pos);
+    let edge = $head.pos;
+    while (direction < 0 ? edge > start : edge < end) {
+      const next = edge + direction;
+      if (Math.abs(lineTop(next) - top) > 2) break;
+      edge = next;
+    }
+    const $edge = state.doc.resolve(edge);
+    const beyond = direction < 0 ? $edge.nodeAfter : $edge.nodeBefore;
+    if (beyond?.type !== composerSchema.nodes.chip) return false;
+    if (dispatch) dispatch(state.tr.setSelection(TextSelection.create(state.doc, edge)));
+    return true;
+  };
+}
+
+const KEYS = keydownHandler({
+  Home: moveToLineEdge(-1),
+  End: moveToLineEdge(1),
+  'Mod-ArrowLeft': moveToLineEdge(-1),
+  'Mod-ArrowRight': moveToLineEdge(1),
+  'Mod-z': undo,
+  'Mod-y': redo,
+  'Shift-Mod-z': redo,
+  'Mod-a': selectAll,
+  Enter: splitBlock,
+  'Shift-Enter': splitBlock,
+  Backspace: chainCommands(deleteSelection, deleteChip(-1), joinBackward),
+  Delete: chainCommands(deleteSelection, deleteChip(1), joinForward),
+});
+
+export function ComposerInput({
   value,
-  textareaRef,
+  onValueChange,
+  inputRef,
   onCaretChange,
+  onKeyDown,
+  onPaste,
+  mentions = NO_MENTIONS,
+  onMentionRestored,
+  placeholder,
   className,
-  mirrorTestId,
-  onScroll,
-  onChange,
-  onSelect,
-  onKeyUp,
-  onClick,
-  onFocus,
-  ...textareaProps
-}: ComposerTextareaProps) {
-  const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const mirrorRef = useRef<HTMLDivElement | null>(null);
+  rows = 1,
+  disabled = false,
+  readOnly = false,
+  testId,
+  ariaKeyShortcuts,
+}: {
+  readonly value: string;
+  readonly onValueChange: (text: string) => void;
+  readonly inputRef?: RefObject<ComposerInputHandle | null>;
   /**
-   * The mirror's width is MEASURED, not inherited. A vertical scrollbar that
-   * takes space (Windows, and any platform without overlay scrollbars) narrows
-   * the textarea's content box but not a sibling's, and the two layers would then
-   * wrap at different columns — the one misalignment that gets worse the longer
-   * the draft is. `clientWidth` excludes exactly that scrollbar.
+   * Where the caret is, and whether it stands against a chip: a chip is finished
+   * text, so a caret beside one must not read the chip as a query being typed.
    */
-  const [mirrorWidth, setMirrorWidth] = useState<number | null>(null);
-  const { skills } = useAgentSkills();
-  const installedNames = useMemo(() => skills.map((skill) => skill.name), [skills]);
-  const segments = useMemo(
-    () => segmentSkillHandles(value, installedNames),
-    [value, installedNames],
+  readonly onCaretChange?: (caret: number, besideChip: boolean) => void;
+  readonly onKeyDown?: (event: KeyboardEvent) => void;
+  /** Runs first; `preventDefault` means it took the paste (files, say). */
+  readonly onPaste?: (event: ClipboardEvent) => void;
+  readonly mentions?: readonly InlineMention[];
+  /** An undo or redo brought back a chip whose mention had gone with it. */
+  readonly onMentionRestored?: (mention: InlineMention) => void;
+  readonly placeholder?: string;
+  readonly className?: string;
+  /** How many lines the empty box shows. */
+  readonly rows?: number;
+  readonly disabled?: boolean;
+  readonly readOnly?: boolean;
+  readonly testId?: string;
+  readonly ariaKeyShortcuts?: string;
+}) {
+  const { t } = useI18n();
+  const skillNames = useSkillChipNames(t);
+  const source = useMemo<ComposerChipSource>(
+    () => ({
+      skills: skillNames,
+      mentions: new Map(mentions.map((mention) => [mention.label, mention])),
+      mentionIcon: composerMentionIcon,
+    }),
+    [skillNames, mentions],
   );
 
-  const syncToInput = useCallback(() => {
-    const input = inputRef.current;
-    const mirror = mirrorRef.current;
-    if (!input || !mirror) return;
-    mirror.scrollTop = input.scrollTop;
-    mirror.scrollLeft = input.scrollLeft;
-    setMirrorWidth((current) => (current === input.clientWidth ? current : input.clientWidth));
-  }, []);
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const resetRef = useRef<((text: string) => void) | null>(null);
+  const compositionEndedAt = useRef(Number.NEGATIVE_INFINITY);
+  // The handlers and props the long-lived editor reads when an event arrives.
+  const latest = useRef({
+    source,
+    placeholder,
+    onValueChange,
+    onCaretChange,
+    onKeyDown,
+    onPaste,
+    onMentionRestored,
+  });
+  useLayoutEffect(() => {
+    latest.current = {
+      source,
+      placeholder,
+      onValueChange,
+      onCaretChange,
+      onKeyDown,
+      onPaste,
+      onMentionRestored,
+    };
+  });
 
-  // Typing at the bottom of a full box scrolls it, and so does autosize hitting
-  // its ceiling; both land here through the value change even when no scroll
-  // event fires.
-  useEffect(syncToInput, [syncToInput, value]);
+  const attributes = useMemo(
+    () => ({
+      class: cn('composer-input outline-none', className, disabled && 'opacity-60'),
+      style: `--composer-rows: ${rows}`,
+      role: 'textbox',
+      'aria-multiline': 'true',
+      'data-composer-input': '',
+      // Moving the caret while typing a query is not a press "somewhere else":
+      // see `CourseMentionMenu`'s outside press.
+      'data-mention-keep-open': '',
+      ...(testId ? { 'data-testid': testId } : {}),
+      ...(ariaKeyShortcuts ? { 'aria-keyshortcuts': ariaKeyShortcuts } : {}),
+      ...(placeholder ? { 'aria-placeholder': placeholder } : {}),
+      ...(disabled ? { 'aria-disabled': 'true' } : {}),
+    }),
+    [ariaKeyShortcuts, className, disabled, placeholder, rows, testId],
+  );
 
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(syncToInput);
-    observer.observe(input);
-    return () => observer.disconnect();
-  }, [syncToInput]);
+  useLayoutEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return;
+    let view: EditorView | null = null;
 
-  /**
-   * Report the caret from the element itself rather than from any event's payload.
-   *
-   * `selectionStart` after the browser has applied the event is the only value that
-   * is right for all of them at once — an `input` has already moved it, a `keyup`
-   * for ← has already moved it, and a click has already placed it. Reading it here
-   * is also safe under an IME: this only READS the selection, so a live composition
-   * is never disturbed (the one path that rewrites the value under the caret is
-   * `useSkillHandleBackspace`, which refuses while composing).
-   */
-  const reportCaret = useCallback(() => {
-    if (!onCaretChange) return;
-    const input = inputRef.current;
-    if (!input) return;
-    onCaretChange(input.selectionStart ?? input.value.length);
-  }, [onCaretChange]);
+    const reportCaret = (state: EditorState) => {
+      const { $from } = state.selection;
+      const beside =
+        state.selection.empty &&
+        ($from.nodeBefore?.type === composerSchema.nodes.chip ||
+          $from.nodeAfter?.type === composerSchema.nodes.chip);
+      latest.current.onCaretChange?.(offsetOfPos(state.doc, state.selection.from), !!beside);
+    };
 
-  return (
-    <div className="relative">
-      <div
-        ref={mirrorRef}
-        aria-hidden="true"
-        data-testid={mirrorTestId}
-        className={cn(className, MIRROR_CLASS, textareaProps.disabled && 'opacity-60')}
-        style={{
-          // `text-transparent` says this too, and `cn` does drop the caller's
-          // colour utility for it — but only for utilities it recognises as
-          // colours. A caller writing `[color:…]` would win in the cascade and
-          // print a second, offset copy of the whole draft; inline style cannot
-          // lose that argument.
-          color: 'transparent',
-          // Not `w-full`: see `mirrorWidth`.
-          ...(mirrorWidth === null ? {} : { width: `${mirrorWidth}px` }),
-        }}
-      >
-        {segments.map((segment, index) =>
-          segment.skill ? (
-            <span key={index} className={SKILL_PILL_CLASS}>
-              {segment.text}
-            </span>
-          ) : (
-            <span key={index}>{segment.text}</span>
+    const plugins = [
+      history(),
+      new Plugin({
+        props: {
+          decorations: (state) => {
+            const { doc } = state;
+            const text = latest.current.placeholder;
+            if (!text || doc.childCount !== 1 || doc.firstChild!.content.size > 0) return null;
+            return DecorationSet.create(doc, [
+              Decoration.node(0, doc.firstChild!.nodeSize, {
+                class: 'is-empty',
+                'data-placeholder': text,
+              }),
+            ]);
+          },
+        },
+        appendTransaction: (transactions, _old, state) => {
+          if (view?.composing) return null;
+          if (!transactions.some((tr) => tr.docChanged || tr.selectionSet || tr.getMeta(RECHECK))) {
+            return null;
+          }
+          if (transactions.some((tr) => tr.getMeta(EXTERNAL))) return null;
+          const settle = transactions.some((tr) => tr.getMeta(SETTLE));
+          return normalizeComposerDoc(state, latest.current.source, {
+            protectCaret:
+              !settle && state.selection.empty
+                ? offsetOfPos(state.doc, state.selection.from)
+                : null,
+          });
+        },
+      }),
+    ];
+    const createState = (text: string) =>
+      EditorState.create({
+        schema: composerSchema,
+        doc: docFromPlain(text, latest.current.source),
+        plugins,
+      });
+
+    const dispatchTransaction = (tr: Transaction) => {
+      const current = view!;
+      const before = current.state;
+      const { state } = before.applyTransaction(tr);
+      current.updateState(state);
+      if (!state.doc.eq(before.doc)) {
+        // A chip back from the undo stack brings its reference back with it, in
+        // the same batch as the text that names it.
+        const known = latest.current.source.mentions;
+        state.doc.descendants((node) => {
+          if (node.type !== composerSchema.nodes.chip || node.attrs.kind === 'skill') return;
+          if (known.has(node.attrs.text)) return;
+          latest.current.onMentionRestored?.({
+            label: node.attrs.text,
+            kind: node.attrs.kind,
+            id: node.attrs.id,
+            name: node.attrs.name,
+          });
+        });
+        if (!tr.getMeta(EXTERNAL)) latest.current.onValueChange(plainOfDoc(state.doc));
+      }
+      if (!state.doc.eq(before.doc) || !state.selection.eq(before.selection)) reportCaret(state);
+    };
+
+    view = new EditorView(
+      { mount },
+      {
+        state: createState(value),
+        attributes,
+        editable: () => !(disabled || readOnly),
+        dispatchTransaction,
+        clipboardTextSerializer: plainOfSlice,
+        clipboardSerializer: composerClipboardSerializer,
+        handleKeyDown: (_view, event) => {
+          // ProseMirror also calls this with a synthetic Enter when a line break
+          // turns up in the DOM around a composition: that is no key of a person's,
+          // and it must not send. The line break it found stands.
+          const composingKey =
+            _view.composing ||
+            event.isComposing ||
+            event.keyCode === 229 ||
+            (!(event instanceof KeyboardEvent) &&
+              performance.now() - compositionEndedAt.current < 200);
+          if (composingKey) return false;
+          latest.current.onKeyDown?.(event);
+          if (event.defaultPrevented) return true;
+          return KEYS(_view, event);
+        },
+        handlePaste: (_view, event) => {
+          latest.current.onPaste?.(event);
+          if (event.defaultPrevented) return true;
+          pasteText(_view, event.clipboardData?.getData('text/plain') ?? '');
+          return true;
+        },
+        handleDOMEvents: {
+          // The chips a composition left owing, once it has settled.
+          compositionstart: () => {
+            compositionEndedAt.current = Number.POSITIVE_INFINITY;
+            return false;
+          },
+          compositionend: (_view) => {
+            compositionEndedAt.current = performance.now();
+            setTimeout(() => {
+              if (viewRef.current === _view && !_view.composing) {
+                _view.dispatch(_view.state.tr.setMeta(RECHECK, true));
+                reportCaret(_view.state);
+              }
+            }, 40);
+            return false;
+          },
+          focus: (_view) => {
+            reportCaret(_view.state);
+            return false;
+          },
+        },
+      },
+    );
+    viewRef.current = view;
+    const created = view;
+
+    const handle: ComposerInputHandle = {
+      get value() {
+        return plainOfDoc(created.state.doc);
+      },
+      get selectionStart() {
+        return offsetOfPos(created.state.doc, created.state.selection.from);
+      },
+      get selectionEnd() {
+        return offsetOfPos(created.state.doc, created.state.selection.to);
+      },
+      setSelectionRange(start, end) {
+        const { doc } = created.state;
+        created.dispatch(
+          created.state.tr.setSelection(
+            TextSelection.create(doc, posOfOffset(doc, start), posOfOffset(doc, end)),
           ),
-        )}
-        {/* A `pre-wrap` div drops the line box a trailing newline opens, where a
-            textarea keeps it. One more newline makes the two scroll the same. */}
-        {'\n'}
-      </div>
-      <textarea
-        {...textareaProps}
-        ref={(node) => {
-          inputRef.current = node;
-          if (textareaRef) textareaRef.current = node;
-        }}
-        value={value}
-        onChange={(event) => {
-          onChange?.(event);
-          reportCaret();
-        }}
-        // Every other way the caret moves without the value changing: arrow keys
-        // and Home/End (`keyup`), a click or drag placing it, a selection change
-        // from any source (`select` covers programmatic `setSelectionRange` too),
-        // and coming back to a box that kept its caret while blurred.
-        onSelect={(event) => {
-          onSelect?.(event);
-          reportCaret();
-        }}
-        onKeyUp={(event) => {
-          onKeyUp?.(event);
-          reportCaret();
-        }}
-        onClick={(event) => {
-          onClick?.(event);
-          reportCaret();
-        }}
-        onFocus={(event) => {
-          onFocus?.(event);
-          reportCaret();
-        }}
-        onScroll={(event) => {
-          syncToInput();
-          onScroll?.(event);
-        }}
-        // `relative` only to sit above the mirror; the transparent background is
-        // what lets the pill show through. Below the composer's own controls,
-        // which are z-10.
-        className={cn(className, 'relative z-[1] bg-transparent')}
-      />
-    </div>
-  );
+        );
+      },
+      focus() {
+        created.focus();
+      },
+      insertText(text) {
+        created.dispatch(created.state.tr.insertText(text));
+      },
+    };
+    (created.dom as Element & { [HANDLE]?: ComposerInputHandle })[HANDLE] = handle;
+    if (inputRef) inputRef.current = handle;
+
+    // Applied here rather than in the effect below, which needs `createState`.
+    resetRef.current = (text) => {
+      created.updateState(createState(text));
+    };
+
+    return () => {
+      viewRef.current = null;
+      resetRef.current = null;
+      if (inputRef) inputRef.current = null;
+      created.destroy();
+      view = null;
+    };
+    // The editor lives as long as this component; everything that changes is read
+    // through `latest` or pushed in by the effects below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Going non-editable blurs a contenteditable, as `disabled` does a textarea but
+  // `readOnly` does not. A box that was being typed in gets its focus back, unless
+  // the person has since moved on to something else.
+  const hadFocus = useRef(false);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const editable = !(disabled || readOnly);
+    if (!editable && view.hasFocus()) hadFocus.current = true;
+    view.setProps({ attributes, editable: () => editable });
+    if (editable && hadFocus.current) {
+      hadFocus.current = false;
+      if (document.activeElement === document.body || document.activeElement === null) view.focus();
+    }
+  }, [attributes, disabled, readOnly]);
+
+  // A new placeholder has to redraw the decoration that reads it.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (view && !view.composing) view.updateState(view.state);
+  }, [placeholder]);
+
+  /**
+   * The caller's `value` and `mentions` are the truth. Before paint, and before the
+   * caller's own effects, which place the caret in the new text.
+   */
+  const lastSource = useRef(source);
+  useLayoutEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const sourceChanged = lastSource.current !== source;
+    lastSource.current = source;
+    const plain = plainOfDoc(view.state.doc);
+    if (view.composing && value === plain) return;
+    if (value !== plain) {
+      if (value === '') {
+        resetRef.current?.('');
+        onCaretChange?.(0, false);
+        return;
+      }
+      const tr = replaceComposerDoc(view.state, value, source);
+      if (tr) {
+        // A value set from outside leaves the caret at its end, as a textarea's
+        // does; a caller with a better place says so in its own effect.
+        tr.setSelection(TextSelection.atEnd(tr.doc));
+        view.dispatch(closeHistory(tr).setMeta(EXTERNAL, true));
+      }
+    }
+    const tr = normalizeComposerDoc(view.state, source, {
+      unbind: sourceChanged || value !== plain,
+      protectCaret:
+        value === plain && view.state.selection.empty
+          ? offsetOfPos(view.state.doc, view.state.selection.from)
+          : null,
+    });
+    if (tr) view.dispatch(tr.setMeta(EXTERNAL, true).setMeta('addToHistory', false));
+  }, [value, source, onCaretChange]);
+
+  return <div ref={mountRef} />;
+}
+
+/**
+ * Focus a composer once it can take focus. A request that arrives while its
+ * pane is still hidden or mounting (a new chat started from an open one) would
+ * otherwise be a silent no-op, so retry on the next frames until the box whose
+ * test id is given actually holds focus. Returns a cancel function.
+ */
+export function focusComposerWhenShown(
+  ref: { readonly current: ComposerInputHandle | null },
+  testId: string,
+): () => void {
+  let frames = 0;
+  let handle = 0;
+  const attempt = () => {
+    ref.current?.focus();
+    if (document.activeElement?.closest(`[data-testid="${testId}"]`)) return;
+    frames += 1;
+    if (frames < 60) handle = requestAnimationFrame(attempt);
+  };
+  attempt();
+  return () => cancelAnimationFrame(handle);
 }

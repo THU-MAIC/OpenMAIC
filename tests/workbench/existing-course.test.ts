@@ -122,3 +122,33 @@ describe('startConversationWithFirstMessage', () => {
     expect(post).not.toHaveBeenCalled();
   });
 });
+
+describe('startConversationWithFirstMessage with no course to be about', () => {
+  it('starts an ordinary conversation from the message, as the home composer does', async () => {
+    const create = vi.fn();
+    const post = vi.fn();
+    const launch = vi.fn(async () => ({
+      id: 'session-plain',
+      stageId: 'stage-new',
+      status: 'queued',
+      courseRefsAccepted: true,
+    }));
+    const onCreated = vi.fn();
+    const courseRef = { kind: 'course', stageId: 'stage-9', title: 'Tides' } as never;
+
+    const result = await startConversationWithFirstMessage(
+      { text: 'a lesson on tides', courseRefs: [courseRef], onCreated },
+      { create, post, launch: launch as never },
+    );
+
+    expect(launch).toHaveBeenCalledWith({ prompt: 'a lesson on tides', courseRefs: [courseRef] });
+    expect(create).not.toHaveBeenCalled();
+    expect(post).not.toHaveBeenCalled();
+    expect(onCreated).toHaveBeenCalledWith('session-plain');
+    expect(result).toEqual({
+      sessionId: 'session-plain',
+      elementRefsAccepted: true,
+      courseRefsAccepted: true,
+    });
+  });
+});

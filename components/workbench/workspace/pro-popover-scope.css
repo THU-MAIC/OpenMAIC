@@ -170,32 +170,6 @@
   height: 14px;
 }
 
-/* The bottom notification/community flyout is already a Pro-only component;
-   this pass brings its card density down to the same menu scale. */
-.ws-root .ws-pop {
-  gap: 1px;
-  padding: 3px 4px;
-  border-color: var(--ws-line);
-  border-radius: 10px;
-  background-color: var(--ws-raised);
-  box-shadow: var(--ws-lift-sm);
-}
-
-.ws-root .ws-pop .ws-pop-item {
-  gap: 1px;
-}
-
-.ws-root .ws-pop button,
-.ws-root .ws-pop a {
-  color: var(--ws-ink-mute);
-}
-
-.ws-root .ws-pop button:hover,
-.ws-root .ws-pop a:hover {
-  background: var(--ws-tint-strong);
-  color: var(--ws-ink);
-}
-
 @media (prefers-reduced-motion: reduce) {
   .ws-root .pro-popover,
   .ws-root .pro-theme-popover {

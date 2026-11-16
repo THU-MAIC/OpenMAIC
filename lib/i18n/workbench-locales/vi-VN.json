@@ -48,7 +48,9 @@
     "fileTooLargeWithLimit": "Tệp quá lớn. Vui lòng chọn tệp không vượt quá {{limit}} MB.",
     "unsupportedType": "Loại tệp không được hỗ trợ. Vui lòng chọn tệp được hỗ trợ.",
     "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên.",
-    "storageFull": "Dung lượng lưu trữ đã đầy. Không thể tải tài liệu này lên."
+    "storageFull": "Dung lượng lưu trữ đã đầy. Không thể tải tài liệu này lên.",
+    "uploadFailedShort": "Tải lên thất bại",
+    "retryFailed": "Không thể phân tích lại. Vui lòng thử lại."
   },
   "skill": {
     "listFailed": "Không tải được danh sách skill",
@@ -139,9 +141,7 @@
     "listSeparator": ", ",
     "group": {
       "tools": "{{count}} lần gọi tool",
-      "skills": "{{count}} skill",
-      "running": "Đang chạy",
-      "error": "Có lỗi",
+      "failed": "{{count}} thất bại",
       "done": "Hoàn tất"
     },
     "section": {

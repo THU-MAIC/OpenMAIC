@@ -15,6 +15,14 @@ import type { ChatNode, SessionStatus } from './session-store';
 
 const LIVE_STATUSES: readonly SessionStatus[] = ['running', 'queued', 'connecting'];
 
+/**
+ * The key a just-created session's request goes by while it waits in the queue
+ * with no events. Once `session_start` paints the opening bubble the same
+ * request is named by that node's key: anything that follows one request
+ * across that moment must treat this key as provisional.
+ */
+export const QUEUED_REQUEST_KEY = 'queued';
+
 /** The fold's durable steer receipt keeps the message inside the current request. */
 export function requestStartIndex(chat: readonly ChatNode[]): number {
   return chat.findLastIndex(
@@ -130,7 +138,7 @@ export function requestTrack(
     // existing one starts at `connecting` and replays its own events.
     if (chat.length > 0 || !sessionPrompt || status !== 'queued') return null;
     return {
-      key: 'queued',
+      key: QUEUED_REQUEST_KEY,
       startedAt: 0,
       prompt: sessionPrompt,
       steps: [],

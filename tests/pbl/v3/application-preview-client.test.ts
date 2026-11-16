@@ -78,8 +78,8 @@ it('renews the standalone preview before expiry without replacing its iframe', a
     expect(frame.src).toBe(src);
     expect(frame.hasAttribute('inert')).toBe(false);
     expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-      'frontend',
       'open',
+      'frontend',
       'frontend',
     ]);
   } finally {
@@ -87,7 +87,7 @@ it('renews the standalone preview before expiry without replacing its iframe', a
   }
 });
 
-it('shows an independent document before the process starts and preserves it across backend restarts', async () => {
+it('waits for the first running observation before mounting, and preserves the document across restarts', async () => {
   const current: LearningView = {
     ...view,
     application: { ...view.application!, standaloneFrontend: true },
@@ -102,13 +102,15 @@ it('shows an independent document before the process starts and preserves it acr
   const f = await fixture();
   try {
     await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(f.host.querySelector('[role="status"]')?.textContent).toBe('pblV3.application.starting');
+    await act(async () => launch({ state: 'running', observedAt: '' }));
     const frame = f.host.querySelector('iframe')!;
-    expect(frame).toBeTruthy();
+    expect(frame.classList.contains('invisible')).toBe(true);
     await act(async () => frame.dispatchEvent(new Event('load')));
     expect(frame.classList.contains('invisible')).toBe(false);
-    expect(frame.hasAttribute('inert')).toBe(true);
-    await act(async () => launch({ state: 'running', observedAt: '' }));
     expect(frame.hasAttribute('inert')).toBe(false);
+    expect(f.host.querySelector('[role="status"]')).toBeNull();
     start = new Promise((resolve) => {
       launch = resolve;
     });
@@ -125,6 +127,53 @@ it('shows an independent document before the process starts and preserves it acr
     expect(
       mocks.request.mock.calls.filter(([, input]) => input.action === 'frontend'),
     ).toHaveLength(1);
+  } finally {
+    await f.cleanup();
+  }
+});
+it('reopens a visible standalone document from application help without another Java operation', async () => {
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  let grants = 0;
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend'
+      ? {
+          ...running,
+          preview: {
+            url: 'https://isolated.example/preview#grant-' + ++grants,
+            expiresAt: Date.now() + 300_000,
+          },
+        }
+      : { state: 'running', observedAt: '' },
+  );
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    expect(frame.hasAttribute('inert')).toBe(false);
+
+    const header = f.host.querySelector('header')!;
+    expect(header.querySelector('[aria-label="pblV3.application.reopen"]')).toBeNull();
+    const help = header.querySelector('details')!;
+    await act(async () => help.querySelector('summary')!.click());
+    expect(help.open).toBe(true);
+    const reopen = help.querySelector('button')!;
+    expect(reopen.textContent).toBe('pblV3.application.reopen');
+    expect(reopen.disabled).toBe(false);
+    await act(async () => reopen.click());
+    const replacement = f.host.querySelector('iframe')!;
+    expect(replacement.src).toContain('#grant-2');
+    expect(replacement.hasAttribute('inert')).toBe(true);
+    await act(async () => replacement.dispatchEvent(new Event('load')));
+    expect(replacement.hasAttribute('inert')).toBe(false);
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+      'open',
+      'frontend',
+      'frontend',
+    ]);
   } finally {
     await f.cleanup();
   }
@@ -152,37 +201,66 @@ it.each(['ENVIRONMENT_BUSY', 'STUDY_BUSY', 'unknown outcome'])(
     const f = await fixture();
     try {
       await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
-      const frame = f.host.querySelector('iframe')!;
-      await act(async () => frame.dispatchEvent(new Event('load')));
       const panel = f.host.querySelector('[data-testid="pbl-application-panel"]')!;
-      expect(panel.querySelector('[role="alert"], [role="status"]')).toBeNull();
-      expect(frame.classList.contains('invisible')).toBe(false);
-      await act(async () => vi.advanceTimersByTimeAsync(2500));
-      expect(panel.querySelector('iframe')).toBe(frame);
-      expect(panel.querySelector('[role="alert"], [role="status"]')).toBeNull();
+      expect(panel.querySelector('iframe')).toBeNull();
       if (reason !== 'unknown outcome') {
+        expect(panel.querySelector('[role="alert"]')).toBeNull();
+        expect(panel.querySelector('[role="status"]')?.textContent).toBe(
+          'pblV3.application.starting',
+        );
+        await act(async () => vi.advanceTimersByTimeAsync(2500));
         expect(launch).toHaveBeenCalledTimes(5);
         expect(launch.mock.calls.every(([input]) => input === launch.mock.calls[0][0])).toBe(true);
-        expect(frame.hasAttribute('inert')).toBe(false);
       } else {
         expect(launch).toHaveBeenCalledTimes(1);
-        expect(frame.hasAttribute('inert')).toBe(true);
-        expect(panel.querySelector('details')?.textContent).toContain('Unknown network outcome');
-        await act(async () => {
-          panel
-            .querySelector<HTMLButtonElement>('[aria-label="pblV3.application.reopen"]')!
-            .click();
-        });
+        expect(panel.querySelector('[role="alert"]')?.textContent).toBe('Unknown network outcome');
+        const reopen = [...panel.querySelectorAll('button')].find(
+          (button) => button.textContent === 'pblV3.application.reopen',
+        )!;
+        await act(async () => reopen.click());
         expect(launch).toHaveBeenCalledTimes(2);
         expect(launch.mock.calls[1][0]).toEqual(launch.mock.calls[0][0]);
-        expect(panel.querySelector('iframe')).toBe(frame);
-        expect(frame.hasAttribute('inert')).toBe(false);
       }
+      const frame = panel.querySelector('iframe')!;
+      await act(async () => frame.dispatchEvent(new Event('load')));
+      expect(panel.querySelector('[role="alert"], [role="status"]')).toBeNull();
+      expect(frame.hasAttribute('inert')).toBe(false);
     } finally {
       await f.cleanup();
     }
   },
 );
+it('retries temporary standalone launch failures with the same receipt before mounting', async () => {
+  vi.useFakeTimers();
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  const launch = vi
+    .fn()
+    .mockRejectedValueOnce(new SandboxRequestError('Temporary failure', 503))
+    .mockRejectedValueOnce(new SandboxRequestError('Temporary failure', 502))
+    .mockResolvedValue({ state: 'running', observedAt: '' });
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend' ? running : launch(input),
+  );
+  const f = await fixture();
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    await act(async () => vi.advanceTimersByTimeAsync(2_249));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(f.host.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(launch).toHaveBeenCalledTimes(3);
+    expect(launch.mock.calls.every(([input]) => input === launch.mock.calls[0][0])).toBe(true);
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    expect(frame.hasAttribute('inert')).toBe(false);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it('keeps a running standalone preview usable during a revision status check that hits the study lock', async () => {
   vi.useFakeTimers();
   const current: LearningView = {
@@ -224,7 +302,8 @@ it('keeps a running standalone preview usable during a revision status check tha
     await f.cleanup();
   }
 });
-it('shows the standalone document while stage entry takes priority over automatic launch', async () => {
+it('defers the first preview grant while stage entry delays the application launch', async () => {
+  vi.useFakeTimers();
   const current: LearningView = {
     ...view,
     application: { ...view.application!, standaloneFrontend: true },
@@ -239,13 +318,14 @@ it('shows the standalone document while stage entry takes priority over automati
         createElement(Harness, { current, automatic: true, learningActionPending: true }),
       ),
     );
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(f.host.querySelector('[role="status"]')?.textContent).toBe('pblV3.application.starting');
+    await act(async () => vi.advanceTimersByTimeAsync(300_000));
+    expect(mocks.request).not.toHaveBeenCalled();
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual(['open', 'frontend']);
     const frame = f.host.querySelector('iframe')!;
     await act(async () => frame.dispatchEvent(new Event('load')));
-    expect(frame.classList.contains('invisible')).toBe(false);
-    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual(['frontend']);
-    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
-    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual(['frontend', 'open']);
-    expect(f.host.querySelector('iframe')).toBe(frame);
     expect(frame.hasAttribute('inert')).toBe(false);
   } finally {
     await f.cleanup();
@@ -287,8 +367,8 @@ it('recovers a stopped preview after an observation conflict without racing a le
     );
     await act(async () => vi.advanceTimersByTimeAsync(500));
     expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-      'frontend',
       'open',
+      'frontend',
       'status',
       'status',
     ]);
@@ -296,8 +376,8 @@ it('recovers a stopped preview after an observation conflict without racing a le
       f.root.render(createElement(Harness, { current: updated, automatic: true })),
     );
     expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-      'frontend',
       'open',
+      'frontend',
       'status',
       'status',
       'status',
@@ -351,8 +431,8 @@ it.each([false, true])(
         isolated ? undefined : 'pblV3.application.wait',
       );
       expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-        'frontend',
         'open',
+        'frontend',
       ]);
       await act(async () =>
         f.root.render(
@@ -370,8 +450,8 @@ it.each([false, true])(
         ),
       );
       expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-        'frontend',
         'open',
+        'frontend',
         'status',
         ...(isolated ? [] : ['open']),
       ]);
@@ -401,21 +481,61 @@ it('checks readiness without replaying an acknowledged standalone launch', async
   const f = await fixture();
   try {
     await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
-    const frame = f.host.querySelector('iframe')!;
-    await act(async () => frame.dispatchEvent(new Event('load')));
-    expect(frame.hasAttribute('inert')).toBe(true);
+    expect(f.host.querySelector('iframe')).toBeNull();
     await act(async () => vi.advanceTimersByTimeAsync(500));
-    expect(mocks.request.mock.calls.map(([, input]) => input.action).sort()).toEqual([
-      'frontend',
+    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
       'open',
       'status',
+      'frontend',
     ]);
-    expect(f.host.querySelector('iframe')).toBe(frame);
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
     expect(frame.hasAttribute('inert')).toBe(false);
   } finally {
     await f.cleanup();
   }
 });
+it('keeps the first standalone preview recoverable after repeated startup timeouts', async () => {
+  vi.useFakeTimers();
+  const current: LearningView = {
+    ...view,
+    application: { ...view.application!, standaloneFrontend: true },
+  };
+  let state: ApplicationObservation['state'] = 'starting';
+  mocks.request.mockImplementation((_url, input) =>
+    input.action === 'frontend' ? running : { state, observedAt: '', sourceChanged: false },
+  );
+  const f = await fixture();
+  const reopen = () =>
+    [...f.host.querySelectorAll('button')].find(
+      (button) => button.textContent === 'pblV3.application.reopen',
+    )!;
+  try {
+    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(reopen().disabled).toBe(false);
+    await act(async () => reopen().click());
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(f.host.querySelector('iframe')).toBeNull();
+    expect(f.host.querySelector('[role="alert"]')?.textContent).toBe(
+      'pblV3.application.unavailable',
+    );
+    expect(reopen().disabled).toBe(false);
+
+    state = 'running';
+    await act(async () => reopen().click());
+    const frame = f.host.querySelector('iframe')!;
+    await act(async () => frame.dispatchEvent(new Event('load')));
+    expect(frame.hasAttribute('inert')).toBe(false);
+    expect(
+      mocks.request.mock.calls.filter(([, input]) => ['open', 'restart'].includes(input.action)),
+    ).toHaveLength(1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 it('restores the preview at the write review checkpoint while the reply is still streaming', async () => {
   mocks.request.mockResolvedValue(running);
   const f = await fixture();
@@ -2247,42 +2367,68 @@ it.each(['ready', 'still-starting', 'rotated', 'failed'])(
   },
 );
 
-it('offers one document retry when the standalone gateway is silent during startup', async () => {
-  vi.useFakeTimers();
-  const current: LearningView = {
-    ...view,
-    application: { ...view.application!, standaloneFrontend: true },
-  };
-  const grant = {
-    ...running,
-    preview: {
-      ...running.preview,
-      url: 'https://isolated.example/__openmaic_preview#silent',
-      expiresAt: Date.now() + 300_000,
-    },
-  };
-  const launch = new Promise<ApplicationObservation>(() => {});
-  mocks.request.mockImplementation((_url, input) => (input.action === 'frontend' ? grant : launch));
-  const f = await fixture();
-  try {
-    await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
-    expect(f.host.querySelector('[role="alert"]')).toBeNull();
-    await act(async () => vi.advanceTimersByTimeAsync(15_000));
-    expect(f.host.textContent?.match(/pblV3\.application\.unavailable/g)).toHaveLength(1);
-    await act(async () =>
-      [...f.host.querySelectorAll('button')]
-        .find((button) => button.textContent === 'pblV3.application.reopen')!
-        .click(),
+it.each(['auth', 'timeout'])(
+  'automatically replaces the first standalone grant after %s, then allows manual recovery',
+  async (mode) => {
+    vi.useFakeTimers();
+    const current: LearningView = {
+      ...view,
+      application: { ...view.application!, standaloneFrontend: true },
+    };
+    let grants = 0;
+    mocks.request.mockImplementation((_url, input) =>
+      input.action === 'frontend'
+        ? {
+            ...running,
+            preview: {
+              url: 'https://isolated.example/__openmaic_preview#grant-' + ++grants,
+              expiresAt: Date.now() + 300_000,
+            },
+          }
+        : { state: 'running', observedAt: '' },
     );
-    expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
-      'frontend',
-      'open',
-      'frontend',
-    ]);
-  } finally {
-    await f.cleanup();
-  }
-});
+    const f = await fixture();
+    const fail = async (frame: HTMLIFrameElement) => {
+      if (mode === 'timeout') await act(async () => vi.advanceTimersByTimeAsync(15_000));
+      else
+        await act(async () =>
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              source: frame.contentWindow,
+              origin: 'https://isolated.example',
+              data: { type: 'openmaic-preview-error' },
+            }),
+          ),
+        );
+    };
+    try {
+      await act(async () => f.root.render(createElement(Harness, { current, automatic: true })));
+      const first = f.host.querySelector('iframe')!;
+      await fail(first);
+      const second = f.host.querySelector('iframe')!;
+      expect(second.src).toContain('#grant-2');
+      expect(f.host.querySelector('[role="alert"]')).toBeNull();
+      await fail(second);
+      expect(f.host.querySelector('[role="alert"]')?.textContent).toBe(
+        'pblV3.application.unavailable',
+      );
+      const retry = [...f.host.querySelectorAll('button')].find(
+        (button) => button.textContent === 'pblV3.application.reopen',
+      )!;
+      expect(retry.disabled).toBe(false);
+      await act(async () => retry.click());
+      expect(f.host.querySelector('iframe')?.src).toContain('#grant-3');
+      expect(mocks.request.mock.calls.map(([, input]) => input.action)).toEqual([
+        'open',
+        'frontend',
+        'frontend',
+        'frontend',
+      ]);
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
 
 it.each(['auth', 'timeout'])(
   'reopens an initial document after %s readiness failure, then retains the ready document',
@@ -2500,16 +2646,16 @@ it.each([
         expect(replacementFrame).not.toBe(originalFrame);
         expect(replacementFrame?.src).toBe(`https://isolated.example/${environmentId}/${epoch}`);
         expect(mocks.request.mock.calls.map(([, request]) => request.action)).toEqual([
-          'frontend',
           'open',
           'frontend',
           'open',
+          'frontend',
         ]);
       } else {
         expect(replacementFrame).toBeNull();
         expect(mocks.request.mock.calls.map(([, request]) => request.action)).toEqual([
-          'frontend',
           'open',
+          'frontend',
         ]);
       }
     } finally {

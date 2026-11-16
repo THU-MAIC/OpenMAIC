@@ -1,27 +1,19 @@
 /**
- * Lazily load the editor-only side effects, keeping them out of the
- * flag-off classroom/playback bundle:
- *   1. `surfaces/slide` + `surfaces/quiz` — register their SceneEditorSurfaces
- *      into `sceneEditorRegistry` so EditShell can resolve them (otherwise it
- *      falls back to NOOP_SURFACE, i.e. a read-only flash).
- *   2. `editor-fonts` — the @fontsource font-face tables the slide font
- *      picker offers (CSS side effect).
+ * Lazily load the editor chunk, keeping it out of the flag-off
+ * classroom/playback bundle: `surfaces/slide` + `surfaces/quiz` register their
+ * SceneEditorSurfaces into `sceneEditorRegistry` so EditShell can resolve them
+ * (otherwise it falls back to NOOP_SURFACE, i.e. a read-only flash).
  *
- * Only (1) is awaited. Called from the Learn→Edit switch BEFORE flipping into
- * edit mode, so the surfaces are registered by the time EditShell reads the
- * registry and the edit chrome animates in with its content present. The
- * promise is cached so repeated toggles, the idle warm-up and any belt-and-
+ * Called from the Learn→Edit switch BEFORE flipping into edit mode, so the
+ * surfaces are registered by the time EditShell reads the registry and the
+ * edit chrome animates in with its content present; also from the idle
+ * warm-up and, for a course remembered in Edit, alongside its document. The
+ * promise is cached so repeated toggles, the warm-ups and any belt-and-
  * suspenders caller share one in-flight import.
  *
- * The fonts are requested once the surfaces settle and never awaited. They are
- * the bulk of the bytes, and awaiting them never guaranteed final metrics: the
- * stylesheets only declare `@font-face` rules (all `font-display: swap`), the
- * font files still download lazily on first use, and text boxes already
- * re-fit through the text element's ResizeObserver when a face swaps in.
- * Waiting held the first switch for seconds and, on HTTP/1.1, queued the
- * surface chunks behind the stylesheets. The tradeoff: a slide set in a picker
- * font may briefly render in the fallback face and swap when the stylesheet
- * lands.
+ * The slide font picker's fonts are not loaded here: a slide renders its
+ * picked font everywhere, so the root layout declares them on every page
+ * (`app/slide-fonts.ts`).
  */
 let editorReady: Promise<void> | null = null;
 let editorLoaded = false;
@@ -36,23 +28,6 @@ let editorLoaded = false;
  */
 export function isEditorPreloaded(): boolean {
   return editorLoaded;
-}
-
-let fontsRequested: Promise<unknown> | null = null;
-
-/**
- * Request the picker fonts' stylesheets, once. Fire-and-forget: a failure only
- * leaves the fallback face showing, so it is logged and forgotten, and the next
- * `preloadEditor()` call asks again.
- */
-function requestEditorFonts(): void {
-  if (fontsRequested) return;
-  const attempt = import('@/app/editor-fonts');
-  fontsRequested = attempt;
-  attempt.catch((error: unknown) => {
-    if (fontsRequested === attempt) fontsRequested = null;
-    console.warn('[edit] editor fonts failed to load; the picker falls back', error);
-  });
 }
 
 export function preloadEditor(): Promise<void> {
@@ -73,8 +48,5 @@ export function preloadEditor(): Promise<void> {
       if (editorReady === attempt) editorReady = null;
     });
   }
-  // After the surfaces, so their chunks are never queued behind the font
-  // stylesheets; not part of what callers wait for.
-  editorReady.then(requestEditorFonts, requestEditorFonts);
   return editorReady;
 }

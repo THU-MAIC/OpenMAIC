@@ -121,13 +121,17 @@ const RUN: readonly WorkbenchEvent[] = [
 /** Attach a session, fold the run, and dirty the fields the fold does not own. */
 function driveARunningSession(): void {
   const store = useWorkbenchStore.getState();
-  store.attach('session-1', 'stage-a');
+  store.attach('session-1', 'stage-a', false);
   store.applyEvents(RUN);
   store.finishReplay();
   // Keep both replay fields non-initial so the total-reset guard remains
   // non-vacuous while still exercising the historical stage-link baseline.
   store.setReplaying(true);
-  store.setSessionBootstrap({ prompt: '给我做一门光的折射', title: '光的折射课' });
+  store.setSessionBootstrap({
+    prompt: '给我做一门光的折射',
+    title: '光的折射课',
+    existingCourse: true,
+  });
   store.setSessionTitle('光的折射课');
   store.setAttached(true);
   store.setError('stream hiccup');

@@ -37,7 +37,7 @@ export function ChartElement({ elementInfo, selectElement }: ChartElementProps) 
         style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
       >
         <div
-          className={`element-content relative w-full h-full overflow-hidden ${
+          className={`element-content relative w-full h-full ${
             elementInfo.lock ? 'cursor-default' : 'cursor-move'
           }`}
           style={{

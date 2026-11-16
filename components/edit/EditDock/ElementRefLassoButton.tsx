@@ -43,6 +43,7 @@
 import { Lasso } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils/cn';
+import { DOCK_BAR_ACTION, DockBarTip } from './dock-context';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useElementRefsForSession, useElementRefsStore } from '@/lib/store/element-refs';
@@ -120,34 +121,36 @@ export function ElementRefLassoButton({ sceneId }: { readonly sceneId: string })
   // its way out.
   if (!armTarget && !armed) return null;
 
+  const label = armed ? t('edit.elementRef.exitPicking') : t('edit.elementRef.startPicking');
+
   return (
-    <button
-      type="button"
-      data-testid="element-ref-arm"
-      onClick={toggle}
-      aria-pressed={armed}
-      title={t('edit.dock.elementRefHint')}
-      className={cn(
-        'inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors',
-        armed
-          ? 'border-violet-400 bg-violet-500 text-white hover:bg-violet-600'
-          : 'border-primary/25 bg-primary/10 text-primary hover:bg-primary/15',
-      )}
-    >
-      <Lasso className="size-3" />
-      {armed ? t('edit.elementRef.exitPicking') : t('edit.elementRef.startPicking')}
-      {refs.length > 0 && (
-        <span
-          data-testid="element-ref-count"
-          title={t('edit.elementRef.counts', { count: refs.length, max: MAX_ELEMENT_REFS })}
-          className={cn(
-            'grid size-4 place-items-center rounded-full font-mono text-[9px] font-semibold leading-none tabular-nums',
-            armed ? 'bg-white/25 text-white' : 'bg-primary/20 text-primary',
-          )}
-        >
-          {refs.length}
-        </span>
-      )}
-    </button>
+    <DockBarTip label={t('edit.dock.elementRefHint')}>
+      <button
+        type="button"
+        data-testid="element-ref-arm"
+        onClick={toggle}
+        aria-pressed={armed}
+        aria-label={label}
+        className={cn(
+          DOCK_BAR_ACTION,
+          'w-6',
+          armed && 'bg-violet-500 text-white hover:bg-violet-600 hover:text-white dark:text-white',
+        )}
+      >
+        <Lasso className="size-3.5" />
+        {refs.length > 0 && (
+          <span
+            data-testid="element-ref-count"
+            title={t('edit.elementRef.counts', { count: refs.length, max: MAX_ELEMENT_REFS })}
+            className={cn(
+              'absolute -right-0.5 -top-0.5 grid size-3 place-items-center rounded-full font-mono text-[8px] font-semibold leading-none tabular-nums',
+              armed ? 'bg-white text-violet-600' : 'bg-primary text-primary-foreground',
+            )}
+          >
+            {refs.length}
+          </span>
+        )}
+      </button>
+    </DockBarTip>
   );
 }

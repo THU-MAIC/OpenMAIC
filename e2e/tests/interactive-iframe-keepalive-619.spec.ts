@@ -24,7 +24,9 @@ const INTERACTIVE_SCENE_ID = 'scene-interactive';
 const IFRAME_TITLE = `Interactive Scene ${INTERACTIVE_SCENE_ID}`;
 const SHOTS = 'e2e/__screenshots-619';
 
-const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
+const SETTINGS_STORAGE = createSettingsStorage({
+  sidebarCollapsed: false,
+});
 
 const INTERACTIVE_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;background:#eaf0ff">

@@ -5,23 +5,11 @@ import tinycolor from 'tinycolor2';
 import type { ChartData, ChartOptions, ChartType } from '@openmaic/dsl';
 import { getChartOption } from './chartOption';
 
-import * as echarts from 'echarts/core';
-import { BarChart, LineChart, PieChart, ScatterChart, RadarChart } from 'echarts/charts';
-import { LegendComponent } from 'echarts/components';
-import { SVGRenderer } from 'echarts/renderers';
-import * as chartFeatures from 'echarts/features';
+import type { ECharts } from 'echarts/core';
+import { createLogger } from '@/lib/logger';
+import { loadChartRuntime } from './chart-runtime';
 
-echarts.use([
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  RadarChart,
-  LegendComponent,
-  SVGRenderer,
-]);
-// ECharts 6 makes the ECharts 5 containLabel layout an opt-in feature.
-if (chartFeatures.LegacyGridContainLabel) echarts.use(chartFeatures.LegacyGridContainLabel);
+const log = createLogger('Chart');
 
 interface ChartProps {
   width: number;
@@ -45,7 +33,7 @@ export function Chart({
   options,
 }: ChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
-  const chartInstance = useRef<echarts.ECharts | null>(null);
+  const chartInstance = useRef<ECharts | null>(null);
 
   // Generate theme colors
   const themeColors = useMemo(() => {
@@ -87,32 +75,47 @@ export function Chart({
     };
   }, [type, data, themeColors, textColor, lineColor, options]);
 
-  // Initialize chart
-  useEffect(() => {
-    if (!chartRef.current) return;
-
-    chartInstance.current = echarts.init(chartRef.current, null, {
-      renderer: 'svg',
-    });
-    updateOption();
-
-    const resizeObserver = new ResizeObserver(() => {
-      chartInstance.current?.resize();
-    });
-    resizeObserver.observe(chartRef.current);
-
-    return () => {
-      resizeObserver.disconnect();
-      chartInstance.current?.dispose();
-      chartInstance.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Init-only effect: chart setup and resize observer
-  }, []);
+  // Read by the initial draw, which runs once the chart library has loaded and
+  // must use the props of that moment rather than those of the first render.
+  const latestUpdateOption = useRef(updateOption);
 
   // Update chart when props change
   useEffect(() => {
+    latestUpdateOption.current = updateOption;
     updateOption();
   }, [updateOption]);
+
+  // Initialize chart
+  useEffect(() => {
+    const container = chartRef.current;
+    if (!container) return;
+
+    let disposed = false;
+    let resizeObserver: ResizeObserver | undefined;
+    loadChartRuntime()
+      .then((echarts) => {
+        if (disposed) return;
+        chartInstance.current = echarts.init(container, null, {
+          renderer: 'svg',
+        });
+        latestUpdateOption.current();
+
+        resizeObserver = new ResizeObserver(() => {
+          chartInstance.current?.resize();
+        });
+        resizeObserver.observe(container);
+      })
+      .catch((error: unknown) => {
+        log.warn('Chart library failed to load', error);
+      });
+
+    return () => {
+      disposed = true;
+      resizeObserver?.disconnect();
+      chartInstance.current?.dispose();
+      chartInstance.current = null;
+    };
+  }, []);
 
   return <div ref={chartRef} className="chart w-full h-full" />;
 }

@@ -22,7 +22,10 @@
     "waiting": "正在處理",
     "emptyTitle": "開始一個新對話",
     "emptyHint": "描述你想做的變更，或用 @ 指一堂課",
-    "copyReply": "複製 Agent 回覆"
+    "copyReply": "複製 Agent 回覆",
+    "queued": "正在排隊，輪到後會自動開始",
+    "queuedPlaceholder": "排隊中，可以先補充要求，Enter 送出",
+    "cancelQueued": "取消排隊"
   },
   "question": {
     "waiting": "等你回答",
@@ -48,7 +51,9 @@
     "fileTooLargeWithLimit": "檔案過大，請選擇不超過 {{limit}}MB 的檔案。",
     "unsupportedType": "不支援此檔案類型，請選擇受支援的檔案。",
     "quotaExceeded": "已達到材料上傳限額。",
-    "storageFull": "儲存空間已達上限，無法上傳這份資料。"
+    "storageFull": "儲存空間已達上限，無法上傳這份資料。",
+    "uploadFailedShort": "上傳失敗",
+    "retryFailed": "無法重新解析，請稍後再試。"
   },
   "skill": {
     "listFailed": "Skill 清單載入失敗",
@@ -114,7 +119,10 @@
     "pageCaption": "第 {{order}} 頁 · {{title}}",
     "skills": "已裝備的技能",
     "resting": "課程會出現在這裡",
-    "restingDesc": "在對話裡繼續；生成課程後會在這個分頁開啟。"
+    "restingDesc": "在對話裡繼續；生成課程後會在這個分頁開啟。",
+    "queuedEyebrow": "排隊中",
+    "queued": "正在排隊",
+    "queuedDesc": "前面還有任務在進行，輪到後會自動開始。"
   },
   "thinking": {
     "active": "思考中…",
@@ -139,9 +147,7 @@
     "listSeparator": "、",
     "group": {
       "tools": "{{count}} 個工具呼叫",
-      "skills": "{{count}} 個 skill",
-      "running": "執行中",
-      "error": "有錯誤",
+      "failed": "{{count}} 個失敗",
       "done": "已完成"
     },
     "section": {

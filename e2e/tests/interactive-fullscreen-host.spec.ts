@@ -120,13 +120,14 @@ test.beforeEach(async ({ page }) => {
 test('player fullscreen with workbench panels open shows the whole page and keeps it clickable', async ({
   page,
 }) => {
-  // Windowed: the 800x900 pane right of the panels fits 1280x720 at 0.625.
-  const windowed = { left: 640, top: 225, width: 800, height: 450 };
+  // Windowed: the frame fills the 800x900 pane right of the panels (1280x1440
+  // logical at 0.625), with no letterbox.
+  const windowed = { left: 640, top: 0, width: 800, height: 900 };
   await expect.poll(() => wrapperBox(page)).toEqual(windowed);
 
   await enterFullscreen(page);
-  // Fullscreen: the 1440x900 stage fits 1280x720 at 1.125, letterboxed top and bottom.
-  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 45, width: 1440, height: 810 });
+  // Fullscreen: the frame fills the 1440x900 stage (1280x800 logical at 1.125).
+  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 0, width: 1440, height: 900 });
   expect(
     await page.evaluate(
       (s) => document.fullscreenElement!.contains(document.querySelector(s)),
@@ -144,15 +145,13 @@ test('player fullscreen with workbench panels open shows the whole page and keep
 
 test('re-entering fullscreen after a resize follows the new viewport', async ({ page }) => {
   await enterFullscreen(page);
-  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 45, width: 1440, height: 810 });
+  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 0, width: 1440, height: 900 });
   await exitFullscreen(page);
-  await expect
-    .poll(() => wrapperBox(page))
-    .toEqual({ left: 640, top: 225, width: 800, height: 450 });
+  await expect.poll(() => wrapperBox(page)).toEqual({ left: 640, top: 0, width: 800, height: 900 });
 
   await page.setViewportSize({ width: 1280, height: 720 });
-  // The pane is now 640x720, which fits the page at 0.5.
-  const windowed = { left: 640, top: 180, width: 640, height: 360 };
+  // The pane is now 640x720: the frame fills it at 0.5 (1280x1440 logical).
+  const windowed = { left: 640, top: 0, width: 640, height: 720 };
   await expect.poll(() => wrapperBox(page)).toEqual(windowed);
 
   await enterFullscreen(page);

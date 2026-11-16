@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ArrowRight, ShieldCheck, LoaderCircle } from 'lucide-react';
@@ -17,6 +17,7 @@ export function AccessCodeModal({ open, onSuccess }: AccessCodeModalProps) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     if (open && inputRef.current) {
@@ -56,6 +57,10 @@ export function AccessCodeModal({ open, onSuccess }: AccessCodeModalProps) {
     <AnimatePresence>
       {open && (
         <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          data-testid="access-code-modal"
           className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -104,6 +109,7 @@ export function AccessCodeModal({ open, onSuccess }: AccessCodeModalProps) {
 
               {/* Title */}
               <motion.h1
+                id={titleId}
                 className="mb-1 text-center text-lg font-semibold tracking-tight text-foreground"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}

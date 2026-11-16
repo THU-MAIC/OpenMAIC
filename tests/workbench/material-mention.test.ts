@@ -75,6 +75,9 @@ const settle = (milliseconds = 300) =>
 
 function mount() {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  // Uploads report progress through XMLHttpRequest when the page has it; here
+  // they go through the fetch mock instead.
+  vi.stubGlobal('XMLHttpRequest', undefined);
   const container = document.createElement('div');
   document.body.appendChild(container);
   const root = createRoot(container);

@@ -20,10 +20,12 @@ type Page = {
 export function ConversationHistory({
   id,
   sources,
+  milestones = [],
   renderEntry,
 }: {
   id: string;
   sources: Source[];
+  milestones?: ReadonlyArray<{ id: string; title: string }>;
   renderEntry: (entry: LearningConversationEntry, dismissForNavigation: () => void) => ReactNode;
 }) {
   const { t } = useI18n();
@@ -36,6 +38,20 @@ export function ConversationHistory({
   const trigger = useRef<HTMLButtonElement | null>(null);
   const navigating = useRef(false);
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const groups = [
+    ...milestones.map(({ id, title }) => ({
+      id,
+      title,
+      sources: openedSources.filter((item) => item.milestoneId === id),
+    })),
+    {
+      id: '',
+      title: '',
+      sources: openedSources.filter(
+        (item) => !milestones.some(({ id }) => id === item.milestoneId),
+      ),
+    },
+  ].filter((group) => group.sources.length);
   const next = pages[0]?.nextBefore;
   const load = async (selected: Source, before?: number) => {
     request.current?.abort();
@@ -118,17 +134,27 @@ export function ConversationHistory({
         >
           <DialogTitle className="pr-10">{t('pblV3.history.title')}</DialogTitle>
           <DialogDescription>{t('pblV3.history.description')}</DialogDescription>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            {openedSources.map((item) => (
-              <button
-                key={item.sessionId}
-                type="button"
-                aria-pressed={source?.sessionId === item.sessionId}
-                className={`rounded-md px-3 py-1 text-xs ${source?.sessionId === item.sessionId ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
-                onClick={() => select(item)}
+          <div className="max-h-[30dvh] shrink-0 space-y-2 overflow-y-auto">
+            {groups.map((group) => (
+              <div
+                key={group.id}
+                role={group.title ? 'group' : undefined}
+                aria-label={group.title || undefined}
+                className="flex flex-wrap items-center gap-2"
               >
-                {t(`pblV3.roles.${item.role}`)}
-              </button>
+                {group.title && <span className="text-xs font-medium">{group.title}</span>}
+                {group.sources.map((item) => (
+                  <button
+                    key={item.sessionId}
+                    type="button"
+                    aria-pressed={source?.sessionId === item.sessionId}
+                    className={`rounded-md px-3 py-1 text-xs ${source?.sessionId === item.sessionId ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
+                    onClick={() => select(item)}
+                  >
+                    {t(`pblV3.roles.${item.role}`)}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
           <div className="min-h-0 space-y-5 overflow-y-auto" aria-busy={pending}>

@@ -751,11 +751,15 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(page.locator('[data-testid="pbl-pending-action"][data-action="chat"]')).toHaveCount(
     0,
   );
-  // Teaching has no drawer; decisions expose only the actual current task.
-  await expect(task.getByRole('button', { name: /^Current task$/ })).toHaveCount(0);
+  // The current milestone is available even before the decision step.
+  await task.getByRole('button', { name: /^Current task$/ }).click();
+  await expect(details.getByTestId('pbl-current-milestone-summary')).toContainText(
+    'Implement a greeting',
+  );
+  await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   const originalStage = view.stage;
-  const enterDecisions = task.getByRole('button', {
+  const enterDecisions = task.getByTestId('pbl-advance-bar').getByRole('button', {
     name: 'Continue to Make your decisions',
     exact: true,
   });
@@ -778,14 +782,14 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ).toBeVisible();
   await expect(enterDecisions).toHaveAttribute('data-state', 'ready');
   await expect(enterDecisions).toBeEnabled();
-  const readyColor = () => enterDecisions.evaluate((el) => getComputedStyle(el).backgroundColor);
-  const greens = ['rgb(11, 122, 82)', 'rgb(59, 240, 164)'];
-  expect(greens).toContain(await readyColor());
-  const initialColor = await readyColor();
+  const readyGradient = () => enterDecisions.evaluate((el) => getComputedStyle(el).backgroundImage);
+  const initialGradient = await readyGradient();
+  expect(initialGradient).toContain('linear-gradient');
   await page.getByRole('button', { name: 'Switch color theme', exact: true }).click();
-  await expect.poll(readyColor).toBe(greens.find((color) => color !== initialColor));
+  await expect.poll(readyGradient).not.toBe(initialGradient);
+  expect(await readyGradient()).toContain('linear-gradient');
   await page.getByRole('button', { name: 'Switch color theme', exact: true }).click();
-  await expect.poll(readyColor).toBe(initialColor);
+  await expect.poll(readyGradient).toBe(initialGradient);
   await page.getByLabel('Your message', { exact: true }).fill('What should I do next?');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
   await expect(enterDecisions).toBeVisible();
@@ -1320,9 +1324,10 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(summary).toHaveAttribute('data-state', 'idle');
   await expect(runTests).toBeEnabled();
   await page.mouse.move(0, 0);
+  const runTestColors = ['rgb(11, 122, 82)', 'rgb(59, 240, 164)'];
   await expect
     .poll(async () =>
-      greens.includes(await runTests.evaluate((el) => getComputedStyle(el).backgroundColor)),
+      runTestColors.includes(await runTests.evaluate((el) => getComputedStyle(el).backgroundColor)),
     )
     .toBe(true);
   let releaseEvaluate = () => {};
@@ -1425,11 +1430,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   });
   await expect(enterQuiz).toBeEnabled();
   await page.mouse.move(0, 0);
-  await expect
-    .poll(async () =>
-      greens.includes(await enterQuiz.evaluate((el) => getComputedStyle(el).backgroundColor)),
-    )
-    .toBe(true);
+  await expect(enterQuiz).toHaveCSS('background-image', initialGradient);
   await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByTestId('pbl-test-details')).toHaveAttribute('data-state', 'passed');
   await expect(details.getByRole('listitem')).toHaveCount(2);

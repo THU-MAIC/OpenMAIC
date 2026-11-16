@@ -51,6 +51,12 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
           fileName: input.fileName || 'document.pdf',
           mimeType: input.mimeType,
         });
+      } else if (id === 'minicpm-ocr') {
+        // PDFs and images share one document-parse job on this provider.
+        parsed = await parsePDF(config, input.buffer, {
+          fileName: input.fileName,
+          mimeType: input.mimeType,
+        });
       } else if (input.mimeType === DOCUMENT_MIME_TYPES.pdf) {
         parsed = await parsePDF(config, input.buffer);
       } else {

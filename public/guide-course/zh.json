@@ -1,0 +1,2066 @@
+{
+  "dslVersion": "0.3.0",
+  "stage": {
+    "id": "guide-openmaic-zh",
+    "name": "5 分钟学会用 OpenMAIC",
+    "agentIds": ["gen-YFEep-7z", "gen-fH0htwCY", "gen-vEcwunhR"],
+    "createdAt": 1793880000000,
+    "updatedAt": 1793880000000,
+    "description": "给第一次打开 OpenMAIC 的新手（学生和老师）的五分钟入门课：它是做什么的、第一句话怎么写、发送后会发生什么、上课怎么上、想改怎么说、课存在哪。",
+    "generatedAgentConfigs": [
+      {
+        "id": "gen-YFEep-7z",
+        "name": "林老师",
+        "role": "teacher",
+        "color": "#3B82F6",
+        "avatar": "/avatars/assist.png",
+        "persona": "说话慢，爱用生活里的小例子，先把结论说出来再补一句为什么。面对第一次上手的人从不嫌问题笨，总会顺手告诉你下一步点哪里。",
+        "priority": 10,
+        "voiceDesign": {
+          "gender": "female",
+          "texture": "温暖亲切、语速偏慢、声音清亮",
+          "delivery": "轻松鼓励、节奏舒缓",
+          "identity": "三十多岁的女性老师"
+        }
+      },
+      {
+        "id": "gen-fH0htwCY",
+        "name": "小满",
+        "role": "student",
+        "color": "#F59E0B",
+        "avatar": "/avatars/teacher-2.png",
+        "persona": "第一次打开这个页面的学生，遇到按钮会先小声问「那我点哪里」。理解得慢一点，但愿意一个个试过去，试明白了会很开心。",
+        "priority": 5,
+        "voiceDesign": {
+          "gender": "female",
+          "texture": "轻软、略带好奇",
+          "delivery": "有点怯生生，问句多",
+          "identity": "十六岁左右的女生"
+        }
+      },
+      {
+        "id": "gen-vEcwunhR",
+        "name": "阿木",
+        "role": "student",
+        "color": "#10B981",
+        "avatar": "/avatars/curious.png",
+        "persona": "上手很快的学生，喜欢先自己点一遍再提问，学会以后会主动把步骤讲给旁边的人听。说话直接，爱用「就这样点」这种短句。",
+        "priority": 4,
+        "voiceDesign": {
+          "gender": "male",
+          "texture": "清亮、干脆",
+          "delivery": "爽快、语速稍快",
+          "identity": "十六岁左右的男生"
+        }
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "scene-p1",
+      "type": "slide",
+      "order": 1,
+      "title": "OpenMAIC 是什么",
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p1",
+      "actions": [
+        {
+          "id": "a1_1",
+          "type": "spotlight",
+          "elementId": "p1_sub",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s1_1",
+          "type": "speech",
+          "text": "大家好，我是林老师。在 OpenMAIC 里，输入一个想学的主题，几分钟后就有一节完整的课。",
+          "audioId": "/guide-course/zh/audio/s1_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s1_1.mp3"
+        },
+        {
+          "id": "a1_2",
+          "type": "spotlight",
+          "elementId": "p1_chips_bg",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s1_2",
+          "type": "speech",
+          "text": "课里有一页页的课件、讲课的老师、陪你上课的同学，还有练习题和能动手的互动页。",
+          "audioId": "/guide-course/zh/audio/s1_2.mp3",
+          "audioUrl": "/guide-course/zh/audio/s1_2.mp3"
+        },
+        {
+          "id": "a1_3",
+          "type": "spotlight",
+          "elementId": "p1_note",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s1_3",
+          "type": "speech",
+          "text": "你现在上的这节课，就是这样做出来的。",
+          "audioId": "/guide-course/zh/audio/s1_3.mp3",
+          "audioUrl": "/guide-course/zh/audio/s1_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p1",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Microsoft YaHei"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p1_badge",
+              "type": "shape",
+              "left": 60,
+              "top": 58,
+              "width": 230,
+              "height": 34,
+              "rotate": 0,
+              "viewBox": [230, 34],
+              "path": "M 17 0 L 213 0 Q 230 0 230 17 L 230 17 Q 230 34 213 34 L 17 34 Q 0 34 0 17 L 0 17 Q 0 0 17 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#6D28D9;font-weight:bold;text-align:center;\">新手入门 · 5 分钟</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_title",
+              "type": "text",
+              "left": 60,
+              "top": 104,
+              "width": 470,
+              "height": 64,
+              "rotate": 0,
+              "content": "<p style=\"font-size:40px;color:#1F2340;font-weight:bold;text-align:left;\">OpenMAIC 是什么</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p1_sub",
+              "type": "text",
+              "left": 60,
+              "top": 172,
+              "width": 480,
+              "height": 90,
+              "rotate": 0,
+              "content": "<p style=\"font-size:25px;color:#3F4366;text-align:left;\">输入一个主题，几分钟后，<br>得到一节完整的课</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p1_chips_bg",
+              "type": "shape",
+              "left": 48,
+              "top": 272,
+              "width": 494,
+              "height": 132,
+              "rotate": 0,
+              "viewBox": [494, 132],
+              "path": "M 20 0 L 474 0 Q 494 0 494 20 L 494 112 Q 494 132 474 132 L 20 132 Q 0 132 0 112 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0)"
+            },
+            {
+              "id": "p1_chip0",
+              "type": "shape",
+              "left": 60,
+              "top": 284,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:center;\">📑 一页页的课件</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_chip1",
+              "type": "shape",
+              "left": 300,
+              "top": 284,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:center;\">👩‍🏫 讲课的 AI 老师</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_chip2",
+              "type": "shape",
+              "left": 60,
+              "top": 340,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:center;\">🙋 一起上课的 AI 同学</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_chip3",
+              "type": "shape",
+              "left": 300,
+              "top": 340,
+              "width": 228,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [228, 46],
+              "path": "M 23 0 L 205 0 Q 228 0 228 23 L 228 23 Q 228 46 205 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:center;\">✅ 练习题和互动页</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p1_note",
+              "type": "text",
+              "left": 60,
+              "top": 428,
+              "width": 880,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:21px;color:#6D28D9;font-weight:bold;text-align:left;\">你现在上的这节课，就是这样做出来的。</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p1_img_card",
+              "type": "shape",
+              "left": 556,
+              "top": 82,
+              "width": 404,
+              "height": 308,
+              "rotate": 0,
+              "viewBox": [404, 308],
+              "path": "M 28 0 L 376 0 Q 404 0 404 28 L 404 280 Q 404 308 376 308 L 28 308 Q 0 308 0 280 L 0 28 Q 0 0 28 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p1_img",
+              "type": "image",
+              "left": 566,
+              "top": 92,
+              "width": 384,
+              "height": 288,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/cover.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 22
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p2",
+      "type": "slide",
+      "order": 2,
+      "title": "第一句话写什么",
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p2",
+      "actions": [
+        {
+          "id": "a2_1",
+          "type": "spotlight",
+          "elementId": "p2_input",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s2_1",
+          "type": "speech",
+          "text": "第一句话，一个短短的主题就够，比如「光合作用」，或者「Python 入门」。",
+          "audioId": "/guide-course/zh/audio/s2_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s2_1.mp3"
+        },
+        {
+          "id": "a2_2",
+          "type": "spotlight",
+          "elementId": "p2_examples",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s2_2",
+          "type": "speech",
+          "text": "想学的人可以说「我想搞懂复利，用生活里的例子」；老师可以说「给初二学生做一节 15 分钟的勾股定理课，带一道练习」。",
+          "audioId": "/guide-course/zh/audio/s2_2.mp3",
+          "audioUrl": "/guide-course/zh/audio/s2_2.mp3"
+        },
+        {
+          "id": "a2_3",
+          "type": "laser",
+          "elementId": "p2_clip",
+          "color": "#7C3AED"
+        },
+        {
+          "id": "a2_4",
+          "type": "spotlight",
+          "elementId": "p2_callout",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s2_3",
+          "type": "speech",
+          "text": "手上有资料，就点输入框左下角的回形针，上传 PDF、讲义或课件，再说一句「把这份讲义做成一节课」。",
+          "audioId": "/guide-course/zh/audio/s2_3.mp3",
+          "audioUrl": "/guide-course/zh/audio/s2_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p2",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Microsoft YaHei"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p2_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">第一句话写什么</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">一个短短的主题就够，不用写完整方案</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_input",
+              "type": "shape",
+              "left": 60,
+              "top": 150,
+              "width": 560,
+              "height": 150,
+              "rotate": 0,
+              "viewBox": [560, 150],
+              "path": "M 22 0 L 538 0 Q 560 0 560 22 L 560 128 Q 560 150 538 150 L 22 150 Q 0 150 0 128 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 2,
+                "color": "#DDD6FE"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p2_typed",
+              "type": "text",
+              "left": 84,
+              "top": 168,
+              "width": 500,
+              "height": 50,
+              "rotate": 0,
+              "content": "<p style=\"font-size:28px;color:#1F2340;font-weight:bold;text-align:left;\">光合作用<span style=\"color:#7C3AED\">｜</span></p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_hint",
+              "type": "text",
+              "left": 84,
+              "top": 214,
+              "width": 500,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#A3A6B8;text-align:left;\">描述你想学的内容……</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p2_clip",
+              "type": "shape",
+              "left": 80,
+              "top": 248,
+              "width": 36,
+              "height": 36,
+              "rotate": 0,
+              "viewBox": [36, 36],
+              "path": "M 18.0 0 L 18.0 0 Q 36 0 36 18.0 L 36 18.0 Q 36 36 18.0 36 L 18.0 36 Q 0 36 0 18.0 L 0 18.0 Q 0 0 18.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:17px;color:#6D28D9;text-align:center;\">📎</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_send",
+              "type": "shape",
+              "left": 562,
+              "top": 248,
+              "width": 38,
+              "height": 38,
+              "rotate": 0,
+              "viewBox": [38, 38],
+              "path": "M 19.0 0 L 19.0 0 Q 38 0 38 19.0 L 38 19.0 Q 38 38 19.0 38 L 19.0 38 Q 0 38 0 19.0 L 0 19.0 Q 0 0 19.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:20px;color:#FFFFFF;font-weight:bold;text-align:center;\">↑</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_arrow",
+              "type": "line",
+              "left": 116,
+              "top": 284,
+              "width": 2,
+              "start": [0, 0],
+              "end": [44, 46],
+              "style": "dashed",
+              "color": "#7C3AED",
+              "points": ["", "arrow"]
+            },
+            {
+              "id": "p2_callout",
+              "type": "shape",
+              "left": 160,
+              "top": 316,
+              "width": 460,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [460, 66],
+              "path": "M 16 0 L 444 0 Q 460 0 460 16 L 460 50 Q 460 66 444 66 L 16 66 Q 0 66 0 50 L 0 16 Q 0 0 16 0 Z",
+              "fixedRatio": false,
+              "fill": "#F5F3FF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#DDD6FE"
+              },
+              "text": {
+                "content": "<p style=\"font-size:19px;color:#6D28D9;font-weight:bold;text-align:left;\">上传 PDF、讲义或课件</p><p style=\"font-size:16px;color:#4B4F6B;text-align:left;\">再说一句「把这份讲义做成一节课」</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_examples",
+              "type": "shape",
+              "left": 646,
+              "top": 146,
+              "width": 304,
+              "height": 340,
+              "rotate": 0,
+              "viewBox": [304, 340],
+              "path": "M 20 0 L 284 0 Q 304 0 304 20 L 304 320 Q 304 340 284 340 L 20 340 Q 0 340 0 320 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0)"
+            },
+            {
+              "id": "p2_learner",
+              "type": "shape",
+              "left": 652,
+              "top": 150,
+              "width": 292,
+              "height": 150,
+              "rotate": 0,
+              "viewBox": [292, 150],
+              "path": "M 20 0 L 272 0 Q 292 0 292 20 L 292 130 Q 292 150 272 150 L 20 150 Q 0 150 0 130 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "#D1FAE5",
+              "text": {
+                "content": "<p style=\"font-size:16px;color:#047857;font-weight:bold;text-align:left;\">想学的人</p><p style=\"font-size:17px;color:#1F2340;font-weight:bold;text-align:left;\">「我想搞懂复利，用生活里的例子」</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p2_teacher",
+              "type": "shape",
+              "left": 652,
+              "top": 316,
+              "width": 292,
+              "height": 166,
+              "rotate": 0,
+              "viewBox": [292, 166],
+              "path": "M 20 0 L 272 0 Q 292 0 292 20 L 292 146 Q 292 166 272 166 L 20 166 Q 0 166 0 146 L 0 20 Q 0 0 20 0 Z",
+              "fixedRatio": false,
+              "fill": "#FDE7DC",
+              "text": {
+                "content": "<p style=\"font-size:16px;color:#C2410C;font-weight:bold;text-align:left;\">老师</p><p style=\"font-size:19px;color:#1F2340;font-weight:bold;text-align:left;\">「给初二学生做一节 15 分钟的勾股定理课，带一道练习」</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p3",
+      "type": "slide",
+      "order": 3,
+      "title": "发送之后会发生什么",
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p3",
+      "actions": [
+        {
+          "id": "a3_1",
+          "type": "spotlight",
+          "elementId": "p3_step0",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s3_1",
+          "type": "speech",
+          "text": "点发送后，通常会先收到一份「这节课怎么上」的页面计划，可以直接确认，也可以说多几页、少几页。",
+          "audioId": "/guide-course/zh/audio/s3_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s3_1.mp3"
+        },
+        {
+          "id": "a3_2",
+          "type": "spotlight",
+          "elementId": "p3_step1",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s3_2",
+          "type": "speech",
+          "text": "确认后开始做课，一般几分钟到十几分钟。",
+          "audioId": "/guide-course/zh/audio/s3_2.mp3",
+          "audioUrl": "/guide-course/zh/audio/s3_2.mp3"
+        },
+        {
+          "id": "a3_3",
+          "type": "spotlight",
+          "elementId": "p3_bar",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s3_3",
+          "type": "speech",
+          "text": "对话里会出现课程卡片，点「打开」进去。第 1 页做好就能先学，不用等全部做完。",
+          "audioId": "/guide-course/zh/audio/s3_3.mp3",
+          "audioUrl": "/guide-course/zh/audio/s3_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p3",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Microsoft YaHei"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p3_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">发送之后会发生什么</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">一般几分钟到十几分钟</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_img_card",
+              "type": "shape",
+              "left": 60,
+              "top": 150,
+              "width": 380,
+              "height": 223,
+              "rotate": 0,
+              "viewBox": [380, 223],
+              "path": "M 24 0 L 356 0 Q 380 0 380 24 L 380 199 Q 380 223 356 223 L 24 223 Q 0 223 0 199 L 0 24 Q 0 0 24 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_img",
+              "type": "image",
+              "left": 70,
+              "top": 160,
+              "width": 360,
+              "height": 203,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/flow.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 18
+            },
+            {
+              "id": "p3_step0",
+              "type": "shape",
+              "left": 466,
+              "top": 146,
+              "width": 484,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [484, 66],
+              "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_num0",
+              "type": "shape",
+              "left": 480,
+              "top": 159,
+              "width": 40,
+              "height": 40,
+              "rotate": 0,
+              "viewBox": [40, 40],
+              "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">1</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_h0",
+              "type": "text",
+              "left": 532,
+              "top": 152,
+              "width": 410,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">先收到一份页面计划</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_d0",
+              "type": "text",
+              "left": 532,
+              "top": 181,
+              "width": 410,
+              "height": 26,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">直接确认，或者说「多几页」「少几页」</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_step1",
+              "type": "shape",
+              "left": 466,
+              "top": 222,
+              "width": 484,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [484, 66],
+              "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_num1",
+              "type": "shape",
+              "left": 480,
+              "top": 235,
+              "width": 40,
+              "height": 40,
+              "rotate": 0,
+              "viewBox": [40, 40],
+              "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">2</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_h1",
+              "type": "text",
+              "left": 532,
+              "top": 228,
+              "width": 410,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">开始做课</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_d1",
+              "type": "text",
+              "left": 532,
+              "top": 257,
+              "width": 410,
+              "height": 26,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">几分钟到十几分钟，做好一页出一页</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_step2",
+              "type": "shape",
+              "left": 466,
+              "top": 298,
+              "width": 484,
+              "height": 66,
+              "rotate": 0,
+              "viewBox": [484, 66],
+              "path": "M 18 0 L 466 0 Q 484 0 484 18 L 484 48 Q 484 66 466 66 L 18 66 Q 0 66 0 48 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p3_num2",
+              "type": "shape",
+              "left": 480,
+              "top": 311,
+              "width": 40,
+              "height": 40,
+              "rotate": 0,
+              "viewBox": [40, 40],
+              "path": "M 20.0 0 L 20.0 0 Q 40 0 40 20.0 L 40 20.0 Q 40 40 20.0 40 L 20.0 40 Q 0 40 0 20.0 L 0 20.0 Q 0 0 20.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">3</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_h2",
+              "type": "text",
+              "left": 532,
+              "top": 304,
+              "width": 410,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">点课程卡片上的「打开」</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_d2",
+              "type": "text",
+              "left": 532,
+              "top": 333,
+              "width": 410,
+              "height": 26,
+              "rotate": 0,
+              "content": "<p style=\"font-size:15px;color:#6B6F86;text-align:left;\">课程卡片会出现在对话里</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_bar",
+              "type": "shape",
+              "left": 60,
+              "top": 392,
+              "width": 890,
+              "height": 112,
+              "rotate": 0,
+              "viewBox": [890, 112],
+              "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 90 Q 890 112 868 112 L 22 112 Q 0 112 0 90 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#6D28D9"
+            },
+            {
+              "id": "p3_bar_t",
+              "type": "text",
+              "left": 84,
+              "top": 404,
+              "width": 840,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:22px;color:#FFFFFF;font-weight:bold;text-align:left;\">✨ 第 1 页做好就能先学，不用等全部做完</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p3_pg0",
+              "type": "shape",
+              "left": 90,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "#10B981",
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;font-weight:bold;text-align:center;\">✓ 可以学了</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg1",
+              "type": "shape",
+              "left": 208,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">2 · 还在做</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg2",
+              "type": "shape",
+              "left": 326,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">3 · 还在做</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg3",
+              "type": "shape",
+              "left": 444,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">4 · 还在做</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg4",
+              "type": "shape",
+              "left": 562,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">5 · 还在做</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg5",
+              "type": "shape",
+              "left": 680,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">6 · 还在做</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p3_pg6",
+              "type": "shape",
+              "left": 798,
+              "top": 448,
+              "width": 100,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [100, 42],
+              "path": "M 12 0 L 88 0 Q 100 0 100 12 L 100 30 Q 100 42 88 42 L 12 42 Q 0 42 0 30 L 0 12 Q 0 0 12 0 Z",
+              "fixedRatio": false,
+              "fill": "rgba(255,255,255,0.18)",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "rgba(255,255,255,0.45)"
+              },
+              "text": {
+                "content": "<p style=\"font-size:15px;color:#FFFFFF;text-align:center;\">7 · 还在做</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p4",
+      "type": "interactive",
+      "order": 4,
+      "title": "上课怎么上：试试这些按钮",
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p4",
+      "actions": [
+        {
+          "id": "s4_1",
+          "type": "speech",
+          "text": "上课用的按钮，大多在课件下面这条底栏上。",
+          "audioId": "/guide-course/zh/audio/s4_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s4_1.mp3"
+        },
+        {
+          "id": "a4_hl1",
+          "type": "widget_highlight",
+          "target": "#bar",
+          "content": "翻页、播放、调速、笔记，都在这条底栏上。"
+        },
+        {
+          "id": "s4_2",
+          "type": "speech",
+          "text": "翻页、播放和调速在中间，右边那个对话框图标能打开笔记；想提问，就用右下角的开口问或打字问。",
+          "audioId": "/guide-course/zh/audio/s4_2.mp3",
+          "audioUrl": "/guide-course/zh/audio/s4_2.mp3"
+        },
+        {
+          "id": "a4_hl2",
+          "type": "widget_highlight",
+          "target": "#ask",
+          "content": "想提问，就用这里。"
+        },
+        {
+          "id": "s4_3",
+          "type": "speech",
+          "text": "现在你自己每个都点一下试试。",
+          "audioId": "/guide-course/zh/audio/s4_3.mp3",
+          "audioUrl": "/guide-course/zh/audio/s4_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "interactive",
+        "url": "",
+        "html": "<!doctype html>\n<html lang='zh-CN'>\n<head>\n<meta charset='utf-8'>\n<meta name='viewport' content='width=device-width,initial-scale=1'>\n<style>\n*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nhtml,body{height:100%;margin:0}\nbody{font-family:'PingFang SC','Microsoft YaHei',system-ui,sans-serif;background:#FBF8F2;color:#1f2430;overflow:hidden}\n.wrap{height:100%;display:flex;flex-direction:column;padding:2vmin 2.6vmin 1.6vmin;gap:1.4vmin}\n.top{display:flex;align-items:center;justify-content:space-between;gap:2vmin}\n.title{font-size:4.93vmin;font-weight:800}\n.count{font-size:3.33vmin;font-weight:700;color:#5b21b6;background:#ede9fe;border-radius:999px;padding:.7vmin 1.8vmin;white-space:nowrap}\n.room{flex:1;min-height:0;display:flex;gap:1.4vmin}\n.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1vmin}\n.slide{flex:1;min-height:0;background:#fff;border-radius:2vmin;box-shadow:0 4px 14px rgba(76,29,149,.10);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1vmin;position:relative}\n.slide .pg{font-size:6.09vmin;font-weight:800;color:#6d28d9}\n.slide .st{font-size:3.33vmin;color:#64748b}\n.slide .state{position:absolute;top:1.2vmin;right:1.6vmin;font-size:2.9vmin;font-weight:700;color:#7c3aed}\n.bar{display:flex;align-items:center;justify-content:center;gap:.8vmin;background:#fff;border-radius:999px;padding:.8vmin 1.4vmin;box-shadow:0 4px 14px rgba(76,29,149,.10);position:relative}\n.bar .pages{position:absolute;left:2vmin;font-size:2.9vmin;color:#64748b}\n.btn{border:0;background:#f3f4f6;border-radius:1.4vmin;padding:.8vmin 1.4vmin;display:flex;align-items:center;gap:.6vmin;cursor:pointer;font-family:inherit;font-size:3.04vmin;font-weight:700;color:#374151;transition:background .15s,transform .1s}\n.btn .ico{font-size:3.77vmin;line-height:1}\n.btn:active{transform:scale(.96)}\n.btn.on{background:#7C3AED;color:#fff}\n.btn.done:not(.on){background:#ede9fe}\n.sep{width:1px;height:3vmin;background:#e5e7eb;margin:0 .6vmin}\n.talk{display:flex;align-items:center;gap:1.4vmin;background:#fff;border-radius:2vmin;padding:1.2vmin 1.6vmin;box-shadow:0 4px 14px rgba(76,29,149,.10)}\n.av{width:8vmin;height:8vmin;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:4.93vmin;flex:0 0 auto}\n.who{font-size:2.75vmin;font-weight:800;color:#7c3aed}\n.say{font-size:3.48vmin;line-height:1.4}\n.side{width:27%;display:flex;flex-direction:column;gap:1vmin;background:#fff;border-radius:2vmin;padding:1.4vmin;box-shadow:0 4px 14px rgba(76,29,149,.10)}\n.side .lab{font-size:2.75vmin;color:#64748b;font-weight:700}\n.mates{display:flex;gap:.8vmin}\n.side .btn{justify-content:center}\n.panel{flex:1;min-height:0;background:#f8fafc;border-radius:1.4vmin;padding:1vmin 1.2vmin;font-size:2.75vmin;color:#475569;line-height:1.45;overflow:hidden}\n.panel b{color:#1f2430}\n.tip{background:#4C1D95;color:#fff;border-radius:2vmin;padding:1.4vmin 2.4vmin;display:flex;gap:2vmin;align-items:center;min-height:15vmin}\n.tip .t{font-size:3.92vmin;font-weight:800}\n.tip .w{font-size:2.9vmin;color:#c4b5fd;margin-top:.3vmin}\n.tip .d{font-size:3.33vmin;color:#e5e7eb;margin-top:.5vmin;line-height:1.4}\n.pulse{animation:pulse 1.1s ease-in-out 3;outline:3px solid rgba(124,58,237,.75);outline-offset:3px;border-radius:2vmin}\n@keyframes pulse{0%,100%{outline-color:rgba(124,58,237,.75)}50%{outline-color:rgba(124,58,237,.15)}}\n.askbox{display:flex;flex-direction:column;gap:1vmin;padding:.4vmin;border-radius:1.6vmin}\n</style>\n</head>\n<body>\n<div class='wrap'>\n  <div class='top'>\n    <div class='title'>试一试：课堂里的按钮</div>\n    <div class='count' id='count'>已试 0 / 7</div>\n  </div>\n  <div class='room'>\n    <div class='main'>\n      <div class='slide'>\n        <div class='state' id='state'>正在上课</div>\n        <div class='pg'>第 <span id='pg'>1</span> / 7 页</div>\n        <div class='st'>这里是课件，老师边讲边指给你看</div>\n      </div>\n      <div class='bar' id='bar'>\n        <span class='pages'>底栏</span>\n        <button class='btn' id='btn-prev' data-k='prev'><span class='ico'>‹</span>上一页</button>\n        <button class='btn' id='btn-play' data-k='play'><span class='ico' id='playIco'>⏸</span><span id='playLab'>暂停</span></button>\n        <button class='btn' id='btn-next' data-k='next'><span class='ico'>›</span>下一页</button>\n        <button class='btn' id='btn-speed' data-k='speed'><span id='spd'>1x</span></button>\n        <span class='sep'></span>\n        <button class='btn' id='btn-note' data-k='note'><span class='ico'>🗒</span>笔记</button>\n      </div>\n      <div class='talk'>\n        <div class='av' style='background:#dbeafe'>👩‍🏫</div>\n        <div><div class='who' id='who'>林老师</div><div class='say' id='say'>同学们好，咱们一页一页往下讲。</div></div>\n      </div>\n    </div>\n    <div class='side'>\n      <div class='lab'>同学</div>\n      <div class='mates'><div class='av' style='background:#fef3c7'>🙋‍♀️</div><div class='av' style='background:#d1fae5'>🙋‍♂️</div></div>\n      <div class='lab'>想提问？</div>\n      <div class='askbox' id='ask'><button class='btn' id='btn-mic' data-k='mic'><span class='ico'>🎤</span>开口问</button>\n      <button class='btn' id='btn-chat' data-k='chat'><span class='ico'>💬</span>打字问</button></div>\n      <div class='panel' id='panel'>点左边的按钮，看看它们都管什么。</div>\n    </div>\n  </div>\n  <div class='tip'>\n    <div>\n      <div class='t' id='tt'>每个按钮都点一下</div>\n      <div class='w' id='tw'>真正的课堂里，它们就在同样的位置</div>\n      <div class='d' id='td'>点哪个，这里就告诉你它是做什么的。</div>\n    </div>\n  </div>\n</div>\n<script>\nvar info={\n prev:{t:'上一页',w:'在课堂底栏中间',d:'翻回刚才那页，再看一遍。',who:'小满',say:'刚才没看清，我翻回去看看。'},\n play:{t:'播放 / 暂停',w:'在课堂底栏中间',d:'让老师接着讲，或者先停下来想一想。没有声音时，老师的话会一句句显示在下面。',who:'林老师',say:''},\n next:{t:'下一页',w:'在课堂底栏中间',d:'准备好了，就翻到下一页。',who:'林老师',say:'跟上了就往下走。'},\n speed:{t:'调速',w:'在课堂底栏，写着 1x 的那个',d:'点一下换一档：觉得慢就调快，回到 1x 就是正常速度。',who:'阿木',say:''},\n note:{t:'笔记',w:'在课堂底栏右侧，一个对话框样子的图标',d:'打开右边的面板：「笔记」里按页记着老师讲过的话，「对话」里是你问过的问题。',who:'小满',say:'刚才那句没记住，翻笔记就有。'},\n mic:{t:'开口问',w:'在课堂右下角，同学头像下面',d:'点一下开始说，说完再点一下，老师就停下来回答你。',who:'林老师',say:'你说，我在听。'},\n chat:{t:'打字问',w:'在课堂右下角，麦克风下面',d:'不想开口就打字。老师会回答，同学有时也会接一句。',who:'阿木',say:'我也想问这个！'}\n};\nvar page=1,playing=true,speeds=['1x','1.5x','2x'],si=0,tried={};\nfunction $(id){return document.getElementById(id);}\nvar btns=document.querySelectorAll('.btn');\nfunction pick(k,el){\n var b=info[k];if(!b)return;\n for(var i=0;i<btns.length;i++){btns[i].classList.remove('on');}\n el.classList.add('on');tried[k]=1;el.classList.add('done');\n var n=Object.keys(tried).length;$('count').textContent='已试 '+n+' / 7';\n $('tt').textContent=b.t;$('tw').textContent=b.w;$('td').textContent=b.d;\n var who=b.who,say=b.say,panel='';\n if(k==='prev'){page=Math.max(1,page-1);$('pg').textContent=page;}\n if(k==='next'){page=Math.min(7,page+1);$('pg').textContent=page;}\n if(k==='play'){playing=!playing;$('playIco').textContent=playing?'⏸':'▶';$('playLab').textContent=playing?'暂停':'播放';$('state').textContent=playing?'正在上课':'已暂停';say=playing?'好，我们接着讲。':'好，先停一下，想好了再点播放。';}\n if(k==='speed'){si=(si+1)%speeds.length;$('spd').textContent=speeds[si];say='好嘞，我换成 '+speeds[si]+' 听听。';}\n if(k==='note'){panel='<b>笔记</b>　第 '+page+' 页<br>林老师：同学们好，咱们一页一页往下讲。';}\n if(k==='mic'){panel='🎤 正在听你说…';$('state').textContent='老师在听你说';}\n if(k==='chat'){panel='<b>你</b>：这一页能再举个例子吗？<br><b>林老师</b>：当然可以，我换个生活里的例子。';say='我也想问这个！';}\n if(k!=='mic'&&k!=='play'){$('state').textContent=playing?'正在上课':'已暂停';}\n if(panel)$('panel').innerHTML=panel;\n $('who').textContent=who;$('say').textContent=say;\n if(n===7){$('tt').textContent='都试过了！';$('tw').textContent='';$('td').textContent='真正上课时就是这些按钮。点底栏的「下一页」，接着往下学。';}\n}\nfor(var i=0;i<btns.length;i++){(function(el){el.addEventListener('click',function(){pick(el.getAttribute('data-k'),el);});})(btns[i]);}\n\nwindow.addEventListener('message',function(e){\n var d=e.data||{};\n if(d.type==='HIGHLIGHT_ELEMENT'||d.type==='ANNOTATE_ELEMENT'||d.type==='REVEAL_ELEMENT'){\n  var el=d.target?document.querySelector(d.target):null;\n  if(el){el.classList.remove('pulse');void el.offsetWidth;el.classList.add('pulse');setTimeout(function(){el.classList.remove('pulse');},3400);}\n  if(d.content){$('td').textContent=d.content;}\n }\n});\n</script>\n</body>\n</html>\n"
+      }
+    },
+    {
+      "id": "scene-p5",
+      "type": "slide",
+      "order": 5,
+      "title": "想改哪里，直接说",
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p5",
+      "actions": [
+        {
+          "id": "a5_1",
+          "type": "spotlight",
+          "elementId": "p5_chat",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s5_1",
+          "type": "speech",
+          "text": "想改课，最省事的办法是直接在左边的对话框里说。",
+          "audioId": "/guide-course/zh/audio/s5_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s5_1.mp3"
+        },
+        {
+          "id": "a5_2",
+          "type": "laser",
+          "elementId": "p5_b1",
+          "color": "#7C3AED"
+        },
+        {
+          "id": "s5_2",
+          "type": "speech",
+          "text": "比如「字太小了」「第 3 页加一道练习题」「讲得再简单一点」，这样说就行。",
+          "audioId": "/guide-course/zh/audio/s5_2.mp3",
+          "audioUrl": "/guide-course/zh/audio/s5_2.mp3"
+        },
+        {
+          "id": "a5_3",
+          "type": "spotlight",
+          "elementId": "p5_toggle_bg",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s5_3",
+          "type": "speech",
+          "text": "右上角「学习」是上课，「编辑」是自己动手改文字、图片和老师说的话。",
+          "audioId": "/guide-course/zh/audio/s5_3.mp3",
+          "audioUrl": "/guide-course/zh/audio/s5_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p5",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Microsoft YaHei"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p5_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">想改哪里，直接说</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">在左边的对话框里，用大白话提要求</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_img_card",
+              "type": "shape",
+              "left": 60,
+              "top": 148,
+              "width": 300,
+              "height": 230,
+              "rotate": 0,
+              "viewBox": [300, 230],
+              "path": "M 24 0 L 276 0 Q 300 0 300 24 L 300 206 Q 300 230 276 230 L 24 230 Q 0 230 0 206 L 0 24 Q 0 0 24 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p5_img",
+              "type": "image",
+              "left": 70,
+              "top": 158,
+              "width": 280,
+              "height": 210,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/tweak.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 18
+            },
+            {
+              "id": "p5_chat",
+              "type": "shape",
+              "left": 384,
+              "top": 146,
+              "width": 566,
+              "height": 214,
+              "rotate": 0,
+              "viewBox": [566, 214],
+              "path": "M 22 0 L 544 0 Q 566 0 566 22 L 566 192 Q 566 214 544 214 L 22 214 Q 0 214 0 192 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p5_b0",
+              "type": "shape",
+              "left": 794,
+              "top": 162,
+              "width": 136,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [136, 42],
+              "path": "M 21 0 L 115 0 Q 136 0 136 21 L 136 21 Q 136 42 115 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">字太小了</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_b1",
+              "type": "shape",
+              "left": 640,
+              "top": 214,
+              "width": 290,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [290, 42],
+              "path": "M 21 0 L 269 0 Q 290 0 290 21 L 290 21 Q 290 42 269 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">第 3 页加一道练习题</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_b2",
+              "type": "shape",
+              "left": 728,
+              "top": 266,
+              "width": 202,
+              "height": 42,
+              "rotate": 0,
+              "viewBox": [202, 42],
+              "path": "M 21 0 L 181 0 Q 202 0 202 21 L 202 21 Q 202 42 181 42 L 21 42 Q 0 42 0 21 L 0 21 Q 0 0 21 0 Z",
+              "fixedRatio": false,
+              "fill": "#7C3AED",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">讲得再简单一点</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_done",
+              "type": "text",
+              "left": 404,
+              "top": 318,
+              "width": 520,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:17px;color:#047857;font-weight:bold;text-align:left;\">✓ 说完就帮你改好，改完接着看</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_toggle_bg",
+              "type": "shape",
+              "left": 60,
+              "top": 392,
+              "width": 890,
+              "height": 112,
+              "rotate": 0,
+              "viewBox": [890, 112],
+              "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 90 Q 890 112 868 112 L 22 112 Q 0 112 0 90 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#F5F3FF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#DDD6FE"
+              }
+            },
+            {
+              "id": "p5_toggle_t",
+              "type": "text",
+              "left": 84,
+              "top": 404,
+              "width": 300,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#6B6F86;font-weight:bold;text-align:left;\">右上角的两个按钮</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p5_learn",
+              "type": "shape",
+              "left": 84,
+              "top": 438,
+              "width": 150,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [150, 46],
+              "path": "M 23 0 L 127 0 Q 150 0 150 23 L 150 23 Q 150 46 127 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#1F2340",
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#FFFFFF;font-weight:bold;text-align:center;\">📖 学习</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_learn_d",
+              "type": "text",
+              "left": 246,
+              "top": 442,
+              "width": 230,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:17px;color:#1F2340;text-align:left;\">上课：看、听、提问</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "middle"
+            },
+            {
+              "id": "p5_edit",
+              "type": "shape",
+              "left": 500,
+              "top": 438,
+              "width": 150,
+              "height": 46,
+              "rotate": 0,
+              "viewBox": [150, 46],
+              "path": "M 23 0 L 127 0 Q 150 0 150 23 L 150 23 Q 150 46 127 46 L 23 46 Q 0 46 0 23 L 0 23 Q 0 0 23 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "text": {
+                "content": "<p style=\"font-size:18px;color:#1F2340;font-weight:bold;text-align:center;\">✏️ 编辑</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p5_edit_d",
+              "type": "text",
+              "left": 662,
+              "top": 442,
+              "width": 280,
+              "height": 40,
+              "rotate": 0,
+              "content": "<p style=\"font-size:17px;color:#1F2340;text-align:left;\">自己改文字、图片和老师的话</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "middle"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p6",
+      "type": "slide",
+      "order": 6,
+      "title": "你的课放在哪",
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "updatedAt": 1793880000000,
+      "outlineId": "p6",
+      "actions": [
+        {
+          "id": "a6_1",
+          "type": "spotlight",
+          "elementId": "p6_row0",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s6_1",
+          "type": "speech",
+          "text": "做过的课，都在左侧栏「我的课程」里，可以搜索，也能建文件夹整理。",
+          "audioId": "/guide-course/zh/audio/s6_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s6_1.mp3"
+        },
+        {
+          "id": "a6_2",
+          "type": "spotlight",
+          "elementId": "p6_row1",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s6_2",
+          "type": "speech",
+          "text": "左侧的对话列表，能带你回到当时做课的那段对话，接着改。",
+          "audioId": "/guide-course/zh/audio/s6_2.mp3",
+          "audioUrl": "/guide-course/zh/audio/s6_2.mp3"
+        },
+        {
+          "id": "a6_3",
+          "type": "spotlight",
+          "elementId": "p6_row2",
+          "dimOpacity": 0.35
+        },
+        {
+          "id": "s6_3",
+          "type": "speech",
+          "text": "想分享，点右上角「全屏」，再点下载按钮，就能导出成 PPT 或网页文件。",
+          "audioId": "/guide-course/zh/audio/s6_3.mp3",
+          "audioUrl": "/guide-course/zh/audio/s6_3.mp3"
+        }
+      ],
+      "content": {
+        "type": "slide",
+        "canvas": {
+          "id": "slide-p6",
+          "viewportSize": 1000,
+          "viewportRatio": 0.5625,
+          "theme": {
+            "backgroundColor": "#FBF8F2",
+            "themeColors": ["#6D28D9", "#7C3AED", "#10B981", "#F59E7B", "#1F2340"],
+            "fontColor": "#1F2340",
+            "fontName": "Microsoft YaHei"
+          },
+          "background": {
+            "type": "solid",
+            "color": "#FBF8F2"
+          },
+          "elements": [
+            {
+              "id": "p6_title",
+              "type": "text",
+              "left": 60,
+              "top": 40,
+              "width": 880,
+              "height": 56,
+              "rotate": 0,
+              "content": "<p style=\"font-size:34px;color:#1F2340;font-weight:bold;text-align:left;\">你的课放在哪</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_sub",
+              "type": "text",
+              "left": 60,
+              "top": 96,
+              "width": 880,
+              "height": 36,
+              "rotate": 0,
+              "content": "<p style=\"font-size:19px;color:#6B6F86;text-align:left;\">做过的课都会留着，随时回来</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_img_card",
+              "type": "shape",
+              "left": 650,
+              "top": 146,
+              "width": 300,
+              "height": 230,
+              "rotate": 0,
+              "viewBox": [300, 230],
+              "path": "M 24 0 L 276 0 Q 300 0 300 24 L 300 206 Q 300 230 276 230 L 24 230 Q 0 230 0 206 L 0 24 Q 0 0 24 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_img",
+              "type": "image",
+              "left": 660,
+              "top": 156,
+              "width": 280,
+              "height": 210,
+              "rotate": 0,
+              "fixedRatio": true,
+              "src": "/guide-course/img/library.webp",
+              "clip": {
+                "shape": "roundRect",
+                "range": [
+                  [0, 0],
+                  [100, 100]
+                ]
+              },
+              "radius": 18
+            },
+            {
+              "id": "p6_row0",
+              "type": "shape",
+              "left": 60,
+              "top": 146,
+              "width": 566,
+              "height": 72,
+              "rotate": 0,
+              "viewBox": [566, 72],
+              "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_ic0",
+              "type": "shape",
+              "left": 74,
+              "top": 158,
+              "width": 48,
+              "height": 48,
+              "rotate": 0,
+              "viewBox": [48, 48],
+              "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#6D28D9;text-align:center;\">📚</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p6_h0",
+              "type": "text",
+              "left": 136,
+              "top": 151,
+              "width": 470,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">我的课程</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_d0",
+              "type": "text",
+              "left": 136,
+              "top": 182,
+              "width": 480,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#6B6F86;text-align:left;\">左侧栏里，做过的课都在这。能搜索，能建文件夹</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_row1",
+              "type": "shape",
+              "left": 60,
+              "top": 228,
+              "width": 566,
+              "height": 72,
+              "rotate": 0,
+              "viewBox": [566, 72],
+              "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_ic1",
+              "type": "shape",
+              "left": 74,
+              "top": 240,
+              "width": 48,
+              "height": 48,
+              "rotate": 0,
+              "viewBox": [48, 48],
+              "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#6D28D9;text-align:center;\">💬</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p6_h1",
+              "type": "text",
+              "left": 136,
+              "top": 233,
+              "width": 470,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">对话列表</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_d1",
+              "type": "text",
+              "left": 136,
+              "top": 264,
+              "width": 480,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#6B6F86;text-align:left;\">回到当时做课的那段对话，接着改</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_row2",
+              "type": "shape",
+              "left": 60,
+              "top": 310,
+              "width": 566,
+              "height": 72,
+              "rotate": 0,
+              "viewBox": [566, 72],
+              "path": "M 18 0 L 548 0 Q 566 0 566 18 L 566 54 Q 566 72 548 72 L 18 72 Q 0 72 0 54 L 0 18 Q 0 0 18 0 Z",
+              "fixedRatio": false,
+              "fill": "#FFFFFF",
+              "outline": {
+                "style": "solid",
+                "width": 1,
+                "color": "#E7E2F3"
+              },
+              "shadow": {
+                "h": 0,
+                "v": 6,
+                "blur": 18,
+                "color": "rgba(76,29,149,0.10)"
+              }
+            },
+            {
+              "id": "p6_ic2",
+              "type": "shape",
+              "left": 74,
+              "top": 322,
+              "width": 48,
+              "height": 48,
+              "rotate": 0,
+              "viewBox": [48, 48],
+              "path": "M 24.0 0 L 24.0 0 Q 48 0 48 24.0 L 48 24.0 Q 48 48 24.0 48 L 24.0 48 Q 0 48 0 24.0 L 0 24.0 Q 0 0 24.0 0 Z",
+              "fixedRatio": false,
+              "fill": "#EDE9FE",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#6D28D9;text-align:center;\">⬇️</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            },
+            {
+              "id": "p6_h2",
+              "type": "text",
+              "left": 136,
+              "top": 315,
+              "width": 470,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:20px;color:#1F2340;font-weight:bold;text-align:left;\">想分享</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_d2",
+              "type": "text",
+              "left": 136,
+              "top": 346,
+              "width": 480,
+              "height": 30,
+              "rotate": 0,
+              "content": "<p style=\"font-size:16px;color:#6B6F86;text-align:left;\">点右上角「全屏」，再点下载按钮，导出 PPT 或网页文件</p>",
+              "defaultFontName": "Microsoft YaHei",
+              "defaultColor": "#1F2340",
+              "lineHeight": 1.4,
+              "vAlign": "top"
+            },
+            {
+              "id": "p6_bar",
+              "type": "shape",
+              "left": 60,
+              "top": 410,
+              "width": 890,
+              "height": 74,
+              "rotate": 0,
+              "viewBox": [890, 74],
+              "path": "M 22 0 L 868 0 Q 890 0 890 22 L 890 52 Q 890 74 868 74 L 22 74 Q 0 74 0 52 L 0 22 Q 0 0 22 0 Z",
+              "fixedRatio": false,
+              "fill": "#6D28D9",
+              "text": {
+                "content": "<p style=\"font-size:22px;color:#FFFFFF;font-weight:bold;text-align:center;\">随时回来，点开就能接着学</p>",
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#1F2340",
+                "align": "middle",
+                "lineHeight": 1.35
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "scene-p7",
+      "type": "quiz",
+      "order": 7,
+      "title": "三道小题，看看记住了没有",
+      "actions": [
+        {
+          "id": "s7_1",
+          "type": "speech",
+          "text": "最后三道小题，看看你记住了没有。想好再点，答完有解析。",
+          "audioId": "/guide-course/zh/audio/s7_1.mp3",
+          "audioUrl": "/guide-course/zh/audio/s7_1.mp3"
+        }
+      ],
+      "content": {
+        "type": "quiz",
+        "questions": [
+          {
+            "id": "q1",
+            "type": "single",
+            "answer": ["A"],
+            "points": 10,
+            "options": [
+              {
+                "label": "一个短短的主题，比如「光合作用」",
+                "value": "A"
+              },
+              {
+                "label": "一份写好的教学计划",
+                "value": "B"
+              },
+              {
+                "label": "全班同学的名单",
+                "value": "C"
+              }
+            ],
+            "analysis": "一个短主题就够，想要多长、给谁上，之后再补一句就行。",
+            "question": "第一次做课，输入框里最少要写什么？",
+            "hasAnswer": true
+          },
+          {
+            "id": "q2",
+            "type": "single",
+            "answer": ["B"],
+            "points": 10,
+            "options": [
+              {
+                "label": "等全部做完才能看",
+                "value": "A"
+              },
+              {
+                "label": "第 1 页好了就点课程卡片「打开」，先学起来",
+                "value": "B"
+              },
+              {
+                "label": "关掉页面重新做一遍",
+                "value": "C"
+              }
+            ],
+            "analysis": "做一页就能学一页，不用干等。",
+            "question": "课还在做，你想先看看，该怎么做？",
+            "hasAnswer": true
+          },
+          {
+            "id": "q3",
+            "type": "single",
+            "answer": ["C"],
+            "points": 10,
+            "options": [
+              {
+                "label": "重新做一整节课",
+                "value": "A"
+              },
+              {
+                "label": "自己到「编辑」里一页页手动改",
+                "value": "B"
+              },
+              {
+                "label": "在左边的对话框里说「第 3 页那道题简单一点」",
+                "value": "C"
+              }
+            ],
+            "analysis": "在对话里说一句就会帮你改好。右上角「学习」是上课，「编辑」才是自己动手改文字和图片。",
+            "question": "你觉得第 3 页的练习题太难，想改，最省事的做法是？",
+            "hasAnswer": true
+          }
+        ]
+      },
+      "stageId": "guide-openmaic-zh",
+      "createdAt": 1793880000000,
+      "outlineId": "p7",
+      "updatedAt": 1793880000000
+    }
+  ],
+  "outline": {
+    "outlines": [],
+    "requirement": "5 分钟学会用 OpenMAIC",
+    "generationComplete": true
+  }
+}

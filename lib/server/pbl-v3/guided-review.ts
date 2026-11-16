@@ -178,11 +178,23 @@ export class GuidedSkillReview {
 
   /** Check protocol evidence before a tool performs remote file reads. */
   assertFeedbackSource(feedback: string | undefined, reuseFeedback = false): void {
+    if (this.feedbackSource() === null) {
+      const action = this.ended
+        ? 'This turn already ended. Wait for a new learner reply.'
+        : !this.state.activeFile
+          ? 'Read the first section without studentFeedback, then deliver its goal.'
+          : 'Deliver the active section and use request_skill_review for one question, then wait for a new learner reply.';
+      throw new Error(
+        '当前段必须先提交审查任务并等待新的学生回复。' +
+          ` Current feedbackSource=null; activeSection=${this.state.activeFile || 'none'}. ${action} ` +
+          'Do not retry advancement by changing feedback wording or toggling reuseFeedback; rereading cannot create learner evidence.',
+      );
+    }
     if (reuseFeedback) {
       if (this.state.pending || !this.eligible || !this.verifiedCoverage())
         throw new Error(
           '只能沿用当前环节、当前版本已验证的真实学生回复；新问题和文件变化仍需重新确认。' +
-            'For a new reply to the pending review, omit reuseFeedback.',
+            ' Current feedbackSource=pending_review_reply. Use the actual new learner reply and omit reuseFeedback; reusing earlier feedback cannot answer this pending question.',
         );
       if (!feedback?.trim()) throw new Error('请说明已有学生回复如何覆盖当前段的目标');
       return;
@@ -190,8 +202,8 @@ export class GuidedSkillReview {
     const pending = this.state.pending;
     if (!pending || pending.runId === this.runId || !this.eligible)
       throw new Error(
-        '当前段必须先提交审查任务并等待新的学生回复。' +
-          'When feedbackSource is verified_feedback, use reuseFeedback: true.',
+        '当前段已有同版本、已验证的真实学生回复。' +
+          ' Current feedbackSource=verified_feedback. Set reuseFeedback:true only when that reply covers the active goal; otherwise deliver the active section, request_skill_review once and wait. Do not retry the same call unchanged.',
       );
     if (!this.studentResponses().length)
       throw new Error('当前审查任务尚无新的学生回复；不能用助手自查或旧对话代替');

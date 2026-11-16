@@ -1,3 +1,10 @@
+import {
+  listClassroomSkills,
+  availableSkillsPromptBlock,
+  createNativeSkillReadTool,
+} from '@/lib/server/agent-runtime/skills';
+import { createChildTailStateTransform } from '../child-tail-state';
+import type { WhiteboardPreview } from '@/lib/chat/pi/whiteboard-preview';
 import { formatChildResult } from './child-result';
 import { createAbortableSend } from '../send';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
@@ -555,6 +562,8 @@ export function buildCallAgentTool(opts: {
   agentConfigs: AgentConfig[];
   send: SendEvent;
   languageModel: LanguageModel;
+  supportsToolImages?: boolean;
+  whiteboardPreview?: WhiteboardPreview;
   streamFnFactory?: PiStreamFnFactory;
   onAgentDone: (summary: AgentTurnSummary, outcome?: AgentTurnOutcome) => void;
   onActionDone: (record?: WhiteboardActionRecord) => void;
@@ -708,6 +717,12 @@ export function buildCallAgentTool(opts: {
 
         const childRuntimeMode = opts.childRuntimeMode ?? 'legacy';
         if (childRuntimeMode === 'native') {
+          const isExplainer =
+            agent.role === 'teacher' ||
+            (agent.role === 'assistant' &&
+              !opts.agentConfigs.some((candidate) => candidate.role === 'teacher'));
+          const classroomSkills = isExplainer ? await listClassroomSkills() : [];
+          const activatedSkills: string[] = [];
           const spotlightTargets = new Set(spotlightElementIds);
           const spotlightEnabled = Boolean(
             opts.enableNativeChildSpotlight &&
@@ -715,6 +730,13 @@ export function buildCallAgentTool(opts: {
             spotlightTargets.size > 0,
           );
           const nativeTools: AgentTool[] = [
+            ...(classroomSkills.length
+              ? [
+                  createNativeSkillReadTool(classroomSkills, (skill) => {
+                    if (!activatedSkills.includes(skill.name)) activatedSkills.push(skill.name);
+                  }),
+                ]
+              : []),
             ...(spotlightEnabled
               ? [
                   buildNativeSpotlightTool({
@@ -748,25 +770,37 @@ export function buildCallAgentTool(opts: {
               {
                 languageModel: opts.languageModel,
                 source: 'pi-chat-native-child',
+                supportsToolImages: opts.supportsToolImages,
+                includeUserImages: opts.supportsToolImages === true,
                 thinkingConfig: opts.thinkingConfig,
                 maxOutputTokens: opts.maxOutputTokens,
                 abortSignal: childAbort.signal,
               },
               agent,
             ),
-            systemPrompt: buildNativeChildPrompt(
-              opts.body,
-              agent,
-              opts.getAgentResponses(),
-              availableToolNames,
-              capturedScene,
-            ),
+            systemPrompt:
+              buildNativeChildPrompt(
+                opts.body,
+                agent,
+                opts.getAgentResponses(),
+                availableToolNames,
+                capturedScene,
+              ) +
+              '\n' +
+              availableSkillsPromptBlock(classroomSkills),
             prompt: buildNativeChildTurnPrompt(params.instruction, agent.role, {
               scene: sceneEvidence?.content,
               element: elementReferenceEvidence?.content,
               spotlightElementIds,
             }),
             tools: nativeTools,
+            transformContext: availableToolNames.includes('wb_read')
+              ? createChildTailStateTransform({
+                  preview: opts.whiteboardPreview,
+                  service: opts.nativeWhiteboardService,
+                  stageId: opts.nativeWhiteboardStageId,
+                })
+              : undefined,
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
@@ -836,6 +870,8 @@ export function buildCallAgentTool(opts: {
               runtimeMode: childRuntimeMode,
               availableToolNames,
               nativeChildRun: nativeResult,
+              availableSkills: classroomSkills.map((skill) => skill.name),
+              activatedSkills,
               ...(sceneEvidence ? { sceneEvidence: sceneEvidence.metadata } : {}),
               ...(elementReferenceEvidence?.metadata
                 ? {

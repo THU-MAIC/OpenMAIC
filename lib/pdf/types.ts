@@ -5,7 +5,7 @@
 /**
  * PDF Provider IDs
  */
-export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud' | 'alidocmind';
+export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud' | 'alidocmind' | 'minicpm-ocr';
 
 /**
  * PDF Provider Configuration
@@ -17,8 +17,28 @@ export interface PDFProviderConfig {
   /** Authenticates with a key pair (`credentials`) rather than one API key. */
   requiresCredentials?: boolean;
   baseUrl?: string;
+  /** The request endpoint shown in settings, when the provider has a hosted one. */
+  displayEndpoint?: string;
   icon?: string;
   features: string[]; // ['text', 'images', 'tables', 'formulas', 'layout-analysis', etc.]
+  /**
+   * The provider offers a hosted API that takes a key and a self-hosted
+   * deployment that usually takes none: with an explicit `baseUrl` the key is
+   * optional, and without one the hosted API's key is required.
+   */
+  apiKeyOptionalWithBaseUrl?: boolean;
+  /**
+   * Legacy environment variables (`<prefix>_API_KEY`, `<prefix>_BASE_URL`).
+   * Keeping the mapping here lets the neutral provider loader derive its env
+   * map and activation rules without naming any vendor.
+   */
+  legacyEnv?: {
+    prefix: string;
+    /** A key alone activates the provider: it has a usable default endpoint. */
+    baseUrlOptional?: boolean;
+    /** A base URL alone activates the provider without a key (self-hosted). */
+    keyless?: boolean;
+  };
 }
 
 /**

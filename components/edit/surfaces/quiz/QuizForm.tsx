@@ -48,14 +48,10 @@ export function QuizForm() {
 
   return (
     <div
-      className="h-full w-full overflow-y-auto bg-zinc-50/40 dark:bg-zinc-950/30"
+      // The ground the learner's quiz sits on (`QuizView`), so a page keeps its
+      // colour when the mode changes.
+      className="h-full w-full overflow-y-auto bg-gradient-to-b from-gray-50 to-white dark:from-gray-900 dark:to-gray-900"
       data-testid="quiz-surface"
-      // Faint dot grid gives the authoring canvas a subtle texture so the
-      // white question cards read as floating sheets rather than flat boxes.
-      style={{
-        backgroundImage: 'radial-gradient(circle, rgba(113,113,122,0.10) 1px, transparent 1px)',
-        backgroundSize: '22px 22px',
-      }}
     >
       <div
         className="mx-auto flex max-w-2xl flex-col gap-2.5 px-5 pt-16"

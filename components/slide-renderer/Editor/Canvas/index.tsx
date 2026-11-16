@@ -249,7 +249,7 @@ export function Canvas(_props: CanvasProps) {
     <ContextMenu>
       <ContextMenuTrigger>
         <div
-          className="canvas relative h-full w-full overflow-hidden bg-gray-100 select-none"
+          className="canvas relative h-full w-full overflow-hidden select-none"
           ref={canvasRef}
           onMouseDown={handleClickBlankArea}
           onDoubleClick={handleDblClick}
@@ -270,7 +270,7 @@ export function Canvas(_props: CanvasProps) {
 
           {/* Viewport wrapper */}
           <div
-            className="viewport-wrapper absolute shadow-[0_0_0_1px_rgba(0,0,0,0.01),0_0_12px_0_rgba(0,0,0,0.1)]"
+            className="viewport-wrapper absolute rounded-lg shadow-[0_0_0_1px_rgba(0,0,0,0.01),0_0_12px_0_rgba(0,0,0,0.1)]"
             style={{
               width: `${viewportStyles.width * canvasScale}px`,
               height: `${viewportStyles.height * canvasScale}px`,

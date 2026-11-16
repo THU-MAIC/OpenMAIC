@@ -1,87 +1,60 @@
 /**
- * A course opened on its own gets a conversation beside it — but never a NEW one.
+ * What sits beside a course in the classroom pane: a conversation, an empty
+ * one, or nothing yet — and never a NEW session minted on arrival.
  *
- * `/workspace?course=<id>` — clicking a classroom in the navigation tree, or
- * pasting its link — used to mount the classroom pane with NO chat, so the Pro
- * bench sat there with no agent to talk to. It then went the other way and MINTED
- * a conversation on arrival, which is what this module now exists to stop:
- * opening a course, closing the chat, and opening the course again left a trail
- * of empty sessions in the rail, one per visit.
+ * `/workspace?course=<id>` used to mount the classroom with no chat, then went
+ * the other way and MINTED a conversation per visit (a trail of empty sessions
+ * in the rail), then carried the user's most recent conversation over. That
+ * last one read wrongly: with conversation A open, browsing to an unrelated
+ * course B put A's chat beside B, as if A were editing B.
  *
- * ── The rule ─────────────────────────────────────────────────────────────
+ * How a course came to be open is now the whole question, and the URL carries
+ * the answer:
  *
- * 1. A conversation is already in the middle column → use it, whatever it is
- *    about.
- * 2. The user explicitly asked for a new one → an empty composer, and nothing is
- *    created until they send something. This outranks 3 for a reason: the most
- *    recent conversation IS the one they just asked to leave.
- * 3. None, and none asked for → carry the user's MOST RECENT conversation over.
- *    "Independent columns" means the middle one keeps the conversation you were
- *    having; it does not mean it empties itself every time you look at a
- *    different course.
- * 4. No conversations at all → mint NOTHING. The column shows an empty composer,
- *    and the session is created by the first message the user sends
- *    (`lib/workbench/first-message-session`).
+ * - Opened FROM a conversation (a course card's Open in the chat, the request
+ *   preview turning into the course's tab, an `@`-named course, a link the agent
+ *   posts): the conversation stays in `?session=` beside it.
+ * - Opened by BROWSING (My courses and its search, the global search, any
+ *   library-style entry, a pasted or reloaded `?course=` link): the shell drops
+ *   `?session=`, and the course is shown alone, the chat column folded. That is
+ *   a view state of this open, not the remembered fold preference. The previous
+ *   conversation stays in the rail where it was.
+ *
+ * ── The rules ────────────────────────────────────────────────────────────
+ *
+ * 1. No course → nothing to decide.
+ * 2. A conversation in `?session=` → it stays, whatever it is about. That
+ *    pairing is the user's (or the conversation's own) to make.
+ * 3. The user asked to talk about this course — the classroom header's "Edit
+ *    with AI", the folded column's own unfold, New chat, a hand-over → an EMPTY
+ *    conversation beside the course. Nothing is created until the first message
+ *    (`lib/workbench/first-message-session`), and the session it creates is
+ *    started beside an existing course, so no new-course preview appears.
+ * 4. Otherwise the course was browsed → `browse`: the course alone, the chat
+ *    column folded, with the way to rule 3 on offer. Nothing is minted and
+ *    nothing is carried over.
  *
  * What it deliberately does NOT do is look for "the session that owns this
- * course". That matching version (newest session whose `stageId === courseId`)
- * was an ownership inference, and the panes are being pulled apart precisely so
- * that inference stops existing: an agent is pointed at a classroom by being TOLD
- * (an explicit course mention), not by a stage id happening to match. Silently swapping the user's
- * open conversation for another one about the course they just clicked is the two
- * columns becoming one object again.
+ * course" (newest session whose `stageId === courseId`): an agent is pointed at
+ * a classroom by being TOLD (an explicit course mention), not by a stage id
+ * happening to match. Nor does it carry the most recent conversation over any
+ * more — that was the same inference, made for whichever conversation was
+ * newest.
  *
- * Nothing here needs an idempotence guard any more, and that is the point: with
- * no POST on arrival there is no in-flight window to coalesce and no
- * just-created-but-not-yet-in-the-URL window to remember. There is also nothing
- * for the server to refuse — a course you may not touch simply has no
- * conversation minted for it, because none is minted for anybody.
+ * There is nothing to make idempotent and nothing for the server to refuse:
+ * nothing here writes.
  */
 
 export type CourseChatBootstrap =
-  /** Nothing to do: no course open, or a conversation is already there. */
+  /** Nothing to do: no course open, or a conversation is already beside it. */
   | { readonly kind: 'settled' }
-  /** Carry this existing conversation into the middle column. */
-  | { readonly kind: 'adopt'; readonly sessionId: string; readonly courseId: string }
   /**
-   * The user has no conversations yet. Show an empty one; it becomes real when
-   * they send their first message.
+   * The course was browsed: shown alone, with the chat column folded and a way
+   * to start talking about it.
    */
+  | { readonly kind: 'browse'; readonly courseId: string }
+  /** An empty conversation beside the course; its first message creates it. */
   | { readonly kind: 'draft'; readonly courseId: string };
-
-/** The shape this resolver needs from a session row. */
-export interface AdoptableSession {
-  readonly id: string;
-  readonly updatedAt?: number;
-  readonly createdAt?: number;
-}
-
-/** How recent a row is, tolerating a list that carries only one of the two stamps. */
-function recency(session: AdoptableSession): number {
-  return Math.max(Number(session.updatedAt) || 0, Number(session.createdAt) || 0);
-}
-
-/**
- * The conversation to carry over: the most recently active one.
- *
- * `updatedAt` rather than `createdAt`, so "the one I was just in" wins over "the
- * one I opened last week and never touched"; the id breaks ties so the choice is
- * deterministic rather than dependent on list order.
- */
-export function mostRecentSession<T extends AdoptableSession>(sessions: readonly T[]): T | null {
-  let best: T | null = null;
-  for (const session of sessions) {
-    if (!session.id) continue;
-    if (!best) {
-      best = session;
-      continue;
-    }
-    const stamp = recency(session);
-    const bestStamp = recency(best);
-    if (stamp > bestStamp || (stamp === bestStamp && session.id > best.id)) best = session;
-  }
-  return best;
-}
 
 export function resolveCourseChatBootstrap(input: {
   /** The course in the classroom pane (`?course=`). */
@@ -89,51 +62,18 @@ export function resolveCourseChatBootstrap(input: {
   /** The conversation the URL asks for (`?session=`). */
   readonly sessionId: string | null;
   /**
-   * The conversation the store is actually attached to. Usually the same as
-   * `sessionId`; it is read as well so the brief window during navigation — when
-   * the URL has dropped `?session=` but the store has not detached yet — cannot
-   * be mistaken for "there is no conversation".
-   */
-  readonly attachedSessionId?: string | null;
-  /**
-   * The user just asked for a NEW conversation while a course was open.
+   * The user asked for a conversation about the open course (rule 3): the
+   * classroom header's button, the folded column's unfold, New chat.
    *
-   * Without this, "new chat" beside an open classroom would immediately adopt
-   * (rule 2) the very conversation it was meant to leave — the most recent one is
-   * the one you were just in — and the button would read as broken. An explicit
-   * ask therefore outranks adoption, and nothing is created until the first
-   * message, exactly as for a user with no conversations at all.
+   * Without it, dropping `?session=` would only ever mean "browse", and New
+   * chat beside an open classroom would fold the column instead of offering
+   * an empty one.
    */
   readonly newConversationRequested?: boolean;
-  /** The owner's conversations, as the rail knows them. */
-  readonly sessions: readonly AdoptableSession[];
-  /**
-   * Has that list actually arrived? Until it has, neither branch is knowable:
-   * deciding 'draft' early would flash an empty composer over a user who has
-   * fifty conversations.
-   */
-  readonly sessionsLoaded: boolean;
 }): CourseChatBootstrap {
-  const {
-    courseId,
-    sessionId,
-    attachedSessionId = null,
-    newConversationRequested = false,
-    sessions,
-    sessionsLoaded,
-  } = input;
+  const { courseId, sessionId, newConversationRequested = false } = input;
   if (!courseId) return { kind: 'settled' };
-  // A conversation explicitly selected in workspace state is already open. It
-  // does not matter which course it is about: that pairing is the user's to
-  // make, and this must never replace it.
   if (sessionId) return { kind: 'settled' };
-  // Explicit intent outranks the store's one-render-late attachment. Client-side
-  // workspace navigation drops `sessionId` immediately; waiting for the stream
-  // teardown before showing the draft made New chat briefly remove the whole
-  // middle column.
   if (newConversationRequested) return { kind: 'draft', courseId };
-  if (attachedSessionId) return { kind: 'settled' };
-  if (!sessionsLoaded) return { kind: 'settled' };
-  const recent = mostRecentSession(sessions);
-  return recent ? { kind: 'adopt', sessionId: recent.id, courseId } : { kind: 'draft', courseId };
+  return { kind: 'browse', courseId };
 }

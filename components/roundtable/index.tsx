@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { DockResizeHandle, useDockBox } from '@/components/classroom/dock-box';
+import { dockBubbleVars } from '@/lib/edit/dock-height';
+import { useState, useRef, useCallback, useEffect, type CSSProperties } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Mic,
@@ -108,6 +110,11 @@ interface RoundtableProps {
   readonly canPickSlideElement?: boolean;
   readonly elementPickActive?: boolean;
   readonly onToggleElementPick?: () => void;
+  readonly nextOpensEnd?: boolean;
+  /** The end state is up and there is nothing to say: no empty bubble under it. */
+  readonly foldDock?: boolean;
+  /** The end state has the stage: nothing floats over it. */
+  readonly courseEndOpen?: boolean;
   readonly elementReferencePill?: {
     sceneLabel: string;
     elementType: string;
@@ -210,10 +217,19 @@ export function Roundtable({
   canPickSlideElement,
   elementPickActive,
   onToggleElementPick,
+  nextOpensEnd,
+  foldDock,
+  courseEndOpen,
   elementReferencePill,
   onClearElementReference,
 }: RoundtableProps) {
   const { t } = useI18n();
+  const dockRef = useRef<HTMLDivElement>(null);
+  const dock = useDockBox(dockRef, foldDock);
+  // A folded dock has no room for the conversation, so it goes over the stage: the same
+  // layer as full-screen, anchored to the stage instead of the window.
+  const overStage = !isPresenting && dock.collapsed && !courseEndOpen;
+  const setDockCollapsed = useSettingsStore((state) => state.setDockCollapsed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   // The workspace's tts and asr slots decide whether narration and speech
@@ -254,7 +270,7 @@ export function Roundtable({
       textarea.scrollHeight,
       NON_PRESENTATION_INPUT_MAX_HEIGHT_PX,
     )}px`;
-  }, [inputValue, isInputOpen, isPresenting]);
+  }, [inputValue, isInputOpen, isPresenting, overStage]);
 
   // End flash visible state (Issue 3)
   const [endFlashVisible, setEndFlashVisible] = useState(false);
@@ -689,6 +705,7 @@ export function Roundtable({
     onPlayPause,
   ]);
   const showPresentationDock =
+    overStage ||
     !!controlsVisible ||
     !!discussionRequest ||
     isCueUser ||
@@ -738,12 +755,15 @@ export function Roundtable({
       canPickSlideElement={canPickSlideElement}
       elementPickActive={elementPickActive}
       onToggleElementPick={onToggleElementPick}
+      nextOpensEnd={nextOpensEnd}
+      dockCollapsed={dock.collapsed}
+      onToggleDock={isPresenting ? undefined : () => setDockCollapsed(!dock.collapsed)}
     />
   );
   const referencePill = elementReferencePill ? (
     <div
       data-testid="slide-element-reference-pill"
-      className="pointer-events-auto flex max-w-[min(520px,calc(100vw-3rem))] items-center gap-2 rounded-full border border-violet-200 bg-white/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur dark:border-violet-700 dark:bg-gray-900/95"
+      className="pointer-events-auto flex max-w-[min(520px,calc(100cqw-3rem))] items-center gap-2 rounded-full border border-violet-200 bg-white/95 px-3 py-1.5 text-xs shadow-lg backdrop-blur dark:border-violet-700 dark:bg-gray-900/95"
       onClick={(event) => event.stopPropagation()}
     >
       <Quote className="h-3.5 w-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
@@ -814,9 +834,21 @@ export function Roundtable({
   const suggestedReplyBubbleClass =
     'relative flex flex-col rounded-2xl rounded-br-sm border border-dashed border-purple-300 bg-[#faf7ff] pl-3 pr-5 py-2.5 dark:border-purple-400/50 dark:bg-[#1f1830]';
 
-  if (isPresenting) {
-    return (
-      <div className="h-0 w-full relative z-10 overflow-visible">
+  // On a stage as narrow as a pane these panels can land on a bubble, whose text must not
+  // show through what is being typed.
+  const overStagePanelClass = overStage
+    ? 'bg-white dark:bg-gray-900'
+    : 'bg-white/70 dark:bg-black/60';
+  const speechLayer =
+    isPresenting || overStage ? (
+      <div
+        data-testid="roundtable-speech-layer"
+        className={cn(
+          'h-0 w-full relative overflow-visible',
+          // Sized against the stage, which may be a pane: `cqw` in the widths below.
+          overStage ? 'z-20 @container' : 'z-10',
+        )}
+      >
         {/* Speech overlay — fills the full stage area via absolute positioning */}
         <PresentationSpeechOverlay
           playbackView={enrichedPlaybackView}
@@ -833,7 +865,12 @@ export function Roundtable({
         {/* Click-outside backdrop to dismiss input/voice */}
         {(isInputOpen || isVoiceOpen) && (
           <div
-            className="fixed top-0 left-0 right-0 bottom-14 z-[45] pointer-events-auto"
+            className={cn(
+              'z-[45] pointer-events-auto',
+              overStage
+                ? 'absolute inset-x-0 bottom-0 h-screen'
+                : 'fixed top-0 left-0 right-0 bottom-14',
+            )}
             onClick={() => {
               setIsInputOpen(false);
               setIsVoiceOpen(false);
@@ -842,18 +879,20 @@ export function Roundtable({
           />
         )}
 
-        {/* ── Toolbar — pinned to bottom of screen ── */}
-        <div
-          className={cn(
-            'fixed bottom-0 left-0 z-[40] pointer-events-none flex items-center justify-center transition-all duration-300',
-            controlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2',
-          )}
-          style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
-        >
-          <div className="mb-3 px-2 py-1 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] pointer-events-auto">
-            {toolbar}
+        {/* ── Toolbar — pinned to bottom of screen; over the stage it stays in the dock ── */}
+        {isPresenting ? (
+          <div
+            className={cn(
+              'fixed bottom-0 left-0 z-[40] pointer-events-none flex items-center justify-center transition-all duration-300',
+              controlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2',
+            )}
+            style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
+          >
+            <div className="mb-3 px-2 py-1 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] pointer-events-auto">
+              {toolbar}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {/* ── End flash notification ── */}
         <AnimatePresence>
@@ -870,10 +909,17 @@ export function Roundtable({
                 times: [0, 0.15, 0.7, 1],
                 ease: 'easeOut',
               }}
-              className="fixed bottom-20 -translate-x-1/2 z-[50] bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md text-gray-700 dark:text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
-              style={{
-                left: `calc((100vw - ${chatCollapsed === false ? (chatAreaWidth ?? 320) : 0}px) / 2)`,
-              }}
+              className={cn(
+                'bottom-20 -translate-x-1/2 z-[50] bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md text-gray-700 dark:text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none',
+                overStage ? 'absolute left-1/2' : 'fixed',
+              )}
+              style={
+                overStage
+                  ? undefined
+                  : {
+                      left: `calc((100vw - ${chatCollapsed === false ? (chatAreaWidth ?? 320) : 0}px) / 2)`,
+                    }
+              }
             >
               <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block mr-1.5" />
               {endFlashSessionType === 'discussion'
@@ -885,8 +931,15 @@ export function Roundtable({
 
         {/* ── Center stack: input / voice / thinking — anchored above toolbar ── */}
         <div
-          className="fixed bottom-14 left-0 z-[50] flex flex-col items-center justify-center gap-3 pointer-events-none transition-[right] duration-300"
-          style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
+          className={cn(
+            'z-[50] flex flex-col items-center justify-center gap-3 pointer-events-none transition-[right] duration-300',
+            // Over the stage there is no toolbar pill to clear, but the right-hand stack
+            // shares a narrow stage's width: it stays above that.
+            overStage ? 'absolute inset-x-3 bottom-[4.75rem]' : 'fixed bottom-14 left-0',
+          )}
+          style={
+            overStage ? undefined : { right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }
+          }
         >
           {referencePill}
           {/* Input panel */}
@@ -897,9 +950,14 @@ export function Roundtable({
                 initial={{ opacity: 0, scale: 0.95, y: 15, filter: 'blur(4px)' }}
                 animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, scale: 0.95, y: 15, filter: 'blur(4px)' }}
-                className="w-[min(480px,calc(100vw-3rem))] pointer-events-auto"
+                className="w-[min(480px,calc(100cqw-3rem))] pointer-events-auto"
               >
-                <div className="flex items-center gap-3 bg-white/70 dark:bg-black/60 backdrop-blur-xl rounded-full px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-gray-200/60 dark:border-white/10">
+                <div
+                  className={cn(
+                    'flex items-center gap-3 backdrop-blur-xl rounded-full px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-gray-200/60 dark:border-white/10',
+                    overStagePanelClass,
+                  )}
+                >
                   <div className="flex-1 min-w-0 flex items-center">
                     <textarea
                       value={inputValue}
@@ -950,7 +1008,12 @@ export function Roundtable({
                 exit={{ opacity: 0, scale: 0.9, y: 20, filter: 'blur(4px)' }}
                 className="pointer-events-auto"
               >
-                <div className="flex items-center gap-4 bg-white/70 dark:bg-black/60 backdrop-blur-xl rounded-full px-5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-gray-200/60 dark:border-white/10">
+                <div
+                  className={cn(
+                    'flex items-center gap-4 backdrop-blur-xl rounded-full px-5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-gray-200/60 dark:border-white/10',
+                    overStagePanelClass,
+                  )}
+                >
                   {/* Waveform bars */}
                   <div className="flex items-center gap-0.5 h-8">
                     <VoiceWaveformBars barClassName="bg-gradient-to-t from-purple-400 to-indigo-400" />
@@ -1029,8 +1092,13 @@ export function Roundtable({
 
         {/* ── Right-side stack: bubble + dock — flex column, no hardcoded px ── */}
         <div
-          className="fixed bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none transition-[right] duration-300"
-          style={{ right: chatCollapsed ? 20 : 20 + (chatAreaWidth ?? 320) }}
+          className={cn(
+            'z-[48] flex flex-col items-end gap-3 pointer-events-none transition-[right] duration-300',
+            overStage ? 'absolute bottom-3 right-4' : 'fixed bottom-5',
+          )}
+          style={
+            overStage ? undefined : { right: chatCollapsed ? 20 : 20 + (chatAreaWidth ?? 320) }
+          }
         >
           {/* Right-side speech bubble (flows above dock via flex) */}
           <PresentationSpeechOverlay
@@ -1056,7 +1124,7 @@ export function Roundtable({
                 animate={{ opacity: 1, x: 0, y: 0 }}
                 exit={{ opacity: 0, y: 8, transition: { duration: 0.12 } }}
                 transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
-                className="pointer-events-auto w-[min(420px,calc(100vw-3rem))]"
+                className="pointer-events-auto w-[min(420px,calc(100cqw-3rem))]"
               >
                 <div
                   className={cn(
@@ -1239,1090 +1307,1113 @@ export function Roundtable({
           </AnimatePresence>
         </div>
       </div>
-    );
-  }
+    ) : null;
+
+  if (isPresenting) return speechLayer;
 
   return (
-    <div
-      data-testid="roundtable-region"
-      className={cn(
-        'h-[192px] w-full flex flex-col relative z-10 transition-all duration-300',
-        isPresenting && !controlsVisible
-          ? 'border-t border-transparent bg-transparent backdrop-blur-none'
-          : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
-      )}
-    >
-      {/* ── Toolbar strip — merged from CanvasArea ── */}
+    <>
+      {speechLayer}
       <div
+        ref={dockRef}
+        data-testid="roundtable-region"
+        data-collapsed={dock.collapsed ? 'true' : 'false'}
+        style={{ height: dock.height, ...dockBubbleVars(dock.height) } as CSSProperties}
         className={cn(
-          'transition-opacity duration-300',
-          isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
+          // Its height moves with the fold, not with the drag that sizes it.
+          'w-full flex flex-col relative z-10 transition-[height,background-color,border-color] duration-[400ms] ease-[cubic-bezier(0.22,1,0.36,1)] data-[dragging=true]:transition-none motion-reduce:transition-none',
+          isPresenting && !controlsVisible
+            ? 'border-t border-transparent bg-transparent backdrop-blur-none'
+            : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
         )}
       >
-        {toolbar}
-      </div>
-      {/* ── Interaction area — three-column layout ── */}
-      <div className="flex-1 flex items-stretch min-h-0">
-        {/* Left: Teacher identity */}
+        {/* One edge in both states, so a fold mid-drag keeps the same handle under the pointer. */}
+        {dock.held ? null : <DockResizeHandle dockRef={dockRef} folded={dock.collapsed} />}
+        {/* ── Toolbar strip — merged from CanvasArea ── */}
         <div
           className={cn(
-            'w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300',
+            'transition-opacity duration-300',
             isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
           )}
         >
-          {/* Decorative Element (Top) */}
-          <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-purple-50/50 dark:from-purple-900/10 to-transparent pointer-events-none" />
-          <div className="absolute top-3 inset-x-0 flex flex-col items-center justify-center gap-1 opacity-10 pointer-events-none">
-            <BookOpen size={20} className="text-purple-900 dark:text-purple-100" />
-            <div className="w-8 h-0.5 bg-purple-900 dark:bg-purple-100 rounded-full" />
-          </div>
+          {toolbar}
+        </div>
+        {/* ── Interaction area — three-column layout ── Folded, it stays mounted and
+          keeps going, only out of sight and out of reach. */}
+        <div
+          inert={dock.collapsed}
+          className={cn('flex-1 flex items-stretch min-h-0', dock.collapsed && 'overflow-hidden')}
+        >
+          {/* Left: Teacher identity */}
+          <div
+            className={cn(
+              'w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300',
+              isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
+            )}
+          >
+            {/* Decorative Element (Top) */}
+            <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-purple-50/50 dark:from-purple-900/10 to-transparent pointer-events-none" />
+            <div className="absolute top-3 inset-x-0 flex flex-col items-center justify-center gap-1 opacity-10 pointer-events-none">
+              <BookOpen size={20} className="text-purple-900 dark:text-purple-100" />
+              <div className="w-8 h-0.5 bg-purple-900 dark:bg-purple-100 rounded-full" />
+            </div>
 
-          {/* Main Content */}
-          <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0 pb-1 pt-8">
-            {/* Avatar Group (Left) */}
-            <div
-              ref={teacherAvatarRef}
-              className="relative group cursor-pointer flex flex-col items-center justify-center gap-1"
-            >
-              <HoverCard openDelay={300} closeDelay={100}>
-                <HoverCardTrigger asChild>
-                  <div className="flex flex-col items-center gap-1">
-                    <div
-                      className={cn(
-                        'relative w-12 h-12 rounded-full transition-all duration-500 flex items-center justify-center',
-                        activeRole === 'teacher' ? 'scale-105' : 'opacity-90 scale-95',
-                      )}
-                    >
+            {/* Main Content */}
+            <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0 pb-1 pt-8">
+              {/* Avatar Group (Left) */}
+              <div
+                ref={teacherAvatarRef}
+                className="relative group cursor-pointer flex flex-col items-center justify-center gap-1"
+              >
+                <HoverCard openDelay={300} closeDelay={100}>
+                  <HoverCardTrigger asChild>
+                    <div className="flex flex-col items-center gap-1">
                       <div
                         className={cn(
-                          'absolute inset-0 rounded-full border-2 transition-all duration-500',
-                          activeRole === 'teacher'
-                            ? 'border-purple-500 dark:border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
-                            : 'border-gray-200 dark:border-gray-700 group-hover:border-purple-300 dark:group-hover:border-purple-600',
+                          'relative w-12 h-12 rounded-full transition-all duration-500 flex items-center justify-center',
+                          activeRole === 'teacher' ? 'scale-105' : 'opacity-90 scale-95',
                         )}
-                      />
-
-                      <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 overflow-hidden relative z-10 shadow-sm border border-gray-50 dark:border-gray-700">
-                        <img
-                          src={teacherAvatar}
-                          alt={teacherName}
-                          className="w-full h-full object-cover"
+                      >
+                        <div
+                          className={cn(
+                            'absolute inset-0 rounded-full border-2 transition-all duration-500',
+                            activeRole === 'teacher'
+                              ? 'border-purple-500 dark:border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.4)]'
+                              : 'border-gray-200 dark:border-gray-700 group-hover:border-purple-300 dark:group-hover:border-purple-600',
+                          )}
                         />
+
+                        <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 overflow-hidden relative z-10 shadow-sm border border-gray-50 dark:border-gray-700">
+                          <img
+                            src={teacherAvatar}
+                            alt={teacherName}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        {activeRole === 'teacher' && (
+                          <div className="absolute -right-0.5 top-0.5 w-4 h-4 bg-green-500 dark:bg-green-400 rounded-full border-2 border-white dark:border-gray-800 flex items-center justify-center z-20">
+                            <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
+                          </div>
+                        )}
                       </div>
 
-                      {activeRole === 'teacher' && (
-                        <div className="absolute -right-0.5 top-0.5 w-4 h-4 bg-green-500 dark:bg-green-400 rounded-full border-2 border-white dark:border-gray-800 flex items-center justify-center z-20">
-                          <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
-                        </div>
-                      )}
-                    </div>
-
-                    <span
-                      className={cn(
-                        'max-w-[80px] truncate px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm transition-all duration-300 bg-white/90 dark:bg-gray-800/90',
-                        activeRole === 'teacher' && !speakingStudent
-                          ? 'text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-700'
-                          : 'text-gray-400 dark:text-gray-500 border-gray-100 dark:border-gray-700 group-hover:text-purple-500 dark:group-hover:text-purple-400 group-hover:border-purple-200 dark:group-hover:border-purple-600',
-                      )}
-                    >
-                      {teacherName}
-                    </span>
-                  </div>
-                </HoverCardTrigger>
-                <HoverCardContent
-                  side="bottom"
-                  align="center"
-                  className="w-64 p-3 max-h-[300px] overflow-y-auto"
-                >
-                  {(() => {
-                    const teacherConfig = getAgentConfig(teacherParticipant?.id || '');
-                    return (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-gray-100 dark:bg-gray-800">
-                            <img
-                              src={teacherAvatar}
-                              alt={teacherName}
-                              className="w-full h-full object-cover"
-                            />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium truncate">{teacherName}</p>
-                            <span
-                              className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded-full text-white mt-0.5"
-                              style={{
-                                backgroundColor: teacherConfig?.color || '#8b5cf6',
-                              }}
-                            >
-                              {t('settings.agentRoles.teacher')}
-                            </span>
-                          </div>
-                        </div>
-                        {teacherConfig?.persona && (
-                          <p className="text-xs text-muted-foreground mt-2 leading-relaxed whitespace-pre-line">
-                            {teacherConfig.persona}
-                          </p>
+                      <span
+                        className={cn(
+                          'max-w-[80px] truncate px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm transition-all duration-300 bg-white/90 dark:bg-gray-800/90',
+                          activeRole === 'teacher' && !speakingStudent
+                            ? 'text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-700'
+                            : 'text-gray-400 dark:text-gray-500 border-gray-100 dark:border-gray-700 group-hover:text-purple-500 dark:group-hover:text-purple-400 group-hover:border-purple-200 dark:group-hover:border-purple-600',
                         )}
-                      </>
-                    );
-                  })()}
-                </HoverCardContent>
-              </HoverCard>
+                      >
+                        {teacherName}
+                      </span>
+                    </div>
+                  </HoverCardTrigger>
+                  <HoverCardContent
+                    side="bottom"
+                    align="center"
+                    className="w-64 p-3 max-h-[300px] overflow-y-auto"
+                  >
+                    {(() => {
+                      const teacherConfig = getAgentConfig(teacherParticipant?.id || '');
+                      return (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-gray-100 dark:bg-gray-800">
+                              <img
+                                src={teacherAvatar}
+                                alt={teacherName}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{teacherName}</p>
+                              <span
+                                className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded-full text-white mt-0.5"
+                                style={{
+                                  backgroundColor: teacherConfig?.color || '#8b5cf6',
+                                }}
+                              >
+                                {t('settings.agentRoles.teacher')}
+                              </span>
+                            </div>
+                          </div>
+                          {teacherConfig?.persona && (
+                            <p className="text-xs text-muted-foreground mt-2 leading-relaxed whitespace-pre-line">
+                              {teacherConfig.persona}
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </HoverCardContent>
+                </HoverCard>
 
-              {/* ProactiveCard from teacher avatar */}
-              <AnimatePresence>
-                {discussionRequest && discussionRequest.agentId === teacherParticipant?.id && (
-                  <ProactiveCard
-                    action={discussionRequest}
-                    mode={engineMode === 'paused' ? 'paused' : 'playback'}
-                    anchorRef={teacherAvatarRef}
-                    align="left"
-                    agentName={teacherName}
-                    agentAvatar={teacherAvatar}
-                    agentColor={getAgentConfig(teacherParticipant?.id || '')?.color}
-                    onSkip={() => onDiscussionSkip?.()}
-                    onListen={() => onDiscussionStart?.(discussionRequest)}
-                    onTogglePause={() => onPlayPause?.()}
-                  />
-                )}
-              </AnimatePresence>
+                {/* ProactiveCard from teacher avatar */}
+                <AnimatePresence>
+                  {!overStage &&
+                    discussionRequest &&
+                    discussionRequest.agentId === teacherParticipant?.id && (
+                      <ProactiveCard
+                        action={discussionRequest}
+                        mode={engineMode === 'paused' ? 'paused' : 'playback'}
+                        anchorRef={teacherAvatarRef}
+                        align="left"
+                        agentName={teacherName}
+                        agentAvatar={teacherAvatar}
+                        agentColor={getAgentConfig(teacherParticipant?.id || '')?.color}
+                        onSkip={() => onDiscussionSkip?.()}
+                        onListen={() => onDiscussionStart?.(discussionRequest)}
+                        onTogglePause={() => onPlayPause?.()}
+                      />
+                    )}
+                </AnimatePresence>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Center: Interaction stage */}
-        <div className="flex-1 relative mx-3 mb-2">
-          {/* End flash banner (Issue 3) */}
-          <AnimatePresence>
-            {endFlashVisible && (
-              <motion.div
-                initial={{ opacity: 0, y: -10, scale: 0.9 }}
-                animate={{
-                  opacity: [0, 1, 1, 0],
-                  y: [-10, 0, 0, -6],
-                  scale: [0.9, 1, 1, 0.95],
-                }}
-                transition={{
-                  duration: 1.8,
-                  times: [0, 0.15, 0.7, 1],
-                  ease: 'easeOut',
-                }}
-                className="absolute top-1 left-1/2 -translate-x-1/2 z-50 bg-gray-800/80 backdrop-blur-md text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block mr-1.5" />
-                {endFlashSessionType === 'discussion'
-                  ? t('roundtable.discussionEnded')
-                  : t('roundtable.qaEnded')}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div
-            data-testid="roundtable-non-presentation-card"
-            onClick={() => {
-              if (isInputOpen || isVoiceOpen) {
-                setIsInputOpen(false);
-                setIsVoiceOpen(false);
-                if (isRecording || isProcessing) cancelRecording();
-              }
-            }}
-            className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default @container"
-          >
-            {elementReferencePill && (
-              <div className="absolute left-1/2 top-2 z-30 -translate-x-1/2">{referencePill}</div>
-            )}
-            {/* Text input box */}
+          {/* Center: Interaction stage */}
+          <div className="flex-1 relative mx-3 mb-2">
+            {/* End flash banner (Issue 3) */}
             <AnimatePresence>
-              {isInputOpen && (
+              {endFlashVisible && (
                 <motion.div
-                  key="input-stage"
-                  data-testid="roundtable-non-presentation-input-stage"
-                  initial={{
-                    opacity: 0,
-                    scale: 0.95,
-                    y: 15,
-                    filter: 'blur(4px)',
-                  }}
-                  animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, scale: 0.95, y: 15, filter: 'blur(4px)' }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute inset-x-6 bottom-4 z-20 flex items-center justify-end"
-                >
-                  <div
-                    data-testid="roundtable-non-presentation-input-panel"
-                    className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50"
-                  >
-                    <div className="pl-4 flex-1 py-1 min-w-0">
-                      <textarea
-                        ref={nonPresentationInputRef}
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onBeforeInput={() => onUserInputActivity?.('text_input')}
-                        onCompositionStart={() => onUserInputActivity?.('composition_start')}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                        placeholder={t('roundtable.inputPlaceholder')}
-                        autoFocus
-                        rows={1}
-                        className="w-full resize-none overflow-y-auto bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-gray-700 dark:text-gray-200 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[40px] max-h-[100px]"
-                      />
-                    </div>
-                    <button
-                      onClick={handleSendMessage}
-                      disabled={isSendCooldown}
-                      className={cn(
-                        'p-2.5 text-white rounded-xl transition shadow-md mb-0.5 shrink-0',
-                        isSendCooldown
-                          ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-gray-200 dark:shadow-gray-900/50'
-                          : 'bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 shadow-purple-200 dark:shadow-purple-900/50',
-                      )}
-                    >
-                      {isSendCooldown ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Send className="w-4 h-4" />
-                      )}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* Audio recording status */}
-              {isVoiceOpen && (
-                <motion.div
-                  key="voice-stage"
-                  initial={{
-                    opacity: 0,
-                    scale: 0.9,
-                    x: 20,
-                    filter: 'blur(4px)',
-                  }}
-                  animate={{ opacity: 1, scale: 1, x: 0, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, scale: 0.9, x: 20, filter: 'blur(4px)' }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 z-30 flex items-center gap-4 pr-2 pointer-events-none"
-                >
-                  <div className="flex flex-col-reverse items-end gap-1 mr-[-10px] relative z-20">
-                    <div className="flex items-center gap-0.5 h-8 px-2 py-1.5 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-xl border border-purple-100 dark:border-purple-800 shadow-sm">
-                      <VoiceWaveformBars barClassName="bg-gradient-to-t from-purple-500 to-indigo-600 dark:from-purple-400 dark:to-indigo-500" />
-                    </div>
-                    <motion.div
-                      initial={{ opacity: 0, x: 10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      className="text-[10px] font-bold tracking-widest text-purple-600 dark:text-purple-400 uppercase bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm px-2 py-0.5 rounded-full shadow-sm border border-purple-100/50 dark:border-purple-800/50 mr-1"
-                    >
-                      {isProcessing ? t('roundtable.processing') : t('roundtable.listening')}
-                    </motion.div>
-                  </div>
-
-                  <div
-                    className="pointer-events-auto relative group cursor-pointer"
-                    onClick={handleToggleVoice}
-                  >
-                    <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 dark:from-purple-500 dark:to-indigo-600 shadow-[0_4px_20px_rgba(147,51,234,0.3)] flex items-center justify-center z-20 group-hover:scale-105 transition-transform duration-300 border border-white/20 dark:border-white/10">
-                      <Mic className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="absolute inset-0 rounded-full border-2 border-purple-500 dark:border-purple-400 opacity-40 animate-[ping_2s_ease-in-out_infinite] z-10" />
-                    <div className="absolute inset-0 rounded-full border border-indigo-400 dark:border-indigo-300 opacity-20 animate-[ping_3s_ease-in-out_infinite_0.5s] z-10" />
-                    <div className="absolute inset-0 bg-purple-600 dark:bg-purple-500 blur-2xl opacity-20 group-hover:opacity-40 transition-opacity z-0" />
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Thinking dots (Issue 5) */}
-            <AnimatePresence>
-              {thinkingState?.stage === 'director' && !currentSpeech && !userMessage && (
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center gap-2 px-4 py-2 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-full shadow-sm border border-gray-100 dark:border-gray-700"
-                >
-                  <div className="flex gap-1">
-                    <motion.div
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 1.2,
-                        delay: 0,
-                      }}
-                      className="w-1.5 h-1.5 rounded-full bg-purple-500"
-                    />
-                    <motion.div
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 1.2,
-                        delay: 0.2,
-                      }}
-                      className="w-1.5 h-1.5 rounded-full bg-purple-500"
-                    />
-                    <motion.div
-                      animate={{ opacity: [0.3, 1, 0.3] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 1.2,
-                        delay: 0.4,
-                      }}
-                      className="w-1.5 h-1.5 rounded-full bg-purple-500"
-                    />
-                  </div>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
-                    {t('roundtable.thinking')}
-                  </span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Cue user: centered indicator when waiting for user input */}
-            <AnimatePresence>
-              {isCueUser && !bubbleRole && !thinkingState && !isInputOpen && !isVoiceOpen && (
-                <motion.div
-                  data-testid="cue-user-panel"
-                  initial={{ opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.85 }}
-                  transition={{ duration: 0.35, ease: [0.21, 1, 0.36, 1] }}
-                  className={cn(
-                    'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2.5',
-                    // On a narrow stage the suggested-reply bubble needs the full width.
-                    showSuggestedReplies && '@max-[36rem]:hidden',
-                  )}
-                >
-                  {/* Button with ripple effect */}
-                  <div className="relative flex items-center justify-center">
-                    {/* Soft background glow */}
-                    <div
-                      className={cn(
-                        'absolute w-24 h-24 rounded-full blur-2xl',
-                        asrEnabled
-                          ? 'bg-amber-400/[0.08] dark:bg-amber-500/[0.06]'
-                          : 'bg-purple-400/[0.08] dark:bg-purple-500/[0.06]',
-                      )}
-                    />
-
-                    {/* Expanding ripple 1 */}
-                    <motion.div
-                      animate={{ scale: [1, 2.2], opacity: [0.25, 0] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 2.2,
-                        ease: 'easeOut',
-                      }}
-                      className={cn(
-                        'absolute w-11 h-11 rounded-full border',
-                        asrEnabled
-                          ? 'border-amber-400/50 dark:border-amber-500/35'
-                          : 'border-purple-400/50 dark:border-purple-500/35',
-                      )}
-                    />
-                    {/* Expanding ripple 2 */}
-                    <motion.div
-                      animate={{ scale: [1, 2.2], opacity: [0.25, 0] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 2.2,
-                        ease: 'easeOut',
-                        delay: 0.7,
-                      }}
-                      className={cn(
-                        'absolute w-11 h-11 rounded-full border',
-                        asrEnabled
-                          ? 'border-amber-300/40 dark:border-amber-400/25'
-                          : 'border-purple-300/40 dark:border-purple-400/25',
-                      )}
-                    />
-
-                    {/* Action circle — voice (ASR on) or text input (ASR off) */}
-                    <motion.button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (asrEnabled) handleToggleVoice();
-                        else handleToggleInput();
-                      }}
-                      animate={{ scale: [1, 1.05, 1] }}
-                      transition={{
-                        repeat: Infinity,
-                        duration: 2,
-                        ease: 'easeInOut',
-                      }}
-                      className={cn(
-                        'relative w-11 h-11 rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:shadow-xl active:scale-95 z-10 bg-gradient-to-br',
-                        asrEnabled
-                          ? 'from-amber-400 to-orange-500 dark:from-amber-500 dark:to-orange-600 shadow-amber-400/30 dark:shadow-amber-600/20 hover:shadow-amber-400/40 dark:hover:shadow-amber-600/30'
-                          : 'from-purple-400 to-indigo-500 dark:from-purple-500 dark:to-indigo-600 shadow-purple-400/30 dark:shadow-purple-600/20 hover:shadow-purple-400/40 dark:hover:shadow-purple-600/30',
-                      )}
-                    >
-                      {asrEnabled ? (
-                        <Mic className="w-[18px] h-[18px] text-white drop-shadow-sm" />
-                      ) : (
-                        <MessageSquare className="w-[18px] h-[18px] text-white drop-shadow-sm" />
-                      )}
-                    </motion.button>
-                  </div>
-
-                  {/* Visual indicator below button */}
-                  {asrEnabled ? (
-                    <div className="flex items-center justify-center gap-[3px] h-3">
-                      {[0, 1, 2, 3, 4, 3, 2, 1, 0].map((intensity, i) => (
-                        <motion.div
-                          key={i}
-                          animate={{
-                            scaleY: [0.3, 0.5 + intensity * 0.15, 0.3],
-                            opacity: [0.3, 0.7, 0.3],
-                          }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 0.8 + (i % 3) * 0.1,
-                            delay: i * 0.08,
-                            ease: 'easeInOut',
-                          }}
-                          className="w-[2.5px] h-full origin-center rounded-full bg-amber-400/70 dark:bg-amber-500/60"
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center gap-[3px] h-3">
-                      {[0, 1, 2, 3, 2, 1, 0].map((intensity, i) => (
-                        <motion.div
-                          key={i}
-                          animate={{
-                            scaleY: [0.3, 0.45 + intensity * 0.15, 0.3],
-                            opacity: [0.25, 0.6, 0.25],
-                          }}
-                          transition={{
-                            repeat: Infinity,
-                            duration: 1.0 + (i % 3) * 0.15,
-                            delay: i * 0.12,
-                            ease: 'easeInOut',
-                          }}
-                          className="w-[2.5px] h-full origin-center rounded-full bg-purple-400/60 dark:bg-purple-500/50"
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Label */}
-                  <motion.span
-                    animate={{ opacity: [0.5, 0.9, 0.5] }}
-                    transition={{
-                      repeat: Infinity,
-                      duration: 2.5,
-                      ease: 'easeInOut',
-                    }}
-                    className={cn(
-                      'text-[10px] font-medium tracking-wider',
-                      asrEnabled
-                        ? 'text-amber-600/70 dark:text-amber-400/60'
-                        : 'text-purple-600/70 dark:text-purple-400/60',
-                    )}
-                  >
-                    {t('roundtable.yourTurn')}
-                  </motion.span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Suggested replies (draft user bubble) and the chat bubble share one
-                slot and one presence group: they are mutually exclusive, and
-                mode="wait" lets the outgoing bubble finish its exit before the
-                next one mounts. Two separate groups would briefly stack both in
-                this vertically centered column, shifting the new bubble when the
-                old one unmounts. */}
-            <AnimatePresence mode="wait">
-              {showSuggestedReplies ? (
-                <motion.div
-                  key="suggested-replies"
-                  data-testid="cue-user-suggested-bubble"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8, transition: { duration: 0.12 } }}
-                  transition={{ duration: 0.2, ease: [0.21, 1, 0.36, 1] }}
-                  className="w-full flex justify-end relative z-10"
-                >
-                  {/* On wide stages the width stops short of the centered mic cue */}
-                  <div
-                    className={cn(
-                      suggestedReplyBubbleClass,
-                      'w-full @[36rem]:w-[min(420px,calc(50%-3.5rem))] max-h-[110px] shadow-sm @max-[36rem]:pl-2 @max-[36rem]:pr-3',
-                    )}
-                  >
-                    {suggestedReplyAvatar}
-                    {quickReplies}
-                  </div>
-                </motion.div>
-              ) : bubbleRole ? (
-                <motion.div
-                  key={bubbleKey}
-                  initial={{ opacity: 0, y: 8 }}
+                  initial={{ opacity: 0, y: -10, scale: 0.9 }}
                   animate={{
-                    opacity: isInputOpen || isVoiceOpen ? 0.4 : 1,
-                    y: 0,
-                    filter: isInputOpen || isVoiceOpen ? 'blur(1px) grayscale(0.2)' : 'none',
+                    opacity: [0, 1, 1, 0],
+                    y: [-10, 0, 0, -6],
+                    scale: [0.9, 1, 1, 0.95],
                   }}
-                  exit={{ opacity: 0, y: -8, transition: { duration: 0.12 } }}
-                  transition={{ duration: 0.2, ease: [0.21, 1, 0.36, 1] }}
-                  className="w-full flex items-center relative z-10"
+                  transition={{
+                    duration: 1.8,
+                    times: [0, 0.15, 0.7, 1],
+                    ease: 'easeOut',
+                  }}
+                  className="absolute top-1 left-1/2 -translate-x-1/2 z-50 bg-gray-800/80 backdrop-blur-md text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
                 >
-                  <div
-                    className={cn(
-                      'flex w-full transition-all duration-500',
-                      bubbleRole === 'teacher' ? 'justify-start' : 'justify-end',
-                    )}
-                  >
-                    <div
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (bubbleRole === 'user') return;
-                        // Topic pending: click Play to resume
-                        if (isTopicPending) {
-                          onResumeTopic?.();
-                          return;
-                        }
-                        // QA/Discussion: buffer-level pause/resume (freeze text reveal, SSE continues)
-                        if (isInLiveFlow) {
-                          if (isDiscussionPaused) {
-                            onDiscussionResume?.();
-                          } else if (!thinkingState && currentSpeech) {
-                            // Don't allow pause during thinking or before text arrives
-                            onDiscussionPause?.();
-                          }
-                          return;
-                        }
-                        // Lecture playback: toggle play/pause
-                        onPlayPause?.();
-                      }}
-                      className={cn(
-                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[110px]',
-                        bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
-                        bubbleRole === 'user'
-                          ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
-                          : bubbleRole === 'agent'
-                            ? cn(
-                                'bg-blue-50/95 dark:bg-blue-950/60 backdrop-blur-sm border-blue-200/60 dark:border-blue-800/60 text-gray-700 dark:text-gray-200 rounded-br-sm shadow-sm',
-                                (isInLiveFlow || isTopicPending) &&
-                                  'hover:shadow-md cursor-pointer',
-                              )
-                            : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-bl-sm shadow-sm hover:shadow-md cursor-pointer',
-                      )}
-                    >
-                      {bubbleRole &&
-                        (() => {
-                          const bubbleAvatar =
-                            bubbleRole === 'user'
-                              ? userAvatar
-                              : bubbleRole === 'agent'
-                                ? speakingStudent?.avatar || userAvatar
-                                : teacherAvatar;
-                          return (
-                            <div
-                              className={cn(
-                                'absolute -top-2.5 z-20 pointer-events-none select-none',
-                                bubbleRole === 'teacher' ? '-left-2.5' : '-right-2.5',
-                              )}
-                              title={bubbleName}
-                            >
-                              <div
-                                className={cn(
-                                  'w-6 h-6 rounded-full overflow-hidden border-2 shadow-sm',
-                                  bubbleRole === 'user'
-                                    ? 'border-purple-400 dark:border-purple-500'
-                                    : bubbleRole === 'agent'
-                                      ? 'border-blue-300 dark:border-blue-600'
-                                      : 'border-purple-200 dark:border-purple-700',
-                                )}
-                              >
-                                <AvatarDisplay src={bubbleAvatar} alt={bubbleName} />
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                      <div ref={bubbleScrollRef} className="overflow-y-auto scrollbar-hide">
-                        {/* Agent name + audio indicator header */}
-                        {bubbleRole !== 'user' && bubbleName && (
-                          <div className="flex items-center gap-1 mb-0.5">
-                            <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 truncate">
-                              {bubbleName}
-                            </span>
-                            {(() => {
-                              const aiState =
-                                speakingAgentId === audioAgentId
-                                  ? (audioIndicatorState ?? 'idle')
-                                  : 'idle';
-                              if (aiState === 'generating')
-                                return (
-                                  <Loader2 className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-spin" />
-                                );
-                              if (aiState === 'playing')
-                                return (
-                                  <Volume2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                                );
-                              return null;
-                            })()}
-                          </div>
-                        )}
-                        {isBubbleLoading ? (
-                          <div className="flex gap-1 items-center py-1">
-                            <motion.div
-                              animate={{ opacity: [0.3, 1, 0.3] }}
-                              transition={{
-                                repeat: Infinity,
-                                duration: 1,
-                                delay: 0,
-                              }}
-                              className={cn(
-                                'w-1.5 h-1.5 rounded-full',
-                                isAgentLoading
-                                  ? 'bg-blue-400 dark:bg-blue-500'
-                                  : 'bg-purple-400 dark:bg-purple-500',
-                              )}
-                            />
-                            <motion.div
-                              animate={{ opacity: [0.3, 1, 0.3] }}
-                              transition={{
-                                repeat: Infinity,
-                                duration: 1,
-                                delay: 0.2,
-                              }}
-                              className={cn(
-                                'w-1.5 h-1.5 rounded-full',
-                                isAgentLoading
-                                  ? 'bg-blue-400 dark:bg-blue-500'
-                                  : 'bg-purple-400 dark:bg-purple-500',
-                              )}
-                            />
-                            <motion.div
-                              animate={{ opacity: [0.3, 1, 0.3] }}
-                              transition={{
-                                repeat: Infinity,
-                                duration: 1,
-                                delay: 0.4,
-                              }}
-                              className={cn(
-                                'w-1.5 h-1.5 rounded-full',
-                                isAgentLoading
-                                  ? 'bg-blue-400 dark:bg-blue-500'
-                                  : 'bg-purple-400 dark:bg-purple-500',
-                              )}
-                            />
-                          </div>
-                        ) : (
-                          <p className="whitespace-pre-wrap break-words" suppressHydrationWarning>
-                            {sourceText}
-                            {isTopicPending && (
-                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 ml-1 align-middle" />
-                            )}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* Playback state icon (hidden during loading — dots already indicate activity) */}
-                      {bubbleRole !== 'user' &&
-                        !isBubbleLoading &&
-                        (() => {
-                          const btnState = playbackView?.buttonState ?? 'none';
-                          const barsColor =
-                            bubbleRole === 'agent' ? 'bg-blue-500' : 'bg-purple-500';
-
-                          if (btnState === 'none') return null;
-
-                          if (btnState === 'play') {
-                            return (
-                              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-gray-50/80 dark:bg-gray-700/80 hover:bg-purple-100 dark:hover:bg-purple-900/50 group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer">
-                                <Play className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
-                              </div>
-                            );
-                          }
-
-                          if (btnState === 'restart') {
-                            return (
-                              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-gray-50/80 dark:bg-gray-700/80 hover:bg-purple-100 dark:hover:bg-purple-900/50 group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer">
-                                <Repeat className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400" />
-                              </div>
-                            );
-                          }
-
-                          // btnState === 'bars'
-                          return (
-                            <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-gray-50/80 dark:bg-gray-700/80 group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
-                              {isDiscussionPaused ? (
-                                /* Paused: static Play icon */
-                                <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
-                              ) : (
-                                <>
-                                  {/* Breathing bars — visible by default, hidden on hover */}
-                                  <div className="flex gap-0.5 items-end justify-center h-3.5 w-3.5 group-hover/bubble:hidden">
-                                    <motion.div
-                                      animate={{ height: ['20%', '100%', '20%'] }}
-                                      transition={{
-                                        repeat: Infinity,
-                                        duration: 0.6,
-                                      }}
-                                      className={cn('w-1 rounded-full', barsColor)}
-                                    />
-                                    <motion.div
-                                      animate={{ height: ['40%', '100%', '40%'] }}
-                                      transition={{
-                                        repeat: Infinity,
-                                        duration: 0.4,
-                                      }}
-                                      className={cn('w-1 rounded-full', barsColor)}
-                                    />
-                                    <motion.div
-                                      animate={{ height: ['20%', '80%', '20%'] }}
-                                      transition={{
-                                        repeat: Infinity,
-                                        duration: 0.5,
-                                      }}
-                                      className={cn('w-1 rounded-full', barsColor)}
-                                    />
-                                  </div>
-                                  {/* Pause icon on hover */}
-                                  <Pause className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 hidden group-hover/bubble:block" />
-                                </>
-                              )}
-                            </div>
-                          );
-                        })()}
-                    </div>
-                  </div>
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block mr-1.5" />
+                  {endFlashSessionType === 'discussion'
+                    ? t('roundtable.discussionEnded')
+                    : t('roundtable.qaEnded')}
                 </motion.div>
-              ) : null}
+              )}
             </AnimatePresence>
-          </div>
-        </div>
-
-        {/* Right: Participants area */}
-        <div
-          className={cn(
-            'w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
-            isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
-          )}
-        >
-          {/* Companion agent avatars — horizontal row, scrollable on overflow, arrows on hover */}
-          <div className="flex-none relative group/scroll">
-            {/* Left arrow */}
-            <button
-              onClick={() => {
-                agentScrollRef.current?.scrollBy({
-                  left: -80,
-                  behavior: 'smooth',
-                });
-              }}
-              className="absolute left-0 top-0 bottom-0 w-5 z-10 flex items-center justify-center bg-gradient-to-r from-gray-50/90 dark:from-gray-900/90 to-transparent opacity-0 group-hover/scroll:opacity-100 transition-opacity cursor-pointer"
-            >
-              <ChevronLeft className="w-3.5 h-3.5 text-gray-400" />
-            </button>
 
             <div
-              ref={agentScrollRef}
-              className="overflow-x-auto overflow-y-hidden px-2 scrollbar-hide"
-              onWheel={(e) => {
-                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                  e.currentTarget.scrollLeft += e.deltaY;
-                  e.preventDefault();
+              data-testid="roundtable-non-presentation-card"
+              onClick={() => {
+                if (isInputOpen || isVoiceOpen) {
+                  setIsInputOpen(false);
+                  setIsVoiceOpen(false);
+                  if (isRecording || isProcessing) cancelRecording();
                 }
               }}
+              className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default @container"
             >
-              <div className="flex gap-1 w-max py-1">
-                {studentParticipants.map((student) => {
-                  const isSpeaking = speakingAgentId === student.id;
-                  const isThinkingAgent =
-                    thinkingState?.stage === 'agent_loading' &&
-                    thinkingState.agentId === student.id;
-                  const agentConfig = getAgentConfig(student.id);
-                  const roleLabelKey = agentConfig?.role as
-                    | 'teacher'
-                    | 'assistant'
-                    | 'student'
-                    | undefined;
-                  const roleLabel = roleLabelKey ? t(`settings.agentRoles.${roleLabelKey}`) : '';
-                  const i18nDescription = t(`settings.agentDescriptions.${student.id}`);
-                  const description =
-                    i18nDescription !== `settings.agentDescriptions.${student.id}`
-                      ? i18nDescription
-                      : agentConfig?.persona || '';
-                  const hasDescription = !!description;
-                  const isDiscussionAgent =
-                    !!discussionRequest && discussionRequest.agentId === student.id;
-                  return (
+              {elementReferencePill && (
+                <div className="absolute left-1/2 top-2 z-30 -translate-x-1/2">{referencePill}</div>
+              )}
+              {/* Text input box */}
+              <AnimatePresence>
+                {isInputOpen && !overStage && (
+                  <motion.div
+                    key="input-stage"
+                    data-testid="roundtable-non-presentation-input-stage"
+                    initial={{
+                      opacity: 0,
+                      scale: 0.95,
+                      y: 15,
+                      filter: 'blur(4px)',
+                    }}
+                    animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, scale: 0.95, y: 15, filter: 'blur(4px)' }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute inset-x-6 bottom-4 z-20 flex items-center justify-end"
+                  >
                     <div
-                      key={student.id}
-                      data-agent-id={student.id}
-                      ref={(el) => {
-                        if (el) studentAvatarRefs.current.set(student.id, el);
-                        else studentAvatarRefs.current.delete(student.id);
-                      }}
-                      className="relative group/student shrink-0"
+                      data-testid="roundtable-non-presentation-input-panel"
+                      className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50"
                     >
-                      {/* Breathing glow for discussion agent */}
-                      {isDiscussionAgent && (
-                        <motion.div
-                          animate={{
-                            scale: [1, 1.2, 1],
-                            opacity: [0.7, 0, 0.7],
+                      <div className="pl-4 flex-1 py-1 min-w-0">
+                        <textarea
+                          ref={nonPresentationInputRef}
+                          value={inputValue}
+                          onChange={(e) => setInputValue(e.target.value)}
+                          onBeforeInput={() => onUserInputActivity?.('text_input')}
+                          onCompositionStart={() => onUserInputActivity?.('composition_start')}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
                           }}
+                          placeholder={t('roundtable.inputPlaceholder')}
+                          autoFocus
+                          rows={1}
+                          className="w-full resize-none overflow-y-auto bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-gray-700 dark:text-gray-200 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[40px] max-h-[100px]"
+                        />
+                      </div>
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={isSendCooldown}
+                        className={cn(
+                          'p-2.5 text-white rounded-xl transition shadow-md mb-0.5 shrink-0',
+                          isSendCooldown
+                            ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed shadow-gray-200 dark:shadow-gray-900/50'
+                            : 'bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 shadow-purple-200 dark:shadow-purple-900/50',
+                        )}
+                      >
+                        {isSendCooldown ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* Audio recording status */}
+                {isVoiceOpen && !overStage && (
+                  <motion.div
+                    key="voice-stage"
+                    initial={{
+                      opacity: 0,
+                      scale: 0.9,
+                      x: 20,
+                      filter: 'blur(4px)',
+                    }}
+                    animate={{ opacity: 1, scale: 1, x: 0, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, scale: 0.9, x: 20, filter: 'blur(4px)' }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-30 flex items-center gap-4 pr-2 pointer-events-none"
+                  >
+                    <div className="flex flex-col-reverse items-end gap-1 mr-[-10px] relative z-20">
+                      <div className="flex items-center gap-0.5 h-8 px-2 py-1.5 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md rounded-xl border border-purple-100 dark:border-purple-800 shadow-sm">
+                        <VoiceWaveformBars barClassName="bg-gradient-to-t from-purple-500 to-indigo-600 dark:from-purple-400 dark:to-indigo-500" />
+                      </div>
+                      <motion.div
+                        initial={{ opacity: 0, x: 10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="text-[10px] font-bold tracking-widest text-purple-600 dark:text-purple-400 uppercase bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm px-2 py-0.5 rounded-full shadow-sm border border-purple-100/50 dark:border-purple-800/50 mr-1"
+                      >
+                        {isProcessing ? t('roundtable.processing') : t('roundtable.listening')}
+                      </motion.div>
+                    </div>
+
+                    <div
+                      className="pointer-events-auto relative group cursor-pointer"
+                      onClick={handleToggleVoice}
+                    >
+                      <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 dark:from-purple-500 dark:to-indigo-600 shadow-[0_4px_20px_rgba(147,51,234,0.3)] flex items-center justify-center z-20 group-hover:scale-105 transition-transform duration-300 border border-white/20 dark:border-white/10">
+                        <Mic className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="absolute inset-0 rounded-full border-2 border-purple-500 dark:border-purple-400 opacity-40 animate-[ping_2s_ease-in-out_infinite] z-10" />
+                      <div className="absolute inset-0 rounded-full border border-indigo-400 dark:border-indigo-300 opacity-20 animate-[ping_3s_ease-in-out_infinite_0.5s] z-10" />
+                      <div className="absolute inset-0 bg-purple-600 dark:bg-purple-500 blur-2xl opacity-20 group-hover:opacity-40 transition-opacity z-0" />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Thinking dots (Issue 5) */}
+              <AnimatePresence>
+                {thinkingState?.stage === 'director' && !currentSpeech && !userMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex items-center gap-2 px-4 py-2 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-full shadow-sm border border-gray-100 dark:border-gray-700"
+                  >
+                    <div className="flex gap-1">
+                      <motion.div
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1.2,
+                          delay: 0,
+                        }}
+                        className="w-1.5 h-1.5 rounded-full bg-purple-500"
+                      />
+                      <motion.div
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1.2,
+                          delay: 0.2,
+                        }}
+                        className="w-1.5 h-1.5 rounded-full bg-purple-500"
+                      />
+                      <motion.div
+                        animate={{ opacity: [0.3, 1, 0.3] }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 1.2,
+                          delay: 0.4,
+                        }}
+                        className="w-1.5 h-1.5 rounded-full bg-purple-500"
+                      />
+                    </div>
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">
+                      {t('roundtable.thinking')}
+                    </span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Cue user: centered indicator when waiting for user input */}
+              <AnimatePresence>
+                {!overStage &&
+                  isCueUser &&
+                  !bubbleRole &&
+                  !thinkingState &&
+                  !isInputOpen &&
+                  !isVoiceOpen && (
+                    <motion.div
+                      data-testid="cue-user-panel"
+                      initial={{ opacity: 0, scale: 0.85 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.85 }}
+                      transition={{ duration: 0.35, ease: [0.21, 1, 0.36, 1] }}
+                      className={cn(
+                        'absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center gap-2.5',
+                        // On a narrow stage the suggested-reply bubble needs the full width.
+                        showSuggestedReplies && '@max-[36rem]:hidden',
+                      )}
+                    >
+                      {/* Button with ripple effect */}
+                      <div className="relative flex items-center justify-center">
+                        {/* Soft background glow */}
+                        <div
+                          className={cn(
+                            'absolute w-24 h-24 rounded-full blur-2xl',
+                            asrEnabled
+                              ? 'bg-amber-400/[0.08] dark:bg-amber-500/[0.06]'
+                              : 'bg-purple-400/[0.08] dark:bg-purple-500/[0.06]',
+                          )}
+                        />
+
+                        {/* Expanding ripple 1 */}
+                        <motion.div
+                          animate={{ scale: [1, 2.2], opacity: [0.25, 0] }}
+                          transition={{
+                            repeat: Infinity,
+                            duration: 2.2,
+                            ease: 'easeOut',
+                          }}
+                          className={cn(
+                            'absolute w-11 h-11 rounded-full border',
+                            asrEnabled
+                              ? 'border-amber-400/50 dark:border-amber-500/35'
+                              : 'border-purple-400/50 dark:border-purple-500/35',
+                          )}
+                        />
+                        {/* Expanding ripple 2 */}
+                        <motion.div
+                          animate={{ scale: [1, 2.2], opacity: [0.25, 0] }}
+                          transition={{
+                            repeat: Infinity,
+                            duration: 2.2,
+                            ease: 'easeOut',
+                            delay: 0.7,
+                          }}
+                          className={cn(
+                            'absolute w-11 h-11 rounded-full border',
+                            asrEnabled
+                              ? 'border-amber-300/40 dark:border-amber-400/25'
+                              : 'border-purple-300/40 dark:border-purple-400/25',
+                          )}
+                        />
+
+                        {/* Action circle — voice (ASR on) or text input (ASR off) */}
+                        <motion.button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (asrEnabled) handleToggleVoice();
+                            else handleToggleInput();
+                          }}
+                          animate={{ scale: [1, 1.05, 1] }}
                           transition={{
                             repeat: Infinity,
                             duration: 2,
                             ease: 'easeInOut',
                           }}
-                          className="absolute inset-0 rounded-full pointer-events-none"
-                          style={{
-                            border: `2px solid ${agentConfig?.color || '#d97706'}`,
-                          }}
-                        />
-                      )}
-                      <HoverCard openDelay={300} closeDelay={100}>
-                        <HoverCardTrigger asChild>
-                          <div
-                            className={cn(
-                              'relative w-9 h-9 rounded-full transition-all duration-300 cursor-pointer',
-                              isSpeaking
-                                ? 'opacity-100 grayscale-0 scale-110'
-                                : 'opacity-50 grayscale-[0.2] scale-95 hover:opacity-100 hover:grayscale-0 hover:scale-100',
-                            )}
-                          >
-                            <div
-                              className={cn(
-                                'absolute inset-0 rounded-full border-2 transition-all duration-300',
-                                isSpeaking
-                                  ? 'border-purple-500 dark:border-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.4)]'
-                                  : 'border-white dark:border-gray-700',
-                              )}
-                            />
-                            <div className="absolute inset-0.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
-                              <img
-                                src={student.avatar}
-                                alt={student.name}
-                                className="w-full h-full"
-                              />
-                            </div>
-                            {/* Speaking indicator */}
-                            {isSpeaking && (
-                              <div className="absolute -right-0.5 -top-0.5 w-3 h-3 bg-green-500 rounded-full border border-white dark:border-gray-800 z-20 flex items-center justify-center">
-                                <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
-                              </div>
-                            )}
-                            {/* Loading indicator (Issue 5) */}
-                            {isThinkingAgent && (
-                              <div className="absolute inset-0 rounded-full border-2 border-purple-400 border-t-transparent animate-spin z-20" />
-                            )}
-                          </div>
-                        </HoverCardTrigger>
-                        <HoverCardContent
-                          side="bottom"
-                          align="center"
-                          className="w-64 p-3 max-h-[300px] overflow-y-auto"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-gray-100 dark:bg-gray-800">
-                              <img
-                                src={student.avatar}
-                                alt={student.name}
-                                className="w-full h-full"
-                              />
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium truncate">{student.name}</p>
-                              {roleLabel && roleLabel !== `settings.agentRoles.${roleLabelKey}` && (
-                                <span
-                                  className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded-full text-white mt-0.5"
-                                  style={{
-                                    backgroundColor: agentConfig?.color || '#6b7280',
-                                  }}
-                                >
-                                  {roleLabel}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {hasDescription && (
-                            <p className="text-xs text-muted-foreground mt-2 leading-relaxed whitespace-pre-line">
-                              {description}
-                            </p>
+                          className={cn(
+                            'relative w-11 h-11 rounded-full flex items-center justify-center shadow-lg cursor-pointer hover:shadow-xl active:scale-95 z-10 bg-gradient-to-br',
+                            asrEnabled
+                              ? 'from-amber-400 to-orange-500 dark:from-amber-500 dark:to-orange-600 shadow-amber-400/30 dark:shadow-amber-600/20 hover:shadow-amber-400/40 dark:hover:shadow-amber-600/30'
+                              : 'from-purple-400 to-indigo-500 dark:from-purple-500 dark:to-indigo-600 shadow-purple-400/30 dark:shadow-purple-600/20 hover:shadow-purple-400/40 dark:hover:shadow-purple-600/30',
                           )}
-                        </HoverCardContent>
-                      </HoverCard>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+                        >
+                          {asrEnabled ? (
+                            <Mic className="w-[18px] h-[18px] text-white drop-shadow-sm" />
+                          ) : (
+                            <MessageSquare className="w-[18px] h-[18px] text-white drop-shadow-sm" />
+                          )}
+                        </motion.button>
+                      </div>
 
-            {/* Right arrow */}
-            <button
-              onClick={() => {
-                agentScrollRef.current?.scrollBy({
-                  left: 80,
-                  behavior: 'smooth',
-                });
-              }}
-              className="absolute right-0 top-0 bottom-0 w-5 z-10 flex items-center justify-center bg-gradient-to-l from-gray-50/90 dark:from-gray-900/90 to-transparent opacity-0 group-hover/scroll:opacity-100 transition-opacity cursor-pointer"
-            >
-              <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
-            </button>
+                      {/* Visual indicator below button */}
+                      {asrEnabled ? (
+                        <div className="flex items-center justify-center gap-[3px] h-3">
+                          {[0, 1, 2, 3, 4, 3, 2, 1, 0].map((intensity, i) => (
+                            <motion.div
+                              key={i}
+                              animate={{
+                                scaleY: [0.3, 0.5 + intensity * 0.15, 0.3],
+                                opacity: [0.3, 0.7, 0.3],
+                              }}
+                              transition={{
+                                repeat: Infinity,
+                                duration: 0.8 + (i % 3) * 0.1,
+                                delay: i * 0.08,
+                                ease: 'easeInOut',
+                              }}
+                              className="w-[2.5px] h-full origin-center rounded-full bg-amber-400/70 dark:bg-amber-500/60"
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center gap-[3px] h-3">
+                          {[0, 1, 2, 3, 2, 1, 0].map((intensity, i) => (
+                            <motion.div
+                              key={i}
+                              animate={{
+                                scaleY: [0.3, 0.45 + intensity * 0.15, 0.3],
+                                opacity: [0.25, 0.6, 0.25],
+                              }}
+                              transition={{
+                                repeat: Infinity,
+                                duration: 1.0 + (i % 3) * 0.15,
+                                delay: i * 0.12,
+                                ease: 'easeInOut',
+                              }}
+                              className="w-[2.5px] h-full origin-center rounded-full bg-purple-400/60 dark:bg-purple-500/50"
+                            />
+                          ))}
+                        </div>
+                      )}
 
-            {/* ProactiveCard for student/non-teacher agents — rendered via portal */}
-            <AnimatePresence>
-              {discussionRequest &&
-                discussionRequest.agentId !== teacherParticipant?.id &&
-                (() => {
-                  const matchedStudent = studentParticipants.find(
-                    (s) => s.id === discussionRequest.agentId,
-                  );
-                  const agentConfig = getAgentConfig(discussionRequest.agentId || '');
-                  return (
-                    <ProactiveCard
-                      action={discussionRequest}
-                      mode={engineMode === 'paused' ? 'paused' : 'playback'}
-                      anchorRef={discussionAnchorRef}
-                      align="left"
-                      agentName={matchedStudent?.name || agentConfig?.name}
-                      agentAvatar={matchedStudent?.avatar || agentConfig?.avatar}
-                      agentColor={agentConfig?.color}
-                      onSkip={() => onDiscussionSkip?.()}
-                      onListen={() => onDiscussionStart?.(discussionRequest)}
-                      onTogglePause={() => onPlayPause?.()}
-                    />
-                  );
-                })()}
-            </AnimatePresence>
-          </div>
-
-          {/* Divider */}
-          <div className="mx-auto my-1.5 w-8 h-px bg-gray-200 dark:bg-gray-700 opacity-50 shrink-0" />
-
-          {/* User avatar + interaction buttons */}
-          <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0">
-            <div className="flex flex-col gap-1.5 shrink-0">
-              {isSendCooldown ? (
-                /* Unified cooldown indicator — replaces both buttons with a single dot wave */
-                <div className="flex items-center justify-center w-8 h-8">
-                  <div className="flex items-center gap-[3px]">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        animate={{
-                          y: [0, -3, 0],
-                          opacity: [0.35, 0.9, 0.35],
-                        }}
+                      {/* Label */}
+                      <motion.span
+                        animate={{ opacity: [0.5, 0.9, 0.5] }}
                         transition={{
                           repeat: Infinity,
-                          duration: 0.9,
-                          delay: i * 0.12,
+                          duration: 2.5,
                           ease: 'easeInOut',
                         }}
-                        className="w-[4px] h-[4px] rounded-full bg-purple-400 dark:bg-purple-400"
-                      />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (asrEnabled) handleToggleVoice();
-                    }}
-                    disabled={!asrEnabled}
-                    className={cn(
-                      'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
-                      !asrEnabled
-                        ? 'bg-gray-100 dark:bg-gray-800/50 text-gray-300 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-not-allowed'
-                        : isVoiceOpen
-                          ? 'bg-purple-600 dark:bg-purple-500 border-purple-600 dark:border-purple-500 text-white shadow-purple-200 dark:shadow-purple-800'
-                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-700',
-                    )}
-                  >
-                    {asrEnabled ? (
-                      <Mic className="w-3.5 h-3.5" />
-                    ) : (
-                      <MicOff className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleInput();
-                    }}
-                    className={cn(
-                      'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
-                      isInputOpen
-                        ? 'bg-purple-600 dark:bg-purple-500 border-purple-600 dark:border-purple-500 text-white shadow-purple-200 dark:shadow-purple-800'
-                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-700',
-                    )}
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* User avatar (big, clickable to open input) */}
-            <div
-              className="relative group cursor-pointer shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleToggleInput();
-              }}
-            >
-              <div
-                className={cn(
-                  'relative w-16 h-16 rounded-full transition-all duration-300 flex items-center justify-center',
-                  activeRole === 'user' || isInputOpen || isCueUser
-                    ? 'scale-105'
-                    : 'opacity-50 grayscale-[0.2] scale-95 group-hover:opacity-100 group-hover:grayscale-0 group-hover:scale-100',
-                )}
-              >
-                <div
-                  className={cn(
-                    'absolute inset-0 rounded-full border-2 transition-all duration-300',
-                    isCueUser
-                      ? 'border-amber-500 dark:border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)] animate-pulse'
-                      : activeRole === 'user' || isInputOpen
-                        ? 'border-purple-600 dark:border-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.3)]'
-                        : 'border-white dark:border-gray-700 group-hover:border-purple-200 dark:group-hover:border-purple-600',
+                        className={cn(
+                          'text-[10px] font-medium tracking-wider',
+                          asrEnabled
+                            ? 'text-amber-600/70 dark:text-amber-400/60'
+                            : 'text-purple-600/70 dark:text-purple-400/60',
+                        )}
+                      >
+                        {t('roundtable.yourTurn')}
+                      </motion.span>
+                    </motion.div>
                   )}
-                />
-                <div className="w-14 h-14 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden relative z-10 shadow-sm border border-gray-50 dark:border-gray-700 text-2xl">
-                  <AvatarDisplay src={userAvatar} alt={t('roundtable.you')} />
-                </div>
-                <div className="absolute top-0 right-0 w-5 h-5 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center shadow-md border border-gray-100 dark:border-gray-700 z-20">
-                  <div
-                    className={cn(
-                      'w-1.5 h-1.5 rounded-full',
-                      isInputOpen || isCueUser
-                        ? 'bg-purple-500 animate-pulse'
-                        : 'bg-gray-300 dark:bg-gray-600',
-                    )}
-                  />
-                </div>
-              </div>
-              {/* Cue user hint (Issue 7) */}
-              <AnimatePresence>
-                {isCueUser && (
+              </AnimatePresence>
+
+              {/* Suggested replies (draft user bubble) and the chat bubble share one
+                slot and one presence group: they are mutually exclusive, and
+                mode="wait" lets the outgoing bubble finish its exit before the
+                next one mounts. Two separate groups would briefly stack both in
+                this vertically centered column, shifting the new bubble when the
+                old one unmounts. */}
+              <AnimatePresence mode="wait">
+                {showSuggestedReplies && !overStage ? (
                   <motion.div
-                    initial={{ opacity: 0, y: 4, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 4, scale: 0.9 }}
-                    className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded-full shadow-sm z-30"
+                    key="suggested-replies"
+                    data-testid="cue-user-suggested-bubble"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8, transition: { duration: 0.12 } }}
+                    transition={{ duration: 0.2, ease: [0.21, 1, 0.36, 1] }}
+                    className="w-full flex justify-end relative z-10"
                   >
-                    {t('roundtable.yourTurn')}
+                    {/* On wide stages the width stops short of the centered mic cue */}
+                    <div
+                      className={cn(
+                        suggestedReplyBubbleClass,
+                        'w-full @[36rem]:w-[min(420px,calc(50%-3.5rem))] max-h-[var(--dock-bubble-max,110px)] shadow-sm @max-[36rem]:pl-2 @max-[36rem]:pr-3',
+                      )}
+                    >
+                      {suggestedReplyAvatar}
+                      {quickReplies}
+                    </div>
                   </motion.div>
-                )}
+                ) : bubbleRole ? (
+                  <motion.div
+                    key={bubbleKey}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{
+                      opacity: isInputOpen || isVoiceOpen ? 0.4 : 1,
+                      y: 0,
+                      filter: isInputOpen || isVoiceOpen ? 'blur(1px) grayscale(0.2)' : 'none',
+                    }}
+                    exit={{ opacity: 0, y: -8, transition: { duration: 0.12 } }}
+                    transition={{ duration: 0.2, ease: [0.21, 1, 0.36, 1] }}
+                    className="w-full flex items-center relative z-10"
+                  >
+                    <div
+                      className={cn(
+                        'flex w-full transition-all duration-500',
+                        bubbleRole === 'teacher' ? 'justify-start' : 'justify-end',
+                      )}
+                    >
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (bubbleRole === 'user') return;
+                          // Topic pending: click Play to resume
+                          if (isTopicPending) {
+                            onResumeTopic?.();
+                            return;
+                          }
+                          // QA/Discussion: buffer-level pause/resume (freeze text reveal, SSE continues)
+                          if (isInLiveFlow) {
+                            if (isDiscussionPaused) {
+                              onDiscussionResume?.();
+                            } else if (!thinkingState && currentSpeech) {
+                              // Don't allow pause during thinking or before text arrives
+                              onDiscussionPause?.();
+                            }
+                            return;
+                          }
+                          // Lecture playback: toggle play/pause
+                          onPlayPause?.();
+                        }}
+                        className={cn(
+                          'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all [[data-dragging=true]_&]:transition-none border w-[min(var(--dock-bubble-width,420px),calc(100%-3rem))] group/bubble flex flex-col min-h-[var(--dock-bubble-min,0px)] max-h-[var(--dock-bubble-max,110px)]',
+                          bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
+                          bubbleRole === 'user'
+                            ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
+                            : bubbleRole === 'agent'
+                              ? cn(
+                                  'bg-blue-50/95 dark:bg-blue-950/60 backdrop-blur-sm border-blue-200/60 dark:border-blue-800/60 text-gray-700 dark:text-gray-200 rounded-br-sm shadow-sm',
+                                  (isInLiveFlow || isTopicPending) &&
+                                    'hover:shadow-md cursor-pointer',
+                                )
+                              : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 text-gray-700 dark:text-gray-200 rounded-bl-sm shadow-sm hover:shadow-md cursor-pointer',
+                        )}
+                      >
+                        {bubbleRole &&
+                          (() => {
+                            const bubbleAvatar =
+                              bubbleRole === 'user'
+                                ? userAvatar
+                                : bubbleRole === 'agent'
+                                  ? speakingStudent?.avatar || userAvatar
+                                  : teacherAvatar;
+                            return (
+                              <div
+                                className={cn(
+                                  'absolute -top-2.5 z-20 pointer-events-none select-none',
+                                  bubbleRole === 'teacher' ? '-left-2.5' : '-right-2.5',
+                                )}
+                                title={bubbleName}
+                              >
+                                <div
+                                  className={cn(
+                                    'w-6 h-6 rounded-full overflow-hidden border-2 shadow-sm',
+                                    bubbleRole === 'user'
+                                      ? 'border-purple-400 dark:border-purple-500'
+                                      : bubbleRole === 'agent'
+                                        ? 'border-blue-300 dark:border-blue-600'
+                                        : 'border-purple-200 dark:border-purple-700',
+                                  )}
+                                >
+                                  <AvatarDisplay src={bubbleAvatar} alt={bubbleName} />
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                        <div ref={bubbleScrollRef} className="overflow-y-auto scrollbar-hide">
+                          {/* Agent name + audio indicator header */}
+                          {bubbleRole !== 'user' && bubbleName && (
+                            <div className="flex items-center gap-1 mb-0.5">
+                              <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 truncate">
+                                {bubbleName}
+                              </span>
+                              {(() => {
+                                const aiState =
+                                  speakingAgentId === audioAgentId
+                                    ? (audioIndicatorState ?? 'idle')
+                                    : 'idle';
+                                if (aiState === 'generating')
+                                  return (
+                                    <Loader2 className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-spin" />
+                                  );
+                                if (aiState === 'playing')
+                                  return (
+                                    <Volume2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
+                                  );
+                                return null;
+                              })()}
+                            </div>
+                          )}
+                          {isBubbleLoading ? (
+                            <div className="flex gap-1 items-center py-1">
+                              <motion.div
+                                animate={{ opacity: [0.3, 1, 0.3] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 1,
+                                  delay: 0,
+                                }}
+                                className={cn(
+                                  'w-1.5 h-1.5 rounded-full',
+                                  isAgentLoading
+                                    ? 'bg-blue-400 dark:bg-blue-500'
+                                    : 'bg-purple-400 dark:bg-purple-500',
+                                )}
+                              />
+                              <motion.div
+                                animate={{ opacity: [0.3, 1, 0.3] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 1,
+                                  delay: 0.2,
+                                }}
+                                className={cn(
+                                  'w-1.5 h-1.5 rounded-full',
+                                  isAgentLoading
+                                    ? 'bg-blue-400 dark:bg-blue-500'
+                                    : 'bg-purple-400 dark:bg-purple-500',
+                                )}
+                              />
+                              <motion.div
+                                animate={{ opacity: [0.3, 1, 0.3] }}
+                                transition={{
+                                  repeat: Infinity,
+                                  duration: 1,
+                                  delay: 0.4,
+                                }}
+                                className={cn(
+                                  'w-1.5 h-1.5 rounded-full',
+                                  isAgentLoading
+                                    ? 'bg-blue-400 dark:bg-blue-500'
+                                    : 'bg-purple-400 dark:bg-purple-500',
+                                )}
+                              />
+                            </div>
+                          ) : (
+                            <p className="whitespace-pre-wrap break-words" suppressHydrationWarning>
+                              {sourceText}
+                              {isTopicPending && (
+                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 ml-1 align-middle" />
+                              )}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Playback state icon (hidden during loading — dots already indicate activity) */}
+                        {bubbleRole !== 'user' &&
+                          !isBubbleLoading &&
+                          (() => {
+                            const btnState = playbackView?.buttonState ?? 'none';
+                            const barsColor =
+                              bubbleRole === 'agent' ? 'bg-blue-500' : 'bg-purple-500';
+
+                            if (btnState === 'none') return null;
+
+                            if (btnState === 'play') {
+                              return (
+                                <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-gray-50/80 dark:bg-gray-700/80 hover:bg-purple-100 dark:hover:bg-purple-900/50 group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer">
+                                  <Play className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
+                                </div>
+                              );
+                            }
+
+                            if (btnState === 'restart') {
+                              return (
+                                <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-gray-50/80 dark:bg-gray-700/80 hover:bg-purple-100 dark:hover:bg-purple-900/50 group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer">
+                                  <Repeat className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400" />
+                                </div>
+                              );
+                            }
+
+                            // btnState === 'bars'
+                            return (
+                              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-gray-50/80 dark:bg-gray-700/80 group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+                                {isDiscussionPaused ? (
+                                  /* Paused: static Play icon */
+                                  <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
+                                ) : (
+                                  <>
+                                    {/* Breathing bars — visible by default, hidden on hover */}
+                                    <div className="flex gap-0.5 items-end justify-center h-3.5 w-3.5 group-hover/bubble:hidden">
+                                      <motion.div
+                                        animate={{ height: ['20%', '100%', '20%'] }}
+                                        transition={{
+                                          repeat: Infinity,
+                                          duration: 0.6,
+                                        }}
+                                        className={cn('w-1 rounded-full', barsColor)}
+                                      />
+                                      <motion.div
+                                        animate={{ height: ['40%', '100%', '40%'] }}
+                                        transition={{
+                                          repeat: Infinity,
+                                          duration: 0.4,
+                                        }}
+                                        className={cn('w-1 rounded-full', barsColor)}
+                                      />
+                                      <motion.div
+                                        animate={{ height: ['20%', '80%', '20%'] }}
+                                        transition={{
+                                          repeat: Infinity,
+                                          duration: 0.5,
+                                        }}
+                                        className={cn('w-1 rounded-full', barsColor)}
+                                      />
+                                    </div>
+                                    {/* Pause icon on hover */}
+                                    <Pause className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 hidden group-hover/bubble:block" />
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })()}
+                      </div>
+                    </div>
+                  </motion.div>
+                ) : null}
               </AnimatePresence>
             </div>
           </div>
+
+          {/* Right: Participants area */}
+          <div
+            className={cn(
+              'w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
+              isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
+            )}
+          >
+            {/* Companion agent avatars — horizontal row, scrollable on overflow, arrows on hover */}
+            <div className="flex-none relative group/scroll">
+              {/* Left arrow */}
+              <button
+                onClick={() => {
+                  agentScrollRef.current?.scrollBy({
+                    left: -80,
+                    behavior: 'smooth',
+                  });
+                }}
+                className="absolute left-0 top-0 bottom-0 w-5 z-10 flex items-center justify-center bg-gradient-to-r from-gray-50/90 dark:from-gray-900/90 to-transparent opacity-0 group-hover/scroll:opacity-100 transition-opacity cursor-pointer"
+              >
+                <ChevronLeft className="w-3.5 h-3.5 text-gray-400" />
+              </button>
+
+              <div
+                ref={agentScrollRef}
+                className="overflow-x-auto overflow-y-hidden px-2 scrollbar-hide"
+                onWheel={(e) => {
+                  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                    e.preventDefault();
+                  }
+                }}
+              >
+                <div className="flex gap-1 w-max py-1">
+                  {studentParticipants.map((student) => {
+                    const isSpeaking = speakingAgentId === student.id;
+                    const isThinkingAgent =
+                      thinkingState?.stage === 'agent_loading' &&
+                      thinkingState.agentId === student.id;
+                    const agentConfig = getAgentConfig(student.id);
+                    const roleLabelKey = agentConfig?.role as
+                      | 'teacher'
+                      | 'assistant'
+                      | 'student'
+                      | undefined;
+                    const roleLabel = roleLabelKey ? t(`settings.agentRoles.${roleLabelKey}`) : '';
+                    const i18nDescription = t(`settings.agentDescriptions.${student.id}`);
+                    const description =
+                      i18nDescription !== `settings.agentDescriptions.${student.id}`
+                        ? i18nDescription
+                        : agentConfig?.persona || '';
+                    const hasDescription = !!description;
+                    const isDiscussionAgent =
+                      !!discussionRequest && discussionRequest.agentId === student.id;
+                    return (
+                      <div
+                        key={student.id}
+                        data-agent-id={student.id}
+                        ref={(el) => {
+                          if (el) studentAvatarRefs.current.set(student.id, el);
+                          else studentAvatarRefs.current.delete(student.id);
+                        }}
+                        className="relative group/student shrink-0"
+                      >
+                        {/* Breathing glow for discussion agent */}
+                        {isDiscussionAgent && (
+                          <motion.div
+                            animate={{
+                              scale: [1, 1.2, 1],
+                              opacity: [0.7, 0, 0.7],
+                            }}
+                            transition={{
+                              repeat: Infinity,
+                              duration: 2,
+                              ease: 'easeInOut',
+                            }}
+                            className="absolute inset-0 rounded-full pointer-events-none"
+                            style={{
+                              border: `2px solid ${agentConfig?.color || '#d97706'}`,
+                            }}
+                          />
+                        )}
+                        <HoverCard openDelay={300} closeDelay={100}>
+                          <HoverCardTrigger asChild>
+                            <div
+                              className={cn(
+                                'relative w-9 h-9 rounded-full transition-all duration-300 cursor-pointer',
+                                isSpeaking
+                                  ? 'opacity-100 grayscale-0 scale-110'
+                                  : 'opacity-50 grayscale-[0.2] scale-95 hover:opacity-100 hover:grayscale-0 hover:scale-100',
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  'absolute inset-0 rounded-full border-2 transition-all duration-300',
+                                  isSpeaking
+                                    ? 'border-purple-500 dark:border-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.4)]'
+                                    : 'border-white dark:border-gray-700',
+                                )}
+                              />
+                              <div className="absolute inset-0.5 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                                <img
+                                  src={student.avatar}
+                                  alt={student.name}
+                                  className="w-full h-full"
+                                />
+                              </div>
+                              {/* Speaking indicator */}
+                              {isSpeaking && (
+                                <div className="absolute -right-0.5 -top-0.5 w-3 h-3 bg-green-500 rounded-full border border-white dark:border-gray-800 z-20 flex items-center justify-center">
+                                  <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
+                                </div>
+                              )}
+                              {/* Loading indicator (Issue 5) */}
+                              {isThinkingAgent && (
+                                <div className="absolute inset-0 rounded-full border-2 border-purple-400 border-t-transparent animate-spin z-20" />
+                              )}
+                            </div>
+                          </HoverCardTrigger>
+                          <HoverCardContent
+                            side="bottom"
+                            align="center"
+                            className="w-64 p-3 max-h-[300px] overflow-y-auto"
+                          >
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-gray-100 dark:bg-gray-800">
+                                <img
+                                  src={student.avatar}
+                                  alt={student.name}
+                                  className="w-full h-full"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{student.name}</p>
+                                {roleLabel &&
+                                  roleLabel !== `settings.agentRoles.${roleLabelKey}` && (
+                                    <span
+                                      className="inline-block text-[10px] leading-tight px-1.5 py-0.5 rounded-full text-white mt-0.5"
+                                      style={{
+                                        backgroundColor: agentConfig?.color || '#6b7280',
+                                      }}
+                                    >
+                                      {roleLabel}
+                                    </span>
+                                  )}
+                              </div>
+                            </div>
+                            {hasDescription && (
+                              <p className="text-xs text-muted-foreground mt-2 leading-relaxed whitespace-pre-line">
+                                {description}
+                              </p>
+                            )}
+                          </HoverCardContent>
+                        </HoverCard>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right arrow */}
+              <button
+                onClick={() => {
+                  agentScrollRef.current?.scrollBy({
+                    left: 80,
+                    behavior: 'smooth',
+                  });
+                }}
+                className="absolute right-0 top-0 bottom-0 w-5 z-10 flex items-center justify-center bg-gradient-to-l from-gray-50/90 dark:from-gray-900/90 to-transparent opacity-0 group-hover/scroll:opacity-100 transition-opacity cursor-pointer"
+              >
+                <ChevronRight className="w-3.5 h-3.5 text-gray-400" />
+              </button>
+
+              {/* ProactiveCard for student/non-teacher agents — rendered via portal */}
+              <AnimatePresence>
+                {!overStage &&
+                  discussionRequest &&
+                  discussionRequest.agentId !== teacherParticipant?.id &&
+                  (() => {
+                    const matchedStudent = studentParticipants.find(
+                      (s) => s.id === discussionRequest.agentId,
+                    );
+                    const agentConfig = getAgentConfig(discussionRequest.agentId || '');
+                    return (
+                      <ProactiveCard
+                        action={discussionRequest}
+                        mode={engineMode === 'paused' ? 'paused' : 'playback'}
+                        anchorRef={discussionAnchorRef}
+                        align="left"
+                        agentName={matchedStudent?.name || agentConfig?.name}
+                        agentAvatar={matchedStudent?.avatar || agentConfig?.avatar}
+                        agentColor={agentConfig?.color}
+                        onSkip={() => onDiscussionSkip?.()}
+                        onListen={() => onDiscussionStart?.(discussionRequest)}
+                        onTogglePause={() => onPlayPause?.()}
+                      />
+                    );
+                  })()}
+              </AnimatePresence>
+            </div>
+
+            {/* Divider */}
+            <div className="mx-auto my-1.5 w-8 h-px bg-gray-200 dark:bg-gray-700 opacity-50 shrink-0" />
+
+            {/* User avatar + interaction buttons */}
+            <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0">
+              <div className="flex flex-col gap-1.5 shrink-0">
+                {isSendCooldown ? (
+                  /* Unified cooldown indicator — replaces both buttons with a single dot wave */
+                  <div className="flex items-center justify-center w-8 h-8">
+                    <div className="flex items-center gap-[3px]">
+                      {[0, 1, 2].map((i) => (
+                        <motion.div
+                          key={i}
+                          animate={{
+                            y: [0, -3, 0],
+                            opacity: [0.35, 0.9, 0.35],
+                          }}
+                          transition={{
+                            repeat: Infinity,
+                            duration: 0.9,
+                            delay: i * 0.12,
+                            ease: 'easeInOut',
+                          }}
+                          className="w-[4px] h-[4px] rounded-full bg-purple-400 dark:bg-purple-400"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (asrEnabled) handleToggleVoice();
+                      }}
+                      disabled={!asrEnabled}
+                      className={cn(
+                        'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
+                        !asrEnabled
+                          ? 'bg-gray-100 dark:bg-gray-800/50 text-gray-300 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-not-allowed'
+                          : isVoiceOpen
+                            ? 'bg-purple-600 dark:bg-purple-500 border-purple-600 dark:border-purple-500 text-white shadow-purple-200 dark:shadow-purple-800'
+                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-700',
+                      )}
+                    >
+                      {asrEnabled ? (
+                        <Mic className="w-3.5 h-3.5" />
+                      ) : (
+                        <MicOff className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleInput();
+                      }}
+                      className={cn(
+                        'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
+                        isInputOpen
+                          ? 'bg-purple-600 dark:bg-purple-500 border-purple-600 dark:border-purple-500 text-white shadow-purple-200 dark:shadow-purple-800'
+                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-700',
+                      )}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* User avatar (big, clickable to open input) */}
+              <div
+                className="relative group cursor-pointer shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleToggleInput();
+                }}
+              >
+                <div
+                  className={cn(
+                    'relative w-16 h-16 rounded-full transition-all duration-300 flex items-center justify-center',
+                    activeRole === 'user' || isInputOpen || isCueUser
+                      ? 'scale-105'
+                      : 'opacity-50 grayscale-[0.2] scale-95 group-hover:opacity-100 group-hover:grayscale-0 group-hover:scale-100',
+                  )}
+                >
+                  <div
+                    className={cn(
+                      'absolute inset-0 rounded-full border-2 transition-all duration-300',
+                      isCueUser
+                        ? 'border-amber-500 dark:border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.4)] animate-pulse'
+                        : activeRole === 'user' || isInputOpen
+                          ? 'border-purple-600 dark:border-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.3)]'
+                          : 'border-white dark:border-gray-700 group-hover:border-purple-200 dark:group-hover:border-purple-600',
+                    )}
+                  />
+                  <div className="w-14 h-14 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden relative z-10 shadow-sm border border-gray-50 dark:border-gray-700 text-2xl">
+                    <AvatarDisplay src={userAvatar} alt={t('roundtable.you')} />
+                  </div>
+                  <div className="absolute top-0 right-0 w-5 h-5 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center shadow-md border border-gray-100 dark:border-gray-700 z-20">
+                    <div
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full',
+                        isInputOpen || isCueUser
+                          ? 'bg-purple-500 animate-pulse'
+                          : 'bg-gray-300 dark:bg-gray-600',
+                      )}
+                    />
+                  </div>
+                </div>
+                {/* Cue user hint (Issue 7) */}
+                <AnimatePresence>
+                  {isCueUser && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 4, scale: 0.9 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.9 }}
+                      className="absolute -bottom-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 bg-amber-500 text-white text-[9px] font-bold rounded-full shadow-sm z-30"
+                    >
+                      {t('roundtable.yourTurn')}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </div>
         </div>
+        {/* close interaction row */}
       </div>
-      {/* close interaction row */}
-    </div>
+    </>
   );
 }

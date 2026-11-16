@@ -387,6 +387,18 @@ describe('agent session collection route', () => {
     await expect(response.json()).resolves.toEqual([{ id: 'session-1', status: 'running' }]);
   });
 
+  it('passes the store’s awaiting-answer verdict through to the rail', async () => {
+    mocks.listSessionsByOwner.mockResolvedValue([
+      { id: 'asked', status: 'succeeded', awaitingAnswer: true },
+      { id: 'at-rest', status: 'succeeded' },
+    ]);
+    const response = await GET(new NextRequest('http://localhost/api/agent/sessions'));
+    await expect(response.json()).resolves.toEqual([
+      { id: 'asked', status: 'succeeded', awaitingAnswer: true },
+      { id: 'at-rest', status: 'succeeded' },
+    ]);
+  });
+
   it('keeps both collection methods behind the runtime gate', async () => {
     mocks.runtimeEnabled = false;
 

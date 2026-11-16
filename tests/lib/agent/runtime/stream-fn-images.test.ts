@@ -288,3 +288,30 @@ describe('tool-result image transport', () => {
     },
   );
 });
+
+describe('opt-in user image transport', () => {
+  const user: Message = {
+    role: 'user',
+    timestamp: 0,
+    content: [{ type: 'text', text: 'Current state' }, image],
+  };
+  it('leaves authoring user messages text-only even with tool images enabled', () => {
+    expect(toModelMessages([user], { includeToolImages: true })).toEqual([
+      { role: 'user', content: 'Current state' },
+    ]);
+    expect(toModelMessages([user], { includeUserImages: false })).toEqual([
+      { role: 'user', content: 'Current state' },
+    ]);
+  });
+  it('preserves text and PNG in the same final user message when explicitly enabled', () => {
+    expect(toModelMessages([user], { includeUserImages: true })).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Current state' },
+          { type: 'image', image: PNG, mediaType: 'image/png' },
+        ],
+      },
+    ]);
+  });
+});

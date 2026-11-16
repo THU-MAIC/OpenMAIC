@@ -6,6 +6,7 @@ import {
   reduceOwnerStreamSignal,
   relativeBucket,
   runningSessionStageIds,
+  sessionRowMark,
   type OwnerSessionEvent,
   type ProHomeSessionItem,
 } from '@/lib/workbench/pro-home-data';
@@ -370,5 +371,118 @@ describe('sidebar relative timestamps', () => {
     expect(relativeBucket(0, now)).toBeNull();
     expect(relativeBucket(Number.NaN, now)).toBeNull();
     expect(relativeBucket(-1, now)).toBeNull();
+  });
+});
+
+describe('awaiting an answer', () => {
+  const statusEvent = (
+    sessionId: string,
+    status: ProHomeSessionItem['status'],
+    awaitingAnswer?: boolean,
+  ): OwnerSessionEvent => ({
+    id: '77',
+    sessionId,
+    ts: 900,
+    phase: 'live',
+    type: 'session_status',
+    status,
+    attempt: 0,
+    ...(awaitingAnswer === undefined ? {} : { awaitingAnswer }),
+  });
+
+  it('takes the flag from a status summary and drops it on any later status without it', () => {
+    const asked = reduceOwnerSessionEvent(
+      [session('a', { status: 'running' })],
+      statusEvent('a', 'succeeded', true),
+    );
+    expect(asked.sessions[0]).toMatchObject({ status: 'succeeded', awaitingAnswer: true });
+
+    const answered = reduceOwnerSessionEvent(asked.sessions, statusEvent('a', 'queued'));
+    expect(answered.sessions[0]?.status).toBe('queued');
+    expect(answered.sessions[0]).not.toHaveProperty('awaitingAnswer');
+
+    const settledWithoutAsking = reduceOwnerSessionEvent(
+      answered.sessions,
+      statusEvent('a', 'succeeded'),
+    );
+    expect(settledWithoutAsking.sessions[0]).not.toHaveProperty('awaitingAnswer');
+  });
+
+  it('never lets a live status carry the flag, even if a summary claims it', () => {
+    const result = reduceOwnerSessionEvent(
+      [session('a', { status: 'succeeded', awaitingAnswer: true })],
+      statusEvent('a', 'running', true),
+    );
+    expect(result.sessions[0]).not.toHaveProperty('awaitingAnswer');
+  });
+
+  it('overlays the attached fold: a fresh question marks the row, an answer clears it at once', () => {
+    const rows = [session('a', { status: 'running' }), session('b', { status: 'succeeded' })];
+    const attached = { paneId: 'a', attachedId: 'a' } as const;
+
+    // The question card and session_end reach the fold before the owner summary.
+    const asked = reconcileAttachedSessionStatus(rows, {
+      ...attached,
+      status: 'succeeded',
+      awaitingAnswer: true,
+    });
+    expect(asked[0]).toMatchObject({ status: 'succeeded', awaitingAnswer: true });
+    expect(asked[1]).toBe(rows[1]);
+
+    // Same fold, same answer: nothing to change.
+    expect(
+      reconcileAttachedSessionStatus(asked, {
+        ...attached,
+        status: 'succeeded',
+        awaitingAnswer: true,
+      }),
+    ).toBe(asked);
+
+    // The teacher answers in the chat: the card is answered before any run starts.
+    const answered = reconcileAttachedSessionStatus(asked, {
+      ...attached,
+      status: 'succeeded',
+      awaitingAnswer: false,
+    });
+    expect(answered[0]?.status).toBe('succeeded');
+    expect(answered[0]).not.toHaveProperty('awaitingAnswer');
+  });
+
+  it('keeps the row’s own flag while the fold has no verdict, and clears it under a live fold', () => {
+    const rows = [session('a', { status: 'succeeded', awaitingAnswer: true })];
+    expect(
+      reconcileAttachedSessionStatus(rows, {
+        paneId: 'a',
+        attachedId: 'a',
+        status: 'succeeded',
+      }),
+    ).toBe(rows);
+    const resumed = reconcileAttachedSessionStatus(rows, {
+      paneId: 'a',
+      attachedId: 'a',
+      status: 'running',
+      awaitingAnswer: true,
+    });
+    expect(resumed[0]?.status).toBe('running');
+    expect(resumed[0]).not.toHaveProperty('awaitingAnswer');
+    // A detached or other-pane fold lends nothing.
+    expect(
+      reconcileAttachedSessionStatus(rows, {
+        paneId: 'a',
+        attachedId: 'b',
+        status: 'succeeded',
+        awaitingAnswer: false,
+      }),
+    ).toBe(rows);
+  });
+
+  it('orders the row mark: running, then awaiting, then failed, then the time', () => {
+    expect(sessionRowMark({ status: 'running', awaitingAnswer: true })).toBe('running');
+    expect(sessionRowMark({ status: 'queued' })).toBe('queued');
+    expect(sessionRowMark({ status: 'failed', awaitingAnswer: true })).toBe('awaiting');
+    expect(sessionRowMark({ status: 'cancelled', awaitingAnswer: true })).toBe('awaiting');
+    expect(sessionRowMark({ status: 'failed' })).toBe('failed');
+    expect(sessionRowMark({ status: 'succeeded' })).toBeNull();
+    expect(sessionRowMark({ status: 'cancelled' })).toBeNull();
   });
 });

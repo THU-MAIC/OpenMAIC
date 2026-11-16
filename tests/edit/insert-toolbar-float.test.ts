@@ -246,7 +246,7 @@ describe('floating insert toolbar', () => {
     const constraints = mocks.dragConstraints.ref?.current as HTMLElement;
     expect(constraints).not.toBeUndefined();
     expect(constraints.parentElement).toBe(layer());
-    expect(constraints.className).toContain('inset-2');
+    expect(constraints.className).toContain('inset-1');
 
     // Keyboard move, which clamps against that same box: jsdom lays out nothing,
     // so give the boundary the frame-minus-margin rect it has in a browser and

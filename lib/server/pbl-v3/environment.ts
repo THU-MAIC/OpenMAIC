@@ -215,8 +215,13 @@ export function recoveredProgress(
   const planChanged =
     !!collected.plan && collected.plan.contentHash !== hash(files['PLAN.md'] ?? '');
   if (collected.plan && !planChanged) collected.plan.workspaceRevisionId = fingerprint;
+  // A formal pass on these exact files is newer evidence than the code review
+  // performed before repair. An older checkpoint still invalidates that pass.
+  const matchesPassedTests =
+    collected.tests?.status === 'passed' && collected.tests.revision.id === fingerprint;
   const codeChanged =
-    planChanged || (!!collected.code && collected.code.workspaceRevisionId !== fingerprint);
+    planChanged ||
+    (!matchesPassedTests && !!collected.code && collected.code.workspaceRevisionId !== fingerprint);
   const testsChanged =
     codeChanged || (!!collected.tests && collected.tests.revision.id !== fingerprint);
   let restart = -1;
