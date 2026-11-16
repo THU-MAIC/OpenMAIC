@@ -137,4 +137,47 @@ describe('a question may auto-confirm only when it arrived live', () => {
     await send(question(2));
     expect(live()).toEqual([]);
   });
+
+  const leave = (detach: boolean) =>
+    act(async () => {
+      root.render(null);
+      if (detach) useWorkbenchStore.getState().detach();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  const comeBack = () =>
+    act(async () => {
+      root.render(createElement(Harness, { sessionId: 's' }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+  it.each([
+    ['kept in memory', false],
+    ['replayed from scratch', true],
+  ])('not when the same session is left unanswered and opened again (%s)', async (_how, detach) => {
+    await open();
+    await send(start(1, 'backlog') + CAUGHT_UP);
+    await send(question(2, 'live'));
+    expect(live()).toEqual([sessionScopedKey('s', 'e2')]);
+    await leave(detach);
+    expect(live()).toEqual([]);
+    await comeBack();
+    await open();
+    await send((detach ? start(1, 'backlog') + question(2, 'backlog') : '') + CAUGHT_UP);
+    expect(
+      useWorkbenchStore.getState().chat.some((n) => n.kind === 'question' && !n.questionAnswered),
+    ).toBe(true);
+    expect(live()).toEqual([]);
+  });
+
+  it('yes for a question asked live after coming back', async () => {
+    await open();
+    await send(start(1, 'backlog') + CAUGHT_UP);
+    await send(question(2, 'live'));
+    await leave(false);
+    await comeBack();
+    await open();
+    await send(CAUGHT_UP);
+    await send(question(3, 'live'));
+    expect(live()).toEqual([sessionScopedKey('s', 'e3')]);
+  });
 });

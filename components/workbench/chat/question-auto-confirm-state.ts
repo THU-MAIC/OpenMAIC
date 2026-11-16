@@ -269,7 +269,9 @@ export function useAutoConfirmCountdown(input: {
       pausedFor: hidden() ? ['hidden'] : [],
       onChange: setSnapshot,
       onFire: () => {
-        useQuestionAutoConfirm.getState().stop(key);
+        // One answer per question, whichever form fires first, and none at
+        // all once the user has stopped it.
+        if (!useQuestionAutoConfirm.getState().claim(key)) return;
         const recommended = (node.questionOptions ?? []).find((o) => o.id === optionId);
         if (recommended) onFireRef.current(recommended);
       },

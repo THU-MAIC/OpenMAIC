@@ -9,13 +9,18 @@
  * outside any one form decide whether that may happen and what the transcript
  * says afterwards, so they live here:
  *
- *  - LIVE questions: only a question that arrived on the live stream during this
- *    visit may count down. A question replayed from the backlog (an old session
- *    reopened, a reconnect catching up) is history the user has not seen arrive,
- *    and answering it for them would be acting on a decision they never saw.
- *  - STOPPED questions: once the user touched a question's form, its countdown is
- *    over for good, even if the form unmounts and mounts again elsewhere (the
- *    composer and the request preview host the same question).
+ *  - LIVE questions: only a question that arrived on the live stream during the
+ *    CURRENT attachment of its session may count down. The stream forgets a
+ *    session's live questions whenever it attaches to or leaves that session,
+ *    so a question replayed from the backlog (an old session reopened, the same
+ *    session left unanswered and opened again, a reconnect catching up) is
+ *    history the user has not seen arrive, and answering it for them would be
+ *    acting on a decision they never saw.
+ *  - STOPPED questions: once the user touched a question's form, or its
+ *    countdown fired, it is over for good, even if the form unmounts and mounts
+ *    again elsewhere (the composer and the request preview host the same
+ *    question). Firing CLAIMS the question here first, so two forms that both
+ *    happen to be counting down for it can send its answer only once.
  *  - AUTO-CONFIRMED questions: the answer an auto-confirm sends is an ordinary
  *    user message (the whole `ask_user` answer protocol), so the only record that
  *    it was chosen for the user is kept here, per browser, to label the answered
@@ -24,6 +29,7 @@
  * Every key is `sessionScopedKey(sessionId, node.key)`.
  */
 import { create } from 'zustand';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 
 /** How long the form waits before sending the recommended option. */
 export const AUTO_CONFIRM_SECONDS = 8;
@@ -63,7 +69,12 @@ interface QuestionAutoConfirmState {
   /** Whether `autoConfirmed` has been read from the browser yet. */
   readonly loaded: boolean;
   readonly markLive: (key: string) => void;
+  readonly unmarkLive: (key: string) => void;
+  /** Forget every live marker of one session (`sessionScopedKey` prefix). */
+  readonly forgetLiveSession: (sessionId: string) => void;
   readonly stop: (key: string) => void;
+  /** Stop the question and report whether this call was the one that stopped it. */
+  readonly claim: (key: string) => boolean;
   readonly markAutoConfirmed: (key: string) => void;
   readonly unmarkAutoConfirmed: (key: string) => void;
   readonly load: () => void;
@@ -75,6 +86,23 @@ export const useQuestionAutoConfirm = create<QuestionAutoConfirmState>((set, get
   autoConfirmed: [],
   loaded: false,
   markLive: (key) => set((state) => ({ live: remember(state.live, key) })),
+  unmarkLive: (key) =>
+    set((state) =>
+      state.live.includes(key) ? { live: state.live.filter((other) => other !== key) } : state,
+    ),
+  forgetLiveSession: (sessionId) => {
+    const prefix = sessionScopedKey(sessionId, '');
+    set((state) =>
+      state.live.some((key) => key.startsWith(prefix))
+        ? { live: state.live.filter((key) => !key.startsWith(prefix)) }
+        : state,
+    );
+  },
+  claim: (key) => {
+    if (get().stopped.includes(key)) return false;
+    set((state) => ({ stopped: remember(state.stopped, key) }));
+    return true;
+  },
   stop: (key) =>
     set((state) =>
       state.stopped.includes(key) ? state : { stopped: remember(state.stopped, key) },

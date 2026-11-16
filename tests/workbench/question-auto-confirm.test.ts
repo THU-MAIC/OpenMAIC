@@ -274,6 +274,31 @@ describe('the answer form', () => {
     expect(useQuestionAutoConfirm.getState().autoConfirmed).toContain(key);
   });
 
+  it('sends once when two forms count down for the same question', async () => {
+    const node = question();
+    useWorkbenchStore.setState({ sessionId: SESSION, chat: [node] } as never);
+    useQuestionAutoConfirm.setState({ live: [key], stopped: [], autoConfirmed: [], loaded: true });
+    await act(async () =>
+      root.render(
+        createElement(
+          'div',
+          null,
+          createElement(QuestionForm, { key: 'chat', node, onAnswer, onDismiss: () => {} }),
+          createElement(QuestionForm, {
+            key: 'preview',
+            node,
+            onAnswer,
+            onDismiss: () => {},
+            embedded: true,
+          }),
+        ),
+      ),
+    );
+    expect(container.querySelectorAll('[data-auto-confirm="running"]').length).toBe(2);
+    await advance(DURATION);
+    expect(answers).toEqual(['Go ahead']);
+  });
+
   it('sends only the recommended label for a multi-select question', async () => {
     await mount(question({ questionMultiSelect: true }));
     await advance(DURATION);
