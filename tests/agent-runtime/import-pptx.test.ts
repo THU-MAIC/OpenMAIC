@@ -772,7 +772,7 @@ describe('parsePptxIsolated bounds', () => {
   it('rejects a hung worker when the parse timeout elapses and terminates it', async () => {
     const { HungWorker, constructed } = hungWorkerHarness();
     await expect(
-      parsePptxIsolated(new ArrayBuffer(8), { Worker: HungWorker, timeoutMs: 20 }),
+      parsePptxIsolated(new ArrayBuffer(8), { spawnWorker: () => new HungWorker(), timeoutMs: 20 }),
     ).rejects.toThrow(/parse exceeded 20ms/i);
     expect(constructed).toHaveLength(1);
     expect(constructed[0]?.terminate).toHaveBeenCalled();
@@ -784,7 +784,7 @@ describe('parsePptxIsolated bounds', () => {
     abort.abort();
     await expect(
       parsePptxIsolated(new ArrayBuffer(8), {
-        Worker: HungWorker,
+        spawnWorker: () => new HungWorker(),
         signal: abort.signal,
         timeoutMs: 5_000,
       }),
@@ -796,7 +796,7 @@ describe('parsePptxIsolated bounds', () => {
     const { HungWorker, constructed } = hungWorkerHarness();
     const abort = new AbortController();
     const pending = parsePptxIsolated(new ArrayBuffer(8), {
-      Worker: HungWorker,
+      spawnWorker: () => new HungWorker(),
       signal: abort.signal,
       timeoutMs: 5_000,
     });
