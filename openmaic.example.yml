@@ -99,6 +99,11 @@ providers:
   #   credentials:
   #     accessKeyId: ${ALIDOCMIND_ACCESS_KEY_ID}
   #     accessKeySecret: ${ALIDOCMIND_ACCESS_KEY_SECRET}
+  # paddleocr-cloud:
+  #   preset: paddleocr-cloud
+  #   credentials:
+  #     accessKeyId: ${PADDLEOCR_CLOUD_ACCESS_KEY_ID}
+  #     accessKeySecret: ${PADDLEOCR_CLOUD_ACCESS_KEY_SECRET}
 
 slots:
   # The default chat model. Every chat slot without an assignment of its own

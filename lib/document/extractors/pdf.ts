@@ -1,8 +1,10 @@
+import { parseWithPaddleCloud } from '@/lib/pdf/paddleocr-cloud';
+import { parseWithPaddleOCR } from '@/lib/pdf/paddleocr';
 import { parseWithMinerUCloud } from '@/lib/pdf/mineru-cloud';
 import { parsePDF, parseWithMinerUDocument } from '@/lib/pdf/pdf-providers';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
-import { DOCUMENT_MIME_TYPES } from '../mime';
+import { DOCUMENT_MIME_TYPES, getExtensionsForMimes } from '../mime';
 import { parsedPdfToDocumentArtifact } from '../pdf-compat';
 import type { DocumentExtractorInput, DocumentExtractorProvider } from '../types';
 import { getDocumentExtractorManifestEntry, type DocumentExtractorManifestEntry } from './manifest';
@@ -45,6 +47,19 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
         });
       } else if (id === 'mineru-cloud') {
         parsed = await parseWithMinerUCloud(config, input.buffer, input.fileName);
+      } else if (id === 'paddleocr') {
+        parsed = await parseWithPaddleOCR(config, input.buffer, { mimeType: input.mimeType });
+      } else if (id === 'paddleocr-cloud') {
+        // Baidu selects the upload format from the file_name extension, so a
+        // missing or extension-less name is repaired from the input MIME —
+        // this branch bypasses parsePDF's repair and would otherwise send
+        // DOCX/image inputs under a PDF-ish name.
+        let cloudName = input.fileName;
+        if ((!cloudName || !cloudName.includes('.')) && input.mimeType) {
+          const ext = getExtensionsForMimes([input.mimeType])[0];
+          if (ext) cloudName = cloudName ? `${cloudName}.${ext}` : `document.${ext}`;
+        }
+        parsed = await parseWithPaddleCloud(config, input.buffer, cloudName);
       } else if (id === 'mineru') {
         // Self-host MinerU routes every type (incl. pdf) through /file_parse.
         parsed = await parseWithMinerUDocument(config, input.buffer, {

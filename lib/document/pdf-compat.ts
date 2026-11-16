@@ -1,3 +1,4 @@
+import { getDocumentExtractorManifestEntry } from './extractors/manifest';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import type {
   DocumentArtifact,
@@ -51,8 +52,8 @@ function pdfLayoutType(value: unknown): NonNullable<ParsedPdfContent['layout']>[
     : 'text';
 }
 
-function isMinerUMarkdownParser(parser: unknown): boolean {
-  return parser === 'mineru' || parser === 'mineru-cloud';
+function isMarkdownParser(parser: unknown): boolean {
+  return getDocumentExtractorManifestEntry(String(parser))?.markdownOutput === true;
 }
 
 export function parsedPdfToDocumentArtifact(
@@ -64,7 +65,7 @@ export function parsedPdfToDocumentArtifact(
   if (parsed.text) {
     blocks.push({
       id: 'document-text',
-      type: isMinerUMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
+      type: isMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
       text: parsed.text,
     });
   }
