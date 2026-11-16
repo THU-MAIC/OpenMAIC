@@ -15,7 +15,7 @@
  * - V3 teaching turns have no total duration, output or tool-count cap, while
  *   cancellation, shutdown, and lease-loss retain their meaning.
  */
-import type { AgentTool } from '@earendil-works/pi-agent-core';
+import type { AgentMessage, AgentTool } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
 import type { ClaimedAgentSession } from '@openmaic/storage';
 import { Type } from 'typebox';
@@ -117,6 +117,8 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
 });
 
 import { runSession } from '@/lib/server/agent-runtime/runner';
+import type { Message } from '@earendil-works/pi-ai';
+import { preloadInitialPlan } from '@/lib/server/pbl-v3/plan-tool-context';
 import { AGENT_TOOL_TIMEOUT_ENV } from '@/lib/agent/runtime/tool-timeout';
 
 const SESSION_ID = 'session-1';
@@ -363,6 +365,67 @@ describe('runner: cancel of a hung tool', () => {
 });
 
 describe('runner: unbounded V3 teaching turns', () => {
+  it.each([false, true])(
+    'retains the initial plan without adding a learner turn (resume: %s)',
+    async (resume) => {
+      const meta = makeMeta({ id: 'pbl-role-plan-preload' });
+      const session = await makeEntryTree(),
+        store = makeStore(meta);
+      if (resume) await session.appendMessage({ role: 'user', content: meta.prompt, timestamp: 1 });
+      mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+      mocks.getAgentSessionStore.mockResolvedValue(store);
+      const text = 'Exact saved plan for this learner version.';
+      const initialPlan = {
+        text,
+        literalPrompt: 'Teaching rules\nInitial file: ' + text,
+        referencePrompt:
+          'Teaching rules\nInitial file: retained source identified by initialPlanSource',
+      };
+      const preloadMessages = vi.fn(
+        (messages: AgentMessage[], model: Parameters<typeof preloadInitialPlan>[2]) =>
+          preloadInitialPlan(
+            {
+              systemPrompt: initialPlan.literalPrompt,
+              messages: messages.filter((m): m is Message =>
+                ['user', 'assistant', 'toolResult'].includes(m.role),
+              ),
+            },
+            initialPlan,
+            model,
+          ),
+      );
+      mocks.teachingRunnerConfig.mockResolvedValue({
+        tools: [],
+        systemPrompt: initialPlan.literalPrompt,
+        preloadMessages,
+        historyWindow: { stageKey: 'm:2', studentTurns: 1, initialPlan },
+        thinkingConfig: () => ({ mode: 'disabled' }),
+        allowedToolNames: new Set(),
+        needsTurnReceipt: () => false,
+        isTurnComplete: () => false,
+      });
+      useResponses([[{ type: 'text-delta', text: 'Ready for review.' }, finish('stop')]]);
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      const history = (await session.buildContext()).messages;
+      expect(history.slice(0, 3).map((m) => m.role)).toEqual(['user', 'assistant', 'toolResult']);
+      expect(history.filter((m) => m.role === 'user')).toHaveLength(1);
+      const receipt = history[2];
+      if (receipt?.role !== 'toolResult' || receipt.content[0]?.type !== 'text')
+        throw new Error('Missing preload receipt');
+      expect(JSON.parse(receipt.content[0].text).text).toBe(text);
+      expect(preloadMessages).toHaveBeenCalledOnce();
+      expect(mocks.streamLLM).toHaveBeenCalledOnce();
+      const request = mocks.streamLLM.mock.calls[0]![0];
+      expect(JSON.stringify(request.messages)).toContain(text);
+      expect(request.system).not.toContain(text);
+      expect(store.finishSession).toHaveBeenCalledWith(
+        meta.id,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+    },
+  );
+
   it.each(['cancel', 'shutdown', 'lease-loss'] as const)(
     'keeps a tool alive beyond all former deadlines, then honors %s',
     async (outcome) => {
@@ -380,6 +443,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       mocks.openEntryStorage.mockResolvedValue(session.getStorage());
       mocks.getAgentSessionStore.mockResolvedValue(store);
       mocks.teachingRunnerConfig.mockResolvedValue({
+        preloadMessages: () => [],
         tools: [makeHungTool(captured, started)],
         systemPrompt: 'Teaching test',
         thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
@@ -434,6 +498,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       mocks.openEntryStorage.mockResolvedValue(session.getStorage());
       mocks.getAgentSessionStore.mockResolvedValue(store);
       mocks.teachingRunnerConfig.mockResolvedValue({
+        preloadMessages: () => [],
         tools: [],
         systemPrompt: 'Teaching test',
         allowedToolNames: new Set(),
@@ -486,6 +551,7 @@ describe('runner: unbounded V3 teaching turns', () => {
     mocks.openEntryStorage.mockResolvedValue(session.getStorage());
     mocks.getAgentSessionStore.mockResolvedValue(store);
     mocks.teachingRunnerConfig.mockResolvedValue({
+      preloadMessages: () => [],
       tools: [],
       systemPrompt: 'Teaching test',
       allowedToolNames: new Set(),
@@ -545,6 +611,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       mocks.openEntryStorage.mockResolvedValue(session.getStorage());
       mocks.getAgentSessionStore.mockResolvedValue(store);
       mocks.teachingRunnerConfig.mockResolvedValue({
+        preloadMessages: () => [],
         tools: [],
         systemPrompt: 'Teaching test',
         allowedToolNames: new Set(),
@@ -615,6 +682,7 @@ describe('runner: unbounded V3 teaching turns', () => {
     mocks.openEntryStorage.mockResolvedValue(session.getStorage());
     mocks.getAgentSessionStore.mockResolvedValue(store);
     mocks.teachingRunnerConfig.mockResolvedValue({
+      preloadMessages: () => [],
       tools: [],
       systemPrompt: 'Teaching test',
       thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
@@ -685,6 +753,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       }),
     };
     mocks.teachingRunnerConfig.mockResolvedValue({
+      preloadMessages: () => [],
       tools: [tool],
       systemPrompt: 'Teaching test',
       thinkingConfig: () =>
@@ -725,6 +794,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       })),
     };
     mocks.teachingRunnerConfig.mockResolvedValue({
+      preloadMessages: () => [],
       tools: [tool],
       systemPrompt: 'Teaching test',
       thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
@@ -756,6 +826,7 @@ it('fails an ended teaching turn after one receipt repair rather than continuing
   mocks.openEntryStorage.mockResolvedValue(session.getStorage());
   mocks.getAgentSessionStore.mockResolvedValue(store);
   mocks.teachingRunnerConfig.mockResolvedValue({
+    preloadMessages: () => [],
     tools: [],
     systemPrompt: 'Teaching test',
     thinkingConfig: () => ({ mode: 'enabled', effort: 'low', level: 'low' }),
@@ -788,6 +859,7 @@ it('persists a request timeout as failed and releases the worker without cancell
   mocks.openEntryStorage.mockResolvedValue(session.getStorage());
   mocks.getAgentSessionStore.mockResolvedValue(store);
   mocks.teachingRunnerConfig.mockResolvedValue({
+    preloadMessages: () => [],
     tools: [],
     systemPrompt: 'Teaching test',
     thinkingConfig: () => ({ mode: 'disabled' }),
