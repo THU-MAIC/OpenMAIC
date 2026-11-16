@@ -1,6 +1,8 @@
 import { parseMinerUPdfChunks } from '@/lib/pdf/mineru-chunks';
 import { documentExtractionFailure } from '@/lib/server/material-extraction/extract';
 import { readFileSync } from 'node:fs';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
 import { randomBytes } from 'node:crypto';
 import { PDFDict, PDFDocument, PDFName, PDFString } from 'pdf-lib';
@@ -48,6 +50,46 @@ afterEach(() => {
 });
 
 describe('self-hosted MinerU PDF chunks', () => {
+  it('releases the source PDF while the last parse requests are still pending', async () => {
+    vi.stubEnv('PDF_MINERU_CHUNK_CONCURRENCY', '4');
+    const bytes = await pdf(6);
+    let source: WeakRef<PDFDocument> | undefined;
+    const load = PDFDocument.load;
+    const loadSpy = vi.spyOn(PDFDocument, 'load').mockImplementation(async (...args) => {
+      const document = await load(...args);
+      source = new WeakRef(document);
+      return document;
+    });
+    let release!: () => void;
+    let dispatched!: () => void;
+    const pending = new Promise<void>((resolve) => (release = resolve));
+    const allDispatched = new Promise<void>((resolve) => (dispatched = resolve));
+    let calls = 0;
+    const job = parseMinerUPdfChunks(bytes, async (_bytes, name) => {
+      if (++calls === 3) dispatched();
+      await pending;
+      return { md_content: name };
+    });
+    try {
+      await allDispatched;
+      // The spy's recorded result would itself keep the loaded document alive.
+      loadSpy.mockClear();
+      setFlagsFromString('--expose-gc');
+      const gc = runInNewContext('gc') as () => void;
+      setFlagsFromString('--no-expose-gc');
+      for (let round = 0; round < 3; round++) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        gc();
+      }
+      expect(source).toBeDefined();
+      expect(source!.deref()).toBeUndefined();
+    } finally {
+      release();
+      await job;
+    }
+    expect((await job)?.text).toBe('pages-1-2.pdf\n\npages-3-4.pdf\n\npages-5-6.pdf');
+  });
+
   it('also chunks PDFs sent directly through the document extractor', async () => {
     const extractor = pdfDocumentExtractorProviders.find((provider) => provider.id === 'mineru')!;
     fetchMock.mockImplementation(async (_url, init) =>

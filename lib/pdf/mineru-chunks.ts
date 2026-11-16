@@ -203,7 +203,7 @@ export async function parseMinerUPdfChunks(
 ): Promise<ParsedPdfContent | undefined> {
   parentSignal?.throwIfAborted();
   const config = chunkConfig();
-  let document: PDFDocument;
+  let document: PDFDocument | undefined;
   let pages: number;
   try {
     // Do not ignore encryption: unreadable PDFs keep the existing provider error path.
@@ -227,6 +227,7 @@ export async function parseMinerUPdfChunks(
   const signal = parentSignal ? AbortSignal.any([parentSignal, stopped.signal]) : stopped.signal;
   const results: MinerUChunkResult[] = [];
   let nextPage = 0;
+  let remainingCopies = Math.ceil(pages / config.chunkPages);
   const worker = async () => {
     try {
       while (nextPage < pages) {
@@ -236,9 +237,12 @@ export async function parseMinerUPdfChunks(
         nextPage = end;
         const chunk = await PDFDocument.create();
         const copied = await chunk.copyPages(
-          document,
+          document!,
           Array.from({ length: end - start }, (_, index) => start + index),
         );
+        // Copies can finish out of order. Release the source only after all
+        // copies finish, before waiting on the remaining parse requests/merge.
+        if (--remainingCopies === 0) document = undefined;
         for (const page of copied) {
           chunk.addPage(page);
           const annotations = page.node.Annots();
