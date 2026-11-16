@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  assertQwenNarratorVoiceTargets,
+  assertNarratorVoiceCompatibility,
   QWEN_VOICE_SETTINGS_URL,
   startRefusal,
 } from '@/lib/server/generation/run/start';
@@ -9,17 +9,19 @@ import {
 describe('generation-start narrator voice validation', () => {
   it('refuses an incompatible voice before generation work and names it with a Settings link', () => {
     expect(() =>
-      assertQwenNarratorVoiceTargets('cosyvoice-v3.5-plus', [
-        { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-old-id', name: 'Ada' },
-      ]),
+      assertNarratorVoiceCompatibility(
+        [{ providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-old-id', name: 'Ada' }],
+        undefined,
+      ),
     ).toThrow('Ada');
 
     const refusal = startRefusal(
       (() => {
         try {
-          assertQwenNarratorVoiceTargets('cosyvoice-v3.5-plus', [
-            { providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-old-id', name: 'Ada' },
-          ]);
+          assertNarratorVoiceCompatibility(
+            [{ providerId: 'qwen-tts', voiceId: 'qwen-tts-vc-old-id', name: 'Ada' }],
+            undefined,
+          );
         } catch (error) {
           return error;
         }
@@ -39,7 +41,7 @@ describe('generation-start narrator voice validation', () => {
       voiceId: 'cosyvoice-v3.5-plus-new-id',
       name: 'Ada',
     } as const;
-    expect(() => assertQwenNarratorVoiceTargets('cosyvoice-v3.5-plus', [candidate])).not.toThrow();
+    expect(() => assertNarratorVoiceCompatibility([candidate], undefined)).not.toThrow();
     expect(candidate).toEqual({
       providerId: 'qwen-tts',
       voiceId: 'cosyvoice-v3.5-plus-new-id',
@@ -49,10 +51,27 @@ describe('generation-start narrator voice validation', () => {
 
   it('checks every narrator candidate and refuses an incompatible later voice', () => {
     expect(() =>
-      assertQwenNarratorVoiceTargets('cosyvoice-v3.5-plus', [
-        { providerId: 'qwen-tts', voiceId: 'cosyvoice-v3.5-plus-first', name: 'Ada' },
-        { providerId: 'qwen-tts', voiceId: 'qwen3-tts-vc-old-id', name: 'Bea' },
-      ]),
-    ).toThrow('Bea');
+      assertNarratorVoiceCompatibility(
+        [
+          { providerId: 'qwen-tts', voiceId: 'cosyvoice-v3.5-plus-first', name: 'Ada' },
+          {
+            providerId: 'qwen-tts',
+            voiceId: 'qwen3-tts-vc-old-id',
+            name: 'Bea',
+            agentName: 'Bea narrator',
+          },
+        ],
+        undefined,
+      ),
+    ).toThrow('Bea narrator');
+  });
+
+  it('allows a configured catalogue voice through the provider seam', () => {
+    expect(() =>
+      assertNarratorVoiceCompatibility(
+        [{ providerId: 'qwen-tts', voiceId: 'deployment-voice', name: 'Configured' }],
+        [{ id: 'deployment-voice' }],
+      ),
+    ).not.toThrow();
   });
 });

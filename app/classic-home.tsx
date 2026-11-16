@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowUp,
@@ -1070,12 +1069,16 @@ function HomePage() {
             >
               <p className="text-sm text-destructive">{error}</p>
               {voiceSettingsError && (
-                <Link
-                  href="/?settings=tts"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsSection('tts');
+                    setSettingsOpen(true);
+                  }}
                   className="mt-2 inline-block text-sm font-medium text-destructive underline"
                 >
                   {t('settings.title')}
-                </Link>
+                </button>
               )}
             </motion.div>
           )}

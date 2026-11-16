@@ -8,9 +8,10 @@ import { ModelAuthorizationError } from '@/lib/server/model-config/model-authori
 import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
 import type { ApiErrorCode } from '@/lib/server/api-response';
 import { resolveAgentsForOwner, UnknownAgentsError } from '@/lib/server/agents/registry';
-import { isQwenCloneVoice } from '@/lib/audio/constants';
-import { assertQwenVoiceTarget } from '@/lib/audio/qwen-voice-clone';
-import { resolveQwenVoiceCloneModel } from '@/lib/server/provider-config';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import { clipVoice } from '@/lib/server/generation/run/narration-voice';
+import { pickNarratorAgent } from '@/lib/audio/agent-voice-options';
+import type { TTSProviderId } from '@/lib/audio/types';
 import {
   ClassroomMaterialsRejectedError,
   resolveClassroomMaterials,
@@ -67,10 +68,16 @@ export class QwenVoiceRecloneRequiredError extends Error {
   readonly status = 400;
   readonly settingsUrl = QWEN_VOICE_SETTINGS_URL;
 
-  constructor(readonly voiceName: string) {
+  constructor(
+    readonly voiceName: string,
+    readonly agentName?: string,
+  ) {
     super(
-      `Saved voice "${voiceName}" is incompatible with the current clone target. ` +
-        `Re-clone it in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL}`,
+      agentName
+        ? `Voice "${voiceName}" bound to narrator "${agentName}" is incompatible with the current clone target. ` +
+            `Change that agent's voice in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL}`
+        : `Saved voice "${voiceName}" is incompatible with the current clone target. ` +
+            `Re-clone it in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL}`,
     );
     this.name = 'QwenVoiceRecloneRequiredError';
   }
@@ -80,19 +87,25 @@ export interface NarratorVoiceCandidate {
   providerId: string;
   voiceId: string;
   name?: string;
+  agentName?: string;
 }
 
-export function assertQwenNarratorVoiceTargets(
-  targetModel: string,
+export function assertNarratorVoiceCompatibility(
   candidates: readonly NarratorVoiceCandidate[],
+  configuredVoices: readonly { id: string }[] | undefined,
 ): void {
   for (const candidate of candidates) {
-    if (candidate.providerId !== 'qwen-tts' || !isQwenCloneVoice(candidate.voiceId)) continue;
     try {
-      assertQwenVoiceTarget(candidate.voiceId, targetModel);
+      getVoiceRegistrationAdapter(candidate.providerId)?.assertVoiceCompatible?.(
+        candidate.voiceId,
+        configuredVoices,
+      );
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'QWEN_VC_RECLONE_REQUIRED') {
-        throw new QwenVoiceRecloneRequiredError(candidate.name?.trim() || candidate.voiceId);
+        throw new QwenVoiceRecloneRequiredError(
+          candidate.name?.trim() || candidate.voiceId,
+          candidate.agentName?.trim() || undefined,
+        );
       }
       throw error;
     }
@@ -104,30 +117,6 @@ async function validateQwenNarratorVoices(
   input: GenerationRunInput,
   agents: Awaited<ReturnType<typeof resolveAgentsForOwner>>,
 ): Promise<void> {
-  const candidates = [
-    ...(input.voice && input.voice.providerId === 'qwen-tts'
-      ? [
-          {
-            providerId: input.voice.providerId,
-            voiceId: input.voice.voiceId,
-            name: input.voice.name,
-          },
-        ]
-      : []),
-    ...agents.flatMap((agent) =>
-      agent.voiceConfig?.providerId === 'qwen-tts'
-        ? [
-            {
-              providerId: agent.voiceConfig.providerId,
-              voiceId: agent.voiceConfig.voiceId,
-              name: agent.name,
-            },
-          ]
-        : [],
-    ),
-  ].filter(({ voiceId }) => isQwenCloneVoice(voiceId));
-  if (candidates.length === 0) return;
-
   let connection: MediaConnection;
   try {
     connection = await resolveMediaSlot('tts', {
@@ -137,9 +126,33 @@ async function validateQwenNarratorVoices(
     if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return;
     throw error;
   }
-  if (connection.providerId !== 'qwen-tts') return;
-
-  assertQwenNarratorVoiceTargets(resolveQwenVoiceCloneModel(), candidates);
+  const narrator = pickNarratorAgent(agents);
+  const chosen = clipVoice({
+    target: {
+      connection,
+      providerId: connection.providerId as TTSProviderId,
+      modelId: connection.modelId,
+    },
+    preference: input.voice,
+    bound: narrator?.voiceConfig,
+    unavailable: new Set(),
+  })?.voice;
+  if (!chosen) return;
+  assertNarratorVoiceCompatibility(
+    [
+      {
+        providerId: chosen.providerId,
+        voiceId: chosen.voiceId,
+        name: narrator?.voiceConfig ? narrator.name : input.voice?.name,
+        agentName:
+          narrator?.voiceConfig?.providerId === chosen.providerId &&
+          narrator.voiceConfig.voiceId === chosen.voiceId
+            ? narrator.name
+            : undefined,
+      },
+    ],
+    connection.voices,
+  );
 }
 
 /** The refusal `error` (thrown by {@link startGenerationRun}) answers with, or null for a fault. */
