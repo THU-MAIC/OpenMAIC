@@ -4,7 +4,7 @@ import { changedLineRanges } from './file-changes';
 import { readProjectFileExcerpt } from './file-read';
 import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
-import { withRequestSystemTail } from '@/lib/agent/runtime/request-system-tail';
+import { withRequestStateTail } from '@/lib/agent/runtime/request-state-tail';
 import { responseLanguage, type ResponseLanguage } from './communication';
 import { supportedLocales } from '@/lib/i18n/locales';
 import { inspectApplication } from './application';
@@ -1090,7 +1090,7 @@ export function withTeachingTurnBoundary(
       );
       const live = await liveContext?.();
       const currentContext = (state: string | undefined) =>
-        withRequestSystemTail(
+        withRequestStateTail(
           {
             ...context,
             messages,

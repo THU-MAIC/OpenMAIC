@@ -1,24 +1,52 @@
 # PBL v3 prompt-cache evidence
 
-## Request layout
-
-The original PR keeps reusable instructions/history ahead of changing host state:
+## Current request layout: wire-only user state
 
 ```text
-fixed rules + course/stage/artifact references → retained history → request-only initial/live state + continuation policy
+fixed system rules (including one host-state policy)
+  → retained learner/assistant/tool history
+  → final user-role <openmaic-host-state> block (request only)
 ```
 
-Initial and live review facts remain distinct. The marked host tail retains system
-authority, counts toward the input budget and is not stored as learner dialogue.
-Replayed tool-call object keys are canonicalized without changing argument values
-or array order.
+Following the latest review, every adapter receives the changing host state as a
+final **user** message. There is no trailing system message, endpoint placement
+capability, prefix fallback or deployment opt-in. The fixed policy identifies only
+the final host block as authoritative workflow state, distinct from learner input;
+learner quotations, file contents and tool data remain untrusted. Copied earlier
+markers do not gain authority, and reserved delimiters inside the host payload are
+escaped so quoted data cannot nest another host block.
 
-The request layout retains the original PR ordering from `4126940` and the
-provider compatibility fix. The follow-up below removes mutable PLAN data from
-the fixed head while retaining its exact version in tool history. No course/Skill, role-isolation, approval-gate,
-schema or compaction-policy changes; no deployment.
+The host transports state through private Symbol metadata. Only the connector
+renders it after the complete retained history and tool results. It is never
+added to Pi learner messages, durable transcripts, compaction input or saved
+checkpoints. Budgeting includes the wrapper and fixed policy. Initial and live
+review facts remain distinct. Tool-call key canonicalization and exact PLAN source
+reuse below remain unchanged. Course/Skill content, role isolation and approval
+gates are unchanged; no deployment or live provider configuration was modified.
 
-## Latest follow-up: retain each exact PLAN version once
+The cache measurements below are **versioned historical measurements**, taken
+before this user-role follow-up. They are not presented as fresh measurements of
+the new wire role. A fresh 144-pair attempt was interrupted by HTTP 408/502 errors
+in both arms; it is not substituted for a complete matched benchmark or silently
+combined with historical rows.
+
+## Validation of the user-state follow-up
+
+- 181 focused tests passed, including real SDK serialization for OpenAI-compatible,
+  Anthropic, Google and Bedrock adapters; strict mock Gemma/Mistral/unknown relay
+  endpoints reject non-leading system messages without requiring any setting.
+- All 315 PostgreSQL runtime tests passed, retaining learner-input, approval,
+  continuation, workflow and persistence assertions.
+- Compaction/checkpoint tests prove the request-only block is absent from durable
+  history and summarizer input. Fixed policy appears exactly once.
+- Eight bounded live-model adversarial probes passed (four attacks, two rounds):
+  copied learner markers, learner JSON imitation, malicious tool text and nested
+  quoted markers all retained the actual host revision/approval facts. These
+  samples are behavioral evidence, not a universal prompt-injection guarantee.
+- Lint passed. Local TypeScript diagnostics match the existing 77-error baseline
+  with no additions.
+
+## Historical PLAN-source follow-up (before user-state wire role)
 
 A complete mutable `PLAN.md` snapshot in the fixed head invalidated the history
 prefix after an ordinary plan edit. Moving the complete file to every request
@@ -30,7 +58,7 @@ head keeps a stable file-source reference; the tail identifies the exact retaine
 version. Missing/compacted sources restore the full original snapshot. Current
 teaching instructions, feedback and approval data are never deduplicated.
 
-The **same frozen 144 production-source records** were replayed again, with a
+For that PLAN-source revision, the **same frozen 144 production-source records** were replayed again, with a
 fresh control and candidate: **288 successful requests, zero failures/retries**.
 The original 108- and 111-record masks were frozen before this run and applied to
 both arms; newly stabilized PLAN edits were not added to the 108-row diagnostic.
@@ -170,20 +198,13 @@ All records remain in the full-sample totals, regardless of diagnostic eligibili
 
 ## Compatibility
 
-OpenAI-compatible describes the wire protocol, not chat-template support. Unknown/
-custom endpoints now safely default to `prefix`. A verified custom endpoint can set
-`providers.<id>.options.requestSystemTailPlacement: trailing`; native capability
-does not transfer to custom URLs. Each primary/fallback resolves its own placement.
-Prefix-only SDKs always keep system instructions first.
-
-Actual SDK request-format tests with strict mock endpoints cover Ollama/Gemma,
-vLLM/Mistral and unknown relays rejecting non-leading systems, plus verified opt-in,
-native DeepSeek and existing Anthropic/Google/Bedrock coverage. These are serialized
-request tests, not self-hosted model-inference measurements.
-
-**Deployment requirement:** the measured custom MaaS route must explicitly opt
-into its verified trailing mode to reproduce these results. Unknown safe-prefix
-routes do not claim equivalent cache gains. No live provider configuration changed.
+The current connector always appends a user-role state block after retained
+history. No provider needs to support trailing system messages, and no per-endpoint
+placement option, validation or deployment configuration remains. Real SDK
+serialization tests verify ordering and strict mock endpoints reject any
+non-leading system message. This is request-format coverage, not a claim of real
+self-hosted model-inference measurements. The historical results above used the
+then-current verified trailing-system transport and retain that provenance.
 
 ## Limits and earlier evidence
 

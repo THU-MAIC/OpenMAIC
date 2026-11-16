@@ -1,4 +1,5 @@
-import { requestSystemTail } from '@/lib/agent/runtime/request-system-tail';
+import { HOST_STATE_START, HOST_STATE_END } from '@/lib/ai/request-state-tail';
+import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -542,6 +543,18 @@ async function runTools(
     status: 'succeeded',
     expectedAttempt: meta!.attempt,
   });
+}
+function requestHostState(messages: readonly ModelMessage[]): string {
+  const tail = messages.at(-1);
+  expect(tail?.role).toBe('user');
+  if (!tail || typeof tail.content !== 'string') throw new Error('Missing wire-only host state');
+  expect(tail.content.startsWith(HOST_STATE_START + '\n')).toBe(true);
+  expect(tail.content.endsWith('\n' + HOST_STATE_END)).toBe(true);
+  return tail.content;
+}
+function retainedRequestMessages(messages: readonly ModelMessage[]): ModelMessage[] {
+  requestHostState(messages);
+  return messages.slice(0, -1);
 }
 async function invoke(
   config: Awaited<ReturnType<typeof teachingRunnerConfig>>,
@@ -1693,9 +1706,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect(await agents.listUserMessages(queued.sessionId)).toEqual(realInputs);
         const request = mocked.modelRequests.at(-1)!;
         expect(request.at(-1)?.role).not.toBe('assistant');
-        expect(
-          mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-        ).toContain('Runtime continuation:');
+        expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain('Runtime continuation:');
         const approved = await learningView(principal, id);
         if (approved.state.status === 'completed') return;
         expect(approved.actions).toContain('next');
@@ -3579,8 +3590,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await stream({} as never, { messages: [] });
     expect(project).toHaveBeenCalledTimes(2);
     expect(modelCall).toHaveBeenCalledOnce();
-    expect(requestSystemTail(modelCall.mock.calls[0]![1])).toContain('"revision":2');
-    expect(requestSystemTail(modelCall.mock.calls[0]![1])).not.toContain('"revision":1');
+    expect(requestStateTail(modelCall.mock.calls[0]![1])).toContain('"revision":2');
+    expect(requestStateTail(modelCall.mock.calls[0]![1])).not.toContain('"revision":1');
     const churn = vi.fn(async (context) => {
       revision++;
       return context;
@@ -5741,20 +5752,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(settled?.status, settled?.error).toBe('succeeded');
     expect((await store.binding(queued.sessionId))?.guided?.activeFile).toBe('A-teach.md');
     expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
-    expect(
-      mocked.modelRequests[retryRequestIndex]
-        ?.filter((message) => message.role !== 'system')
-        .at(-1),
-    ).toMatchObject({
+    expect(retainedRequestMessages(mocked.modelRequests[retryRequestIndex]!).at(-1)).toMatchObject({
       role: 'user',
       content: reply,
     });
-    expect(
-      mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-    ).toContain('\"activeSection\":\"A-teach.md\"');
-    expect(
-      mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-    ).toContain('Authoritative live teaching state');
+    expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
+      '\"activeSection\":\"A-teach.md\"',
+    );
+    expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
+      'Authoritative live teaching state',
+    );
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
     studyId = original;
   }, 30000);
@@ -5797,15 +5804,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         { ...meta!, ...(await agents.getSession(queued.sessionId))! },
       );
       expect(mocked.modelCalls - callsBefore).toBe(3);
-      expect(
-        mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-      ).toContain(JSON.stringify(delivered));
-      expect(
-        mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-      ).toContain('record that SAME reply');
-      expect(
-        mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-      ).toContain('verbatim into response');
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(JSON.stringify(delivered));
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain('record that SAME reply');
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain('verbatim into response');
       expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
       expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
       expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
@@ -5972,9 +5973,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(mocked.modelCalls - calls).toBe(crash ? 1 : 2);
       expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
       expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
-      expect(
-        mocked.modelRequests.at(-1)?.findLast((message) => message.role === 'system')?.content,
-      ).toContain('For an assistance-only answer or product clarification');
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
+        'For an assistance-only answer or product clarification',
+      );
       if (crash)
         await agents.appendControlEvent(sessionId, {
           ts: Date.now(),
@@ -6215,7 +6216,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           (m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.length === 0,
         ),
       ).toEqual([]);
-      expect(request.filter((message) => message.role !== 'system').at(-1)).toMatchObject({
+      expect(retainedRequestMessages(request).at(-1)).toMatchObject({
         role: 'user',
         content: reply,
       });

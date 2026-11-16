@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { AssistantMessage, Context, Message } from '@earendil-works/pi-ai';
-import { requestSystemTail, withRequestSystemTail } from '@/lib/agent/runtime/request-system-tail';
+import { requestStateTail, withRequestStateTail } from '@/lib/agent/runtime/request-state-tail';
 
 export const PLAN_TOOL_REFERENCE =
   'The exact initial PLAN.md file text is retained in the successful file tool record identified by initialPlanSource in current host state.';
@@ -122,7 +122,7 @@ export function preloadInitialPlan(
 export function withPlanToolContext(context: Context, plan?: InitialPlanContext): Context {
   const prior = (context as PlanContext)[PROJECTION];
   let systemPrompt = context.systemPrompt ?? '';
-  let tail = requestSystemTail(context);
+  let tail = requestStateTail(context);
   if (prior) {
     systemPrompt = systemPrompt.replace(prior.referencePrompt, prior.literalPrompt);
     tail = tail.replace(prior.suffix, '');
@@ -134,7 +134,7 @@ export function withPlanToolContext(context: Context, plan?: InitialPlanContext)
   const hash = plan ? createHash('sha256').update(plan.text).digest('hex') : '';
   const { [PROJECTION]: _prior, ...base } = context as PlanContext;
   if (!plan || !receipt || receipt.role !== 'toolResult')
-    return !prior ? context : withRequestSystemTail({ ...base, systemPrompt }, tail);
+    return !prior ? context : withRequestStateTail({ ...base, systemPrompt }, tail);
   const suffix =
     '\nInitial PLAN.md file source: ' +
     JSON.stringify({
@@ -145,7 +145,7 @@ export function withPlanToolContext(context: Context, plan?: InitialPlanContext)
       },
     });
   return {
-    ...withRequestSystemTail(
+    ...withRequestStateTail(
       {
         ...base,
         systemPrompt: systemPrompt.replace(plan.literalPrompt, plan.referencePrompt),

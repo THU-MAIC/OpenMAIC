@@ -94,13 +94,6 @@ export async function languageModelFor(
   // Every other preset keeps the registry's rule, so OpenAI itself still
   // needs a key.
   const keyOptional = getProviderPreset(target.presetId)?.apiKeyOptional === true;
-  const tailPlacement = target.options?.requestSystemTailPlacement;
-  if (tailPlacement !== undefined && tailPlacement !== 'prefix' && tailPlacement !== 'trailing') {
-    throw new ModelConfigurationError(
-      'MODEL_CONFIG_INVALID',
-      'options.requestSystemTailPlacement must be "prefix" or "trailing"',
-    );
-  }
   // Checked here rather than left to the adapter, so the refusal is typed.
   if (!keyOptional && isProviderKeyRequired(registryId) && !apiKey) {
     throw new ModelConfigurationError(
@@ -115,7 +108,6 @@ export async function languageModelFor(
     ...(keyOptional ? { requiresApiKey: false } : {}),
     baseUrl: target.baseUrl,
     proxy: target.proxy,
-    requestSystemTailPlacement: tailPlacement,
     fetchImpl: userEndpoint ? clientBaseUrlLlmFetch : fetchWithRedirectValidation,
   });
   return {

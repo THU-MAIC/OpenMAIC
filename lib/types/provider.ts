@@ -171,8 +171,6 @@ export interface ProviderConfig {
   baseUrlPlaceholder?: string;
   /** Whether this provider exposes a usable model-discovery endpoint. */
   supportsModelDiscovery?: boolean;
-  /** Native endpoint capability; custom endpoints must opt in separately. */
-  requestSystemTailPlacement?: 'prefix' | 'trailing';
   /**
    * Known alternate base URLs for this provider (e.g. regional endpoints).
    * Rendered in the settings UI as quick-select chips under the base URL input.
@@ -199,8 +197,6 @@ export interface ModelConfig {
    * registry entry it rides on does). Omitted: the registry decides.
    */
   requiresApiKey?: boolean;
-  /** Verified transport capability. Unknown OpenAI-compatible endpoints default to prefix. */
-  requestSystemTailPlacement?: 'prefix' | 'trailing';
   /**
    * Optional server-side fetch implementation used for the model's outbound
    * requests (e.g. a wrapper that re-validates redirect hops). When omitted the

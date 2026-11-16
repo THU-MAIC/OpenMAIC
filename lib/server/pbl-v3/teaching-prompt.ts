@@ -1,3 +1,4 @@
+import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
 import 'server-only';
 import { communicationRules, type ResponseLanguage } from './communication';
 import type {
@@ -298,7 +299,9 @@ function buildTeachingPrompt({
           ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls. Ordinary tests/quizzes have no learner chat: do not invite a message; answer repair questions only when productContext.current.chatSupported is true.'
           : '\nFocus decision guidance on the current offered decisions. The learner records choices using the project controls. Project knowledge and product help remain available.') +
     '\n' +
-    productHelpRules;
+    productHelpRules +
+    '\n' +
+    HOST_STATE_TAIL_RULES;
   const initialContext =
     '\nInitial teaching state: ' +
     JSON.stringify({

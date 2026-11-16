@@ -4,10 +4,10 @@ import type { AssistantMessage, Context, Message } from '@earendil-works/pi-ai';
 import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
 import { preloadInitialPlan, withPlanToolContext } from '@/lib/server/pbl-v3/plan-tool-context';
 import {
-  withRequestSystemTail,
-  requestSystemTail,
-  appendRequestSystemTail,
-} from '@/lib/agent/runtime/request-system-tail';
+  withRequestStateTail,
+  requestStateTail,
+  appendRequestStateTail,
+} from '@/lib/agent/runtime/request-state-tail';
 
 const text = 'Exact saved plan, including the learner choice and full details.\n'.repeat(80);
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -67,7 +67,7 @@ function saved(s = text, isError = false): Message {
   };
 }
 function context(messages: Message[], s = text): Context {
-  return withRequestSystemTail(
+  return withRequestStateTail(
     { systemPrompt: plan(s).literalPrompt, messages },
     'FULL ACTIVE SECTION\nCURRENT QUESTION AND APPROVAL FACTS',
   );
@@ -80,14 +80,14 @@ describe('exact initial plan tool context', () => {
     const p = withPlanToolContext(c, plan());
     expect(p.systemPrompt).toBe(plan().referencePrompt);
     expect(p.messages).toBe(c.messages);
-    expect(requestSystemTail(p)).toContain(
+    expect(requestStateTail(p)).toContain(
       'FULL ACTIVE SECTION\nCURRENT QUESTION AND APPROVAL FACTS',
     );
-    expect(requestSystemTail(p)).toContain('read-plan');
-    expect(requestSystemTail(p)).not.toContain(text);
+    expect(requestStateTail(p)).toContain('read-plan');
+    expect(requestStateTail(p)).not.toContain(text);
     expect(JSON.stringify(p.messages)).toContain('Exact saved plan');
     expect(JSON.stringify(c)).toBe(before);
-    expect(requestSystemTail(withPlanToolContext(p, plan()))).toBe(requestSystemTail(p));
+    expect(requestStateTail(withPlanToolContext(p, plan()))).toBe(requestStateTail(p));
   });
 
   it('requires successful paired write arguments with the exact version and host hash', () => {
@@ -168,19 +168,19 @@ describe('exact initial plan tool context', () => {
     );
     expect(a.systemPrompt).toBe(b.systemPrompt);
     expect(b.messages.slice(0, a.messages.length)).toEqual(a.messages);
-    expect(requestSystemTail(b)).toContain(hash(text2));
+    expect(requestStateTail(b)).toContain(hash(text2));
   });
 
   it('restores the entire file after receipt removal, preserving summaries and recovery text', () => {
     const original = context([user, read()]);
     const projected = withPlanToolContext(original, plan());
-    const recovery = appendRequestSystemTail(
+    const recovery = appendRequestStateTail(
       { ...projected, systemPrompt: projected.systemPrompt + '\nHOST SUMMARY' },
       'DELIVERED PROSE',
     );
     const restored = withPlanToolContext({ ...recovery, messages: [user] }, plan());
     expect(restored.systemPrompt).toBe(plan().literalPrompt + '\nHOST SUMMARY');
-    expect(requestSystemTail(restored)).toBe(requestSystemTail(original) + '\nDELIVERED PROSE');
+    expect(requestStateTail(restored)).toBe(requestStateTail(original) + '\nDELIVERED PROSE');
   });
 
   it('does not reference an earlier-stage result removed from current teaching history', () => {
@@ -191,7 +191,7 @@ describe('exact initial plan tool context', () => {
       initialPlan: plan(),
     });
     expect(projected.systemPrompt?.endsWith(plan().literalPrompt)).toBe(true);
-    expect(requestSystemTail(projected)).not.toContain('initialPlanSource');
+    expect(requestStateTail(projected)).not.toContain('initialPlanSource');
   });
 
   it('keeps the reusable head stable across exact file-version changes with retained receipts', () => {
@@ -199,7 +199,7 @@ describe('exact initial plan tool context', () => {
     const next = text + 'Actual learner change.';
     const b = withPlanToolContext(context([user, write(next), saved(next)], next), plan(next));
     expect(a.systemPrompt).toBe(b.systemPrompt);
-    expect(requestSystemTail(b)).toContain(hash(next));
+    expect(requestStateTail(b)).toContain(hash(next));
     expect(JSON.stringify(b.messages)).toContain('Actual learner change.');
   });
 });

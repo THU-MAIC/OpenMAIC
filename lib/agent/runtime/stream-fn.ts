@@ -46,8 +46,8 @@ import {
   type ToolCallProviderMetadata,
 } from './provider-metadata';
 import { replayToolCallArguments, toolCallArguments } from './tool-call-arguments';
-import { requestSystemTail } from './request-system-tail';
-import { hostSystemTailMessage } from '@/lib/ai/request-system-tail';
+import { requestStateTail } from './request-state-tail';
+import { hostStateTailMessage } from '@/lib/ai/request-state-tail';
 
 /**
  * Local re-implementation of pi-ai's `AssistantMessageEventStream` queue. pi
@@ -452,9 +452,7 @@ async function pump(
             includeToolImages: opts.supportsToolImages,
             includeUserImages: opts.includeUserImages,
           }),
-          ...(requestSystemTail(context)
-            ? [hostSystemTailMessage(requestSystemTail(context))]
-            : []),
+          ...(requestStateTail(context) ? [hostStateTailMessage(requestStateTail(context))] : []),
         ],
         tools: toAiTools(context.tools ?? []),
         toolChoice: 'auto',

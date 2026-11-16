@@ -1,5 +1,5 @@
 import type { Context } from '@earendil-works/pi-ai';
-import { appendRequestSystemTail } from '@/lib/agent/runtime/request-system-tail';
+import { appendRequestStateTail } from '@/lib/agent/runtime/request-state-tail';
 import { withPlanToolContext, type InitialPlanContext } from './plan-tool-context';
 
 export interface TeachingHistoryWindow {
@@ -72,7 +72,7 @@ function withDeliveredReply(
   instruction?: string,
 ): Context {
   if (!reply) return context;
-  return appendRequestSystemTail(
+  return appendRequestStateTail(
     context,
     [
       ...(instruction ? [instruction] : []),

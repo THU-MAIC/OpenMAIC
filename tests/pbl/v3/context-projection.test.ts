@@ -23,6 +23,8 @@ import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { stageSkill } from '@/lib/server/pbl-v3/skills';
 import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teaching-prompt';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
+import { withRequestStateTail, requestStateTail } from '@/lib/agent/runtime/request-state-tail';
+import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
 
 const usage = {
   input: 0,
@@ -78,6 +80,26 @@ const longContext = (): Context => ({
   ],
 });
 describe('model-aware teaching context projection', () => {
+  it('never summarizes or saves the wire-only host state as learner history', async () => {
+    const marker = 'EPHEMERAL_HOST_FACTS: approved=false revision=7';
+    const source = withRequestStateTail(longContext(), marker);
+    const stream = summarizer();
+    const saved = vi.fn(async (_checkpoint: TeachingContextCheckpoint) => {});
+    const runtime = createTeachingContextProjection(stream, { saveCheckpoint: saved });
+    try {
+      const projected = await runtime.prepare(source, window, model);
+      expect(stream).toHaveBeenCalled();
+      for (const call of stream.mock.calls) expect(JSON.stringify(call[1])).not.toContain(marker);
+      expect(saved).toHaveBeenCalled();
+      expect(JSON.stringify(saved.mock.calls)).not.toContain(marker);
+      expect(serializeTeachingHistory(source.messages)).not.toContain(marker);
+      expect(JSON.stringify(projected)).not.toContain(marker);
+      expect(requestStateTail(projected)).toContain(marker);
+      expect(source.messages.filter((m) => m.role === 'user')).toHaveLength(16);
+    } finally {
+      runtime.dispose();
+    }
+  });
   it('shares a physical input/output allowance, including large and unknown output windows', () => {
     for (const value of [
       model,
@@ -546,6 +568,7 @@ describe('model-aware teaching context projection', () => {
       collected: startOrchestration(definition).state.collected[milestone.id]!,
     };
     const system = renderTeachingPrompt(input).systemPrompt;
+    expect(system.split(HOST_STATE_TAIL_RULES)).toHaveLength(2);
     expect(system).toContain(JSON.stringify(documents));
     const buildContext = (repeatReferences: boolean): Context => ({
       // Model the full live review prompt, plan, tool schemas and prior observations.

@@ -103,37 +103,6 @@ describe('model configuration at boot', () => {
     expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
   });
 
-  it('rejects an invalid system-tail placement before starting background workers', async () => {
-    vi.stubEnv(
-      'OPENMAIC_CONFIG',
-      configFile(
-        'providers:\n  relay:\n    preset: openai-compatible\n    baseUrl: https://llm.example/v1\n    options:\n      requestSystemTailPlacement: true\nslots:\n  llm: relay:custom-model\n',
-      ),
-    );
-    const { register } = await import('@/instrumentation');
-
-    await expect(register()).rejects.toThrow(/Invalid model configuration/);
-
-    expect(exit).toHaveBeenCalledWith(1);
-    expect(stderr[0]).toContain('providers.relay.options.requestSystemTailPlacement');
-    expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
-  });
-
-  it.each(['prefix', 'trailing'])('boots with a valid system-tail placement %s', async (value) => {
-    vi.stubEnv(
-      'OPENMAIC_CONFIG',
-      configFile(
-        `providers:\n  relay:\n    preset: openai-compatible\n    baseUrl: https://llm.example/v1\n    options:\n      requestSystemTailPlacement: ${value}\nslots:\n  llm: relay:custom-model\n`,
-      ),
-    );
-    const { register } = await import('@/instrumentation');
-
-    await expect(register()).resolves.toBeUndefined();
-
-    expect(exit).not.toHaveBeenCalled();
-    expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
-  });
-
   it('refuses to start with MODEL_ROUTES and no configuration file', async () => {
     vi.stubEnv('OPENMAIC_CONFIG', '');
     vi.spyOn(process, 'cwd').mockReturnValue(dir);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AssistantMessage, Context, Message } from '@earendil-works/pi-ai';
 import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
-import { requestSystemTail } from '@/lib/agent/runtime/request-system-tail';
+import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 
 function assistant(content: AssistantMessage['content']): AssistantMessage {
   return {
@@ -107,7 +107,7 @@ describe('teaching stage handoff', () => {
       };
       const result = currentTeachingContext(context, { ...window, deliveredReply: reply });
       expect(result.messages).toEqual([reflection]);
-      const tail = requestSystemTail(result);
+      const tail = requestStateTail(result);
       expect(result.systemPrompt).not.toContain(JSON.stringify(reply));
       expect(tail).toContain(JSON.stringify(reply));
       expect(tail).toContain('record that SAME reply');

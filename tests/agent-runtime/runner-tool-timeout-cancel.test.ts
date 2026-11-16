@@ -399,6 +399,8 @@ describe('runner: unbounded V3 teaching turns', () => {
         systemPrompt: initialPlan.literalPrompt,
         preloadMessages,
         historyWindow: { stageKey: 'm:2', studentTurns: 1, initialPlan },
+        liveContext: async () =>
+          JSON.stringify({ marker: 'EPHEMERAL_LIVE_STATE', revision: 7, approved: false }),
         thinkingConfig: () => ({ mode: 'disabled' }),
         allowedToolNames: new Set(),
         needsTurnReceipt: () => false,
@@ -418,6 +420,9 @@ describe('runner: unbounded V3 teaching turns', () => {
       const request = mocks.streamLLM.mock.calls[0]![0];
       expect(JSON.stringify(request.messages)).toContain(text);
       expect(request.system).not.toContain(text);
+      expect(request.messages.at(-1)).toMatchObject({ role: 'user' });
+      expect(JSON.stringify(request.messages.at(-1))).toContain('EPHEMERAL_LIVE_STATE');
+      expect(JSON.stringify(history)).not.toContain('EPHEMERAL_LIVE_STATE');
       expect(store.finishSession).toHaveBeenCalledWith(
         meta.id,
         WORKER_ID,
