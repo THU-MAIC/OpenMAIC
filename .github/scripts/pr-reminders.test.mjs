@@ -9,6 +9,7 @@ import {
   codexBody,
   codexClosedBody,
   codexCloseDue,
+  isEligible,
   newestCodexThreadAt,
   codexSince,
   conflictBody,
@@ -543,6 +544,10 @@ test('a new episode of Codex threads gets a fresh reminder and window', async ()
     client.writes.map((w) => w.route),
     ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments'],
   );
+});
+
+test('pull requests from deleted accounts are skipped', () => {
+  assert.equal(isEligible({ isDraft: false, author: null }), false);
 });
 
 test('a close whose comment was already posted only retries the close', async () => {

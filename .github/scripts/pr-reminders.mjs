@@ -57,7 +57,8 @@ export function globalOwners(text) {
 }
 
 export function isEligible(pr) {
-  return !pr.isDraft && pr.author?.__typename !== 'Bot';
+  // A deleted author account comes back as `author: null`: nobody to remind.
+  return !pr.isDraft && Boolean(pr.author?.login) && pr.author.__typename !== 'Bot';
 }
 
 export function isBlocked(pr) {
