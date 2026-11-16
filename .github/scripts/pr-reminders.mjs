@@ -32,7 +32,7 @@ export const MARKERS = {
 export const STALE_MS = 24 * 60 * 60 * 1000;
 export const CODEX_CLOSE_MS = 7 * 24 * 60 * 60 * 1000;
 export const BLOCKED_LABEL = 'status:blocked';
-const CODEX_LOGIN_PREFIX = 'chatgpt-codex-connector';
+const CODEX_LOGIN = 'chatgpt-codex-connector';
 export const MAX_WRITES_PER_RUN = 20;
 const BOT_LOGIN = 'github-actions[bot]';
 const CODEOWNERS_PATHS = ['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'];
@@ -165,7 +165,13 @@ export function decide(pr, { now, branchRuns, runsBySha, owners, base }) {
 export function unresolvedCodexThreads(pr) {
   return (pr.reviewThreads?.nodes ?? []).filter((thread) => {
     const first = thread.comments?.nodes?.[0];
-    return !thread.isResolved && first?.author?.login?.startsWith(CODEX_LOGIN_PREFIX);
+    // The Codex app itself: an exact bot login, so a user account with a
+    // look-alike name cannot open threads that count against a PR.
+    return (
+      !thread.isResolved &&
+      first?.author?.login === CODEX_LOGIN &&
+      first.author.__typename === 'Bot'
+    );
   });
 }
 
@@ -304,7 +310,10 @@ query($owner: String!, $repo: String!, $cursor: String) {
         labels(first: 100) { nodes { name } }
         reviewThreads(first: 100) {
           pageInfo { hasNextPage }
-          nodes { isResolved comments(first: 1) { nodes { author { login } createdAt } } }
+          nodes {
+            isResolved
+            comments(first: 1) { nodes { author { login __typename } createdAt } }
+          }
         }
       }
     }

@@ -72,9 +72,12 @@ const botComment = (id, body, created_at = ago(DAY)) => ({
   created_at,
   user: { login: 'github-actions[bot]', type: 'Bot' },
 });
-const thread = (createdAt, { login = 'chatgpt-codex-connector', isResolved = false } = {}) => ({
+const thread = (
+  createdAt,
+  { login = 'chatgpt-codex-connector', type = 'Bot', isResolved = false } = {},
+) => ({
   isResolved,
-  comments: { nodes: [{ author: { login }, createdAt }] },
+  comments: { nodes: [{ author: { login, __typename: type }, createdAt }] },
 });
 const withThreads = (threads) => ({ reviewThreads: { nodes: threads } });
 
@@ -343,7 +346,9 @@ test('only unresolved Codex threads count, outdated ones included', () => {
       { ...thread(ago(4 * DAY)), isOutdated: true },
     ]),
   });
-  assert.equal(unresolvedCodexThreads(pr).length, 3);
+  // GraphQL reports the app as `chatgpt-codex-connector`; the REST-style
+  // `[bot]` login is not the GraphQL actor and does not count.
+  assert.equal(unresolvedCodexThreads(pr).length, 2);
   assert.equal(codexSince(pr), ago(4 * DAY));
   assert.equal(codexSince(makePr(31)), null);
   assert.equal(codexSince(makePr(32, withThreads([thread(ago(DAY), { isResolved: true })]))), null);
@@ -544,6 +549,15 @@ test('a new episode of Codex threads gets a fresh reminder and window', async ()
     client.writes.map((w) => w.route),
     ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments'],
   );
+});
+
+test('only the Codex bot itself opens Codex threads', () => {
+  const pr = withThreads([
+    thread(ago(2 * DAY), { login: 'chatgpt-codex-connector', type: 'User' }),
+    thread(ago(2 * DAY), { login: 'chatgpt-codex-connector-fake' }),
+    thread(ago(2 * DAY)),
+  ]);
+  assert.equal(unresolvedCodexThreads(pr).length, 1);
 });
 
 test('pull requests from deleted accounts are skipped', () => {
