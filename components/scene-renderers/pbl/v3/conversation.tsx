@@ -251,19 +251,19 @@ export function LearningConversation({
     }
   };
   const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
+  const overviewEligible =
+    view.state.position.milestoneIndex === 0 &&
+    view.state.position.stageIndex === 0 &&
+    view.state.status !== 'completed' &&
+    !pendingMessage &&
+    !entries.some((entry) => entry.speaker === 'user') &&
+    !view.conversationHistory?.length;
   return (
     <ConversationViewport
       key={view.id}
       header={overview}
-      startAtOverview={
-        view.state.position.milestoneIndex === 0 &&
-        view.state.position.stageIndex === 0 &&
-        view.state.status !== 'completed' &&
-        (initialEntry || !entries.length || view.needsOpening) &&
-        !pendingMessage &&
-        !entries.some((entry) => entry.speaker === 'user') &&
-        !view.conversationHistory?.length
-      }
+      startAtOverview={overviewEligible && (initialEntry || !entries.length || view.needsOpening)}
+      overviewEligible={overviewEligible}
       sent={sent}
       hidden={modalActive}
       generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}

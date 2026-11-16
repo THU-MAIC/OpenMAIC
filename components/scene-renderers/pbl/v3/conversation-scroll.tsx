@@ -14,6 +14,7 @@ export function ConversationViewport({
   header,
   sent,
   startAtOverview = false,
+  overviewEligible = startAtOverview,
   generating,
   hidden = false,
   onClick,
@@ -22,6 +23,7 @@ export function ConversationViewport({
   header?: ReactNode;
   sent: number;
   startAtOverview?: boolean;
+  overviewEligible?: boolean;
   generating: boolean;
   hidden?: boolean;
   onClick: (event: MouseEvent<HTMLDivElement>) => void;
@@ -29,6 +31,8 @@ export function ConversationViewport({
   const { t } = useI18n();
   // Layout changes (including hiding the overview during onboarding) are not
   // learner intent. Keep the initial target until the learner chooses to move.
+  // The initial choice can change as the first reply arrives; only leaving
+  // the opening context (or explicit learner intent) ends an existing hold.
   const readingOverview = useRef(startAtOverview);
   const stick = useStickToBottom({
     initial: startAtOverview ? false : 'instant',
@@ -56,7 +60,7 @@ export function ConversationViewport({
     stopScroll();
   };
   useLayoutEffect(() => {
-    if (previous.current !== sent || (readingOverview.current && !startAtOverview)) {
+    if (previous.current !== sent || (readingOverview.current && !overviewEligible)) {
       previous.current = sent;
       readingOverview.current = false;
       // A learner send or leaving the opening stage ends initial reading.
@@ -65,7 +69,7 @@ export function ConversationViewport({
       stopScroll();
       if (scrollRef.current) scrollRef.current.scrollTop = 0;
     }
-  }, [header, sent, startAtOverview, scrollRef, scrollToBottom, stopScroll]);
+  }, [header, sent, overviewEligible, scrollRef, scrollToBottom, stopScroll]);
   const label = generating
     ? `${t('pblV3.journey.latest')} · ${t('workbench.chat.waiting')}`
     : t('pblV3.journey.latest');
