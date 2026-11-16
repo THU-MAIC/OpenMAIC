@@ -165,9 +165,6 @@ function buildTeachingPrompt({
     state: { decisions: collected.decisions, plan: planText, code: collected.code?.value },
     decisionCatalog: definition.decisions,
   });
-  // File edits can change these snapshots between ordinary turns in one stage.
-  // Keep them behind retained history without losing the initial artifact anchor.
-  const { plan: initialPlan, code: initialCode, ...fixedSeed } = seed;
   const { current: _entryState, ...productGuide } = teachingProductContext({
     definition,
     stage,
@@ -184,7 +181,7 @@ function buildTeachingPrompt({
         communication,
         referenceMaterials: welcome === 'pending' ? [] : skill.documents,
         ...(!guided && packaged ? { teachingInstructions: skill.content } : {}),
-        ...(welcome === 'pending' ? {} : fixedSeed),
+        ...(welcome === 'pending' ? {} : seed),
         projectContext: { title: definition.title, language: definition.language },
         stageEntry: {
           firstMilestone: milestoneIndex === 0,
@@ -307,14 +304,6 @@ function buildTeachingPrompt({
     JSON.stringify({
       stageEntry: { automatic: automaticEntry },
       learningRoadmap: { completionRecorded },
-      ...(welcome !== 'pending' && (initialPlan !== undefined || initialCode !== undefined)
-        ? {
-            artifacts: {
-              ...(initialPlan !== undefined ? { plan: initialPlan } : {}),
-              ...(initialCode !== undefined ? { code: initialCode } : {}),
-            },
-          }
-        : {}),
       ...(guided
         ? {
             teachingContext: {
