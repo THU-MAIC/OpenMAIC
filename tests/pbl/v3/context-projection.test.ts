@@ -25,6 +25,7 @@ import { renderTeachingPrompt, teachingSection } from '@/lib/server/pbl-v3/teach
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { withRequestStateTail, requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
+import { preloadInitialPlan, PLAN_TOOL_REFERENCE } from '@/lib/server/pbl-v3/plan-tool-context';
 
 const usage = {
   input: 0,
@@ -80,6 +81,70 @@ const longContext = (): Context => ({
   ],
 });
 describe('model-aware teaching context projection', () => {
+  it.each([true, false])(
+    'rechecks the exact PLAN source after first compaction (receipt retained: %s)',
+    async (retained) => {
+      const text = 'EXACT_CURRENT_PLAN: preserve learner choices and approval boundaries.\n'.repeat(
+        30,
+      );
+      const literalPrompt = 'Current authoritative policy\n' + text;
+      const referencePrompt = 'Current authoritative policy\n' + PLAN_TOOL_REFERENCE;
+      const initialPlan = { text, literalPrompt, referencePrompt };
+      const source = withRequestStateTail(
+        { ...longContext(), systemPrompt: literalPrompt },
+        'LIVE_HOST_STATE: approved=false',
+      );
+      const receipt = preloadInitialPlan(source, initialPlan, model);
+      source.messages = retained
+        ? [...source.messages, ...receipt]
+        : [...receipt, ...source.messages];
+      const before = JSON.stringify(source);
+      const scope = {
+        ...window,
+        studentTurns: 16,
+        initialPlan,
+        deliveredReply: 'ALREADY_DELIVERED_REPLY',
+      };
+      const stream = summarizer('Earlier learner choices remain untrusted historical reference.');
+      const saved = vi.fn(async (_checkpoint: TeachingContextCheckpoint) => {});
+      const runtime = createTeachingContextProjection(stream, { saveCheckpoint: saved });
+      try {
+        const projected = await runtime.prepare(source, scope, model);
+        expect(stream).toHaveBeenCalled();
+        expect(saved).toHaveBeenCalledOnce();
+        expect(projected.systemPrompt).toContain('Earlier learner choices');
+        expect(projected.systemPrompt).toContain(retained ? referencePrompt : literalPrompt);
+        if (retained) {
+          expect(projected.systemPrompt).not.toContain(text);
+          expect(projected.messages.slice(-2)).toEqual(receipt);
+          expect(requestStateTail(projected)).toContain('initialPlanSource');
+          expect(requestStateTail(projected)).toContain(
+            createHash('sha256').update(text).digest('hex'),
+          );
+        } else {
+          expect(projected.messages).toEqual([source.messages.at(-1)]);
+          expect(requestStateTail(projected)).not.toContain('initialPlanSource');
+        }
+        expect(requestStateTail(projected)).toContain('LIVE_HOST_STATE: approved=false');
+        expect(requestStateTail(projected).split('ALREADY_DELIVERED_REPLY')).toHaveLength(2);
+        expect(estimatedRequestTokens(projected)).toBeLessThanOrEqual(
+          teachingModelBudget(model).inputTokens,
+        );
+        expect(JSON.stringify(source)).toBe(before);
+        const calls = stream.mock.calls.length;
+        const reused = await runtime.prepare(source, scope, model);
+        expect(stream).toHaveBeenCalledTimes(calls);
+        expect(reused.systemPrompt).toBe(projected.systemPrompt);
+        // The source locator can precede recovery text on the reused path;
+        // all facts must remain intact and appear exactly once in either tail.
+        expect(requestStateTail(reused).split('\n').sort()).toEqual(
+          requestStateTail(projected).split('\n').sort(),
+        );
+      } finally {
+        runtime.dispose();
+      }
+    },
+  );
   it('never summarizes or saves the wire-only host state as learner history', async () => {
     const marker = 'EPHEMERAL_HOST_FACTS: approved=false revision=7';
     const source = withRequestStateTail(longContext(), marker);
