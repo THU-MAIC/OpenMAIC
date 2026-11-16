@@ -134,7 +134,7 @@ describe('OpenAI provider defaults', () => {
 
       expect(openAiMock.responses).toHaveBeenCalledWith(modelId);
       expect(openAiMock.chat).not.toHaveBeenCalled();
-      expect(model).toMatchObject({ modelId });
+      expect(model).toEqual({ endpoint: 'responses', modelId });
       expect(modelInfo).toBe(getModelInfo('openai', modelId));
     },
   );
@@ -171,7 +171,7 @@ describe('OpenAI provider defaults', () => {
 
     expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.5');
     expect(openAiMock.chat).not.toHaveBeenCalled();
-    expect(model).toMatchObject({ modelId: 'gpt-5.5' });
+    expect(model).toEqual({ endpoint: 'responses', modelId: 'gpt-5.5' });
   });
 
   it('keeps the Responses API for a custom OpenAI base URL by default', () => {
@@ -411,7 +411,10 @@ describe('OpenAI provider defaults', () => {
       fetch: expect.any(Function),
     });
     expect(azureMock.model).toHaveBeenCalledWith('course-generation');
-    expect(model).toMatchObject({ specificationVersion: 'v3' });
+    expect(model).toEqual({
+      endpoint: 'azure-responses',
+      deploymentId: 'course-generation',
+    });
   });
 
   it('normalizes full Azure inference endpoints before creating the provider', () => {

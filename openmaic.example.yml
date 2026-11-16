@@ -46,17 +46,6 @@ providers:
   #   preset: anthropic
   #   apiKey: ${ANTHROPIC_API_KEY}
 
-  # A gateway whose model/chat template has been verified to accept non-leading
-  # system messages. Unknown OpenAI-compatible endpoints safely keep system
-  # instructions first. Opt in only after checking this endpoint and model.
-  # verified-chat:
-  #   preset: openai-compatible
-  #   baseUrl: https://your-verified-gateway.example/v1
-  #   apiKey: ${VERIFIED_CHAT_API_KEY}
-  #   models: [your-verified-model]
-  #   options:
-  #     requestSystemTailPlacement: trailing # prefix is the safe default
-
   # Web search.
   # tavily:
   #   preset: tavily

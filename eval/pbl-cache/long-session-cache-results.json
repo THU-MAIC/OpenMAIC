@@ -297,6 +297,7 @@
     "noCompactionPolicyChange": true
   },
   "compatibility": {
+    "versionScope": "Historical restored-layout measurement only; superseded by c9b6e6e user-role state tail. The placement option and validation were removed; no current deployment configuration is required.",
     "default": "prefix for unknown/custom endpoints",
     "verifiedOverride": "deployment providers.<id>.options.requestSystemTailPlacement: trailing",
     "nativeCapabilitiesDoNotTransferToCustomURLs": true,
