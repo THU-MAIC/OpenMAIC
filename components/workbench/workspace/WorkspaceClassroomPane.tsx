@@ -311,6 +311,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               <span>{t('workspace.talkAboutCourse')}</span>
             </button>
           ) : null}
+          {/* Export, as in the full-screen header: the download menu must not
+              hide behind full screen. Only once the tab's course is the loaded
+              one, since it exports the loaded stage. */}
+          {loadedCourseId === courseId ? (
+            <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
+          ) : null}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
           <button
@@ -332,7 +338,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           actions={
             <>
               {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
-              {/* Export and sharing, which the split view leaves to this size. */}
+              {/* Export, as in the split header. */}
               <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
               {/* The editor portals its undo/redo here while editing; empty, it
               takes no space. It sits with the other editing control (the
