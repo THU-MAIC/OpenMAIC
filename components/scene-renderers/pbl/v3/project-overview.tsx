@@ -79,22 +79,25 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
                       </h5>
                     </div>
                     <div className="space-y-1">
-                      {milestone.goal && (!singleMilestone || !hero?.description) && (
-                        <p>
-                          <span className="pbl-overview-label me-2">
-                            {t(combined ? 'pblV3.overview.goalAndResult' : 'pblV3.overview.goal')}
-                          </span>
-                          {milestone.goal}
-                        </p>
-                      )}
-                      {milestone.outcome && !combined && (!singleMilestone || !outcome) && (
-                        <p>
-                          <span className="pbl-overview-label me-2">
-                            {t('pblV3.overview.result')}
-                          </span>
-                          {milestone.outcome}
-                        </p>
-                      )}
+                      {milestone.goal &&
+                        (!singleMilestone || milestone.goal !== hero?.description) && (
+                          <p>
+                            <span className="pbl-overview-label me-2">
+                              {t(combined ? 'pblV3.overview.goalAndResult' : 'pblV3.overview.goal')}
+                            </span>
+                            {milestone.goal}
+                          </p>
+                        )}
+                      {milestone.outcome &&
+                        !combined &&
+                        (!singleMilestone || milestone.outcome !== outcome) && (
+                          <p>
+                            <span className="pbl-overview-label me-2">
+                              {t('pblV3.overview.result')}
+                            </span>
+                            {milestone.outcome}
+                          </p>
+                        )}
                       {singleMilestone && !!milestone.concepts?.length && (
                         <div className="pt-1">
                           <p className="pbl-overview-label mb-1.5">
