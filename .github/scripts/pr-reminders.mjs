@@ -265,6 +265,19 @@ export function codexCloseDue({ reminderAt, newestThreadAt, lastActivity, now })
   return now - start > CODEX_CLOSE_MS;
 }
 
+// The most recent reminder of a kind, or null.
+export function latestReminder(comments, kind) {
+  const matches = comments.filter(
+    (comment) =>
+      comment.user?.login === BOT_LOGIN &&
+      comment.user?.type === 'Bot' &&
+      comment.body?.startsWith(MARKERS[kind]),
+  );
+  return matches.length
+    ? matches.reduce((a, b) => (time(b.created_at) > time(a.created_at) ? b : a))
+    : null;
+}
+
 export function findReminder(comments, kind) {
   return (
     comments.find(
@@ -447,7 +460,15 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
       10,
     );
     for (const decision of decisions) {
-      const existing = findReminder(comments, decision.kind);
+      let existing = findReminder(comments, decision.kind);
+      if (decision.kind === 'codex') {
+        // Each episode of unresolved threads gets its own reminder: one posted
+        // before the oldest current thread belongs to an episode that was
+        // already resolved, so it neither starts this close window nor counts
+        // as this episode's announcement.
+        existing = latestReminder(comments, 'codex');
+        if (existing && time(existing.created_at) < time(decision.since)) existing = null;
+      }
       let action;
       // Close only when every review thread has been seen: a newer Codex thread
       // on a later page would otherwise not restart the window.

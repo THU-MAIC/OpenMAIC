@@ -526,6 +526,25 @@ test('marking ready or removing status:blocked restarts the close window', () =>
   assert.equal(at([{ createdAt: ago(DAY), label: { name: 'bug' } }]), null);
 });
 
+test('a new episode of Codex threads gets a fresh reminder and window', async () => {
+  const pr = makePr(62, withThreads([thread(ago(2 * DAY))]));
+  const client = fakeClient({
+    prs: [pr],
+    comments: { 62: [botComment(901, codexBody(pr, 1), ago(20 * DAY))] },
+    activity: { 62: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => r.action),
+    ['create'],
+  );
+  assert.deepEqual(client.activityQueries, []);
+  assert.deepEqual(
+    client.writes.map((w) => w.route),
+    ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments'],
+  );
+});
+
 test('a close whose comment was already posted only retries the close', async () => {
   const pr = makePr(60, withThreads([thread(ago(12 * DAY))]));
   const client = fakeClient({
