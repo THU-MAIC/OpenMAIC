@@ -1,5 +1,7 @@
 import { parseMinerUPdfChunks } from '@/lib/pdf/mineru-chunks';
 import { documentExtractionFailure } from '@/lib/server/material-extraction/extract';
+import { readFileSync } from 'node:fs';
+import * as imageParser from '@/lib/server/material-extraction/document-image-parser';
 import { randomBytes } from 'node:crypto';
 import { PDFDict, PDFDocument, PDFName, PDFString } from 'pdf-lib';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,8 +16,9 @@ import {
 } from '@/lib/server/material-extraction/errors';
 
 vi.mock('@/lib/server/provider-fetch', () => ({ providerFetch: vi.fn() }));
+const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
 vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn, error: vi.fn(), debug: vi.fn() }),
 }));
 
 const fetchMock = vi.mocked(providerFetch);
@@ -32,13 +35,17 @@ async function pdf(pages: number): Promise<Buffer> {
 }
 
 beforeEach(() => {
+  warn.mockClear();
   fetchMock.mockReset().mockImplementation(async () => response());
   vi.stubEnv('PDF_MINERU_MAX_PAGES', '1000');
   vi.stubEnv('PDF_MINERU_CHUNK_PAGES', '2');
   vi.stubEnv('PDF_MINERU_CHUNK_CONCURRENCY', '2');
   vi.stubEnv('PDF_MINERU_BACKEND', 'pipeline');
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
 
 describe('self-hosted MinerU PDF chunks', () => {
   it('also chunks PDFs sent directly through the document extractor', async () => {
@@ -441,7 +448,7 @@ describe('self-hosted MinerU PDF chunks', () => {
 });
 
 describe('MinerU chunk merge', () => {
-  it('namespaces repeated image paths, rewrites actual image references, and offsets image pages', () => {
+  it('namespaces repeated image paths, rewrites actual image references, and offsets image pages', async () => {
     const chunk = (startPage: number) => ({
       startPage,
       result: {
@@ -459,7 +466,7 @@ describe('MinerU chunk merge', () => {
         ]),
       },
     });
-    const result = mergeMinerUChunks([chunk(2), chunk(0)]);
+    const result = await mergeMinerUChunks([chunk(2), chunk(0)]);
     expect(result.text.startsWith('page 1')).toBe(true);
     expect(result.text.indexOf('page 3')).toBeGreaterThan(result.text.indexOf('page 1'));
     expect(result.metadata?.pageCount).toBe(2); // Two distinct reported pages; absent blank pages are not invented.
@@ -484,8 +491,8 @@ describe('MinerU chunk merge', () => {
     expect(result.text.match(/prose images\/same.png/g)).toHaveLength(2);
   });
 
-  it('handles URL-backed images and optional missing or malformed content lists', () => {
-    const result = mergeMinerUChunks([
+  it('handles URL-backed images and optional missing or malformed content lists', async () => {
+    const result = await mergeMinerUChunks([
       {
         startPage: 2,
         result: {
@@ -528,13 +535,13 @@ it.each([
 
 it.each([false, true])(
   'preserves real image paths regardless of key order (reverse=%s)',
-  (reverse) => {
+  async (reverse) => {
     const entries = [
       ['images/a.png', 'data:image/png;base64,NESTED'],
       ['a.png', 'data:image/png;base64,ROOT'],
     ];
     if (reverse) entries.reverse();
-    const result = mergeMinerUChunks([
+    const result = await mergeMinerUChunks([
       {
         startPage: 0,
         result: {
@@ -560,3 +567,111 @@ it.each([false, true])(
     ).toBe(2);
   },
 );
+
+describe('bounded chunk image parsing', () => {
+  const chunk = (startPage: number, text = '![figure](images/a.png)') => ({
+    startPage,
+    result: {
+      md_content: text,
+      images: { 'a.png': `data:image/png;base64,${startPage}` },
+      content_list: [{ type: 'image', img_path: 'images/a.png', page_idx: 0 }],
+    },
+  });
+
+  it.each([
+    ['input bytes', 'x'.repeat(4 * 1024 * 1024 + 1)],
+    ['HTML density', '<span>x</span>'.repeat(50_001)],
+  ])('keeps text and omits only rejected chunk images on excess %s', async (_kind, oversized) => {
+    const worker = vi.spyOn(imageParser, 'runDocumentImageWorker');
+    const text = oversized + '\n![unresolved](images/a.png)';
+    const result = await mergeMinerUChunks([chunk(0), chunk(2, text), chunk(4)]);
+    // Compare without printing multi-megabyte document contents on failure.
+    expect(
+      result.text ===
+        `![figure](images/chunk-1/image-1)\n\n${text}\n\n![figure](images/chunk-5/image-1)`,
+    ).toBe(true);
+    expect(result.images).toEqual(['data:image/png;base64,0', 'data:image/png;base64,4']);
+    expect(
+      result.metadata?.pdfImages?.map(({ path, pageNumber }) => ({ path, pageNumber })),
+    ).toEqual([
+      { path: 'images/chunk-1/image-1', pageNumber: 1 },
+      { path: 'images/chunk-5/image-1', pageNumber: 5 },
+    ]);
+    expect(result.metadata?.pageCount).toBe(3);
+    expect(worker).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      'Chunk image rewriting skipped: input exceeds parser budget',
+      { firstPage: 3 },
+    );
+  });
+
+  it('skips the worker for chunks without images, even above the input budget', async () => {
+    const worker = vi.spyOn(imageParser, 'runDocumentImageWorker');
+    const text = 'x'.repeat(4 * 1024 * 1024 + 1);
+    expect((await mergeMinerUChunks([{ startPage: 0, result: { md_content: text } }])).text).toBe(
+      text,
+    );
+    expect(worker).not.toHaveBeenCalled();
+  });
+
+  it('propagates cancellation while waiting for the real image worker', async () => {
+    const worker = vi.spyOn(imageParser, 'runDocumentImageWorker');
+    const controller = new AbortController();
+    const merging = mergeMinerUChunks([chunk(0), chunk(2)], undefined, controller.signal);
+    const rejected = expect(merging).rejects.toThrow('aborted');
+    expect(worker).toHaveBeenCalledExactlyOnceWith(
+      { kind: 'plan', text: chunk(0).result.md_content, includeAllTargets: true },
+      undefined,
+      controller.signal,
+    );
+    controller.abort();
+    await rejected;
+    expect(worker).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('passes the chunk signal to the worker and awaits its cancellation', async () => {
+    const controller = new AbortController();
+    const error = new Error('image parsing cancelled');
+    let receivedSignal: AbortSignal | undefined;
+    const worker = vi.spyOn(imageParser, 'runDocumentImageWorker').mockImplementation(
+      (_job: unknown, _key?: string, signal?: AbortSignal) =>
+        new Promise<never>((_resolve, reject) => {
+          receivedSignal = signal;
+          signal!.addEventListener('abort', () => reject(error), { once: true });
+        }),
+    );
+    const parsing = parseMinerUPdfChunks(
+      await pdf(3),
+      async () => chunk(0).result,
+      controller.signal,
+    );
+    const rejected = expect(parsing).rejects.toBe(error);
+    await vi.waitFor(() => expect(worker).toHaveBeenCalledTimes(1));
+    expect(worker).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'plan' }),
+      undefined,
+      receivedSignal,
+    );
+    expect(receivedSignal).toBeInstanceOf(AbortSignal);
+    controller.abort();
+    await rejected;
+    expect(receivedSignal?.aborted).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('propagates worker failures other than input admission errors unchanged', async () => {
+    const error = new imageParser.DocumentImageParseError(new Error('worker failed'));
+    vi.spyOn(imageParser, 'runDocumentImageWorker').mockRejectedValue(error);
+    await expect(mergeMinerUChunks([chunk(0)])).rejects.toBe(error);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not import a synchronous Markdown or HTML parser into chunk merging', () => {
+    const source = readFileSync('lib/pdf/mineru-chunks.ts', 'utf8');
+    expect(source).not.toMatch(
+      /(?:from\s*|import\s*\()\s*['"][^'"]*(?:document-image-plan|parse5|mdast-util-from-markdown)/,
+    );
+    expect(source).not.toMatch(/\bimagePlan\s*\(/);
+  });
+});

@@ -61,8 +61,8 @@ afterEach(() => {
 });
 
 describe('chapter evidence and input', () => {
-  it('keeps offset headings and bounded front matter without serializing intermediate evidence', () => {
-    const result = mergeMinerUChunks([
+  it('keeps offset headings and bounded front matter without serializing intermediate evidence', async () => {
+    const result = await mergeMinerUChunks([
       { startPage: 50, result: { content_list: [{ text: 'Later', text_level: 2, page_idx: 0 }] } },
       { startPage: 0, result: { content_list: [{ text: 'First', text_level: 1, page_idx: 0 }] } },
     ]);

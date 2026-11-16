@@ -3,7 +3,12 @@ import { PDFArray, PDFDict, PDFDocument, PDFName } from 'pdf-lib';
 import { chapterSourceFromBlocks, withChapterSource } from '@/lib/document/chapter-source';
 
 import { applyImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
-import { imagePlan } from '@/lib/server/material-extraction/document-image-plan.mjs';
+import type { ImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
+import {
+  DocumentImageInputBudgetError,
+  runDocumentImageWorker,
+} from '@/lib/server/material-extraction/document-image-parser';
+import { createLogger } from '@/lib/logger';
 import {
   MaterialExtractionError,
   MaterialSourceRefusedError,
@@ -11,6 +16,8 @@ import {
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 
 import { extractMinerUResult } from './mineru-parser';
+
+const log = createLogger('MinerUChunks');
 
 function positiveInteger(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
@@ -75,17 +82,38 @@ export interface MinerUChunkResult {
 }
 
 /** Merge only the existing result fields; no per-chunk artifact is persisted. */
-export function mergeMinerUChunks(
+export async function mergeMinerUChunks(
   chunks: readonly MinerUChunkResult[],
   physicalPageCount?: number,
-): ParsedPdfContent {
+  signal?: AbortSignal,
+): Promise<ParsedPdfContent> {
   const markdown: string[] = [];
   const images: Record<string, string> = {};
   const contentList: Record<string, unknown>[] = [];
   for (const { startPage, result } of [...chunks].sort((a, b) => a.startPage - b.startPage)) {
+    signal?.throwIfAborted();
+    const text = (result.md_content as string) || '';
+    let imageEntries = Object.entries((result.images ?? {}) as Record<string, string>);
+    let plan: ImagePlan | undefined;
+    if (imageEntries.length) {
+      try {
+        plan = await runDocumentImageWorker(
+          { kind: 'plan', text, includeAllTargets: true },
+          undefined,
+          signal,
+        );
+      } catch (error) {
+        if (signal?.aborted || !(error instanceof DocumentImageInputBudgetError)) throw error;
+        // Keep the text, but never publish images whose paths were not namespaced.
+        imageEntries = [];
+        log.warn('Chunk image rewriting skipped: input exceeds parser budget', {
+          firstPage: startPage + 1,
+        });
+      }
+      signal?.throwIfAborted();
+    }
     const paths = new Map<string, string>();
     const basenames = new Map<string, string | null>();
-    const imageEntries = Object.entries((result.images ?? {}) as Record<string, string>);
     for (const [index, [path, data]] of imageEntries.entries()) {
       const unique = `images/chunk-${startPage + 1}/image-${index + 1}`;
       images[unique] = data;
@@ -107,9 +135,7 @@ export function mergeMinerUChunks(
       if (/^[a-z][a-z0-9+.-]*:/i.test(path) || path.startsWith('/')) return undefined;
       return basenames.get(path.split('/').pop()!) ?? undefined;
     };
-    const text = (result.md_content as string) || '';
-    // Reuse the existing Markdown/HTML image parser, leaving prose and code alone.
-    markdown.push(imageEntries.length ? applyImagePlan(text, imagePlan(text), imagePath) : text);
+    markdown.push(plan ? applyImagePlan(text, plan, imagePath) : text);
     let items: unknown = result.content_list;
     if (typeof items === 'string') {
       try {
@@ -255,5 +281,5 @@ export async function parseMinerUPdfChunks(
   );
   parentSignal?.throwIfAborted();
   signal.throwIfAborted();
-  return mergeMinerUChunks(results, pages);
+  return await mergeMinerUChunks(results, pages, signal);
 }

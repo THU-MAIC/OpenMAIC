@@ -1,3 +1,4 @@
+import type { ImagePlan } from '@/lib/server/material-extraction/document-image-apply.mjs';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -326,4 +327,18 @@ describe('document-image production parser', () => {
       clearInterval(timer);
     }
   }, 20_000);
+});
+
+it('keeps plans derivative-only by default and includes source images only when requested', async () => {
+  const text =
+    '![local](images/a.png) <img src="https://images.example/a.png"> ![stored](openmaic-derivative:img-1)';
+  const targets = (plan: ImagePlan) => {
+    return [...plan.markdown, ...plan.html].map((image) => image.target).sort();
+  };
+  expect(targets(await parser.runDocumentImageWorker({ kind: 'plan', text }))).toEqual([
+    'openmaic-derivative:img-1',
+  ]);
+  expect(
+    targets(await parser.runDocumentImageWorker({ kind: 'plan', text, includeAllTargets: true })),
+  ).toEqual(['https://images.example/a.png', 'images/a.png', 'openmaic-derivative:img-1']);
 });
