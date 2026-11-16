@@ -48,6 +48,40 @@ function fixture(index: number) {
 }
 
 describe('authoritative product guidance', () => {
+  it('keeps changing plan/code snapshots after history while preserving their exact initial values', () => {
+    const input = fixture(3);
+    const before = renderTeachingPrompt({
+      ...input,
+      planText: 'OLD_PLAN',
+      collected: { ...input.collected, code: { value: 'OLD_CODE' } as never },
+    });
+    const after = renderTeachingPrompt({
+      ...input,
+      planText: 'NEW_PLAN',
+      collected: { ...input.collected, code: { value: 'NEW_CODE' } as never },
+    });
+    expect(before.systemPrompt).toBe(after.systemPrompt);
+    expect(after.systemPrompt).not.toContain('NEW_PLAN');
+    const snapshot = JSON.parse(after.initialContext.slice('\nInitial teaching state: '.length));
+    expect(snapshot.artifacts.plan).toBe('NEW_PLAN');
+    expect(after.initialContext).not.toContain('OLD_PLAN');
+  });
+
+  it('preserves the exact code artifact for recap without making it part of the reusable head', () => {
+    const input = fixture(6);
+    const before = renderTeachingPrompt({
+      ...input,
+      collected: { ...input.collected, code: { value: 'OLD_CODE' } as never },
+    });
+    const after = renderTeachingPrompt({
+      ...input,
+      collected: { ...input.collected, code: { value: 'NEW_CODE' } as never },
+    });
+    expect(after.systemPrompt).toBe(before.systemPrompt);
+    expect(
+      JSON.parse(after.initialContext.slice('\nInitial teaching state: '.length)).artifacts.code,
+    ).toBe('NEW_CODE');
+  });
   it.each([0, 2, 3])(
     'keeps instructions stable while preserving deferred and live review facts in stage %i',
     (index) => {

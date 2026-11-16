@@ -1,4 +1,5 @@
 import 'server-only';
+import { LIVE_TEACHING_STATE_PREFIX } from './teaching-live-state';
 import { communicationRules, type ResponseLanguage } from './communication';
 import type {
   AgentRole,
@@ -165,6 +166,9 @@ function buildTeachingPrompt({
     state: { decisions: collected.decisions, plan: planText, code: collected.code?.value },
     decisionCatalog: definition.decisions,
   });
+  // File edits can change these snapshots between ordinary turns in one stage.
+  // Keep them behind retained history without losing the initial artifact anchor.
+  const { plan: initialPlan, code: initialCode, ...fixedSeed } = seed;
   const { current: _entryState, ...productGuide } = teachingProductContext({
     definition,
     stage,
@@ -181,7 +185,7 @@ function buildTeachingPrompt({
         communication,
         referenceMaterials: welcome === 'pending' ? [] : skill.documents,
         ...(!guided && packaged ? { teachingInstructions: skill.content } : {}),
-        ...(welcome === 'pending' ? {} : seed),
+        ...(welcome === 'pending' ? {} : fixedSeed),
         projectContext: { title: definition.title, language: definition.language },
         stageEntry: {
           firstMilestone: milestoneIndex === 0,
@@ -304,6 +308,14 @@ function buildTeachingPrompt({
     JSON.stringify({
       stageEntry: { automatic: automaticEntry },
       learningRoadmap: { completionRecorded },
+      ...(welcome !== 'pending' && (initialPlan !== undefined || initialCode !== undefined)
+        ? {
+            artifacts: {
+              ...(initialPlan !== undefined ? { plan: initialPlan } : {}),
+              ...(initialCode !== undefined ? { code: initialCode } : {}),
+            },
+          }
+        : {}),
       ...(guided
         ? {
             teachingContext: {
@@ -439,7 +451,8 @@ export function teachingLiveSuffix(live: string): string {
   if (!live) return '';
   const { decisionsChosen, ...hostContext } = JSON.parse(live);
   return (
-    `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${JSON.stringify(hostContext)}` +
+    LIVE_TEACHING_STATE_PREFIX +
+    JSON.stringify(hostContext) +
     (decisionsChosen === undefined ? '' : quotedDecisionContext(decisionsChosen))
   );
 }

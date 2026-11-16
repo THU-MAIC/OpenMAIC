@@ -8243,7 +8243,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           try {
             await writeFile(path, 'Learner plan '.repeat(4000));
             const expanded = await teachingRunnerConfig(request);
-            expect(expanded.systemPrompt).toContain('Learner plan '.repeat(4000));
+            expect(expanded.systemPrompt).not.toContain('Learner plan '.repeat(4000));
+            expect(
+              JSON.parse(expanded.initialContext.slice('\nInitial teaching state: '.length))
+                .artifacts.plan,
+            ).toBe('Learner plan '.repeat(4000));
             expect(mocked.modelCalls).toBe(calls);
             oversizedPlanChecked = true;
           } finally {

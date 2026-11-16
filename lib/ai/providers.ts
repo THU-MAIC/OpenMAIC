@@ -940,6 +940,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     name: 'DeepSeek',
     type: 'openai',
     defaultBaseUrl: 'https://api.deepseek.com/v1',
+    requestSystemTailPlacement: 'trailing',
     requiresApiKey: true,
     icon: '/logos/deepseek.svg',
     models: [
@@ -2746,9 +2747,15 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       throw new Error(`Unsupported provider type: ${providerType}`);
   }
 
-  // Apply at the actual adapter, including fallback models. OpenAI-compatible
-  // transports retain request tails; prefix-only transports keep valid system ordering.
-  if (providerType === 'anthropic' || providerType === 'google' || providerType === 'bedrock') {
+  // OpenAI-compatible describes the wire protocol, not the model's chat template.
+  // Only a verified endpoint capability may retain a non-leading system message.
+  // Resolve here so primary and fallback adapters each enforce their own policy.
+  const nativeTailPlacement =
+    provider && (!config.baseUrl || isProviderNativeBaseUrl(config.providerId, effectiveBaseUrl))
+      ? provider.requestSystemTailPlacement
+      : undefined;
+  const tailPlacement = config.requestSystemTailPlacement ?? nativeTailPlacement ?? 'prefix';
+  if (providerType !== 'openai' || tailPlacement !== 'trailing') {
     model = wrapLanguageModel({ model, middleware: prefixSystemTailMiddleware() });
   }
 

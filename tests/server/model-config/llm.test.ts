@@ -38,6 +38,67 @@ describe('resolveStageModel', () => {
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', '');
   });
 
+  it('resolves the system-tail capability independently for a configured primary and fallback', async () => {
+    const providers = await import('@/lib/ai/providers');
+    const { attachedModelFallback } = await import('@/lib/ai/model-fallbacks');
+    const build = vi.spyOn(providers, 'getModel');
+    try {
+      state.lookup = lookupFromLayers('classroom', {
+        deployment: layer('deployment', {
+          providers: {
+            primary: {
+              preset: 'openai-compatible',
+              baseUrl: 'https://verified.example/v1',
+              options: { requestSystemTailPlacement: 'trailing' },
+            },
+            backup: { preset: 'openai-compatible', baseUrl: 'https://self-hosted.example/v1' },
+          },
+          slots: {
+            classroom: { model: 'primary:deepseek-flash', fallback: 'backup:mistral-local' },
+          },
+        }),
+        workspace: null,
+      });
+      const resolved = await resolveStageModel({ stage: 'chat-adapter', workspaceId: null });
+      expect(build).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://verified.example/v1',
+          requestSystemTailPlacement: 'trailing',
+        }),
+      );
+      await attachedModelFallback(resolved.model)!();
+      expect(build).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          baseUrl: 'https://self-hosted.example/v1',
+          requestSystemTailPlacement: undefined,
+        }),
+      );
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  it('refuses an invalid configured tail capability instead of silently enabling it', async () => {
+    state.lookup = lookupFromLayers('classroom', {
+      deployment: layer('deployment', {
+        providers: {
+          local: {
+            preset: 'openai-compatible',
+            baseUrl: 'https://self-hosted.example/v1',
+            options: { requestSystemTailPlacement: true },
+          },
+        },
+        slots: { classroom: 'local:mistral-local' },
+      }),
+      workspace: null,
+    });
+    await expect(
+      resolveStageModel({ stage: 'chat-adapter', workspaceId: null }),
+    ).rejects.toMatchObject({
+      code: 'MODEL_CONFIG_INVALID',
+    });
+  });
+
   it('builds the configured model with its options', async () => {
     state.lookup = lookupFromLayers('course.content.slide', {
       deployment: null,
