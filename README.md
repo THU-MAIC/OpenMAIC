@@ -2,7 +2,7 @@
 
 Synthetic browser reproduction for OpenMAIC PR #2277.
 
-Before: public main `439ad53`. After: fix `477ddff`.
+Before: public main `439ad53`. After: fix `1176073`.
 The recordings render the real PBL LearningConversation, ConversationViewport, and ProjectOverview components. An illustrative overlay reproduces their visibility lifecycle during onboarding or environment preparation. The opening transcript and project are synthetic, and the composer only simulates the existing send counter. Markdown rendering is simplified. These are controlled component reproductions, not recordings of a production learner session.
 
 Each pair demonstrates the opening growing without learner interaction. The after recordings also demonstrate explicitly sending a message restoring tail following.
