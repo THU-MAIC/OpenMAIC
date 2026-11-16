@@ -92,10 +92,10 @@ export function ConversationViewport({
           const target = event.target as HTMLElement;
           if (target.isContentEditable || target.closest('input, textarea, select')) return;
           // Navigation keys also scroll when a link or overview summary has focus.
-          // Space on those controls activates them instead of reading the transcript.
+          // Space activates buttons/summaries, but scrolls links and plain text.
           if (
             ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(event.key) ||
-            (event.key === ' ' && target === event.currentTarget)
+            (event.key === ' ' && !target.closest('button, summary, [role="button"]'))
           )
             releaseOverview();
         }}
