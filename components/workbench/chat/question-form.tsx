@@ -48,6 +48,7 @@ import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n
 import { wbStyles as styles } from './chat-styles';
 import { TextBlock } from './text-block';
 import { QuestionDetails } from './question-details';
+import { useQuestionSurface } from './question-surface';
 import {
   editingKindFor,
   isForeignKeyTarget,
@@ -99,10 +100,13 @@ export function QuestionForm({
   const { mode, rows, locked } = form;
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const frameRef = useRef<HTMLElement | null>(null);
+  // The question's whole surface when a host draws part of it (the preview's
+  // title and details), else this form's own frame.
+  const surface = useQuestionSurface();
   const countdown = useAutoConfirmCountdown({
     node,
     locked,
-    frameRef,
+    boundaryRef: surface ?? frameRef,
     onFire: (option) => {
       const key = sessionScopedKey(sessionId, node.key);
       const marks = useQuestionAutoConfirm.getState();
@@ -166,9 +170,6 @@ export function QuestionForm({
       data-esc-owner=""
       data-auto-confirm={running ? running.phase : undefined}
       aria-label={t('workbench.question.waiting')}
-      onPointerEnter={countdown?.onPointerEnter}
-      onPointerLeave={countdown?.onPointerLeave}
-      onPointerDownCapture={countdown?.onPointerDownCapture}
       onKeyDown={(event) => {
         // A button of its own (the switch, Collapse, a details toggle) keeps
         // its keys; only Escape still means "give the composer back".

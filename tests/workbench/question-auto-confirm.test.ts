@@ -319,22 +319,34 @@ describe('the answer form', () => {
     useSettingsStore.setState({ autoConfirmRecommendedAnswer: false });
     await mount();
     await act(async () => {
-      form()?.dispatchEvent(
-        new MouseEvent('pointerover', { bubbles: true, relatedTarget: document.body }),
-      );
+      form()?.dispatchEvent(new Event('pointerenter'));
     });
     await act(async () => useSettingsStore.setState({ autoConfirmRecommendedAnswer: true }));
     expect(form()?.getAttribute('data-auto-confirm')).toBe('paused');
     await advance(DURATION * 2);
     expect(answers).toEqual([]);
     await act(async () => {
-      form()?.dispatchEvent(
-        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
-      );
+      form()?.dispatchEvent(new Event('pointerleave'));
     });
     expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
     await advance(DURATION);
     expect(answers).toEqual(['Go ahead']);
+  });
+
+  it('in the chat, opening the details inside the form stops the countdown', async () => {
+    vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => 300);
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => 100);
+    await mount(question({ questionDetails: 'A long plan' }));
+    const toggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="workbench-question-details"] button',
+    );
+    await act(async () => {
+      toggle?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      toggle?.click();
+    });
+    expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+    await advance(DURATION * 2);
+    expect(answers).toEqual([]);
   });
 
   it('sends once when two forms count down for the same question', async () => {
@@ -457,9 +469,7 @@ describe('the answer form', () => {
     // may start paused; it runs once the pointer leaves.
     expect(form()?.getAttribute('data-auto-confirm')).not.toBeNull();
     await act(async () => {
-      form()?.dispatchEvent(
-        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
-      );
+      form()?.dispatchEvent(new Event('pointerleave'));
     });
     expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
     // From the top, not from where it was switched off.

@@ -253,20 +253,20 @@ export function useAutoConfirmCountdown(input: {
   node: ChatNode;
   locked: boolean;
   onFire: (option: QuestionOption) => void;
-  /** The form's frame: whether the pointer rests on it is read when a countdown starts. */
-  frameRef?: { readonly current: Element | null };
+  /**
+   * The question's whole visible surface (`question-surface.tsx`): resting the
+   * pointer anywhere on it pauses the countdown, and a press anywhere in it
+   * stops it.
+   */
+  boundaryRef?: { readonly current: Element | null };
 }): {
   readonly option: QuestionOption;
   readonly enabled: boolean;
   readonly setEnabled: (enabled: boolean) => void;
   /** The running or paused countdown, or null while it may not run. */
   readonly snapshot: AutoConfirmSnapshot | null;
-  readonly onPointerEnter: () => void;
-  readonly onPointerLeave: () => void;
-  /** A deliberate press inside the form: the countdown is over for this question. */
-  readonly onPointerDownCapture: (event: { target: EventTarget | null }) => void;
 } | null {
-  const { node, locked, onFire, frameRef } = input;
+  const { node, locked, onFire, boundaryRef } = input;
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const openQuestions = useWorkbenchStore((s) => openQuestionCount(s.chat));
   const key = sessionScopedKey(sessionId, node.key);
@@ -302,6 +302,34 @@ export function useAutoConfirmCountdown(input: {
     useQuestionAutoConfirm.getState().stop(key);
   }, [key]);
 
+  // The surface's own listeners, attached whether or not a countdown exists:
+  // hover is remembered for one that starts later, and a press always ends it.
+  // Native events on the boundary element, so every part of the question —
+  // whoever draws it — is inside.
+  useEffect(() => {
+    const el = boundaryRef?.current;
+    if (!el) return;
+    const enter = () => {
+      hoverRef.current = true;
+      timerRef.current?.pause('hover');
+    };
+    const leave = () => {
+      hoverRef.current = false;
+      timerRef.current?.resume('hover');
+    };
+    const press = (event: Event) => {
+      if (!onSwitch(event.target)) stop();
+    };
+    el.addEventListener('pointerenter', enter);
+    el.addEventListener('pointerleave', leave);
+    el.addEventListener('pointerdown', press, true);
+    return () => {
+      el.removeEventListener('pointerenter', enter);
+      el.removeEventListener('pointerleave', leave);
+      el.removeEventListener('pointerdown', press, true);
+    };
+  }, [boundaryRef, stop]);
+
   const optionId = option?.id ?? null;
   useEffect(() => {
     if (!eligible || !optionId) return;
@@ -310,7 +338,7 @@ export function useAutoConfirmCountdown(input: {
     // starts, not only the ones observed after it exists.
     const pausedFor: AutoConfirmPauseReason[] = [];
     if (hidden()) pausedFor.push('hidden');
-    if (hoverRef.current || hoveredNow(frameRef?.current ?? null)) pausedFor.push('hover');
+    if (hoverRef.current || hoveredNow(boundaryRef?.current ?? null)) pausedFor.push('hover');
     const timer = createAutoConfirmTimer({
       durationMs: AUTO_CONFIRM_SECONDS * 1000,
       pausedFor,
@@ -353,16 +381,5 @@ export function useAutoConfirmCountdown(input: {
     enabled,
     setEnabled,
     snapshot: counting ? snapshot : null,
-    onPointerEnter: () => {
-      hoverRef.current = true;
-      timerRef.current?.pause('hover');
-    },
-    onPointerLeave: () => {
-      hoverRef.current = false;
-      timerRef.current?.resume('hover');
-    },
-    onPointerDownCapture: (event) => {
-      if (!onSwitch(event.target)) stop();
-    },
   };
 }

@@ -44,6 +44,7 @@ import { presentTool } from '../chat/tool-presentation';
 import { TextBlock } from '../chat/text-block';
 import { QuestionForm } from '../chat/question-form';
 import { QuestionDetails } from '../chat/question-details';
+import { QuestionSurface } from '../chat/question-surface';
 import { cn } from '@/lib/utils/cn';
 import { closedPreviewRequest } from '@/lib/workbench/preview-tab';
 import { sessionScopedKey } from '@/lib/workbench/request-scope';
@@ -602,8 +603,10 @@ function QuestionCard({
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const details = question.questionDetails;
   return (
-    <div
-      data-testid="request-preview-question"
+    // The whole card is the question's surface: hovering any of it (the plan
+    // included) pauses an auto-confirm countdown, and pressing any of it stops it.
+    <QuestionSurface
+      testId="request-preview-question"
       className={cn(CARD, 'mx-auto max-w-xl px-7 pb-5 pt-6 text-left')}
     >
       <EquippedSkills skills={skills} t={t} className="mb-3 justify-start" />
@@ -641,7 +644,7 @@ function QuestionCard({
           />
         ) : null}
       </div>
-    </div>
+    </QuestionSurface>
   );
 }
 

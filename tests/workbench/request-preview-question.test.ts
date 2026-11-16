@@ -87,6 +87,7 @@ afterEach(async () => {
   useQuestionHost.getState().setAnswer(null);
   useQuestionAutoConfirm.setState({ live: [], stopped: [], autoConfirmed: [] });
   useWorkbenchStore.setState(createInitialSessionState() as never);
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -186,5 +187,51 @@ describe('the preview asking scene', () => {
     expect(q('workbench-question-form')?.getAttribute('data-mode')).toBe('multi');
     expect(q('workbench-question-form-recommended')).not.toBeNull();
     expect(q('workbench-question-form')?.getAttribute('data-auto-confirm')).toBeNull();
+  });
+
+  describe('the whole card is the countdown boundary', () => {
+    const plan = () =>
+      asked(null, {
+        question: 'Build this plan?',
+        details: '1. Light\n2. Quiz',
+        options: [
+          { id: 'go', label: 'Go ahead', recommended: true },
+          { id: 'change', label: 'Change it' },
+        ],
+      });
+    const phase = () => q('workbench-question-form')?.getAttribute('data-auto-confirm');
+
+    it('hovering the details, outside the form, pauses it', async () => {
+      await show(plan(), true);
+      expect(phase()).toBe('running');
+      await act(async () => {
+        q('request-preview-question')?.dispatchEvent(new Event('pointerenter'));
+      });
+      expect(phase()).toBe('paused');
+      await act(async () => {
+        q('request-preview-question')?.dispatchEvent(new Event('pointerleave'));
+      });
+      expect(phase()).toBe('running');
+    });
+
+    it('opening the details stops it', async () => {
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => 300);
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => 100);
+      await show(plan(), true);
+      const toggle = q('request-preview-plan')?.querySelector('button');
+      expect(toggle).not.toBeNull();
+      await act(async () => {
+        toggle?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      });
+      expect(phase()).toBeNull();
+    });
+
+    it('pressing the title stops it', async () => {
+      await show(plan(), true);
+      await act(async () => {
+        q('request-preview-title')?.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      });
+      expect(phase()).toBeNull();
+    });
   });
 });
