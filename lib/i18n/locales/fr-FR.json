@@ -3034,7 +3034,10 @@
       "eachStage": "Déroulement de chaque étape",
       "yourRole": "Vous prenez les décisions et vérifiez ; l’IA aide à écrire le plan et le code.",
       "preview": "Essayez votre application dans l’aperçu et vérifiez le résultat.",
-      "advance": "Le bouton violet au-dessus de la saisie apparaît uniquement lorsque vous pouvez avancer. Cliquez dessus pour continuer."
+      "advance": "Le bouton violet au-dessus de la saisie apparaît uniquement lorsque vous pouvez avancer. Cliquez dessus pour continuer.",
+      "singleFlow": "Déroulement du projet",
+      "concepts": "Notions d’ingénierie",
+      "deliverables": "Résultats fonctionnels"
     },
     "journey": {
       "currentMilestone": "Étape actuelle",

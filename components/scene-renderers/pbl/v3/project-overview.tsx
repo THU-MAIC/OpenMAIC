@@ -12,6 +12,7 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
   const { t } = useI18n();
   const titleId = useId();
   const milestones = view.milestones ?? [];
+  const singleMilestone = milestones.length === 1;
   const outcome = hero?.finishedWork;
   const steps = milestones[0]?.stages ?? [];
 
@@ -54,6 +55,7 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
             <h4 className="pbl-overview-label">{t('pblV3.overview.roadmap')}</h4>
             <ol
               aria-label={t('pblV3.overview.roadmap')}
+              data-single={singleMilestone}
               className="pbl-overview-roadmap mt-1.5 grid gap-2"
             >
               {milestones.map((milestone, index) => {
@@ -64,9 +66,11 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
                     className="pbl-overview-milestone min-w-0 rounded-xl border p-2.5"
                   >
                     <div className="mb-1 flex items-center gap-2">
-                      <span className="pbl-overview-icon grid size-5 shrink-0 place-items-center rounded-full text-xs font-semibold tabular-nums">
-                        {index + 1}
-                      </span>
+                      {!singleMilestone && (
+                        <span className="pbl-overview-icon grid size-5 shrink-0 place-items-center rounded-full text-xs font-semibold tabular-nums">
+                          {index + 1}
+                        </span>
+                      )}
                       <h5 className="text-[15px] font-semibold">
                         {milestone.title}
                         {milestone.optional && (
@@ -75,7 +79,7 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
                       </h5>
                     </div>
                     <div className="space-y-1">
-                      {milestone.goal && (
+                      {milestone.goal && (!singleMilestone || !hero?.description) && (
                         <p>
                           <span className="pbl-overview-label me-2">
                             {t(combined ? 'pblV3.overview.goalAndResult' : 'pblV3.overview.goal')}
@@ -83,13 +87,39 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
                           {milestone.goal}
                         </p>
                       )}
-                      {milestone.outcome && !combined && (
+                      {milestone.outcome && !combined && (!singleMilestone || !outcome) && (
                         <p>
                           <span className="pbl-overview-label me-2">
                             {t('pblV3.overview.result')}
                           </span>
                           {milestone.outcome}
                         </p>
+                      )}
+                      {singleMilestone && !!milestone.concepts?.length && (
+                        <div className="pt-1">
+                          <p className="pbl-overview-label mb-1.5">
+                            {t('pblV3.overview.concepts')}
+                          </p>
+                          <ul className="flex flex-wrap gap-1.5">
+                            {milestone.concepts.map((concept) => (
+                              <li key={concept} className="rounded-lg border px-2 py-1 text-xs">
+                                {concept}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {singleMilestone && !!milestone.deliverables?.length && (
+                        <div className="pt-2">
+                          <p className="pbl-overview-label mb-1">
+                            {t('pblV3.overview.deliverables')}
+                          </p>
+                          <ul className="list-disc space-y-1 ps-4">
+                            {milestone.deliverables.map((deliverable) => (
+                              <li key={deliverable}>{deliverable}</li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
                   </li>
@@ -100,7 +130,9 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
         )}
         <details className="pbl-overview-guide group">
           <summary className="pbl-overview-accent flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
-            <span>{t('pblV3.overview.eachStage')}</span>
+            <span>
+              {t(singleMilestone ? 'pblV3.overview.singleFlow' : 'pblV3.overview.eachStage')}
+            </span>
             <span className="pbl-overview-disclosure flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold">
               <span className="group-open:hidden">{t('pblV3.overview.expand')}</span>
               <span className="hidden group-open:inline">{t('pblV3.overview.collapse')}</span>

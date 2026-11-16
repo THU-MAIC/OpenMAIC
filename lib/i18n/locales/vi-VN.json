@@ -3034,7 +3034,10 @@
       "eachStage": "Quy trình mỗi giai đoạn",
       "yourRole": "Bạn quyết định và rà soát; AI hỗ trợ viết kế hoạch và mã.",
       "preview": "Dùng ứng dụng trong vùng xem trước để kiểm tra kết quả.",
-      "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp."
+      "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp.",
+      "singleFlow": "Quy trình thực hiện dự án",
+      "concepts": "Khái niệm kỹ thuật",
+      "deliverables": "Chức năng đạt được"
     },
     "journey": {
       "currentMilestone": "Giai đoạn hiện tại",
