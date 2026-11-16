@@ -20,11 +20,12 @@ export function DismissibleDetails(props: ComponentProps<'details'>) {
     };
     document.addEventListener('pointerdown', outside, true);
     document.addEventListener('focusin', outside);
-    details.addEventListener('keydown', escape);
+    // Safari may open a summary by mouse without moving keyboard focus into it.
+    document.addEventListener('keydown', escape, true);
     return () => {
       document.removeEventListener('pointerdown', outside, true);
       document.removeEventListener('focusin', outside);
-      details.removeEventListener('keydown', escape);
+      document.removeEventListener('keydown', escape, true);
     };
   }, []);
   return <details {...props} ref={ref} />;

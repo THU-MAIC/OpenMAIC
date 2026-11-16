@@ -41,7 +41,11 @@ export function DecisionResponseForm({
   const unchanged =
     selected?.chosen === value.chosen && (selected.rationale ?? '') === value.rationale;
   return (
-    <fieldset disabled={disabled} className="grid gap-3" data-testid="pbl-decision-response">
+    <fieldset
+      disabled={disabled && !!hasForm}
+      className="grid gap-3"
+      data-testid="pbl-decision-response"
+    >
       <legend className="whitespace-pre-wrap text-sm font-medium">{decision.prompt}</legend>
       {textResponse ? (
         <label className="grid gap-1 text-sm">
@@ -62,16 +66,20 @@ export function DecisionResponseForm({
               key={option.id}
               type="button"
               className="rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary"
-              disabled={disabled || (!hasForm && selected?.chosen === option.id)}
+              disabled={disabled && !!hasForm}
+              aria-disabled={disabled || (!hasForm && selected?.chosen === option.id)}
               aria-busy={pendingChosen === option.id}
               aria-pressed={
                 hasForm
                   ? value.chosen === option.id
                   : (pendingChosen ?? selected?.chosen) === option.id
               }
-              onClick={() =>
-                hasForm ? onDraftChange({ ...value, chosen: option.id }) : void onSubmit(option.id)
-              }
+              onClick={() => {
+                // Immediate choices stay focusable through pending and acknowledged states.
+                if (disabled || (!hasForm && selected?.chosen === option.id)) return;
+                if (hasForm) onDraftChange({ ...value, chosen: option.id });
+                else void onSubmit(option.id);
+              }}
             >
               {option.label}
             </button>

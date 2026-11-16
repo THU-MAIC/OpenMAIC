@@ -245,11 +245,22 @@ it('distinguishes pending immediate choices from acknowledged choices and permit
   const options = () => container.querySelectorAll('button');
   await render();
   expect(status()).toBeNull();
+  options()[0]!.focus();
   await render(undefined, 'plain');
+  expect(document.activeElement).toBe(options()[0]);
+  await act(async () => {
+    options()[0]!.click();
+    options()[1]!.click();
+  });
+  expect(submit).not.toHaveBeenCalled();
   expect(status()!.textContent).toBe('pblV3.submitting');
   await render('plain');
   expect(status()!.textContent).toBe('pblV3.submitted');
-  expect(options()[0]!.disabled).toBe(true);
+  expect(document.activeElement).toBe(options()[0]);
+  expect(options()[0]!.disabled).toBe(false);
+  expect(options()[0]!.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => options()[0]!.click());
+  expect(submit).not.toHaveBeenCalled();
   expect(options()[1]!.disabled).toBe(false);
   await render('plain', 'json');
   expect(status()!.textContent).toBe('pblV3.submitting');
@@ -264,5 +275,6 @@ it('distinguishes pending immediate choices from acknowledged choices and permit
   await render('json');
   expect(status()!.textContent).toBe('pblV3.submitted');
   expect(options()[0]!.disabled).toBe(false);
-  expect(options()[1]!.disabled).toBe(true);
+  expect(options()[1]!.disabled).toBe(false);
+  expect(options()[1]!.getAttribute('aria-disabled')).toBe('true');
 });

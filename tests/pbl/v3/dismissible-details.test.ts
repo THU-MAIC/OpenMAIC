@@ -31,6 +31,12 @@ it('dismisses outside without losing drafts and restores focus only for Escape',
     outside.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     expect(details.open).toBe(false);
     expect(input.value).toBe('Draft');
+    // Safari can mouse-open a summary without moving focus into the details.
+    outside.focus();
+    details.open = true;
+    outside.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(details.open).toBe(false);
+    expect(document.activeElement).toBe(summary);
     details.open = true;
     input.focus();
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

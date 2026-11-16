@@ -32,6 +32,8 @@ export function useProjectEditor(
   const [tabs, setTabs] = useState(initial.tabs.length ? initial.tabs : ['PLAN.md']);
   const [buffers, setBuffers] = useState<Record<string, EditorBuffer>>(initial.buffers);
   const [loading, setLoading] = useState(false);
+  // Keep cached content visible, but do not accept edits until its fresh read settles.
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [readErrors, setReadErrors] = useState<
@@ -59,8 +61,19 @@ export function useProjectEditor(
     path,
     options,
     recoveryConflicts,
+    refreshing,
   });
-  current.current = { view, buffers, read, onError, onSave, path, options, recoveryConflicts };
+  current.current = {
+    view,
+    buffers,
+    read,
+    onError,
+    onSave,
+    path,
+    options,
+    recoveryConflicts,
+    refreshing,
+  };
   const updateBuffers = useCallback(
     (update: (previous: Record<string, EditorBuffer>) => Record<string, EditorBuffer>) => {
       const next = update(current.current.buffers);
@@ -102,7 +115,10 @@ export function useProjectEditor(
         view.id === current.current.view.id &&
         source === editorSource(current.current.view) &&
         current.current.view.files.includes(path);
-      if (active) setLoading(!background);
+      if (active) {
+        setLoading(!background);
+        setRefreshing(background);
+      }
       try {
         const result = await read(path);
         if (!isCurrent()) return;
@@ -202,7 +218,10 @@ export function useProjectEditor(
           }));
         }
       } finally {
-        if (active && ticket === sequence.current) setLoading(false);
+        if (active && ticket === sequence.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [updateBuffers],
@@ -225,7 +244,10 @@ export function useProjectEditor(
       // Shell writes need not advance the study revision. Keep revalidating
       // clean files, but do not block a tab switch on an already verified read.
       void load(false, path, reusable && unavailableSave.current?.name !== path);
-    else setLoading(false);
+    else {
+      setLoading(false);
+      setRefreshing(false);
+    }
     // Recovery must include background tabs; otherwise their retained drafts
     // would keep the study dirty even after the visible file resumed saving.
     for (const [name, buffer] of Object.entries(buffers))
@@ -401,6 +423,7 @@ export function useProjectEditor(
     tabs,
     buffer: buffers[path],
     loading,
+    refreshing,
     saving,
     saveError,
     readError: readErrors[path]?.source === selectedSource ? readErrors[path].message : '',
@@ -424,6 +447,7 @@ export function useProjectEditor(
       const { path, view, options, recoveryConflicts } = current.current;
       const b = current.current.buffers[path];
       if (
+        current.current.refreshing ||
         !options.enabled ||
         !options.canEdit(path) ||
         !b ||
