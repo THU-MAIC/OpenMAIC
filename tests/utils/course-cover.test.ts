@@ -7,6 +7,7 @@ function scene(overrides: {
   type?: string;
   title?: string | null;
   widgetType?: string | null;
+  widgetConfigType?: string | null;
 }): object {
   return {
     title: overrides.title ?? null,
@@ -16,6 +17,9 @@ function scene(overrides: {
         : {
             type: overrides.type,
             ...(overrides.widgetType ? { widgetType: overrides.widgetType } : {}),
+            ...(overrides.widgetConfigType
+              ? { widgetConfig: { type: overrides.widgetConfigType } }
+              : {}),
           },
   };
 }
@@ -39,6 +43,26 @@ describe('firstInteractiveCover', () => {
       title: '',
       widgetType: null,
     });
+  });
+
+  it("falls back to the widget config's kind when widgetType is absent", () => {
+    // The DSL permits a scene that names its kind only through widgetConfig.
+    expect(
+      firstInteractiveCover([
+        scene({ type: 'interactive', title: 'Water cycle', widgetConfigType: 'diagram' }),
+      ]),
+    ).toEqual({ title: 'Water cycle', widgetType: 'diagram' });
+    // An explicit widgetType wins.
+    expect(
+      firstInteractiveCover([
+        scene({
+          type: 'interactive',
+          title: 'Both set',
+          widgetType: 'game',
+          widgetConfigType: 'diagram',
+        }),
+      ]),
+    ).toEqual({ title: 'Both set', widgetType: 'game' });
   });
 
   it('is null when no scene is interactive', () => {

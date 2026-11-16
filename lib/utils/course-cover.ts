@@ -18,6 +18,7 @@ interface InteractiveCoverScene {
   readonly content?: {
     readonly type?: string;
     readonly widgetType?: WidgetType | null;
+    readonly widgetConfig?: { readonly type?: WidgetType | null } | null;
   } | null;
 }
 
@@ -36,7 +37,8 @@ export function firstInteractiveCover(
     if (scene.content?.type !== 'interactive') continue;
     return {
       title: (scene.title ?? '').trim(),
-      widgetType: scene.content.widgetType ?? null,
+      // A scene may declare its kind only through the widget's own config.
+      widgetType: scene.content.widgetType ?? scene.content.widgetConfig?.type ?? null,
     };
   }
   return null;
