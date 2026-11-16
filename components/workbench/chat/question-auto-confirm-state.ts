@@ -23,7 +23,7 @@
  *  - WHAT stops it for good: any deliberate input — a press or a key inside the
  *    form, or typing anywhere on the page.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChatNode, QuestionOption } from '@/lib/workbench/session-store';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { sessionScopedKey } from '@/lib/workbench/request-scope';
@@ -56,6 +56,12 @@ export function openQuestionCount(chat: readonly ChatNode[]): number {
 
 export function canAutoConfirm(input: {
   node: ChatNode;
+  /**
+   * The user's settings have been read from storage. Before that the
+   * preference is only its default, and a user who turned auto-confirm off
+   * must not see (or get) a countdown in the meantime.
+   */
+  hydrated?: boolean;
   /** The question arrived on the live stream during this visit. */
   live: boolean;
   /** The user's preference (`autoConfirmRecommendedAnswer`). */
@@ -66,8 +72,8 @@ export function canAutoConfirm(input: {
   locked: boolean;
   openQuestions: number;
 }): boolean {
-  const { node, live, enabled, stopped, locked, openQuestions } = input;
-  if (!enabled || !live || stopped || locked) return false;
+  const { node, live, enabled, stopped, locked, openQuestions, hydrated = true } = input;
+  if (!hydrated || !enabled || !live || stopped || locked) return false;
   if (node.kind !== 'question' || node.questionAnswered) return false;
   if (openQuestions !== 1) return false;
   return recommendedOption(node) !== null;
@@ -201,6 +207,27 @@ export function createAutoConfirmTimer(options: {
   };
 }
 
+/** Whether the account-scoped settings store has finished reading storage. */
+function subscribeHydration(onChange: () => void): () => void {
+  return useSettingsStore.persist?.onFinishHydration(onChange) ?? (() => {});
+}
+function settingsHydrated(): boolean {
+  return useSettingsStore.persist?.hasHydrated() ?? true;
+}
+export function useSettingsHydrated(): boolean {
+  return useSyncExternalStore(subscribeHydration, settingsHydrated, () => false);
+}
+
+/** Whether the pointer is over this element right now, where the engine can tell. */
+function hoveredNow(el: Element | null): boolean {
+  if (!el) return false;
+  try {
+    return el.matches(':hover');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Marks the auto-confirm switch. Pressing or keying it is a choice ABOUT the
  * countdown, not an answer to the question, so it never counts as the
@@ -226,6 +253,8 @@ export function useAutoConfirmCountdown(input: {
   node: ChatNode;
   locked: boolean;
   onFire: (option: QuestionOption) => void;
+  /** The form's frame: whether the pointer rests on it is read when a countdown starts. */
+  frameRef?: { readonly current: Element | null };
 }): {
   readonly option: QuestionOption;
   readonly enabled: boolean;
@@ -237,7 +266,7 @@ export function useAutoConfirmCountdown(input: {
   /** A deliberate press inside the form: the countdown is over for this question. */
   readonly onPointerDownCapture: (event: { target: EventTarget | null }) => void;
 } | null {
-  const { node, locked, onFire } = input;
+  const { node, locked, onFire, frameRef } = input;
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const openQuestions = useWorkbenchStore((s) => openQuestionCount(s.chat));
   const key = sessionScopedKey(sessionId, node.key);
@@ -245,8 +274,21 @@ export function useAutoConfirmCountdown(input: {
   const stopped = useQuestionAutoConfirm((s) => s.stopped.includes(key));
   const enabled = useSettingsStore((s) => s.autoConfirmRecommendedAnswer);
   const setEnabled = useSettingsStore((s) => s.setAutoConfirmRecommendedAnswer);
+  const hydrated = useSettingsHydrated();
   const option = recommendedOption(node);
-  const eligible = canAutoConfirm({ node, live, enabled, stopped, locked, openQuestions });
+  const eligible = canAutoConfirm({
+    node,
+    live,
+    enabled,
+    stopped,
+    locked,
+    openQuestions,
+    hydrated,
+  });
+  // Whether the pointer is over the form, tracked whether or not a countdown
+  // exists: one that starts later (switch turned on, settings loaded) must
+  // start paused if the user is already reading the card.
+  const hoverRef = useRef(false);
 
   const timerRef = useRef<AutoConfirmTimer | null>(null);
   const onFireRef = useRef(onFire);
@@ -264,9 +306,14 @@ export function useAutoConfirmCountdown(input: {
   useEffect(() => {
     if (!eligible || !optionId) return;
     const hidden = () => document.visibilityState === 'hidden';
+    // Every pause condition is read from the current state when a countdown
+    // starts, not only the ones observed after it exists.
+    const pausedFor: AutoConfirmPauseReason[] = [];
+    if (hidden()) pausedFor.push('hidden');
+    if (hoverRef.current || hoveredNow(frameRef?.current ?? null)) pausedFor.push('hover');
     const timer = createAutoConfirmTimer({
       durationMs: AUTO_CONFIRM_SECONDS * 1000,
-      pausedFor: hidden() ? ['hidden'] : [],
+      pausedFor,
       onChange: setSnapshot,
       onFire: () => {
         // One answer per question, whichever form fires first, and none at
@@ -306,8 +353,14 @@ export function useAutoConfirmCountdown(input: {
     enabled,
     setEnabled,
     snapshot: counting ? snapshot : null,
-    onPointerEnter: () => timerRef.current?.pause('hover'),
-    onPointerLeave: () => timerRef.current?.resume('hover'),
+    onPointerEnter: () => {
+      hoverRef.current = true;
+      timerRef.current?.pause('hover');
+    },
+    onPointerLeave: () => {
+      hoverRef.current = false;
+      timerRef.current?.resume('hover');
+    },
     onPointerDownCapture: (event) => {
       if (!onSwitch(event.target)) stop();
     },

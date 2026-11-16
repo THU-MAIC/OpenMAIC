@@ -98,9 +98,11 @@ export function QuestionForm({
   const form = useQuestionForm(node, onAnswer, t, startInFreeText);
   const { mode, rows, locked } = form;
   const sessionId = useWorkbenchStore((s) => s.sessionId);
+  const frameRef = useRef<HTMLElement | null>(null);
   const countdown = useAutoConfirmCountdown({
     node,
     locked,
+    frameRef,
     onFire: (option) => {
       const key = sessionScopedKey(sessionId, node.key);
       const marks = useQuestionAutoConfirm.getState();
@@ -156,6 +158,7 @@ export function QuestionForm({
   return (
     <section
       className={embedded ? styles.questionForm.embeddedBox : styles.questionForm.box}
+      ref={frameRef}
       data-testid="workbench-question-form"
       data-mode={mode}
       // The workbench's convention for "Escape is mine": keeps the double-Escape

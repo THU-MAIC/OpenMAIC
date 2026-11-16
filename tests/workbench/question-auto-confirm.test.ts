@@ -274,6 +274,69 @@ describe('the answer form', () => {
     expect(useQuestionAutoConfirm.getState().autoConfirmed).toContain(key);
   });
 
+  describe('settings that have not loaded yet', () => {
+    let finish: (() => void) | null;
+    let hydrated: boolean;
+    beforeEach(() => {
+      finish = null;
+      hydrated = false;
+      vi.spyOn(useSettingsStore.persist, 'hasHydrated').mockImplementation(() => hydrated);
+      vi.spyOn(useSettingsStore.persist, 'onFinishHydration').mockImplementation((listener) => {
+        finish = () => listener(useSettingsStore.getState());
+        return () => {
+          finish = null;
+        };
+      });
+    });
+    const hydrate = async (enabled: boolean) =>
+      act(async () => {
+        hydrated = true;
+        useSettingsStore.setState({ autoConfirmRecommendedAnswer: enabled });
+        finish?.();
+      });
+
+    it('waits for them, then counts down from the top', async () => {
+      await mount();
+      expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+      await advance(DURATION * 2);
+      expect(answers).toEqual([]);
+      await hydrate(true);
+      expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
+      await advance(DURATION);
+      expect(answers).toEqual(['Go ahead']);
+    });
+
+    it('never counts down when they turn out to have auto-confirm off', async () => {
+      await mount();
+      await hydrate(false);
+      expect(form()?.getAttribute('data-auto-confirm')).toBeNull();
+      await advance(DURATION * 2);
+      expect(answers).toEqual([]);
+    });
+  });
+
+  it('a countdown that starts while the pointer is on the form starts paused', async () => {
+    useSettingsStore.setState({ autoConfirmRecommendedAnswer: false });
+    await mount();
+    await act(async () => {
+      form()?.dispatchEvent(
+        new MouseEvent('pointerover', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+    await act(async () => useSettingsStore.setState({ autoConfirmRecommendedAnswer: true }));
+    expect(form()?.getAttribute('data-auto-confirm')).toBe('paused');
+    await advance(DURATION * 2);
+    expect(answers).toEqual([]);
+    await act(async () => {
+      form()?.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+    expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
+    await advance(DURATION);
+    expect(answers).toEqual(['Go ahead']);
+  });
+
   it('sends once when two forms count down for the same question', async () => {
     const node = question();
     useWorkbenchStore.setState({ sessionId: SESSION, chat: [node] } as never);
@@ -390,6 +453,14 @@ describe('the answer form', () => {
     await advance(DURATION);
     await pressSwitch();
     expect(useSettingsStore.getState().autoConfirmRecommendedAnswer).toBe(true);
+    // The pointer that pressed the switch is on the form, so the new countdown
+    // may start paused; it runs once the pointer leaves.
+    expect(form()?.getAttribute('data-auto-confirm')).not.toBeNull();
+    await act(async () => {
+      form()?.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
     expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
     // From the top, not from where it was switched off.
     await advance(DURATION - 1000);
