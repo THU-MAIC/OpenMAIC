@@ -208,9 +208,16 @@ export function useWorkbenchStream(sessionId: string | null): void {
         armReplayWatchdog();
         return;
       }
-      // A question that arrives live (not from the replayed backlog) may
-      // auto-confirm its recommended option (`question-auto-confirm.ts`).
-      if (parsed.type === LIFECYCLE.userQuestion) {
+      // A question that arrives live may auto-confirm its recommended option
+      // (`question-auto-confirm.ts`). Live is the SERVER's word for this frame
+      // (`phase`, see the events route), never inferred from `caughtUp`: after
+      // a dropped connection the reconnect replays missed frames as backlog
+      // before its own `caught_up`, and those are history the user never saw
+      // arrive. A frame without the marker is not trusted as live either.
+      if (
+        parsed.type === LIFECYCLE.userQuestion &&
+        (parsed as WorkbenchEvent & { phase?: unknown }).phase === 'live'
+      ) {
         useQuestionAutoConfirm.getState().markLive(sessionScopedKey(sessionId, `e${parsed.id}`));
       }
       applyEvent(parsed);
