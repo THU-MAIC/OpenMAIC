@@ -539,7 +539,7 @@ for (const entry of ['delayed-guide', 'prepare', 'existing-opening', 'stage-chan
 }
 
 for (const [target, key] of [
-  ['overview summary', 'End'],
+  ['overview summary', 'PageDown'],
   ['reply link', 'Space'],
 ] as const) {
   test(`keyboard scrolling from the ${target} releases the initial reading hold`, async ({
@@ -549,32 +549,47 @@ for (const [target, key] of [
     const fixture = await project(page, learningEvents, {
       application: false,
       guideCompleted: true,
-      finishedWork: 'Save complete conversations and restore them after restarting. '.repeat(30),
       openingText:
-        'Opening background.\n\n'.repeat(60) +
-        (target === 'reply link' ? '[Read more](https://example.test/guide)' : ''),
+        (target === 'reply link' ? '[Read more](https://example.test/guide)\n\n' : '') +
+        'Opening background.\n\n'.repeat(60),
     });
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    await page.evaluate(() => document.fonts.ready);
     const viewport = page.locator('.pbl-conversation-scroll');
     await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeLessThanOrEqual(1);
     const control =
       target === 'reply link'
         ? viewport.getByRole('link', { name: 'Read more', exact: true })
         : page.locator('#pbl-project-overview summary');
-    // Start with the actual keyboard route through an overview taller than the
-    // viewport, then Tab to the reply link. This establishes real scroll events
-    // before Space at the tail, rather than treating programmatic focus as follow.
-    await page.locator('#pbl-project-overview summary').focus();
-    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-    if (target === 'reply link') await page.keyboard.press('Tab');
+    // Isolate the native scrolling key from focus's optional automatic scroll.
+    // PageDown/Space moves one page, so wait for scrollend and retain that passage.
+    await control.evaluate((el) => (el as HTMLElement).focus({ preventScroll: true }));
     await expect(control).toBeFocused();
+    await viewport.evaluate((el) =>
+      el.addEventListener(
+        'scrollend',
+        () => el.setAttribute('data-keyboard-scroll-ended', 'true'),
+        { once: true },
+      ),
+    );
     await page.keyboard.press(key);
+    await expect(viewport).toHaveAttribute('data-keyboard-scroll-ended', 'true');
+    const reading = await viewport.evaluate((el) => el.scrollTop);
+    expect(reading).toBeGreaterThan(0);
     const distance = () =>
       viewport.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
-    await expect.poll(distance).toBeLessThanOrEqual(8);
+    await expect.poll(distance).toBeGreaterThan(8);
     fixture.view.messages[0].text += '\n\nMore text after keyboard navigation.\n\n'.repeat(20);
     fixture.view.revision++;
     await fixture.publish();
     await expect(viewport).toContainText('More text after keyboard navigation.');
+    await expect.poll(() => viewport.evaluate((el) => el.scrollTop)).toBeCloseTo(reading, 0);
+    await page.getByTestId('pbl-conversation-scroll-button').click();
+    await expect.poll(distance).toBeLessThanOrEqual(8);
+    fixture.view.messages[0].text += '\n\nFollowing after keyboard reading.';
+    fixture.view.revision++;
+    await fixture.publish();
+    await expect(viewport).toContainText('Following after keyboard reading.');
     await expect.poll(distance).toBeLessThanOrEqual(8);
   });
 }
