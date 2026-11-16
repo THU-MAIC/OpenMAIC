@@ -119,6 +119,16 @@ async function validateQwenNarratorVoices(
   input: GenerationRunInput,
   agents: Awaited<ReturnType<typeof resolveAgentsForOwner>>,
 ): Promise<void> {
+  const narrator = pickNarratorAgent(agents);
+  const hasCompatibleVoiceAdapter = [
+    input.voice?.providerId,
+    narrator?.voiceConfig?.providerId,
+  ].some(
+    (providerId) =>
+      !!providerId && !!getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible,
+  );
+  if (!hasCompatibleVoiceAdapter) return;
+
   let connection: MediaConnection;
   try {
     connection = await resolveMediaSlot('tts', {
@@ -128,7 +138,6 @@ async function validateQwenNarratorVoices(
     if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return;
     throw error;
   }
-  const narrator = pickNarratorAgent(agents);
   const chosen = clipVoice({
     target: {
       connection,
