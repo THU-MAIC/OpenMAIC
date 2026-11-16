@@ -1,5 +1,5 @@
 {
-  "status": "work_in_progress",
+  "status": "complete",
   "baselineCommit": "65d5ac408301a2916d1d7e81b037855760a286ab",
   "model": "deepseek-v4.1-flash",
   "formula": "sum(cached input tokens)/sum(input tokens)",
@@ -75,7 +75,45 @@
   "limits": [
     "Output capped at16; no generated outputs fed into later requests",
     "Full174 repeated replay interrupted; aggregate not primary evidence",
-    "No latency or production-wide claim",
-    "C-end comparison still in progress"
-  ]
+    "No latency or production-wide claim"
+  ],
+  "localQaInterruptedFullReplay": {
+    "sourceRecords": 174,
+    "rounds": 2,
+    "callsPerArm": 348,
+    "logicalRequests": 1044,
+    "transportAttempts": 1160,
+    "primaryEvidence": false,
+    "reason": "Laptop sleep interrupted the run; failed executions were retained and only missing logical requests resumed. Cache warming/resume order can confound the aggregate.",
+    "usage": {
+      "legacy": {
+        "requests": 348,
+        "success": 348,
+        "input": 7513066,
+        "cached": 4721920,
+        "uncached": 2791146,
+        "hitPercent": 62.849441226790766,
+        "meanPerRequestPercent": 59.09915181554984
+      },
+      "prefix": {
+        "requests": 348,
+        "success": 348,
+        "input": 7517408,
+        "cached": 4989696,
+        "uncached": 2527712,
+        "hitPercent": 66.37521869240035,
+        "meanPerRequestPercent": 63.661674403410686
+      },
+      "tailxx": {
+        "requests": 348,
+        "success": 348,
+        "input": 7518452,
+        "cached": 6436601,
+        "uncached": 1081851,
+        "hitPercent": 85.61072146234358,
+        "meanPerRequestPercent": 79.3497204738687
+      }
+    }
+  },
+  "productionEvidence": "production-cache-results.json"
 }

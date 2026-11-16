@@ -1,64 +1,97 @@
-# PBL v3 prompt-cache validation — work in progress
+# PBL v3 prompt-cache validation
 
-## Latest optimization
+## Final implementation
+
+Changing teaching state originally interrupted reuse of everything after it.
+The initial revision protected fixed instructions but left that state before
+history. The final layout protects both fixed instructions and existing history:
 
 ```text
 fixed system instructions → existing history → initial/live state + continuation policy
 ```
 
-Initial review anchors are retained separately from latest state. Request-local
-host state remains a trusted system message, not a learner turn or durable entry,
-and is counted in the context budget. Version/lease rechecks and approval gates
-remain active. Prefix-only adapters merge only the marked host tail back into
-the system prefix; OpenAI-compatible transports retain it after history.
+Initial review anchors remain separate from latest state. The request-only host
+tail retains system authority and counts toward the context budget. Version,
+lease and approval checks still run. OpenAI-compatible transports retain the tail;
+prefix-only adapters merge only the explicitly marked host tail back into the
+system prefix for protocol compatibility, so the same cache gains are not claimed
+for those adapters.
 
-Tool-call objects are recursively key-sorted on replay, including calls still in
-memory. This prevents JSONB key-order changes from invalidating the prefix after
-reload, without mutating execution arguments or array order. No course package,
-project Skill, generic teaching rule, role isolation, compaction policy or storage
-format changes.
+Tool-call objects are recursively key-sorted on replay to prevent JSONB reload
+order from invalidating the prefix. Execution arguments and array order do not
+change. No course package, project Skill, generic teaching rule, role isolation,
+compaction policy or storage format changes.
 
-## Latest local evidence
+## Completed evidence: three sources
 
-Ratio = `sum(cached input tokens) / sum(input tokens)`. Model:
-`deepseek-v4.1-flash`, existing configured MaaS route. Source requests match in all arms.
+Ratio = `sum(cached input tokens) / sum(input tokens)`; model
+`deepseek-v4.1-flash` through the configured MaaS route. Each comparison uses the
+same source requests and settings in its arms; historical usage is not spliced
+onto a different replay's endpoint.
 
-| Dataset | Before PR #2268 | Initial PR layout | Request-tail candidate |
+| Source and sample | Before #2268 | Initial revision | Final layout |
 | --- | ---: | ---: | ---: |
-| Short synthetic probe, 8 calls/arm | 35.75% | 62.65% | 62.83% |
-| Continuous local-QA replay subset, 67 calls/arm | 56.24% | 60.49% | 81.90% |
+| Synthetic short-history probe: 8 calls/version, 24 total | 35.75% | 62.65% | 62.83% |
+| Local course-3 QA: identical 67 retry-free, pre-interruption records/version | 56.24% | 60.49% | 81.90% |
+| Production prerequisite/course 1/course 2: 24 records/course, 72 total; two rounds, 144 calls/version | 41.59% | Not measured in this batch | 58.52% |
 
-The 67 calls are identical retry-free source records per arm, selected from a
-174-record reconstructed local acceptance corpus by execution-quality timestamps,
-not cache outcome. Coverage: course 3, first milestone, discussion/planning/coding;
-not C-end users or every role/milestone. The larger repeated replay had execution
-interruptions, so its full aggregate is not the primary claim. History retains
-visible dialogue/tool records with rebuilt host facts, not byte-exact historical
-HTTP requests. Raw learner records are not published.
+The local subset comes from 174 reconstructed acceptance records, not C-end
+users. It covers course 3's first milestone in discussion/planning/coding, and was
+selected using sleep/retry timestamps, not cache outcome. Visible dialogue/tool
+records are retained with rebuilt host facts; this is not original HTTP replay.
+The interrupted full 174-record run, two rounds/version, is supplemental only:
+62.85% → 66.38% → 85.61%, 1,044 logical requests and 1,160 transport attempts.
+Counts and raw token aggregates: [local evidence](latest-local-cache.json).
 
-Output is capped at 16 tokens; generated tools are never executed. Usage returned
-reasoning tokens even when thinking was requested disabled. No latency gain or
-production-wide cache rate is claimed. Counts/method:
-[latest-local-cache.json](latest-local-cache.json).
+Production inputs were read from saved PostgreSQL `llm_calls`, joined through
+role sessions to published-course studies, excluding course authors. Fixed-seed
+candidate ordering and role/availability selection yielded four learners/course,
+nine unique learners across courses, with six consecutive calls per selected role
+session. These include real automatic classroom entry/tool-loop calls, not only
+typed learner turns. Selection did not use cache outcomes. Raw chats, account or
+session IDs, credentials and responses are not published.
 
-**Teaching baseline: pre-PR commit
-`65d5ac408301a2916d1d7e81b037855760a286ab`, not an earlier version inside this PR.**
-Reversible instruction/state/Skill checks pass for all 36 scenarios across courses 1–3.
-The final candidate was directly compared with that pre-PR commit: 36 pairs/72
-primary generations, plus 3 fixed paired repeats. Its 36 workflow traces pass;
-all 12 first artifact reviews avoid whole-version approval, and all 12 final
-cycles complete directly after one acceptance. Content pairs and isolated
-differences were reviewed: no newly introduced repeatable teaching regression
-was identified in the covered cases. Existing baseline course/model wording
-behavior is excluded; no course/Skill changes or best-of replacement were used.
-Two transport-failed arms were archived and retried; quality findings were not
-retried away. [Scope and checks](pre-pr-teaching-regression.json).
-This is a bounded synthetic regression check, not a browser/cloud E2E or a claim
-that every generated question is perfect.
+| Production course | Source records | Before | Final |
+| --- | ---: | ---: | ---: |
+| Prerequisite | 24 | 33.54% | 48.14% |
+| Course 1 | 24 | 42.70% | 64.25% |
+| Course 2 | 24 | 47.82% | 62.36% |
 
-**Still a draft; C-end production-data paired validation is being attempted.**
-The sections below retain the initial revision's evidence and describe that
-revision only. The current request-tail implementation is described above.
+All 288 production replay calls succeeded without retry or sleep. Both rounds
+returned the same aggregate ratios. Before: 828,416 cached / 1,992,062 input;
+after: 1,167,094 / 1,994,186. This is **+16.94 percentage points**, with **28.92%
+fewer uncached input tokens**. [Production method/counts](production-cache-results.json).
+
+Production exports preserve complete saved system/input text, but logs contain
+tool names rather than schemas: both arms fill identical pre-PR schemas. Original
+thinking/output settings are not fully logged; replay settings match across arms.
+JSONB also loses original argument insertion order. Therefore this is a controlled
+saved-input replay, not a byte-exact reconstruction of historical HTTP requests.
+The small, early-role-session sample is not a production-wide estimate. Both
+cache experiments cap output at 16 tokens and never execute generated tools;
+they do not establish UI latency or teaching quality by themselves.
+
+## Teaching and engineering validation
+
+The final code is compared directly with **pre-PR `65d5ac4`**, not merely an
+earlier revision in this PR. Across courses 1–3 and two milestones/course:
+36 paired scenarios/72 primary generations, plus three fixed paired repeats.
+All 36 reversible instruction/state/Skill checks and final workflow traces pass.
+All 12 first artifact reviews avoid whole-version approval; all 12 final cycles
+complete after one acceptance. Paired content review found no newly introduced
+repeatable regression in the covered cases. Baseline-existing wording behavior
+is excluded; no course/Skill edits or quality-based replacement were used.
+Only transport-failed arms were retried, with failed attempts retained.
+[Teaching scope/checks](pre-pr-teaching-regression.json).
+
+These are bounded synthetic teaching replays with fixture files/builds, not
+browser/cloud end-to-end learning-outcome measurements. Related adapter/runtime
+unit tests: 292 passed. PostgreSQL workflow: 315 unique scenarios passed, including
+the corrected assertion-location rerun. Local TypeScript diagnostics match the
+baseline (77 existing, no added); the application-code PR head also passed CI.
+
+Validation for this change is complete; deployment and learner acceptance are
+separate. The sections below preserve the initial revision's historical evidence.
 
 ---
 
