@@ -41,7 +41,12 @@ import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
 import { TextBlock } from './text-block';
+import { QuestionDetails } from './question-details';
 import { isFreeTextOption, useQuestionAnswer } from './question-card-state';
+import { useQuestionAutoConfirm } from '@/lib/workbench/question-auto-confirm';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
+import { useWorkbenchStore } from '@/lib/workbench/session-store';
+import { useEffect } from 'react';
 
 /** What the surfaces say about whose move it is. */
 export const QUESTION_WAITING_LABEL = defaultWorkbenchTranslator('workbench.question.waiting');
@@ -93,6 +98,17 @@ export function QuestionCard({
   // An answered question is a record, so it never collapses: the form is gone by
   // then and this row is the only place the question survives.
   const summaryOnly = collapsed && !answered;
+  // Answered by the auto-confirm countdown, not by a click: said once, quietly,
+  // so the user knows a later message is how to change it.
+  const sessionId = useWorkbenchStore((s) => s.sessionId);
+  const autoKey = sessionScopedKey(sessionId, node.key);
+  const loadAutoConfirmed = useQuestionAutoConfirm((s) => s.load);
+  useEffect(() => {
+    if (answered) loadAutoConfirmed();
+  }, [answered, loadAutoConfirmed]);
+  const autoConfirmed = useQuestionAutoConfirm(
+    (s) => answered && s.autoConfirmed.includes(autoKey),
+  );
 
   return (
     <div
@@ -101,6 +117,7 @@ export function QuestionCard({
       data-answered={answered ? 'true' : 'false'}
       data-collapsed={summaryOnly ? 'true' : 'false'}
       data-mode={mode}
+      data-auto-confirmed={autoConfirmed ? 'true' : undefined}
     >
       <div className={styles.questionCard.head}>
         {answered ? (
@@ -123,6 +140,9 @@ export function QuestionCard({
         <div className={styles.questionCard.question}>
           <TextBlock text={node.text} />
         </div>
+      )}
+      {summaryOnly || !node.questionDetails ? null : (
+        <QuestionDetails text={node.questionDetails} t={t} />
       )}
       {options.length > 0 && !summaryOnly ? (
         <div className={styles.questionCard.options} role="group" aria-label={node.text}>
@@ -149,10 +169,20 @@ export function QuestionCard({
                   <Check className={styles.questionCard.optionCheck} aria-hidden="true" />
                 ) : null}
                 <span className={styles.questionCard.optionLabel}>{option.label}</span>
+                {option.recommended ? (
+                  <span className={styles.questionCard.recommended}>
+                    {t('workbench.question.recommended')}
+                  </span>
+                ) : null}
               </button>
             );
           })}
         </div>
+      ) : null}
+      {autoConfirmed ? (
+        <p className={styles.questionCard.autoNote} data-testid="workbench-question-auto-confirmed">
+          {t('workbench.question.autoConfirmed')}
+        </p>
       ) : null}
       {footer && !summaryOnly ? (
         <div className={styles.questionCard.footer}>

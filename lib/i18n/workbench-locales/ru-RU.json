@@ -34,10 +34,18 @@
     "placeholder": "Напишите ответ",
     "confirm": "Подтвердить",
     "submit": "Отправить",
-    "dismiss": "Отклонить",
+    "dismiss": "Свернуть",
     "inFormBelow": "Ответьте в форме ниже",
     "inPreview": "Ответьте в превью",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Рекомендуется",
+    "autoConfirmIn": "Рекомендуемый вариант будет выбран через {{seconds}} с",
+    "autoConfirmPaused": "Отсчёт приостановлен",
+    "autoConfirmOff": "Не подтверждать автоматически",
+    "autoConfirmed": "Рекомендуемый вариант выбран автоматически — его можно изменить в любой момент",
+    "showDetails": "Показать больше",
+    "hideDetails": "Свернуть",
+    "orAnswerInChat": "Можно ответить и прямо в чате"
   },
   "material": {
     "maxSelected": "За один раз можно выбрать не более {{count}} материалов",

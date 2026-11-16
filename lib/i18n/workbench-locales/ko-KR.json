@@ -34,10 +34,18 @@
     "placeholder": "답변을 적어 주세요",
     "confirm": "확인",
     "submit": "제출",
-    "dismiss": "취소",
+    "dismiss": "접기",
     "inFormBelow": "아래 양식에서 답해 주세요",
     "inPreview": "미리보기에서 답하세요",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "추천",
+    "autoConfirmIn": "{{seconds}}초 후 추천 항목을 선택합니다",
+    "autoConfirmPaused": "카운트다운 일시 정지됨",
+    "autoConfirmOff": "자동 확인 안 함",
+    "autoConfirmed": "추천 항목이 자동으로 선택되었습니다. 언제든지 바꿀 수 있습니다",
+    "showDetails": "더 보기",
+    "hideDetails": "접기",
+    "orAnswerInChat": "채팅에서 바로 답할 수도 있습니다"
   },
   "material": {
     "maxSelected": "한 번에 최대 {{count}}개의 자료를 선택할 수 있습니다",

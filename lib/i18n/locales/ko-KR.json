@@ -2237,7 +2237,9 @@
     "webFetchSettings": "웹 페이지 가져오기",
     "webFetchHint": "웹 페이지를 읽는 방법을 선택하세요. 호스팅 서비스에는 세션에서 허용된 공개 URL만 전달됩니다. 결과는 신뢰할 수 없는 데이터로 취급하며, 실패해도 다른 서비스로 전환하지 않습니다.",
     "webFetchApiKey": "API 키",
-    "webFetchSharedKeyHint": "이 키는 같은 제공업체와의 채팅에도 사용됩니다. 키를 변경하거나 삭제하면 채팅에도 영향을 줍니다."
+    "webFetchSharedKeyHint": "이 키는 같은 제공업체와의 채팅에도 사용됩니다. 키를 변경하거나 삭제하면 채팅에도 영향을 줍니다.",
+    "autoConfirmRecommended": "추천 답변 자동 확인",
+    "autoConfirmRecommendedDesc": "에이전트가 질문하며 추천 항목을 제시할 때, 응답이 없으면 짧은 카운트다운 후 그 항목을 선택합니다. 어떤 조작이든 하면 카운트다운이 멈춥니다."
   },
   "workspace": {
     "knowledgeBase": {

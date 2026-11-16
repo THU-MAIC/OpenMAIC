@@ -34,10 +34,18 @@
     "placeholder": "回答を入力",
     "confirm": "確定",
     "submit": "送信",
-    "dismiss": "閉じる",
+    "dismiss": "折りたたむ",
     "inFormBelow": "下のフォームで回答してください",
     "inPreview": "プレビューで回答してください",
-    "multiAnswerSeparator": "、"
+    "multiAnswerSeparator": "、",
+    "recommended": "おすすめ",
+    "autoConfirmIn": "{{seconds}} 秒後におすすめを選択します",
+    "autoConfirmPaused": "カウントダウン一時停止中",
+    "autoConfirmOff": "自動で確定しない",
+    "autoConfirmed": "おすすめの選択肢を自動で選びました。いつでも変更できます",
+    "showDetails": "もっと見る",
+    "hideDetails": "閉じる",
+    "orAnswerInChat": "チャットで直接答えることもできます"
   },
   "material": {
     "maxSelected": "一度に選べる素材は {{count}} 件までです",

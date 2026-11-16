@@ -2237,7 +2237,9 @@
     "webFetchSettings": "Lấy trang web",
     "webFetchHint": "Chọn cách đọc trang web. Dịch vụ lưu trữ chỉ nhận URL công khai được cho phép trong phiên. Kết quả vẫn là dữ liệu không đáng tin cậy và lỗi không làm chuyển sang dịch vụ khác.",
     "webFetchApiKey": "Khóa API",
-    "webFetchSharedKeyHint": "Khóa này cũng được dùng để trò chuyện với nhà cung cấp này. Thay đổi hoặc xóa khóa sẽ ảnh hưởng đến trò chuyện."
+    "webFetchSharedKeyHint": "Khóa này cũng được dùng để trò chuyện với nhà cung cấp này. Thay đổi hoặc xóa khóa sẽ ảnh hưởng đến trò chuyện.",
+    "autoConfirmRecommended": "Tự động xác nhận câu trả lời đề xuất",
+    "autoConfirmRecommendedDesc": "Khi tác nhân đặt câu hỏi kèm phương án đề xuất, phương án đó sẽ được chọn sau một khoảng đếm ngược ngắn nếu bạn không phản hồi. Mọi thao tác đều dừng đếm ngược."
   },
   "workspace": {
     "knowledgeBase": {

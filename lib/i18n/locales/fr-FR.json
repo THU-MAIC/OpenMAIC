@@ -2237,7 +2237,9 @@
     "webFetchSettings": "Récupération web",
     "webFetchHint": "Choisissez comment lire les pages web. Les services hébergés reçoivent les URL publiques autorisées dans la session. Les résultats restent non fiables et aucun autre lecteur n’est utilisé en cas d’échec.",
     "webFetchApiKey": "Clé API",
-    "webFetchSharedKeyHint": "Cette clé sert aussi au chat avec ce fournisseur. La modifier ou la supprimer affecte le chat."
+    "webFetchSharedKeyHint": "Cette clé sert aussi au chat avec ce fournisseur. La modifier ou la supprimer affecte le chat.",
+    "autoConfirmRecommended": "Confirmer automatiquement les réponses recommandées",
+    "autoConfirmRecommendedDesc": "Quand l’agent pose une question avec une option recommandée, elle est choisie après un court compte à rebours si vous ne répondez pas. Toute interaction l’arrête."
   },
   "workspace": {
     "knowledgeBase": {

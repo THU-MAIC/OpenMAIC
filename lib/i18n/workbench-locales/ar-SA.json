@@ -34,10 +34,18 @@
     "placeholder": "اكتب إجابتك",
     "confirm": "تأكيد",
     "submit": "إرسال",
-    "dismiss": "تجاهل",
+    "dismiss": "طي",
     "inFormBelow": "أجب في النموذج أدناه",
     "inPreview": "أجب في المعاينة",
-    "multiAnswerSeparator": "، "
+    "multiAnswerSeparator": "، ",
+    "recommended": "موصى به",
+    "autoConfirmIn": "سيتم اختيار الخيار الموصى به خلال {{seconds}} ث",
+    "autoConfirmPaused": "العد التنازلي متوقف مؤقتًا",
+    "autoConfirmOff": "عدم التأكيد تلقائيًا",
+    "autoConfirmed": "تم اختيار الخيار الموصى به تلقائيًا — يمكنك تغييره في أي وقت",
+    "showDetails": "عرض المزيد",
+    "hideDetails": "عرض أقل",
+    "orAnswerInChat": "يمكنك أيضًا الإجابة في المحادثة"
   },
   "material": {
     "maxSelected": "يمكنك اختيار {{count}} من المواد كحد أقصى في المرة الواحدة",

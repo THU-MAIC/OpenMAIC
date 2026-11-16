@@ -62,6 +62,8 @@ import {
 } from '@/lib/workbench/stage-freshness';
 import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
+import { useQuestionAutoConfirm } from '@/lib/workbench/question-auto-confirm';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 
 /**
  * pi's own `AgentEvent` types, which the runner appends verbatim.
@@ -205,6 +207,11 @@ export function useWorkbenchStream(sessionId: string | null): void {
         appendCompactedReplayEvent(backlog, parsed);
         armReplayWatchdog();
         return;
+      }
+      // A question that arrives live (not from the replayed backlog) may
+      // auto-confirm its recommended option (`question-auto-confirm.ts`).
+      if (parsed.type === LIFECYCLE.userQuestion) {
+        useQuestionAutoConfirm.getState().markLive(sessionScopedKey(sessionId, `e${parsed.id}`));
       }
       applyEvent(parsed);
       markAttached();

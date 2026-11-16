@@ -37,10 +37,18 @@
     "placeholder": "寫下你的回答",
     "confirm": "確認",
     "submit": "送出",
-    "dismiss": "放棄",
+    "dismiss": "收起",
     "inFormBelow": "在下方表單裡回答",
     "inPreview": "在右側預覽中回答",
-    "multiAnswerSeparator": "、"
+    "multiAnswerSeparator": "、",
+    "recommended": "推薦",
+    "autoConfirmIn": "{{seconds}} 秒後自動選擇推薦項",
+    "autoConfirmPaused": "倒數已暫停",
+    "autoConfirmOff": "不自動確認",
+    "autoConfirmed": "已自動選擇推薦項，隨時可以修改",
+    "showDetails": "展開",
+    "hideDetails": "收起",
+    "orAnswerInChat": "也可以直接在對話裡回答"
   },
   "material": {
     "maxSelected": "一次最多選擇 {{count}} 個材料",

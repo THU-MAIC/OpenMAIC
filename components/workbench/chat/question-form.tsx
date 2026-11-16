@@ -27,7 +27,12 @@
  * Dismissing is not "cancel the question": the transcript card stays live and
  * clickable, and the host remembers only that this question's form was waved off
  * (see `WorkbenchChat`). Nothing about the question changes — it just stops
- * holding the composer hostage.
+ * holding the composer hostage. That is why the control reads "Collapse".
+ *
+ * When the agent marked an option as recommended, the form may count down and
+ * send that option for a user who does not respond
+ * (`question-auto-confirm-state.ts`). The countdown lives on the recommended
+ * row and in the footer; any deliberate input inside the form stops it.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -40,7 +45,15 @@ import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 import { wbStyles as styles } from './chat-styles';
 import { TextBlock } from './text-block';
+import { QuestionDetails } from './question-details';
 import { editingKindFor, questionFormKeyAction, useQuestionForm } from './question-form-state';
+import { countdownSeconds, useAutoConfirmCountdown } from './question-auto-confirm-state';
+import {
+  AUTO_CONFIRM_SECONDS,
+  useQuestionAutoConfirm,
+} from '@/lib/workbench/question-auto-confirm';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
+import { useWorkbenchStore } from '@/lib/workbench/session-store';
 
 /** The keyboard legend, decoration only — the keys work whether or not it is read. */
 export const QUESTION_FORM_KEY_HINT = defaultWorkbenchTranslator('workbench.question.keyHint');
@@ -51,6 +64,7 @@ export function QuestionForm({
   onDismiss,
   embedded = false,
   startInFreeText = false,
+  hideQuestion = false,
   t = defaultWorkbenchTranslator,
 }: {
   readonly node: ChatNode;
@@ -65,10 +79,30 @@ export function QuestionForm({
   readonly embedded?: boolean;
   /** Open with the free-text row picked and focused (the user chose to write). */
   readonly startInFreeText?: boolean;
+  /** The host already shows the question as its own title. */
+  readonly hideQuestion?: boolean;
   readonly t?: WorkbenchTranslator;
 }) {
   const form = useQuestionForm(node, onAnswer, t, startInFreeText);
   const { mode, rows, locked } = form;
+  const sessionId = useWorkbenchStore((s) => s.sessionId);
+  const countdown = useAutoConfirmCountdown({
+    node,
+    locked,
+    onFire: (option) => {
+      const key = sessionScopedKey(sessionId, node.key);
+      const marks = useQuestionAutoConfirm.getState();
+      marks.markAutoConfirmed(key);
+      void form.answerWithOption(option.id).then((ok) => {
+        if (!ok) useQuestionAutoConfirm.getState().unmarkAutoConfirmed(key);
+      });
+    },
+  });
+  const paused = countdown?.snapshot.phase === 'paused';
+  const seconds = countdown ? countdownSeconds(countdown.snapshot.remainingMs) : 0;
+  const elapsed = countdown
+    ? 1 - countdown.snapshot.remainingMs / (AUTO_CONFIRM_SECONDS * 1000)
+    : 0;
   const rowRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const otherRef = useRef<HTMLInputElement | null>(null);
   const openRef = useRef<HTMLTextAreaElement | null>(null);
@@ -117,7 +151,11 @@ export function QuestionForm({
       // The workbench's convention for "Escape is mine": keeps the double-Escape
       // run-stop from firing underneath the form.
       data-esc-owner=""
+      data-auto-confirm={countdown ? countdown.snapshot.phase : undefined}
       aria-label={t('workbench.question.waiting')}
+      onPointerEnter={countdown?.onPointerEnter}
+      onPointerLeave={countdown?.onPointerLeave}
+      onPointerDownCapture={countdown?.stop}
       onKeyDown={(event) => {
         const action = questionFormKeyAction({
           key: event.key,
@@ -138,9 +176,14 @@ export function QuestionForm({
     >
       {/* The agent writes its question in Markdown (bold options, lists), as it
           writes its replies. */}
-      <div className={styles.questionForm.question}>
-        <TextBlock text={node.text} />
-      </div>
+      {hideQuestion ? null : (
+        <div className={styles.questionForm.question}>
+          <TextBlock text={node.text} />
+        </div>
+      )}
+      {!hideQuestion && node.questionDetails ? (
+        <QuestionDetails text={node.questionDetails} t={t} />
+      ) : null}
 
       {mode === 'open' ? (
         <textarea
@@ -208,7 +251,28 @@ export function QuestionForm({
                   <span className={styles.questionForm.label}>
                     {isOther ? (row.label ?? t('workbench.question.other')) : row.label}
                   </span>
+                  {row.kind === 'option' && row.recommended ? (
+                    <span
+                      className={styles.questionForm.recommended}
+                      data-testid="workbench-question-form-recommended"
+                    >
+                      {t('workbench.question.recommended')}
+                      {countdown && countdown.option.id === row.id ? (
+                        <span className="tabular-nums" aria-hidden="true">
+                          {' · '}
+                          {seconds}s
+                        </span>
+                      ) : null}
+                    </span>
+                  ) : null}
                 </button>
+                {countdown && row.kind === 'option' && countdown.option.id === row.id ? (
+                  <span
+                    aria-hidden="true"
+                    className={styles.questionForm.countdownBar}
+                    style={{ width: `${Math.min(100, Math.max(0, elapsed * 100))}%` }}
+                  />
+                ) : null}
                 {isOther && picked ? (
                   <input
                     ref={otherRef}
@@ -247,9 +311,28 @@ export function QuestionForm({
         >
           {t('workbench.question.dismiss')}
         </button>
-        <span className={styles.questionForm.keys} aria-hidden="true">
-          {t('workbench.question.keyHint')}
-        </span>
+        {countdown ? (
+          <span className={styles.questionForm.auto} data-testid="workbench-question-auto-confirm">
+            <span role="timer" aria-live="off">
+              {paused
+                ? t('workbench.question.autoConfirmPaused')
+                : t('workbench.question.autoConfirmIn', { seconds })}
+            </span>
+            <span aria-hidden="true">·</span>
+            <button
+              type="button"
+              data-testid="workbench-question-auto-confirm-off"
+              className={styles.questionForm.autoOff}
+              onClick={countdown.turnOff}
+            >
+              {t('workbench.question.autoConfirmOff')}
+            </button>
+          </span>
+        ) : (
+          <span className={styles.questionForm.keys} aria-hidden="true">
+            {t(embedded ? 'workbench.question.orAnswerInChat' : 'workbench.question.keyHint')}
+          </span>
+        )}
       </div>
     </section>
   );

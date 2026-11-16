@@ -2237,7 +2237,9 @@
     "webFetchSettings": "Obtener páginas web",
     "webFetchHint": "Elige cómo leer las páginas web. Los servicios alojados reciben URL públicas autorizadas en la sesión. Los resultados siguen siendo datos no confiables y los errores no cambian el lector.",
     "webFetchApiKey": "Clave de API",
-    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat."
+    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat.",
+    "autoConfirmRecommended": "Confirmar automáticamente las respuestas recomendadas",
+    "autoConfirmRecommendedDesc": "Cuando el agente hace una pregunta con una opción recomendada, la elige tras una breve cuenta regresiva si no respondes. Cualquier interacción la detiene."
   },
   "workspace": {
     "knowledgeBase": {

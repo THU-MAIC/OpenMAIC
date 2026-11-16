@@ -34,10 +34,18 @@
     "placeholder": "Escribe tu respuesta",
     "confirm": "Confirmar",
     "submit": "Enviar",
-    "dismiss": "Descartar",
+    "dismiss": "Contraer",
     "inFormBelow": "Responde en el formulario de abajo",
     "inPreview": "Responde en la vista previa",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Recomendada",
+    "autoConfirmIn": "Se elegirá la opción recomendada en {{seconds}} s",
+    "autoConfirmPaused": "Cuenta regresiva en pausa",
+    "autoConfirmOff": "No confirmar automáticamente",
+    "autoConfirmed": "Se eligió la opción recomendada automáticamente; puedes cambiarla cuando quieras",
+    "showDetails": "Ver más",
+    "hideDetails": "Ver menos",
+    "orAnswerInChat": "También puedes responder en el chat"
   },
   "material": {
     "maxSelected": "Puedes seleccionar hasta {{count}} materiales a la vez",

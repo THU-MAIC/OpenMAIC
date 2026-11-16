@@ -3370,11 +3370,14 @@ describe('the knowledge base page', () => {
       const pane = container?.querySelector('[data-testid="workspace-request-activity"]');
       expect(pane).not.toBeNull();
       expect(pane?.getAttribute('data-scene')).toBe('asking');
-      // The plan from the stream, and the question as the answer form itself.
-      const plan = pane?.querySelector('[data-testid="request-preview-plan"]');
-      expect(plan?.textContent).toContain('Refraction');
+      // The question as the card's title and the conversation's own answer form
+      // below it. The reply stays in the conversation; only `details` would
+      // add a block here.
+      const title = pane?.querySelector('[data-testid="request-preview-title"]');
+      expect(title?.textContent).toContain('Shall I build this plan?');
+      expect(pane?.querySelector('[data-testid="request-preview-plan"]')).toBeNull();
       const form = pane?.querySelector('[data-testid="workbench-question-form"]');
-      expect(form?.textContent).toContain('Shall I build this plan?');
+      expect(form?.textContent).toContain('Go ahead');
       expect(useQuestionHost.getState().previewKey).toBe(
         sessionScopedKey(mocks.store.sessionId, 'q'),
       );

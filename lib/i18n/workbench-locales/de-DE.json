@@ -34,10 +34,18 @@
     "placeholder": "Schreibe deine Antwort",
     "confirm": "Bestätigen",
     "submit": "Absenden",
-    "dismiss": "Verwerfen",
+    "dismiss": "Einklappen",
     "inFormBelow": "Antworte im Formular unten",
     "inPreview": "In der Vorschau beantworten",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Empfohlen",
+    "autoConfirmIn": "Empfohlene Option wird in {{seconds}} s gewählt",
+    "autoConfirmPaused": "Countdown pausiert",
+    "autoConfirmOff": "Nicht automatisch bestätigen",
+    "autoConfirmed": "Empfohlene Option automatisch gewählt – jederzeit änderbar",
+    "showDetails": "Mehr anzeigen",
+    "hideDetails": "Weniger anzeigen",
+    "orAnswerInChat": "Du kannst auch direkt im Chat antworten"
   },
   "material": {
     "maxSelected": "Du kannst höchstens {{count}} Materialien gleichzeitig auswählen",

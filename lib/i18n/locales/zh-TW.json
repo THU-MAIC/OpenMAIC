@@ -2237,7 +2237,9 @@
     "webFetchSettings": "網頁擷取",
     "webFetchHint": "選擇網頁讀取方式。託管服務只會收到工作階段中已獲准的公開網址。結果仍是不可信資料，失敗時不會切換讀取服務。",
     "webFetchApiKey": "API 金鑰",
-    "webFetchSharedKeyHint": "此金鑰也用於與同一供應商進行對話。修改或移除金鑰也會影響對話。"
+    "webFetchSharedKeyHint": "此金鑰也用於與同一供應商進行對話。修改或移除金鑰也會影響對話。",
+    "autoConfirmRecommended": "自動確認推薦選項",
+    "autoConfirmRecommendedDesc": "Agent 提問並給出推薦選項時，若你一段時間內沒有操作，倒數結束後自動選擇推薦項。任何操作都會停止倒數。"
   },
   "workspace": {
     "knowledgeBase": {

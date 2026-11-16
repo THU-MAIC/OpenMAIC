@@ -103,6 +103,11 @@ export interface SettingsState {
 
   /** Always open the outline review before generating scenes. */
   reviewOutlineEnabled: boolean;
+  /**
+   * When the workbench agent asks a question with a recommended option, choose
+   * it for the user after a short countdown they can interrupt.
+   */
+  autoConfirmRecommendedAnswer: boolean;
 
   // Playback controls
   ttsMuted: boolean;
@@ -157,6 +162,7 @@ export interface SettingsState {
   setTTSSpeed: (speed: number) => void;
   setASRLanguage: (language: string) => void;
   setReviewOutlineEnabled: (enabled: boolean) => void;
+  setAutoConfirmRecommendedAnswer: (enabled: boolean) => void;
 
   // Playback actions
   setTTSMuted: (muted: boolean) => void;
@@ -189,6 +195,7 @@ const PERSISTED_FIELDS = [
   'ttsSpeed',
   'asrLanguage',
   'reviewOutlineEnabled',
+  'autoConfirmRecommendedAnswer',
   'ttsMuted',
   'ttsVolume',
   'autoPlayLecture',
@@ -270,6 +277,7 @@ export const useSettingsStore = create<SettingsState>()(
       // 留空后在录音时解析界面语言，避免初次加载或后续切换语言时固定为中文。
       asrLanguage: '',
       reviewOutlineEnabled: false,
+      autoConfirmRecommendedAnswer: true,
 
       // Playback controls
       ttsMuted: false,
@@ -297,6 +305,7 @@ export const useSettingsStore = create<SettingsState>()(
       setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
       setASRLanguage: (language) => set({ asrLanguage: language }),
       setReviewOutlineEnabled: (enabled) => set({ reviewOutlineEnabled: enabled }),
+      setAutoConfirmRecommendedAnswer: (enabled) => set({ autoConfirmRecommendedAnswer: enabled }),
 
       setTTSMuted: (muted) => set({ ttsMuted: muted }),
       setTTSVolume: (volume) => set({ ttsVolume: Math.max(0, Math.min(1, volume)) }),
