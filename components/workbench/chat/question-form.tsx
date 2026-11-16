@@ -48,7 +48,13 @@ import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n
 import { wbStyles as styles } from './chat-styles';
 import { TextBlock } from './text-block';
 import { QuestionDetails } from './question-details';
-import { editingKindFor, questionFormKeyAction, useQuestionForm } from './question-form-state';
+import {
+  editingKindFor,
+  isForeignKeyTarget,
+  QUESTION_NAV_ATTR,
+  questionFormKeyAction,
+  useQuestionForm,
+} from './question-form-state';
 import {
   AUTO_CONFIRM_SWITCH_ATTR,
   countdownSeconds,
@@ -161,6 +167,9 @@ export function QuestionForm({
       onPointerLeave={countdown?.onPointerLeave}
       onPointerDownCapture={countdown?.onPointerDownCapture}
       onKeyDown={(event) => {
+        // A button of its own (the switch, Collapse, a details toggle) keeps
+        // its keys; only Escape still means "give the composer back".
+        if (event.key !== 'Escape' && isForeignKeyTarget(event.target)) return;
         const action = questionFormKeyAction({
           key: event.key,
           editing: editingKindFor((event.target as HTMLElement).tagName),
@@ -229,6 +238,7 @@ export function QuestionForm({
                   role={mode === 'multi' ? 'checkbox' : 'radio'}
                   aria-checked={picked}
                   disabled={locked}
+                  {...{ [QUESTION_NAV_ATTR]: '' }}
                   data-testid={
                     isOther
                       ? 'workbench-question-form-other'
@@ -332,6 +342,7 @@ export function QuestionForm({
           <button
             ref={submitRef}
             type="button"
+            {...{ [QUESTION_NAV_ATTR]: '' }}
             data-testid="workbench-question-form-submit"
             data-highlight={mode !== 'open' && form.highlight >= rows.length ? 'true' : 'false'}
             disabled={!form.canSubmit}

@@ -20,6 +20,10 @@ import {
   recommendedOption,
 } from '@/components/workbench/chat/question-auto-confirm-state';
 import { QuestionForm } from '@/components/workbench/chat/question-form';
+import {
+  isForeignKeyTarget,
+  QUESTION_NAV_ATTR,
+} from '@/components/workbench/chat/question-form-state';
 import { QuestionCard } from '@/components/workbench/chat/question-card';
 import {
   AUTO_CONFIRM_SECONDS,
@@ -180,6 +184,23 @@ describe('the countdown timer', () => {
     expect(isDeliberateKey('Shift')).toBe(false);
     expect(isDeliberateKey('a')).toBe(true);
     expect(isDeliberateKey('Enter')).toBe(true);
+  });
+});
+
+describe('isForeignKeyTarget', () => {
+  const make = (html: string) => {
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    return host.firstElementChild;
+  };
+  it('leaves rows, submit and text boxes to the form, and other controls to themselves', () => {
+    expect(isForeignKeyTarget(make(`<button ${QUESTION_NAV_ATTR}>row</button>`))).toBe(false);
+    expect(isForeignKeyTarget(make('<input />'))).toBe(false);
+    expect(isForeignKeyTarget(make('<textarea></textarea>'))).toBe(false);
+    expect(isForeignKeyTarget(make('<button>Collapse</button>'))).toBe(true);
+    expect(isForeignKeyTarget(make('<span role="switch">Auto</span>'))).toBe(true);
+    expect(isForeignKeyTarget(make('<a href="#">link</a>'))).toBe(true);
+    expect(isForeignKeyTarget(null)).toBe(false);
   });
 });
 
@@ -374,6 +395,57 @@ describe('the answer form', () => {
     });
     await advance(DURATION);
     expect(answers).toEqual(['Go ahead']);
+  });
+
+  describe('keys on the footer controls stay with those controls', () => {
+    const keydown = async (el: Element | null, key: string) =>
+      act(async () => {
+        el?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      });
+    const picked = () => container.querySelectorAll('[role="radio"][aria-checked="true"]').length;
+
+    it.each(['Enter', ' '])(
+      '%j on the switch neither picks nor sends, and keeps counting',
+      async (key) => {
+        await mount();
+        await keydown(autoSwitch(), key);
+        expect(answers).toEqual([]);
+        expect(picked()).toBe(0);
+        expect(form()?.getAttribute('data-auto-confirm')).toBe('running');
+      },
+    );
+
+    it('Enter on Collapse neither picks nor sends', async () => {
+      await mount(question(), false);
+      await keydown(
+        container.querySelector('[data-testid="workbench-question-form-dismiss"]'),
+        'Enter',
+      );
+      expect(answers).toEqual([]);
+      expect(picked()).toBe(0);
+    });
+
+    it('Enter on the details toggle neither picks nor sends', async () => {
+      // Long enough to overflow, so the toggle is there.
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(() => 300);
+      vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => 100);
+      await mount(question({ questionDetails: 'A long plan' }), false);
+      const toggle = container.querySelector('[data-testid="workbench-question-details"] button');
+      expect(toggle).not.toBeNull();
+      await keydown(toggle, 'Enter');
+      expect(answers).toEqual([]);
+      expect(picked()).toBe(0);
+    });
+
+    it('Enter on an option row still answers with it', async () => {
+      await mount(question(), false);
+      const row = container.querySelector<HTMLButtonElement>(
+        '[data-testid="workbench-question-form-option-change"]',
+      );
+      await act(async () => row?.focus());
+      await keydown(row, 'Enter');
+      expect(answers).toEqual(['Change it']);
+    });
   });
 
   it('labels the answered card as auto-selected', async () => {

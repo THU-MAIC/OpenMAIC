@@ -187,6 +187,28 @@ export function quickPickIndex(key: string, rowCount: number): number | null {
   return index < rowCount ? index : null;
 }
 
+/**
+ * Marks the form's own keyboard stops: the option rows and submit. Arrow keys,
+ * digits and Enter are the form's there.
+ */
+export const QUESTION_NAV_ATTR = 'data-question-nav';
+
+const CONTROLS =
+  'button, a[href], [role="switch"], select, [contenteditable=""], [contenteditable="true"]';
+
+/**
+ * Whether a key event comes from a control that owns its own keys — the
+ * auto-confirm switch, Collapse, a details toggle, a link in the question —
+ * rather than from an option row, submit or the form's text boxes. Enter and
+ * Space there must do what that control does (toggle, collapse, expand), not
+ * pick the highlighted row; only Escape still belongs to the form.
+ */
+export function isForeignKeyTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest(`[${QUESTION_NAV_ATTR}]`)) return false;
+  return target.closest(CONTROLS) !== null;
+}
+
 /** Whether the event's target is a text box, and whether Enter belongs to it. */
 export type QuestionFormEditing = false | 'line' | 'multiline';
 
