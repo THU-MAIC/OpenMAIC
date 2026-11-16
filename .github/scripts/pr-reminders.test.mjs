@@ -468,6 +468,56 @@ test('run reminds, closes after 7 quiet days and spares active authors', async (
   assert.equal(client.writes[2].params.state, 'closed');
 });
 
+test('thread replies, pushes and unread thread pages keep a pull request open', async () => {
+  const threads = withThreads([thread(ago(12 * DAY))]);
+  const replied = makePr(50, threads);
+  const pushed = makePr(51, threads);
+  const paged = makePr(52, {
+    reviewThreads: { pageInfo: { hasNextPage: true }, nodes: threads.reviewThreads.nodes },
+  });
+  const reminder = (id, pr) => botComment(id, codexBody(pr, 1), ago(8 * DAY));
+  const client = fakeClient({
+    prs: [replied, pushed, paged],
+    comments: {
+      50: [reminder(701, replied)],
+      51: [reminder(702, pushed)],
+      52: [reminder(703, paged)],
+    },
+    activity: {
+      50: {
+        reviewThreads: {
+          nodes: [
+            { comments: { nodes: [{ author: { login: 'author50' }, createdAt: ago(DAY) }] } },
+          ],
+        },
+      },
+      51: {
+        commits: {
+          nodes: [
+            {
+              commit: {
+                committedDate: ago(20 * DAY),
+                checkSuites: { nodes: [{ createdAt: ago(2 * DAY) }] },
+              },
+            },
+          ],
+        },
+      },
+    },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.number, r.action]),
+    [
+      [50, 'unchanged'],
+      [51, 'unchanged'],
+      [52, 'unchanged'],
+    ],
+  );
+  assert.deepEqual(client.activityQueries, [50, 51]);
+  assert.deepEqual(client.writes, []);
+});
+
 test('dry runs never close and report what they would do', async () => {
   const pr = makePr(50, withThreads([thread(ago(12 * DAY))]));
   const client = fakeClient({

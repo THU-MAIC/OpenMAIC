@@ -223,7 +223,15 @@ export function decideCodex(pr, { now }) {
 export function lastAuthorActivity(pr, activity, comments) {
   const login = pr.author?.login;
   const times = [
-    ...(activity?.commits?.nodes ?? []).map((node) => node.commit?.committedDate),
+    ...(activity?.commits?.nodes ?? []).flatMap((node) => [
+      node.commit?.committedDate,
+      ...(node.commit?.checkSuites?.nodes ?? []).map((suite) => suite.createdAt),
+    ]),
+    ...(activity?.reviewThreads?.nodes ?? []).flatMap((thread) =>
+      (thread.comments?.nodes ?? [])
+        .filter((comment) => comment.author?.login === login)
+        .map((comment) => comment.createdAt),
+    ),
     ...(activity?.timelineItems?.nodes ?? []).map((node) => node.createdAt),
     ...(activity?.reviews?.nodes ?? [])
       .filter((review) => review.author?.login === login)
@@ -275,8 +283,9 @@ query($owner: String!, $repo: String!, $cursor: String) {
         number url isDraft mergeable createdAt baseRefName headRefName headRefOid
         headRepository { nameWithOwner }
         author { login __typename }
-        labels(first: 20) { nodes { name } }
+        labels(first: 100) { nodes { name } }
         reviewThreads(first: 100) {
+          pageInfo { hasNextPage }
           nodes { isResolved comments(first: 1) { nodes { author { login } createdAt } } }
         }
       }
@@ -285,15 +294,21 @@ query($owner: String!, $repo: String!, $cursor: String) {
 }`;
 
 // Only read for pull requests whose Codex reminder is old enough to close.
-// Thread replies are submitted as reviews, so `reviews` covers them. Pushes
-// show up as the head commit date or a force-push event; a reopen also restarts
-// the window.
+// Author activity: reviews, thread replies (read from the threads themselves,
+// since an inline reply is a review comment) and issue comments. Pushes show up
+// as the head commit's check suites (created on push, unlike the commit date)
+// or a force-push event; a reopen also restarts the window.
 const ACTIVITY_QUERY = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
-      commits(last: 1) { nodes { commit { committedDate } } }
+      commits(last: 1) {
+        nodes { commit { committedDate checkSuites(last: 20) { nodes { createdAt } } } }
+      }
       reviews(last: 100) { nodes { author { login } submittedAt } }
+      reviewThreads(first: 100) {
+        nodes { comments(last: 50) { nodes { author { login } createdAt } } }
+      }
       timelineItems(last: 20, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, REOPENED_EVENT]) {
         nodes {
           ... on HeadRefForcePushedEvent { createdAt }
@@ -424,9 +439,12 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
     for (const decision of decisions) {
       const existing = findReminder(comments, decision.kind);
       let action;
+      // Close only when every review thread has been seen: a newer Codex thread
+      // on a later page would otherwise not restart the window.
       if (
         decision.kind === 'codex' &&
         existing &&
+        !pr.reviewThreads?.pageInfo?.hasNextPage &&
         codexCloseDue({
           reminderAt: existing.created_at,
           newestThreadAt: newestCodexThreadAt(pr),
