@@ -69,15 +69,15 @@ function CourseCover({
   readonly version: number | null;
 }) {
   const { thumbnails, requestThumbnail } = useCourseThumbnails();
-  useEffect(() => {
-    if (version === null) return;
-    return requestThumbnail(courseId, version);
-  }, [courseId, version, requestThumbnail]);
-  const cover = version === null ? null : thumbnails[courseId];
-  // A transcript keeps its earlier cards mounted, so the live cover's slot is
-  // requested only while this chip is actually near the viewport.
+  // A transcript keeps its earlier cards mounted, so both the cover's data
+  // load and its live rendering wait until this chip is near the viewport.
   const thumbRef = useRef<HTMLSpanElement>(null);
   const nearViewport = useNearViewport(thumbRef);
+  useEffect(() => {
+    if (version === null || !nearViewport) return;
+    return requestThumbnail(courseId, version);
+  }, [courseId, version, nearViewport, requestThumbnail]);
+  const cover = version === null ? null : thumbnails[courseId];
   return (
     <span ref={thumbRef} className={styles.courseLink.thumb} aria-hidden="true">
       {cover ? (

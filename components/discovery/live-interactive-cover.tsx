@@ -2,7 +2,6 @@
 
 import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import { InteractiveCover } from '@/components/discovery/interactive-cover';
-import { useInteractiveCoverSlot } from '@/lib/hooks/use-interactive-cover-slot';
 import { firstInteractiveCover } from '@/lib/utils/course-cover';
 import type { InteractiveContent, Scene } from '@/lib/types/stage';
 
@@ -13,9 +12,9 @@ import type { InteractiveContent, Scene } from '@/lib/types/stage';
  * looks like, fresh from the current scene, with no cache to go stale.
  *
  * The static placeholder (`InteractiveCover`) stands in while the card is
- * off-screen or no live slot is free — a page caps how many interactive
- * iframes run at once (`useInteractiveCoverSlot`) — and for a page with
- * neither HTML nor a URL to render.
+ * off-screen (`ThumbnailInteractive` itself mounts and unmounts the iframe
+ * on intersection, so an on-screen card's live page leaves with it) and for
+ * a page with neither HTML nor a URL to render.
  */
 export function LiveInteractiveCover({
   scene,
@@ -34,10 +33,7 @@ export function LiveInteractiveCover({
 }) {
   const content = scene.content as InteractiveContent;
   const renderable = Boolean(content.html || content.url);
-  const holding = useInteractiveCoverSlot(
-    visible && renderable && content.type === 'interactive' ? scene.stageId : null,
-  );
-  if (!holding || content.type !== 'interactive') {
+  if (!visible || !renderable || content.type !== 'interactive') {
     const cover = firstInteractiveCover([scene]);
     return cover ? <InteractiveCover cover={cover} compact={compact} /> : null;
   }
