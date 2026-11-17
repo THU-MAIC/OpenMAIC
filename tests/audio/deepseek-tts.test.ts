@@ -156,11 +156,12 @@ describe('DeepSeek TTS', () => {
     ).rejects.toBeInstanceOf(TTSInvalidResponseError);
   });
 
-  it('drops a trailing partial sample and refuses a header with no samples', () => {
+  it('refuses a stream cut off mid-frame and a header with no samples', () => {
     const cut = Buffer.concat([streamedWav([5, 6]), Buffer.from([7])]);
-    const fixed = finalizeDeepSeekWav(new Uint8Array(cut));
-    expect(fixed.byteLength).toBe(48);
-    expect(new DataView(fixed.buffer).getUint32(40, true)).toBe(4);
+    expect(() => finalizeDeepSeekWav(new Uint8Array(cut))).toThrow('ended mid-frame');
+    const whole = finalizeDeepSeekWav(new Uint8Array(streamedWav([5, 6])));
+    expect(whole.byteLength).toBe(48);
+    expect(new DataView(whole.buffer).getUint32(40, true)).toBe(4);
 
     expect(() => finalizeDeepSeekWav(new Uint8Array(streamedWav([])))).toThrow(
       TTSInvalidResponseError,

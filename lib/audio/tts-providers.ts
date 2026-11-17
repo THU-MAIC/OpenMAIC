@@ -1653,8 +1653,10 @@ export function finalizeDeepSeekWav(bytes: Uint8Array): Uint8Array {
     } else if (id === 'data') {
       if (!blockAlign) throw invalid('data chunk before the fmt chunk');
       const start = offset + 8;
-      // Whole samples only: a body cut off mid-sample ends at the last full frame.
-      const dataBytes = bytes.byteLength - start - ((bytes.byteLength - start) % blockAlign);
+      // A body that ends mid-frame was cut off: refuse it rather than pass
+      // incomplete narration off as a whole clip.
+      const dataBytes = bytes.byteLength - start;
+      if (dataBytes % blockAlign !== 0) throw invalid('stream ended mid-frame');
       if (dataBytes <= 0) throw invalid('no audio samples');
       const out = bytes.slice(0, start + dataBytes);
       const outView = new DataView(out.buffer);

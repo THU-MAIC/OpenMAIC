@@ -288,6 +288,10 @@ describe('parseWithDeepSeekOCR', () => {
     expect(busy).toBeInstanceOf(MaterialExtractionError);
     expect((busy as MaterialExtractionError).retryable).toBe(true);
     expect((deepseekOCRFailure(429, '') as MaterialExtractionError).retryable).toBe(true);
+    expect((deepseekOCRFailure(408, '') as MaterialExtractionError).retryable).toBe(true);
+    expect((deepseekOCRFailure(504, '') as MaterialExtractionError).retryable).toBe(true);
+    const recognitionTimeout = deepseekOCRFailure(504, 'OCR did not finish within 180 seconds');
+    expect((recognitionTimeout as MaterialExtractionError).retryable).toBe(false);
 
     const auth = deepseekOCRFailure(401, 'Authentication Fails');
     expect((auth as MaterialExtractionError).retryable).toBe(false);

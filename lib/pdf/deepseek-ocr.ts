@@ -353,9 +353,10 @@ async function readBoundedText(response: Response): Promise<string> {
 /**
  * The error a DeepSeek OCR failure throws: a document over the page limit is
  * refused as the source's fault (not retried, no other provider tried); a
- * busy service, a rate limit or an internal error may pass on a retry; the
- * rest (a password, an unsupported or broken file, insufficient balance, a
- * recognition that ran out of time) fail the same way again.
+ * busy service, a rate limit, an internal error or an upload timeout may pass
+ * on a retry; the rest (a password, an unsupported or broken file,
+ * insufficient balance, a recognition that ran out of time) fail the same way
+ * again.
  */
 export function deepseekOCRFailure(status: number | undefined, rawMessage: string): Error {
   const message = rawMessage.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_MESSAGE_CHARS);
@@ -366,11 +367,18 @@ export function deepseekOCRFailure(status: number | undefined, rawMessage: strin
       { reasonCode: 'too_many_pages', reasonValues: { maxPages: DEEPSEEK_OCR_MAX_PAGES } },
     );
   }
+  // 408 (slow upload) and 504 (upload plus submission over the total time)
+  // can pass on a retry; a recognition that itself ran out of time ("OCR did
+  // not finish") needs a smaller file instead.
+  const recognitionTimedOut = /did not finish/i.test(message);
   const transient =
-    status === 429 ||
-    status === 500 ||
-    status === 503 ||
-    /temporarily unavailable|internal server error/i.test(message);
+    !recognitionTimedOut &&
+    (status === 408 ||
+      status === 429 ||
+      status === 500 ||
+      status === 503 ||
+      status === 504 ||
+      /temporarily unavailable|internal server error/i.test(message));
   return new MaterialExtractionError(
     `DeepSeek OCR failed${where}${message ? `: ${message}` : ''}`,
     transient,
