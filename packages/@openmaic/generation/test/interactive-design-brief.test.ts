@@ -40,9 +40,13 @@ describe('interactive design brief', () => {
     const prompt = user();
 
     expect(prompt).toContain('## Course Visual Style');
-    expect(prompt).toContain('Follow this style for page background, panels, text and accent colours:');
+    expect(prompt).toContain(
+      'Follow this style for page background, panels, text and accent colours:',
+    );
     expect(prompt).toContain(DESIGN_STYLE);
-    expect(result && 'html' in result ? result.html : '').not.toContain('data-openmaic-theme-tokens');
+    expect(result && 'html' in result ? result.html : '').not.toContain(
+      'data-openmaic-theme-tokens',
+    );
   });
 
   it('threads course visual style into all widget types', async () => {
@@ -71,7 +75,9 @@ describe('interactive design brief', () => {
       await generateWidgetContent(outline, aiCall);
       const prompt = user();
       expect(prompt).toContain('## Course Visual Style');
-      expect(prompt).toContain('Follow this style for page background, panels, text and accent colours:');
+      expect(prompt).toContain(
+        'Follow this style for page background, panels, text and accent colours:',
+      );
       expect(prompt).toContain(DESIGN_STYLE);
     }
   });
@@ -108,7 +114,10 @@ describe('interactive design brief', () => {
       languageDirective: '',
     };
     const withoutDesign = buildPrompt(PROMPT_IDS.SIMULATION_CONTENT, { ...baseVars, design: '' });
-    const withDesign = buildPrompt(PROMPT_IDS.SIMULATION_CONTENT, { ...baseVars, design: DESIGN_STYLE });
+    const withDesign = buildPrompt(PROMPT_IDS.SIMULATION_CONTENT, {
+      ...baseVars,
+      design: DESIGN_STYLE,
+    });
 
     expect(withoutDesign).not.toBeNull();
     expect(withDesign).not.toBeNull();

@@ -365,11 +365,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         );
       }
       const design = params.design?.trim();
-      if (
-        params.design !== undefined &&
-        params.type !== 'slide' &&
-        params.type !== 'interactive'
-      ) {
+      if (params.design !== undefined && params.type !== 'slide' && params.type !== 'interactive') {
         return result(
           'generate_scene only accepts design for slide and interactive pages.',
           { error: 'design-requires-slide-or-interactive', type: params.type },
