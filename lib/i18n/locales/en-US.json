@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "No parser is configured for this file type. Ask an administrator to configure one."
+      },
+      "focus": {
+        "folderUnavailable": "This folder is no longer in the knowledge base."
       }
     },
     "untitledCourse": "Untitled course",

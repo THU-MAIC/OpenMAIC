@@ -56,7 +56,11 @@
     "quotaExceeded": "Se alcanzó el límite de carga de materiales.",
     "storageFull": "El almacenamiento está lleno. No se pudo subir este material.",
     "uploadFailedShort": "Error al subir",
-    "retryFailed": "No se pudo volver a analizar. Inténtalo de nuevo."
+    "retryFailed": "No se pudo volver a analizar. Inténtalo de nuevo.",
+    "stored": "Guardados en la base de conocimientos: {{count}}",
+    "view": "Ver",
+    "viewFolder": "Ver carpeta",
+    "viewTopLevel": "Ver nivel superior"
   },
   "skill": {
     "listFailed": "No se pudo cargar la lista de skills",

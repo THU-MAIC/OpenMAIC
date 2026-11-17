@@ -56,7 +56,11 @@
     "quotaExceeded": "資料のアップロード上限に達しました。",
     "storageFull": "ストレージの上限に達したため、この資料をアップロードできません。",
     "uploadFailedShort": "アップロードに失敗しました",
-    "retryFailed": "再解析を開始できませんでした。もう一度お試しください。"
+    "retryFailed": "再解析を開始できませんでした。もう一度お試しください。",
+    "stored": "ナレッジベースに {{count}} 件保存しました",
+    "view": "表示",
+    "viewFolder": "フォルダーを表示",
+    "viewTopLevel": "最上位を表示"
   },
   "skill": {
     "listFailed": "スキル一覧を読み込めませんでした",

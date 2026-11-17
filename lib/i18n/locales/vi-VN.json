@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "Chưa cấu hình dịch vụ phân tích cho loại tệp này. Hãy nhờ quản trị viên cấu hình."
+      },
+      "focus": {
+        "folderUnavailable": "Thư mục này không còn trong kho kiến thức."
       }
     },
     "untitledCourse": "未命名课堂",

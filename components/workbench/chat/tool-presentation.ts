@@ -73,6 +73,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import type { ChatNode, PlannedPage } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
 
@@ -105,6 +106,7 @@ export interface ToolChip {
 }
 
 export interface ToolPresentation {
+  libraryLink?: { target: MaterialLibraryTarget; label: 'folder' | 'topLevel' };
   icon: LucideIcon;
   /** The verb phrase. Stable across running / done — the status dot carries state. */
   label: string;
@@ -121,6 +123,20 @@ export interface ToolPresentation {
   expandedResultText?: string;
   /** `read_stage_outline` — the plan, as a plan. */
   pages?: PlannedPage[];
+}
+
+/** Only settled results name a destination; arguments are never evidence. */
+export function materialToolTarget(node: ChatNode): MaterialLibraryTarget | undefined {
+  if (node.toolState !== 'done' || isWorkbenchToolFailed(node)) return;
+  if (
+    !['create_material_folder', 'rename_material_folder', 'move_materials'].includes(
+      node.toolName ?? '',
+    )
+  )
+    return;
+  const details = asRecord(node.toolDetails);
+  if (typeof details.folderId === 'string') return { kind: 'folder', folderId: details.folderId };
+  if (node.toolName === 'move_materials' && details.folderId === null) return { kind: 'top-level' };
 }
 
 // ── Small helpers ────────────────────────────────────────────────────────────
@@ -293,6 +309,10 @@ export function presentTool(
   const args = node.toolArgs ?? {};
   const d = asRecord(node.toolDetails);
   const failed = isWorkbenchToolFailed(node);
+  const target = materialToolTarget(node);
+  const libraryLink: ToolPresentation['libraryLink'] = target
+    ? { target, label: target.kind === 'folder' ? 'folder' : 'topLevel' }
+    : undefined;
   const extractionFailed = MATERIAL_TOOLS.has(name) && materialStatusFailed(d);
   const chips: ToolChip[] = [];
   const localizedResult = node.toolResultCopyKey ? t(node.toolResultCopyKey) : node.toolResultText;
@@ -371,7 +391,8 @@ export function presentTool(
       };
 
     // Organizing the knowledge base: one quiet row each, from the tool's own
-    // `status`. No result card, no undo, no link to a folder (RFC #1716 §6).
+    // `status`. Successful location results offer a user-controlled page link;
+    // no custom result card or undo (RFC #1716 §6, #1924).
     case 'list_material_folders': {
       const folders = Array.isArray(d.folders) ? d.folders.length : undefined;
       if (folders !== undefined && !failed) {
@@ -393,6 +414,7 @@ export function presentTool(
       return {
         icon: FolderPlus,
         label: t('workbench.tool.label.createMaterialFolder'),
+        libraryLink,
         subject: str(d.name) ?? str(args.name),
         chips,
         hidePayload: true,
@@ -406,6 +428,7 @@ export function presentTool(
       return {
         icon: Pencil,
         label: t('workbench.tool.label.renameMaterialFolder'),
+        libraryLink,
         subject: str(d.name) ?? str(args.name),
         chips,
         hidePayload: true,
@@ -438,6 +461,7 @@ export function presentTool(
       return {
         icon: FolderInput,
         label: t('workbench.tool.label.moveMaterials'),
+        libraryLink,
         chips,
         hidePayload: true,
         ...(failed ? { errorText: t('workbench.tool.error.moveMaterials') } : {}),

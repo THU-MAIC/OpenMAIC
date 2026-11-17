@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "Aucun service d’analyse n’est configuré pour ce type de fichier. Demandez à un administrateur d’en configurer un."
+      },
+      "focus": {
+        "folderUnavailable": "Ce dossier ne se trouve plus dans la base de connaissances."
       }
     },
     "untitledCourse": "未命名课堂",

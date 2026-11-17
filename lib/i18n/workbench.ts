@@ -87,6 +87,10 @@ export const workbenchEn = {
     multiAnswerSeparator: ', ',
   },
   material: {
+    stored: 'Stored in the knowledge base: {{count}}',
+    view: 'View',
+    viewFolder: 'View folder',
+    viewTopLevel: 'View top level',
     maxSelected: 'You can select up to {{count}} materials at once',
     remove: 'Remove {{name}}',
     removeFailed: 'Remove failed upload',
@@ -471,6 +475,10 @@ export const workbenchZh = {
     multiAnswerSeparator: '、',
   },
   material: {
+    stored: '已存入知识库 {{count}} 份',
+    view: '查看',
+    viewFolder: '查看文件夹',
+    viewTopLevel: '查看顶层',
     maxSelected: '一次最多选择 {{count}} 个材料',
     remove: '移除 {{name}}',
     removeFailed: '移除上传失败材料',

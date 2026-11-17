@@ -56,7 +56,11 @@
     "quotaExceeded": "Đã đạt giới hạn tải tài liệu lên.",
     "storageFull": "Dung lượng lưu trữ đã đầy. Không thể tải tài liệu này lên.",
     "uploadFailedShort": "Tải lên thất bại",
-    "retryFailed": "Không thể phân tích lại. Vui lòng thử lại."
+    "retryFailed": "Không thể phân tích lại. Vui lòng thử lại.",
+    "stored": "Đã lưu {{count}} tệp vào kho kiến thức",
+    "view": "Xem",
+    "viewFolder": "Xem thư mục",
+    "viewTopLevel": "Xem cấp cao nhất"
   },
   "skill": {
     "listFailed": "Không tải được danh sách skill",

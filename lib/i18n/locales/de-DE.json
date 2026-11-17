@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "Für diesen Dateityp ist kein Parser eingerichtet. Bitte einen Administrator, einen einzurichten."
+      },
+      "focus": {
+        "folderUnavailable": "Dieser Ordner ist nicht mehr in der Wissensdatenbank."
       }
     },
     "untitledCourse": "未命名课堂",

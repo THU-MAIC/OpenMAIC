@@ -71,6 +71,7 @@ const mocks = vi.hoisted(() => ({
   coursesPageProps: null as Record<string, unknown> | null,
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
+  searchProps: null as Record<string, unknown> | null,
   store: {
     playbackOn: false,
     sessionId: null as string | null,
@@ -230,6 +231,7 @@ vi.mock('@/components/workbench/workspace/WorkspaceHome', async () => {
     WorkspaceHome: (props: Record<string, unknown>) => {
       mocks.homeProps = props;
       return createElement(ProLaunchPanel, {
+        onViewInLibrary: props.onViewInLibrary as never,
         focusSignal: props.composerReset as number,
         onSessionCreated: props.onOpenSession as (id: string) => void,
         onSessionCreatedAfterLeaving: props.onOpenSessionAfterLeaving as (id: string) => void,
@@ -273,6 +275,12 @@ vi.mock('@/components/workbench/workspace/MaterialLibraryPage', () => ({
   },
 }));
 vi.mock('@/components/workbench/workspace/ResizeHandle', () => ({ ResizeHandle: () => null }));
+vi.mock('@/components/workbench/workspace/WorkspaceSearchPalette', () => ({
+  WorkspaceSearchPalette: (props: Record<string, unknown>) => {
+    mocks.searchProps = props;
+    return null;
+  },
+}));
 
 import { WorkspaceShell } from '@/components/workbench/workspace/WorkspaceShell';
 import { COURSE_TABS_STORAGE_KEY } from '@/lib/workbench/workspace-course-tabs';
@@ -539,7 +547,8 @@ describe('a home conversation created while the knowledge base was opened', () =
   it('attaches it under the page, which stays', async () => {
     const answer = await sendFromHome();
     await openLibrary();
-    expect(container!.querySelector('[data-testid="pro-launch-panel"]')).toBeNull();
+    expect(container!.querySelector('[data-testid="pro-launch-panel"]')).not.toBeNull();
+    expect(mocks.homeProps!.hidden).toBe(true);
     mocks.routerReplace.mockClear();
     await answer();
     expect(mocks.routerReplace).toHaveBeenLastCalledWith(
@@ -1245,5 +1254,266 @@ describe('an empty conversation opened for a course', () => {
     await render();
     await act(async () => (mocks.railProps!.onNewSession as () => void)());
     expect(composerText(textarea())).toBe('');
+  });
+});
+
+describe('library links preserve home requests and navigation (#1924)', () => {
+  const leave = () => act(async () => (mocks.libraryProps!.onLeave as () => void)());
+  const link = () =>
+    act(async () =>
+      (mocks.homeProps!.onViewInLibrary as (target: unknown) => void)({ kind: 'top-level' }),
+    );
+  async function sending(withMaterial = false) {
+    mocks.searchParams = new URLSearchParams();
+    const response = deferred<Response>();
+    serve(() => response.promise);
+    await render();
+    if (withMaterial) await chatWith('kept');
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Keep this draft');
+    await act(async () =>
+      container!.querySelector<HTMLButtonElement>('[data-testid="pro-launch-start"]')!.click(),
+    );
+    return response;
+  }
+  const success = (response: ReturnType<typeof deferred<Response>>) =>
+    act(async () =>
+      response.resolve(
+        Response.json({ id: 'session-created', stageId: 'created', status: 'queued' }),
+      ),
+    );
+
+  it('keeps the same composer through repeated returns and accepts success under the second page', async () => {
+    const response = await sending();
+    const textarea = container!.querySelector<HTMLElement>(COMPOSER_INPUT);
+    await link();
+    expect(mocks.libraryProps!.initialFocus).toEqual({ kind: 'top-level' });
+    expect(mocks.libraryProps!.showBack).toBe(true);
+    await leave();
+    expect(container!.querySelector<HTMLElement>(COMPOSER_INPUT)).toBe(textarea);
+    expect(composerText(textarea!)).toBe('Keep this draft');
+    await link();
+    await success(response);
+    expect(mocks.routerReplace).toHaveBeenLastCalledWith(
+      '/workspace?session=session-created&view=library',
+    );
+    await leave();
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace?session=session-created');
+  });
+
+  it('opens a session when success arrives after returning to home', async () => {
+    const response = await sending();
+    await link();
+    await leave();
+    await success(response);
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace?session=session-created');
+  });
+
+  it('reports failure while covered, preserves the draft, and can retry successfully', async () => {
+    const response = await sending(true);
+    await link();
+    await act(async () => response.resolve(Response.json({ error: 'offline' }, { status: 503 })));
+    expect(mocks.toastError).toHaveBeenCalled();
+    await leave();
+    expect(composerText(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe(
+      'Keep this draft',
+    );
+    expect(container!.textContent).toContain('kept.pdf');
+    const retry = deferred<Response>();
+    serve(() => retry.promise);
+    const send = container!.querySelector<HTMLButtonElement>('[data-testid="pro-launch-start"]')!;
+    expect(send.disabled).toBe(false);
+    await act(async () => send.click());
+    await success(retry);
+    expect(mocks.routerPush).toHaveBeenLastCalledWith('/workspace?session=session-created');
+  });
+
+  it.each(['onGoHome', 'onNewSession'])(
+    'rejects success after an explicit reset through %s',
+    async (action) => {
+      const response = await sending();
+      await link();
+      const reset = mocks.railProps![action];
+      expect(reset).toBeTypeOf('function');
+      await act(async () => (reset as () => void)());
+      await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'New draft');
+      mocks.routerPush.mockClear();
+      mocks.routerReplace.mockClear();
+      await success(response);
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+      expect(mocks.routerReplace).not.toHaveBeenCalled();
+      expect(composerText(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe(
+        'New draft',
+      );
+    },
+  );
+
+  it('rejects a completion after the covered home composer unmounts into another session', async () => {
+    const response = await sending();
+    await link();
+    await act(async () =>
+      (mocks.railProps!.onOpenSession as (id: string) => void)('other-session'),
+    );
+    mocks.routerPush.mockClear();
+    mocks.routerReplace.mockClear();
+    await success(response);
+    expect(mocks.routerPush).not.toHaveBeenCalled();
+    expect(mocks.routerReplace).not.toHaveBeenCalled();
+  });
+
+  it('keeps a search pick locating, and ends it with the visit', async () => {
+    mocks.searchParams = new URLSearchParams();
+    serve();
+    await render();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+    });
+    await act(async () =>
+      (mocks.searchProps!.onOpenMaterial as (material: unknown) => void)({
+        materialId: 'picked',
+        name: 'picked.pdf',
+      }),
+    );
+    expect(mocks.libraryProps!.locate).toMatchObject({ materialId: 'picked', name: 'picked.pdf' });
+    // A search pick is not a page link: no way back beyond the rail's own.
+    expect(mocks.libraryProps!.showBack).toBe(false);
+    await leave();
+    await openLibrary();
+    expect(mocks.libraryProps!.locate ?? null).toBeNull();
+  });
+
+  it('clears focus on popstate Back; Forward and the rail carry no target', async () => {
+    mocks.searchParams = new URLSearchParams();
+    serve();
+    await render();
+    await type(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!, 'Draft');
+    const textarea = container!.querySelector<HTMLElement>(COMPOSER_INPUT);
+    await link();
+    vi.mocked(window.history.replaceState).mockRestore();
+    await act(async () => {
+      window.history.replaceState(null, '', '/workspace');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await act(async () => {
+      window.history.replaceState(null, '', '/workspace?view=library');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+
+    expect(mocks.libraryProps!.initialFocus).toBeUndefined();
+    expect(mocks.libraryProps!.locate ?? null).toBeNull();
+    expect(mocks.libraryProps!.showBack).toBe(false);
+    expect(container!.querySelector<HTMLElement>(COMPOSER_INPUT)).toBe(textarea);
+    await leave();
+    await openLibrary();
+    expect(mocks.libraryProps!.initialFocus).toBeUndefined();
+    expect(mocks.libraryProps!.locate ?? null).toBeNull();
+    expect(mocks.libraryProps!.showBack).toBe(false);
+  });
+});
+
+describe('composer identity across library coverage (#1924)', () => {
+  it.each(['home', 'chat'])(
+    'retains %s draft and staged files, including an upload finishing while covered',
+    async (surface) => {
+      mocks.searchParams = new URLSearchParams(surface === 'home' ? '' : 'course=stage-1');
+      const uploaded = deferred<Response>();
+      serve(() => uploaded.promise);
+      await render();
+      if (surface === 'chat') await chatWith('picked');
+      const textarea = container!.querySelector<HTMLElement>(COMPOSER_INPUT)!;
+      await type(textarea, 'My unfinished draft');
+      const input = container!.querySelector<HTMLInputElement>('input[type="file"]')!;
+      await act(async () => {
+        Object.defineProperty(input, 'files', {
+          configurable: true,
+          value: [new File(['x'], 'upload.pdf', { type: 'application/pdf' })],
+        });
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      const attachCount = mocks.attach.mock.calls.length;
+      const detachCount = mocks.detach.mock.calls.length;
+      const classroomMounts = mocks.classroomMounts;
+      await openLibrary();
+      await act(async () =>
+        uploaded.resolve(
+          Response.json({
+            materialId: 'stored',
+            originalName: 'upload.pdf',
+            bytes: 1,
+            mime: 'application/pdf',
+            extraction: { status: 'pending' },
+          }),
+        ),
+      );
+      expect(container!.querySelector<HTMLElement>(COMPOSER_INPUT)).toBe(textarea);
+      expect(composerText(textarea)).toBe('My unfinished draft');
+      await act(async () => (mocks.libraryProps!.onLeave as () => void)());
+      expect(container!.querySelector<HTMLElement>(COMPOSER_INPUT)).toBe(textarea);
+      expect(container!.textContent).toContain('upload.pdf');
+      if (surface === 'chat') expect(container!.textContent).toContain('picked.pdf');
+      expect(mocks.attach).toHaveBeenCalledTimes(attachCount);
+      expect(mocks.detach).toHaveBeenCalledTimes(detachCount);
+      expect(mocks.classroomMounts).toBe(classroomMounts);
+      const view = container!.querySelector<HTMLButtonElement>(
+        '[data-testid="composer-stored-materials"] button',
+      )!;
+      expect(view).not.toBeNull();
+      await act(async () => view.click());
+      // One upload: located like a search pick, not a page-level target.
+      expect(mocks.libraryProps!.initialFocus).toBeUndefined();
+      expect(mocks.libraryProps!.locate).toMatchObject({
+        materialId: 'stored',
+        name: 'upload.pdf',
+      });
+      expect(mocks.libraryProps!.showBack).toBe(true);
+    },
+  );
+});
+
+describe('background work never requests library focus (#1924)', () => {
+  it('keeps a rail visit untargeted when a live agent adds a course and revision changes', async () => {
+    mocks.searchParams = new URLSearchParams('session=live');
+    mocks.store.sessionId = 'live';
+    serve();
+    await render();
+    await openLibrary();
+    mocks.store.libraryRevision += 1;
+    mocks.store.stageLinkStageIds = ['stage-1'];
+    await render();
+    expect(container!.querySelector('[data-testid="pro-workspace-library"]')).not.toBeNull();
+    expect(mocks.libraryProps!.initialFocus).toBeUndefined();
+    expect(mocks.libraryProps!.showBack).toBe(false);
+    expect(mocks.routerReplace).toHaveBeenLastCalledWith(
+      '/workspace?session=live&course=stage-1&view=library',
+    );
+  });
+
+  it('does not open the library when replaying historical agent results', async () => {
+    mocks.searchParams = new URLSearchParams('session=live');
+    mocks.store.sessionId = 'live';
+    mocks.store.replaying = true;
+    mocks.store.stageLinkStageIds = ['stage-1'];
+    mocks.store.replayedStageLinkCount = 1;
+    serve();
+    try {
+      await render();
+      expect(container!.querySelector('[data-testid="pro-workspace-library"]')).toBeNull();
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+      expect(mocks.routerReplace).not.toHaveBeenCalled();
+    } finally {
+      mocks.store.replaying = false;
+    }
+  });
+
+  it('does not open the library in classroom playback', async () => {
+    mocks.store.playbackOn = true;
+    serve();
+    try {
+      await render();
+      expect(container!.querySelector('[data-testid="pro-workspace-library"]')).toBeNull();
+      expect(mocks.routerPush).not.toHaveBeenCalled();
+      expect(mocks.routerReplace).not.toHaveBeenCalled();
+    } finally {
+      mocks.store.playbackOn = false;
+    }
   });
 });

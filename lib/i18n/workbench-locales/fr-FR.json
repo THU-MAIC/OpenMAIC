@@ -56,7 +56,11 @@
     "quotaExceeded": "Limite de téléversement de ressources atteinte.",
     "storageFull": "L’espace de stockage est plein. Impossible de téléverser cette ressource.",
     "uploadFailedShort": "Échec du téléversement",
-    "retryFailed": "Impossible de relancer l’analyse. Veuillez réessayer."
+    "retryFailed": "Impossible de relancer l’analyse. Veuillez réessayer.",
+    "stored": "Enregistrés dans la base de connaissances : {{count}}",
+    "view": "Voir",
+    "viewFolder": "Voir le dossier",
+    "viewTopLevel": "Voir le premier niveau"
   },
   "skill": {
     "listFailed": "Impossible de charger la liste des skills",

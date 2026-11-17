@@ -56,7 +56,11 @@
     "quotaExceeded": "Upload-Limit für Materialien erreicht.",
     "storageFull": "Der Speicherplatz ist voll. Dieses Material konnte nicht hochgeladen werden.",
     "uploadFailedShort": "Upload fehlgeschlagen",
-    "retryFailed": "Die Analyse konnte nicht neu gestartet werden. Bitte versuche es erneut."
+    "retryFailed": "Die Analyse konnte nicht neu gestartet werden. Bitte versuche es erneut.",
+    "stored": "In der Wissensdatenbank gespeichert: {{count}}",
+    "view": "Ansehen",
+    "viewFolder": "Ordner ansehen",
+    "viewTopLevel": "Oberste Ebene ansehen"
   },
   "skill": {
     "listFailed": "Die Skill-Liste konnte nicht geladen werden",

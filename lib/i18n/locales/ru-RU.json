@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "Для этого типа файлов не настроен сервис разбора. Попросите администратора настроить его."
+      },
+      "focus": {
+        "folderUnavailable": "Этой папки больше нет в базе знаний."
       }
     },
     "untitledCourse": "未命名课堂",

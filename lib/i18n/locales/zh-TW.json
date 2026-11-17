@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "尚未設定可處理此類檔案的解析服務，請聯絡管理員完成設定。"
+      },
+      "focus": {
+        "folderUnavailable": "這個資料夾已不在知識庫中。"
       }
     },
     "untitledCourse": "未命名课堂",

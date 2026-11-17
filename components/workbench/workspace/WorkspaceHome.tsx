@@ -34,11 +34,15 @@ import { useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import { OPENMAIC_GITHUB_URL } from '@/lib/workbench/shell-links';
 import { GITHUB_STARS_ENDPOINT, formatStarCount } from '@/lib/workbench/github-stars';
 import { useBrand, useIsDesktop } from '@/lib/brand/brand-context';
+import { cn } from '@/lib/utils/cn';
 import { ProLaunchPanel, type PromptSeed } from '@/components/workbench/ProLaunchPanel';
 import type { CourseMentionSource } from '@/lib/workbench/course-mention';
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
 
 export function WorkspaceHome({
+  hidden = false,
+  onViewInLibrary,
   composerReset,
   courseOptions,
   onOpenSession,
@@ -48,6 +52,8 @@ export function WorkspaceHome({
   promptSeed,
   onPromptSeedConsumed,
 }: {
+  readonly hidden?: boolean;
+  readonly onViewInLibrary?: (target: MaterialLibraryTarget) => void;
   readonly composerReset: number;
   /**
    * What the composer's `@` picker may name. The shell already has this list
@@ -73,7 +79,10 @@ export function WorkspaceHome({
     <main
       data-testid="pro-workspace-home"
       aria-label={t('workspace.homeAria')}
-      className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
+      className={cn(
+        'ws-canvas relative min-w-0 flex-1 flex-col overflow-y-auto',
+        hidden ? 'hidden' : 'flex',
+      )}
     >
       {/* Below `md` the sidebar is gone, so the brand needs a home. */}
       <div className="flex h-12 shrink-0 items-center px-4 md:hidden">
@@ -144,6 +153,7 @@ export function WorkspaceHome({
               gap is what says which of them the page is actually about. */}
           <div className="ws-enter ws-d2 mt-8">
             <ProLaunchPanel
+              onViewInLibrary={onViewInLibrary}
               autoFocus
               focusSignal={composerReset}
               variant="workspace"

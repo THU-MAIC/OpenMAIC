@@ -88,10 +88,18 @@ export interface WorkbenchCourseOption {
   readonly name: string;
 }
 
+/** Where a page link opens the knowledge base (#1924); transient, never in the URL. */
+export type MaterialLibraryTarget =
+  | { readonly kind: 'folder'; readonly folderId: string }
+  | { readonly kind: 'top-level' }
+  /** One source, opened the way a search pick is (the page's `locate`). */
+  | { readonly kind: 'material'; readonly materialId: string; readonly name: string };
+
 /**
  * Navigation capability supplied by `/workspace` to hosted chat content.
  */
 export interface WorkbenchCourseNavigation {
+  readonly openLibraryAt?: (target: MaterialLibraryTarget) => void;
   readonly openCourse: (courseId: string) => void;
   /** The one on screen; `null` when the right pane holds nothing. */
   readonly activeCourseId: string | null;

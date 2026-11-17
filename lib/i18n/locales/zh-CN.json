@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "尚未配置可处理此类文件的解析服务，请联系管理员完成配置。"
+      },
+      "focus": {
+        "folderUnavailable": "这个文件夹已不在知识库中。"
       }
     },
     "untitledCourse": "未命名课堂",

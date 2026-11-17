@@ -75,6 +75,7 @@ import {
   AtSignButton,
   AttachButton,
   MaterialChips,
+  StoredMaterialNotice,
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
@@ -1457,6 +1458,10 @@ export function WorkbenchChat({
                     />
                   </ComposerPillRow>
                 ) : null}
+                <StoredMaterialNotice
+                  materials={materials.uploadedMaterials}
+                  onView={navigation?.openLibraryAt}
+                />
                 {openMenu === 'skill' && slash !== null ? (
                   <SkillSlashMenu
                     key={slash}

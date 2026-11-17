@@ -32,6 +32,7 @@ import {
   composerTransferHasImages,
 } from '@/lib/workbench/composer-image-transfer';
 import { createWorkbenchSession, type WorkbenchMaterial } from '@/lib/workbench/session-store';
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import {
   COMPOSER_SEND_ARIA_KEYSHORTCUTS,
   composerKeyEventOf,
@@ -41,6 +42,7 @@ import {
   AtSignButton,
   AttachButton,
   MaterialChips,
+  StoredMaterialNotice,
   SkillButton,
   SkillSlashMenu,
   useComposerMaterials,
@@ -98,7 +100,10 @@ export function ProLaunchPanel({
   onMaterialSeedConsumed,
   promptSeed,
   onPromptSeedConsumed,
+  onViewInLibrary,
 }: {
+  /** Open the knowledge base page at an upload's location (#1924). */
+  onViewInLibrary?: (target: MaterialLibraryTarget) => void;
   autoFocus?: boolean;
   /** Increment to clear the draft/attachments and focus this existing composer. */
   focusSignal?: number;
@@ -550,6 +555,7 @@ export function ProLaunchPanel({
             />
           </ComposerPillRow>
         ) : null}
+        <StoredMaterialNotice materials={materials.uploadedMaterials} onView={onViewInLibrary} />
         <ComposerInput
           inputRef={inputRef}
           testId={PROMPT_TEST_ID}

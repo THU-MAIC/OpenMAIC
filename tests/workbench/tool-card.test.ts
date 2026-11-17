@@ -170,3 +170,50 @@ describe('tool output renders fenced, as data', () => {
     expect(host.textContent).not.toContain('fetched body must stay fenced');
   });
 });
+
+describe('material tool navigation (#1924)', () => {
+  const node: ChatNode = {
+    key: 'folder',
+    kind: 'tool',
+    text: '',
+    toolName: 'create_material_folder',
+    toolState: 'done',
+    toolDetails: { folderId: 'f' },
+  };
+  it('omits navigation outside a workspace host', () => {
+    expect(mount(node).querySelector('[data-testid="workbench-tool-library-link"]')).toBeNull();
+  });
+  it('renders a sibling button whose click navigates once without disclosure', async () => {
+    const { WorkbenchCourseNavigationProvider } = await import('@/lib/workbench/panel-context');
+    const openLibraryAt = vi.fn();
+    const host = document.createElement('div');
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    act(() =>
+      root.render(
+        // React's createElement overload requires the provider's children prop.
+        // eslint-disable-next-line react/no-children-prop
+        createElement(WorkbenchCourseNavigationProvider, {
+          navigation: {
+            openLibraryAt,
+            activeCourseId: null,
+            openCourse: () => {},
+            lookupCourse: () => null,
+            courseOptions: [],
+          },
+          children: createElement(ToolCard, { node }),
+        }),
+      ),
+    );
+    const link = host.querySelector<HTMLButtonElement>(
+      '[data-testid="workbench-tool-library-link"]',
+    )!;
+    const header = host.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    expect(link.parentElement).toBe(header.parentElement);
+    expect(link.parentElement!.closest('button')).toBeNull();
+    act(() => link.click());
+    expect(openLibraryAt).toHaveBeenCalledExactlyOnceWith({ kind: 'folder', folderId: 'f' });
+    expect(header.getAttribute('aria-expanded')).toBe('false');
+  });
+});

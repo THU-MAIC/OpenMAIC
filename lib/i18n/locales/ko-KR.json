@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "이 파일 형식에 맞는 분석 서비스가 설정되지 않았습니다. 관리자에게 설정을 요청하세요."
+      },
+      "focus": {
+        "folderUnavailable": "이 폴더는 더 이상 지식 베이스에 없습니다."
       }
     },
     "untitledCourse": "未命名课堂",

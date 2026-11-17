@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "Não há um serviço de análise configurado para este tipo de arquivo. Peça a um administrador para configurá-lo."
+      },
+      "focus": {
+        "folderUnavailable": "Esta pasta não está mais na base de conhecimento."
       }
     },
     "untitledCourse": "未命名课堂",

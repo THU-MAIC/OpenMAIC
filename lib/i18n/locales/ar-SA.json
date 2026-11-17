@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "لم تُهيأ خدمة تحليل لهذا النوع من الملفات. اطلب من المسؤول تهيئتها."
+      },
+      "focus": {
+        "folderUnavailable": "لم يعد هذا المجلد موجودًا في قاعدة المعرفة."
       }
     },
     "untitledCourse": "未命名课堂",

@@ -2388,6 +2388,9 @@
       },
       "conversationFailure": {
         "serviceUnavailable": "この種類のファイルに対応する解析サービスが設定されていません。管理者に設定を依頼してください。"
+      },
+      "focus": {
+        "folderUnavailable": "このフォルダーはナレッジベースにありません。"
       }
     },
     "untitledCourse": "未命名课堂",

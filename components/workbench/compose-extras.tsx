@@ -37,6 +37,7 @@ import {
   materialMentionCandidates,
   type MaterialMentionCandidate,
 } from '@/lib/workbench/material-mention';
+import type { MaterialLibraryTarget } from '@/lib/workbench/panel-context';
 import { ComposerPill, ComposerPillAction, ComposerPillRow } from './composer-pill';
 import { MaterialKindIcon } from './material-kind';
 
@@ -293,6 +294,8 @@ export interface ComposerMaterials {
   /** The gate has answered, either way (`enabled` alone cannot tell "not yet" from "no"). */
   enabledKnown: boolean;
   materials: WorkbenchMaterial[];
+  /** Still staged materials stored by an upload in this draft. */
+  uploadedMaterials: readonly WorkbenchMaterial[];
   /**
    * Files picked but not yet settled, in pick order. Every entry is rendered
    * as a chip with its upload progress immediately; uploads settle each entry by id, so
@@ -419,6 +422,7 @@ export function useComposerMaterials(
   // Include picks queued before the next render, retaining the current object
   // so a completed send cannot remove a later pick with the same id.
   const stagedObjects = useRef(new Set(initial.current));
+  const uploaded = useRef(new Set<string>());
   const seq = useRef(0);
   const slotLedger = useRef(new MaterialSlotLedger(initial.current.length));
   const identityGate = useRef(createMaterialUploadIdentityGate());
@@ -454,6 +458,7 @@ export function useComposerMaterials(
         );
         succeeded = true;
         if (draft.current === pickedIn) {
+          uploaded.current.add(staged.materialId);
           stagedObjects.current.add(staged);
           setMaterials((current) => [...current, staged]);
         }
@@ -591,6 +596,11 @@ export function useComposerMaterials(
     enabled,
     enabledKnown: gate !== 'pending',
     materials,
+    uploadedMaterials: materials.filter(
+      (m, i) =>
+        uploaded.current.has(m.materialId) &&
+        materials.findIndex((other) => other.materialId === m.materialId) === i,
+    ),
     uploading,
     failed,
     extraction,
@@ -599,6 +609,7 @@ export function useComposerMaterials(
     addFiles,
     addExisting,
     remove: (materialId) => {
+      uploaded.current.delete(materialId);
       for (const item of stagedObjects.current) {
         if (item.materialId === materialId) {
           stagedObjects.current.delete(item);
@@ -613,6 +624,7 @@ export function useComposerMaterials(
       for (const item of snapshot) {
         if (stagedObjects.current.delete(item)) {
           slotLedger.current.removeCompleted();
+          uploaded.current.delete(item.materialId);
         }
       }
       // The updater is pure: StrictMode replay cannot release a slot twice.
@@ -622,12 +634,14 @@ export function useComposerMaterials(
       // Uploads are not cancelled by clear. Keep their reservations so a late
       // success remains counted when its pill appears after this reset.
       stagedObjects.current.clear();
+      uploaded.current.clear();
       slotLedger.current.clearCompleted();
       setMaterials([]);
       setFailed([]);
     },
     startOver: () => {
       draft.current += 1;
+      uploaded.current.clear();
       stagedObjects.current.clear();
       // A fresh ledger: uploads in flight settle into the old one.
       slotLedger.current = new MaterialSlotLedger(0);
@@ -831,6 +845,49 @@ export function SkillButton({
         {label}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * One upload is located the way a search pick is (`locate`); several land
+ * together in the top level, newest first, so the page opens there.
+ */
+export function storedMaterialsTarget(
+  materials: readonly WorkbenchMaterial[],
+): MaterialLibraryTarget | undefined {
+  if (materials.length === 0) return;
+  if (materials.length > 1) return { kind: 'top-level' };
+  const [{ materialId, name }] = materials;
+  return { kind: 'material', materialId, name };
+}
+
+export function StoredMaterialNotice({
+  materials,
+  onView,
+}: {
+  readonly materials: readonly WorkbenchMaterial[];
+  readonly onView?: (target: MaterialLibraryTarget) => void;
+}) {
+  const { t } = useI18n();
+  const target = storedMaterialsTarget(materials);
+  if (!onView || !target) return null;
+  return (
+    <p data-testid="composer-stored-materials" className="px-3 pb-2 text-xs text-muted-foreground">
+      {t('workbench.material.stored', { count: materials.length })}
+      {' · '}
+      <button
+        type="button"
+        className="underline hover:text-foreground"
+        onClick={(event) => {
+          // Surrender the opener's focus before its composer is hidden. React
+          // effects can run before the browser fixes focus on display:none.
+          event.currentTarget.blur();
+          onView(target);
+        }}
+      >
+        {t('workbench.material.view')}
+      </button>
+    </p>
   );
 }
 

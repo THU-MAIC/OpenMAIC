@@ -117,6 +117,7 @@ import {
   WORKSPACE_COURSES_VIEW,
   WORKSPACE_LIBRARY_VIEW,
   withSession,
+  workspaceLayout,
   type WorkspacePanes,
 } from '@/lib/workbench/workspace-panes';
 import { useWorkspacePaneNavigation } from '@/lib/workbench/use-workspace-pane-navigation';
@@ -128,7 +129,7 @@ import {
   rememberWorkspaceSession,
   validateRememberedWorkspaceSession,
 } from '@/lib/workbench/workspace-session-memory';
-import type { WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
+import type { MaterialLibraryTarget, WorkbenchCourseSummary } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore, type WorkbenchMaterial } from '@/lib/workbench/session-store';
 import { renameWorkbenchSession } from '@/lib/workbench/session-store';
 import { commitSessionRename, createSessionRenameQueue } from '@/lib/workbench/session-title';
@@ -319,7 +320,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * base page over it keeps the visit; every other move -- leaving the page,
    * home again, a conversation, a classroom -- starts a new one. A home
    * message answered after its composer left belongs only to the visit it
-   * was sent in (`openCreatedSessionAfterLeaving`).
+   * was sent in (`openCreatedSessionAfterLeaving`). The knowledge base page
+   * only hides the home composer, so a message sent before a page link was
+   * followed is still answered by that composer (`openCreatedSession`).
    */
   const surface =
     panes.sessionId !== null || panes.courseId !== null
@@ -723,7 +726,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     readonly used: boolean;
   }>({ sessionId: null, requestKey: null, used: true });
 
-  /** The home composer's conversation exists now, the composer still on screen. */
+  /** The home composer's conversation exists now, the composer still mounted. */
   const openCreatedSession = useCallback(
     (sessionId: string) => {
       setHomeRequest({ sessionId, requestKey: null, used: false });
@@ -860,6 +863,31 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         materialId: material.materialId,
         name: material.name,
       }));
+      openView(WORKSPACE_LIBRARY_VIEW);
+    },
+    [openView],
+  );
+  /**
+   * A page link from a composer upload or a tool row (#1924): the page opens
+   * over what it came from, which stays mounted. One source is located like a
+   * search pick; a folder or the top level is the page's own `initialFocus`.
+   * Held in memory only, never in the URL.
+   */
+  const [libraryLink, setLibraryLink] = useState<MaterialLibraryTarget | null>(null);
+  // Leaving the page (its Back, the rail, browser Back) ends both targets, so
+  // a later visit opens the page plainly; Forward is an ordinary page visit.
+  if (panes.view !== WORKSPACE_LIBRARY_VIEW && (libraryLink !== null || locatedMaterial !== null)) {
+    setLibraryLink(null);
+    setLocatedMaterial(null);
+  }
+  const openLibraryAt = useCallback(
+    (target: MaterialLibraryTarget) => {
+      setLibraryLink(target);
+      setLocatedMaterial((current) =>
+        target.kind === 'material'
+          ? { key: (current?.key ?? 0) + 1, materialId: target.materialId, name: target.name }
+          : null,
+      );
       openView(WORKSPACE_LIBRARY_VIEW);
     },
     [openView],
@@ -1864,12 +1892,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const courseNavigation = useMemo(
     () => ({
       openCourse,
+      openLibraryAt,
       activeCourseId: panes.courseId,
       lookupCourse,
       courseOptions,
       generatingCourseIds,
     }),
-    [courseOptions, generatingCourseIds, lookupCourse, openCourse, panes.courseId],
+    [courseOptions, generatingCourseIds, lookupCourse, openCourse, openLibraryAt, panes.courseId],
   );
 
   // The preview of the first request the home composer started on this page
@@ -2162,8 +2191,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
         />
       ) : null}
 
-      {render.home ? (
+      {/* Under the knowledge base page the home composer stays mounted,
+          hidden, so its draft and staged files are there on the way back. */}
+      {render.home ||
+      (render.view === WORKSPACE_LIBRARY_VIEW && workspaceLayout(panes) === 'home') ? (
         <WorkspaceHome
+          hidden={!render.home}
+          onViewInLibrary={openLibraryAt}
           composerReset={composerReset}
           // The home composer's `@` picker names courses from the same one list
           // the rail and the conversation composer use.
@@ -2186,6 +2220,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           onChatWithMaterial={chatWithMaterial}
           onLeave={leaveView}
           locate={locatedMaterial}
+          initialFocus={libraryLink?.kind === 'material' ? undefined : (libraryLink ?? undefined)}
+          showBack={libraryLink !== null}
         />
       ) : render.view === WORKSPACE_COURSES_VIEW ? (
         <WorkspaceCoursesPage
