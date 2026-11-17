@@ -48,8 +48,8 @@ export function useProjectEditor(
     mounted = useRef(true);
   const inFlight = useRef<Promise<void> | null>(null),
     failed = useRef(false);
-  const retrySave = useRef<{ name: string; buffer: EditorBuffer; request: FileSaveRequest } | null>(
-    null,
+  const retrySaves = useRef(
+    new Map<string, { name: string; buffer: EditorBuffer; request: FileSaveRequest }>(),
   );
   const unavailableSave = useRef<{ name: string; environment: string } | null>(null);
   const current = useRef({
@@ -146,13 +146,13 @@ export function useProjectEditor(
         const existing = current.current.buffers[path];
         const clearRecoveredFailure = () => {
           const rejected = unavailableSave.current,
-            retry = retrySave.current;
+            retry = retrySaves.current.get(path);
           if (
             (rejected?.name === path && rejected.environment === existing?.environment) ||
             (retry?.name === path && retry.buffer.environment === existing?.environment)
           ) {
             unavailableSave.current = null;
-            retrySave.current = null;
+            retrySaves.current.delete(path);
             failed.current = false;
             setSaveError('');
           }
@@ -167,7 +167,7 @@ export function useProjectEditor(
         // Server updates and Agent writes refresh clean documents; a late read never erases typing.
         if (!discard && existing && existing.text !== existing.saved) {
           const rejected = unavailableSave.current;
-          const retry = retrySave.current;
+          const retry = retrySaves.current.get(path);
           if (existing.environment === editorSource(view) && rejected?.name !== path) return;
           const savedSubmission =
             result.text === existing.text ||
@@ -216,7 +216,7 @@ export function useProjectEditor(
             unavailableSave.current.environment === existing?.environment)
         ) {
           failed.current = false;
-          retrySave.current = null;
+          retrySaves.current.delete(path);
           unavailableSave.current = null;
           setSaveError('');
         }
@@ -296,13 +296,15 @@ export function useProjectEditor(
           readErrors,
         } = current.current;
         if (!options.enabled) return;
-        const retry = retrySave.current;
+        // Keep each uncertain submission intact while another file can save.
+        const retry = Array.from(retrySaves.current.values()).find(
+          (entry) => readErrors[entry.name]?.source !== editorSource(view),
+        );
         if (
           retry &&
           (retry.buffer.environment !== editorSource(view) ||
             !view.files.includes(retry.name) ||
             recoveryConflicts[retry.name] === editorSource(view) ||
-            readErrors[retry.name]?.source === editorSource(view) ||
             !options.canEdit(retry.name))
         )
           return;
@@ -323,12 +325,12 @@ export function useProjectEditor(
         if (!name) return;
         const buffer = retry?.buffer ?? buffers[name];
         const request = retry?.request ?? { id: crypto.randomUUID() };
-        retrySave.current = { name, buffer, request };
+        retrySaves.current.set(name, { name, buffer, request });
         unavailableSave.current = null;
         setSaving(true);
         try {
           const receipt = await onSave(name, buffer.text, buffer.hash, request);
-          retrySave.current = null;
+          retrySaves.current.delete(name);
           unavailableSave.current = null;
           // Acknowledgements update the submitted base, never the newer local value.
           const cached = readEditorDraft(view.id);
@@ -374,7 +376,7 @@ export function useProjectEditor(
               'ENVIRONMENT_CHANGED',
             ].includes(error.reason ?? '')
           ) {
-            retrySave.current = null;
+            retrySaves.current.delete(name);
             if (['ENVIRONMENT_UNAVAILABLE', 'ENVIRONMENT_CHANGED'].includes(error.reason ?? ''))
               unavailableSave.current = { name, environment: buffer.environment };
           }
@@ -413,10 +415,10 @@ export function useProjectEditor(
   };
   const close = (name: string) => {
     if (
-      (retrySave.current?.name === name || unavailableSave.current?.name === name) &&
+      (retrySaves.current.has(name) || unavailableSave.current?.name === name) &&
       !inFlight.current
     ) {
-      retrySave.current = null;
+      retrySaves.current.delete(name);
       failed.current = false;
       unavailableSave.current = null;
       setSaveError('');

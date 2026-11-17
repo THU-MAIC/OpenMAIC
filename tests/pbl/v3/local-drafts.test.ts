@@ -927,3 +927,79 @@ it('blocks a dirty failed file when another save completes in the same React bat
   expect(editor.buffer?.text).toBe('Unsaved plan');
   expect(editor.dirty('PLAN.md')).toBe(true);
 });
+
+it.each(['reload', 'close'] as const)(
+  'saves healthy files past a read-blocked retry and retains it after %s of another file',
+  async (action) => {
+    vi.useFakeTimers();
+    const value = view(`blocked-retry-${action}`);
+    await mount(createElement(Editor, { value }));
+    save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+    await act(async () => editor.edit('Submitted plan'));
+    await act(async () => editor.save());
+    await act(async () => editor.edit('Newer plan'));
+    read.mockRejectedValueOnce(new Error('Plan read failed'));
+    await act(async () => editor.reload());
+    await act(async () => editor.select('main.py'));
+    await act(async () => editor.edit('Healthy code'));
+    // Preserve the existing explicit retry requirement after a failed write.
+    await act(async () => vi.advanceTimersByTimeAsync(1500));
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => editor.save());
+    expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ['PLAN.md', 'Submitted plan'],
+      ['main.py', 'Healthy code'],
+    ]);
+    await act(async () => editor.edit('Later healthy code'));
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save.mock.calls[2]?.slice(0, 2)).toEqual(['main.py', 'Later healthy code']);
+    if (action === 'reload') await act(async () => editor.reload());
+    else await act(async () => editor.close('main.py'));
+    // The restored file confirms the earlier submission, not the newer local text.
+    read.mockImplementationOnce(async () => ({ text: 'Submitted plan', hash: 'c'.repeat(64) }));
+    if (action === 'reload') await act(async () => editor.select('PLAN.md'));
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(value.id, 'environment-two') })),
+    );
+    expect(editor.buffer?.text).toBe('Newer plan');
+    expect(editor.buffer?.saved).toBe('Submitted plan');
+    expect(editor.recoveryConflict).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save.mock.calls[3]?.slice(0, 3)).toEqual(['PLAN.md', 'Newer plan', 'c'.repeat(64)]);
+    expect(editor.anyDirty).toBe(false);
+  },
+);
+
+it('retains multiple uncertain submissions while a read-blocked retry is skipped', async () => {
+  vi.useFakeTimers();
+  await mount(
+    createElement(Editor, {
+      value: { ...view('multiple-uncertain-saves'), files: ['PLAN.md', 'main.py', 'other.py'] },
+    }),
+  );
+  save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+  await act(async () => editor.edit('Submitted plan'));
+  await act(async () => editor.save());
+  read.mockRejectedValueOnce(new Error('Plan read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Submitted code'));
+  save.mockRejectedValueOnce(new Error('Code acknowledgement lost'));
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(2);
+  const codeRequest = save.mock.calls[1]![3];
+  await act(async () => editor.edit('Newer code'));
+  await act(async () => editor.select('other.py'));
+  await act(async () => editor.edit('Other code'));
+  await act(async () => editor.save());
+  expect(save.mock.calls.slice(2).map((call) => call.slice(0, 3))).toEqual([
+    ['main.py', 'Submitted code', 'a'.repeat(64)],
+    ['other.py', 'Other code', 'a'.repeat(64)],
+    ['main.py', 'Newer code', 'b'.repeat(64)],
+  ]);
+  expect(save.mock.calls[2]![3]).toBe(codeRequest);
+  expect(save.mock.calls.filter((call) => call[0] === 'PLAN.md')).toHaveLength(1);
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.buffer?.text).toBe('Submitted plan');
+  expect(editor.readError).toBe('Plan read failed');
+});
