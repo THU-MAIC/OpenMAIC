@@ -14,7 +14,7 @@ import {
   type SceneGenerationContext,
 } from '@openmaic/generation';
 
-import { putSceneBringingCurrent } from './document-writes';
+import { putSceneBringingCurrent, putSceneReversioning } from './document-writes';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -523,7 +523,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       if (!built) return result('Page assembly failed; nothing was written.', {}, true);
       const scene = built as Scene;
       await runStageMutation(signal, () =>
-        putSceneBringingCurrent(deps.store, params.stageId, scene),
+        putSceneReversioning(deps.store, params.stageId, scene, doc.stage),
       );
       const skill = deps.getActiveSkill?.() ?? null;
       const afterWrite = await deps.store.loadDocument(params.stageId);

@@ -47,3 +47,33 @@ export async function putSceneBringingCurrent(
     await store.saveDocument({ ...doc, scenes });
   }
 }
+
+/**
+ * {@link putSceneBringingCurrent} for a write that changes what the course
+ * looks like from the outside — a regenerated or patched page, whose title or
+ * widget kind the home cover cache renders, or a canvas the first-slide
+ * thumbnail renders. A scene write alone does not move the stage row, and the
+ * library derives its version (and the cover cache its key) from
+ * `stage.updatedAt`, so the write re-versions the stage too, exactly as
+ * `rename_stage` does. `stage` is the row the caller loaded the document with;
+ * nothing but `updatedAt` is taken from it.
+ */
+export async function putSceneReversioning(
+  store: DocumentStore<Scene, Stage>,
+  stageId: string,
+  scene: Scene,
+  stage: Stage,
+): Promise<void> {
+  await putSceneBringingCurrent(store, stageId, scene);
+  await store.putStage(stageId, { ...stage, updatedAt: reversionStamp(stage) });
+}
+
+/**
+ * The next version of a course the caller loaded at `stage`: now, but never
+ * equal to or behind the loaded row — two edits inside one millisecond must
+ * still advance the version, or the cover cache reads the second as the first
+ * and keeps serving the old cover.
+ */
+export function reversionStamp(loaded: Pick<Stage, 'updatedAt'>): number {
+  return Math.max(Date.now(), loaded.updatedAt + 1);
+}

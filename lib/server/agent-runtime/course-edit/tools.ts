@@ -5,7 +5,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
 import { matchOutlineEntries } from '../course-outline-union';
-import { putSceneBringingCurrent } from '../document-writes';
+import { putSceneBringingCurrent, reversionStamp } from '../document-writes';
 import { createBlankScene } from './apply';
 import type { CourseToolDeps } from '../course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from '../course-stage';
@@ -193,6 +193,9 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
         await runStageMutation(signal, () =>
           deps.store.saveDocument({
             ...doc,
+            // A retitle changes the course's cover; re-version it (rename_stage
+            // does the same), or the library keeps the cover cache's old key.
+            stage: { ...doc.stage, updatedAt: reversionStamp(doc.stage) },
             scenes: scenes.map((item) => (item.id === scene.id ? next : item)),
             outline: nextOutline ? { ...outline, outlines: nextOutline } : doc.outline,
           }),
@@ -218,6 +221,8 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
         await runStageMutation(signal, () =>
           deps.store.saveDocument({
             ...doc,
+            // An insert can change which page is first (the cover); re-version.
+            stage: { ...doc.stage, updatedAt: reversionStamp(doc.stage) },
             scenes: [...shifted.scenes, created].sort((a, b) => a.order - b.order),
             outline: shifted.outline,
           }),
@@ -242,7 +247,13 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
           outline,
         );
         await runStageMutation(signal, () =>
-          deps.store.saveDocument({ ...doc, scenes: next.scenes, outline: next.outline }),
+          deps.store.saveDocument({
+            ...doc,
+            // A delete can change which page is first (the cover); re-version.
+            stage: { ...doc.stage, updatedAt: reversionStamp(doc.stage) },
+            scenes: next.scenes,
+            outline: next.outline,
+          }),
         );
         deps.onCheckpoint({
           tool: 'edit_deck',
@@ -262,7 +273,13 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
       ordered.push(...scenes.filter((scene) => byId.has(scene.id)));
       const next = renumberCourseOrders(ordered, outline);
       await runStageMutation(signal, () =>
-        deps.store.saveDocument({ ...doc, scenes: next.scenes, outline: next.outline }),
+        deps.store.saveDocument({
+          ...doc,
+          // A reorder can change which page is first (the cover); re-version.
+          stage: { ...doc.stage, updatedAt: reversionStamp(doc.stage) },
+          scenes: next.scenes,
+          outline: next.outline,
+        }),
       );
       deps.onCheckpoint({ tool: 'edit_deck', stageId: params.stageId, detail: 'reordered pages' });
       return result('Reordered pages.', {
