@@ -157,8 +157,12 @@ test.describe('Mobile classroom with the shared playback surface', () => {
       stage: { ...guide.stage, id },
       scenes: guide.scenes.map((scene) => ({ ...scene, stageId: id })),
     });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/workspace?course=${id}`);
+    await expect(page.locator('[data-playback-stage]')).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId('mobile-classroom-nav')).toBeVisible();
+    await expect(page.locator('.mobile-roundtable-input textarea')).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath('workspace-lesson-390.png') });
     await page.locator('.mobile-roundtable-input textarea').fill('Keep this workspace question');
     await page.setViewportSize({ width: 844, height: 390 });

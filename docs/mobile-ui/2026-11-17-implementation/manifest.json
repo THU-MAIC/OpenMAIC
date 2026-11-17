@@ -1,34 +1,34 @@
 {
   "01-lesson-390.png": {
-    "sha256": "bdae9ac6da8ada83e15e02bd4325cdfca3733af7343d411c1e59a5e175222695",
-    "bytes": 104638
+    "sha256": "358bd540ed539f1f289f122548e2ad6519507c05036f501d611b82e8e90c20af",
+    "bytes": 105214
   },
   "02-lesson-844.png": {
-    "sha256": "35500ae03cdf8d2fc1fadea26c32f848023ae3b41421f435c3171d192d4d5b52",
-    "bytes": 97141
+    "sha256": "c00deaa1bcb790a8690073fe059f85b74109153e77e2a907e7db971b316ff27c",
+    "bytes": 93683
   },
   "03-quiz-390.png": {
-    "sha256": "409fc189ea89495a0aa684890b21d4ea7e114d844b5c884c21df8d51ed4e66be",
-    "bytes": 71137
+    "sha256": "68cf49dad0048cadece9f7821f7916eb030769a0e6ad0292a2a4de14a812c984",
+    "bytes": 71200
   },
   "04-quiz-844.png": {
-    "sha256": "9436f74de0789537536a87bc9274639ce9ee15a7270ed618899d61093038b2cb",
-    "bytes": 39909
+    "sha256": "c19d1f9a94e79883b05cbe0924d651986a35ad3c25be1cb52cbb247fbfcc9b06",
+    "bytes": 39905
   },
   "05-interactive-390.png": {
-    "sha256": "e5c079de692b03a96fe8a70fe611c9d5e94b4cffd014e06cbdfc1de3a59d9fe6",
-    "bytes": 97025
+    "sha256": "51225a4a75a364385fd9b7218f1e4adcbf7c4b719d24e2f0bf7f001fc8596d6b",
+    "bytes": 91066
   },
   "06-interactive-844.png": {
-    "sha256": "cf8b21da9b3efab24db1a2b990efde6b4c7e0e44de5db41428e7d962f810b734",
-    "bytes": 62866
+    "sha256": "f99befdccc4696db72621a7bbc67852c94d0a2265c8734c899dc0f173d7770ad",
+    "bytes": 62845
   },
   "07-course-end-390.png": {
-    "sha256": "c89a6589f9280b97efdf21453cd9a23a064ee62231f5d2620262680d419470cf",
-    "bytes": 136402
+    "sha256": "6f089fbc4d45e1e0f0501ff2666be5c1f1cd2cc8725c521b14442aa7748548f1",
+    "bytes": 131065
   },
   "08-course-end-844.png": {
-    "sha256": "92712c902d300376ac4c035ec34785f88aee4fce54db67f4e24db27da7de6c7b",
-    "bytes": 88911
+    "sha256": "d7eb09c3b669ee36ca2fadb4e9d8163703cdd86377ad2fdbb0f79bcffe9d8269",
+    "bytes": 81642
   }
 }
