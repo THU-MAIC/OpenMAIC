@@ -1,7 +1,7 @@
 import { authorizeMediaModel } from '@/lib/server/model-config/media';
 import { modelAuthorizationResponse } from '@/lib/server/api-response';
 import { NextRequest } from 'next/server';
-import { transcribeAudio } from '@/lib/audio/asr-providers';
+import { ASRInputLimitError, transcribeAudio } from '@/lib/audio/asr-providers';
 import {
   isServerConfiguredProvider,
   isServerProviderDisabled,
@@ -101,6 +101,10 @@ export async function POST(req: NextRequest) {
       `Transcription failed [provider=${resolvedProviderId ?? 'unknown'}, model=${resolvedModelId ?? 'default'}]:`,
       error,
     );
+    // Over the provider's size/duration limit: tell the user what to change.
+    if (error instanceof ASRInputLimitError) {
+      return apiError('ASR_INPUT_TOO_LARGE', 413, error.message);
+    }
     const blocked = findUnsafeNetworkTargetError(error);
     if (blocked) {
       return apiError('INVALID_URL', 403, blocked.message);

@@ -164,6 +164,19 @@ import {
 /**
  * Result of ASR transcription
  */
+
+/**
+ * The audio is valid but exceeds a provider's documented per-request limit
+ * (size or duration). Its message is written for the end user, so the
+ * transcription route returns it as is instead of a generic failure.
+ */
+export class ASRInputLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ASRInputLimitError';
+  }
+}
+
 export interface ASRTranscriptionResult {
   text: string;
 }
@@ -831,7 +844,7 @@ async function transcribeDeepSeekASR(
     );
   }
   if (bytes.byteLength > MAX_DEEPSEEK_ASR_BYTES) {
-    throw new Error(
+    throw new ASRInputLimitError(
       `DeepSeek ASR accepts at most 8 MiB of audio per request ` +
         `(${(bytes.byteLength / 1024 / 1024).toFixed(1)} MiB). Record a shorter clip.`,
     );
@@ -847,7 +860,7 @@ async function transcribeDeepSeekASR(
     seconds = oggOpusDurationSeconds(bytes);
   }
   if (seconds !== null && seconds > MAX_DEEPSEEK_ASR_SECONDS) {
-    throw new Error(
+    throw new ASRInputLimitError(
       `DeepSeek ASR accepts at most ${MAX_DEEPSEEK_ASR_SECONDS} seconds of audio per request ` +
         `(${Math.ceil(seconds)} s). Record a shorter clip.`,
     );
