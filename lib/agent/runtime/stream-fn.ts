@@ -46,6 +46,8 @@ import {
   type ToolCallProviderMetadata,
 } from './provider-metadata';
 import { replayToolCallArguments, toolCallArguments } from './tool-call-arguments';
+import { requestStateTail } from './request-state-tail';
+import { hostStateTailMessage } from '@/lib/ai/request-state-tail';
 
 /**
  * Local re-implementation of pi-ai's `AssistantMessageEventStream` queue. pi
@@ -444,11 +446,14 @@ async function pump(
       {
         model: opts.languageModel,
         system: context.systemPrompt,
-        messages: toModelMessages(context.messages, {
-          includeReasoning: preservesReasoningForModel(opts.languageModel),
-          includeToolImages: opts.supportsToolImages,
-          includeUserImages: opts.includeUserImages,
-        }),
+        messages: [
+          ...toModelMessages(context.messages, {
+            includeReasoning: preservesReasoningForModel(opts.languageModel),
+            includeToolImages: opts.supportsToolImages,
+            includeUserImages: opts.includeUserImages,
+          }),
+          ...(requestStateTail(context) ? [hostStateTailMessage(requestStateTail(context))] : []),
+        ],
         tools: toAiTools(context.tools ?? []),
         toolChoice: 'auto',
         // pi's loop owns multi-step; one LLM turn per streamFn call.

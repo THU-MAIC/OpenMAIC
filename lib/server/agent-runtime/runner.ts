@@ -2159,15 +2159,27 @@ async function executeSession(
             }),
         });
         adoptPreload(preload, true);
-        if (preload.messages.length === 0 && plannedStart.durableMessageSeq === undefined) {
+        const promptMessage = preloadUserMessage(preload.text);
+        const deliveredPrompt =
+          plannedStart.durableMessageSeq === undefined
+            ? promptMessage
+            : tagDurableUserMessage(promptMessage, plannedStart.durableMessageSeq);
+        // PBL has already read the initial plan. Retain that real observation
+        // once, through the same fenced message path as an explicit skill read.
+        const filePreload =
+          teaching?.preloadMessages([...agent.state.messages, deliveredPrompt], {
+            api: driver.piModel.api,
+            provider: driver.piModel.provider,
+            id: driver.piModel.id,
+          }) ?? [];
+        if (
+          preload.messages.length === 0 &&
+          filePreload.length === 0 &&
+          plannedStart.durableMessageSeq === undefined
+        ) {
           await agent.prompt(preload.text);
         } else {
-          const promptMessage = preloadUserMessage(preload.text);
-          const deliveredPrompt =
-            plannedStart.durableMessageSeq === undefined
-              ? promptMessage
-              : tagDurableUserMessage(promptMessage, plannedStart.durableMessageSeq);
-          await agent.prompt([deliveredPrompt, ...preload.messages]);
+          await agent.prompt([deliveredPrompt, ...preload.messages, ...filePreload]);
         }
       } else {
         // ── Resume repair ─────────────────────────────────────────────────────
@@ -2215,8 +2227,14 @@ async function executeSession(
             }),
         });
         adoptPreload(repair, false);
-        if (repair.messages.length > 0) {
-          await agent.prompt(repair.messages);
+        const filePreload =
+          teaching?.preloadMessages(agent.state.messages, {
+            api: driver.piModel.api,
+            provider: driver.piModel.provider,
+            id: driver.piModel.id,
+          }) ?? [];
+        if (repair.messages.length > 0 || filePreload.length > 0) {
+          await agent.prompt([...repair.messages, ...filePreload]);
         } else {
           if (plan.kind === 'already-complete') await repairTeachingStop();
           await agent.continue();

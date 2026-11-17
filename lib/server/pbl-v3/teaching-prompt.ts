@@ -1,3 +1,4 @@
+import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
 import 'server-only';
 import { communicationRules, type ResponseLanguage } from './communication';
 import type {
@@ -173,7 +174,7 @@ function buildTeachingPrompt({
     workspace,
     uiLocale: communication.uiLocale,
   });
-  return (
+  const systemPrompt =
     buildSystemPrompt({
       role: role,
       seed: {
@@ -184,7 +185,6 @@ function buildTeachingPrompt({
         ...(welcome === 'pending' ? {} : seed),
         projectContext: { title: definition.title, language: definition.language },
         stageEntry: {
-          automatic: automaticEntry,
           firstMilestone: milestoneIndex === 0,
           step: stageIndex + 1,
           totalSteps: milestone.stages.length,
@@ -198,35 +198,10 @@ function buildTeachingPrompt({
             : milestoneIndex + 1 < definition.milestones.length
               ? 'next_milestone'
               : 'project_complete',
-          completionRecorded,
           confirmation,
         },
         milestone: { id: milestone.id, title: milestone.title },
         goal: milestone.goal ?? milestone.title,
-        ...(guided
-          ? {
-              teachingContext: {
-                stageKey: stageKey,
-                completionRecorded,
-                welcome,
-                welcomePresented,
-                artifactApprovalRequired,
-                ...(artifactApprovalRequired ? { priorArtifactApproval } : {}),
-                feedbackSource,
-                activeSection: activeSection || null,
-                nextSection:
-                  welcome === 'pending' && activeSection
-                    ? activeSection
-                    : (skill.progression[reviewedSectionCount + (activeSection ? 2 : 1)] ?? null),
-                finalSection: skill.progression.at(-1)!,
-              },
-            }
-          : {}),
-        ...(guided && pendingReview
-          ? {
-              currentReview: teachingReview(pendingReview),
-            }
-          : {}),
         ...(stage.kind === 'check'
           ? {
               assessmentContext: {
@@ -324,8 +299,40 @@ function buildTeachingPrompt({
           ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls. Ordinary tests/quizzes have no learner chat: do not invite a message; answer repair questions only when productContext.current.chatSupported is true.'
           : '\nFocus decision guidance on the current offered decisions. The learner records choices using the project controls. Project knowledge and product help remain available.') +
     '\n' +
-    productHelpRules
-  );
+    productHelpRules +
+    '\n' +
+    HOST_STATE_TAIL_RULES;
+  const initialContext =
+    '\nInitial teaching state: ' +
+    JSON.stringify({
+      stageEntry: { automatic: automaticEntry },
+      learningRoadmap: { completionRecorded },
+      ...(guided
+        ? {
+            teachingContext: {
+              stageKey: stageKey,
+              completionRecorded,
+              welcome,
+              welcomePresented,
+              artifactApprovalRequired,
+              ...(artifactApprovalRequired ? { priorArtifactApproval } : {}),
+              feedbackSource,
+              activeSection: activeSection || null,
+              nextSection:
+                welcome === 'pending' && activeSection
+                  ? activeSection
+                  : (skill.progression[reviewedSectionCount + (activeSection ? 2 : 1)] ?? null),
+              finalSection: skill.progression.at(-1)!,
+            },
+          }
+        : {}),
+      ...(guided && pendingReview
+        ? {
+            currentReview: teachingReview(pendingReview),
+          }
+        : {}),
+    });
+  return { systemPrompt, initialContext };
 }
 
 /** Learner text belongs to durable conversation history. */
@@ -444,7 +451,7 @@ export function teachingLiveSuffix(live: string): string {
  * Learner history is managed separately by the teaching context window.
  */
 export function renderTeachingPrompt(input: TeachingPromptInput) {
-  const systemPrompt = buildTeachingPrompt(input);
+  const { systemPrompt, initialContext } = buildTeachingPrompt(input);
   const sections =
     input.stage.kind === 'produce' || input.stage.kind === 'mentor_say'
       ? input.skill.progression
@@ -454,9 +461,11 @@ export function renderTeachingPrompt(input: TeachingPromptInput) {
   const sectionBytes = sections.length ? Buffer.byteLength(JSON.stringify(sections)) : 0;
   return {
     systemPrompt,
+    initialContext,
     sectionBytes,
     bytes:
-      Buffer.byteLength(systemPrompt + teachingLiveSuffix(teachingLiveContext(input))) +
-      sectionBytes,
+      Buffer.byteLength(
+        systemPrompt + initialContext + teachingLiveSuffix(teachingLiveContext(input)),
+      ) + sectionBytes,
   };
 }
