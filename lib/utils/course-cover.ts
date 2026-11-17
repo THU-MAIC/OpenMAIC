@@ -1,9 +1,14 @@
 import type { Slide, WidgetType } from '@openmaic/dsl';
 
+import type { Scene } from '@/lib/types/stage';
+
 /**
  * The static cover of an interactive page: its title and widget kind, read
- * from the scene record — a picture of the page, never the page itself (its
- * HTML is not run, see `components/discovery/interactive-cover.tsx`).
+ * from the scene record — a picture of the page, never the page itself (the
+ * live cover renders the page in a sandboxed iframe, see
+ * `components/discovery/live-interactive-cover.tsx`). This is the placeholder
+ * shown while a live cover has not been granted a render slot (or the page
+ * has no HTML to render).
  */
 export interface InteractiveCoverData {
   /** The interactive scene's title, trimmed; may be empty. */
@@ -46,9 +51,9 @@ export function firstInteractiveCover(
 
 /**
  * A course's cover: the first slide's canvas, or — only when the course has
- * no slide at all — the static cover of its first interactive page. `null` at
- * a loader boundary means the course has neither.
+ * no slide at all — its first interactive scene, rendered live. `null` at a
+ * loader boundary means the course has neither.
  */
 export type CourseThumbnail =
   | { readonly kind: 'slide'; readonly slide: Slide }
-  | { readonly kind: 'interactive'; readonly cover: InteractiveCoverData };
+  | { readonly kind: 'interactive'; readonly scene: Scene };

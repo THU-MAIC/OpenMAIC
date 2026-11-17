@@ -69,7 +69,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { useHomeDiscovery } from '@/lib/hooks/use-home-discovery';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
-import { InteractiveCover } from '@/components/discovery/interactive-cover';
+import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailSkeleton } from '@/components/discovery/thumbnail-skeleton';
 import {
@@ -1006,7 +1006,7 @@ function FolderTile({
         dropActive && 'scale-[1.03]',
       )}
     >
-      <FolderTileCover covers={covers} courseCount={courseCount} />
+      <FolderTileCover covers={covers} courseCount={courseCount} live={near} />
       {dropActive ? (
         // The classic tile's drop state: the whole card lights up.
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-violet-500/20">
@@ -1168,7 +1168,7 @@ function CourseCard({
                 viewportRatio={cover.slide.viewportRatio ?? 0.5625}
               />
             ) : (
-              <InteractiveCover cover={cover.cover} />
+              <LiveInteractiveCover scene={cover.scene} size={width} visible={near && width > 0} />
             )
           ) : cover === undefined ? (
             <ThumbnailSkeleton />

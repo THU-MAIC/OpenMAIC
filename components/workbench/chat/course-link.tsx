@@ -42,7 +42,7 @@
 
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpen, MoreHorizontal } from 'lucide-react';
-import { InteractiveCover } from '@/components/discovery/interactive-cover';
+import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
@@ -84,7 +84,7 @@ function CourseCover({
             viewportRatio={cover.slide.viewportRatio ?? 0.5625}
           />
         ) : (
-          <InteractiveCover cover={cover.cover} compact />
+          <LiveInteractiveCover scene={cover.scene} size={COVER_WIDTH} compact visible />
         )
       ) : (
         <BookOpen className={styles.courseLink.glyph} />

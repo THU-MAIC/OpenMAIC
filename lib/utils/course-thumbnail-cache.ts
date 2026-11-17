@@ -1,10 +1,12 @@
+import type { Slide } from '@openmaic/dsl';
+
 import { db } from '@/lib/device-storage/database';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { sha256Hex } from '@/lib/legacy-browser-import/digest';
 import { createLogger } from '@/lib/logger';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
 import { getPersistenceLearnerKey } from '@/lib/persistence/bootstrap';
 import { loadCourseCover } from '@/lib/utils/stage-storage';
-import type { CourseThumbnail } from '@/lib/utils/course-cover';
 
 /**
  * The home library's thumbnail cache, in the device cache (`courseThumbnails`
@@ -13,11 +15,10 @@ import type { CourseThumbnail } from '@/lib/utils/course-cover';
  * A thumbnail costs a whole course document read plus its first slide's media
  * bytes, and the server answers none of them from the browser's HTTP cache. The
  * thumbnail is derived data, so this keeps the derived result instead: the
- * course's cover (its first slide and the bytes of its media, or the static
- * cover of its first interactive page) per course, valid for exactly the course
- * version (`updatedAt`) it was derived from. A reload then shows unchanged
- * courses' thumbnails without a request; a course whose `updatedAt` moved is
- * read again and its entry replaced.
+ * first slide and the bytes of its media, per course, valid for exactly the
+ * course version (`updatedAt`) it was derived from. A reload then shows
+ * unchanged courses' thumbnails without a request; a course whose `updatedAt`
+ * moved is read again and its entry replaced.
  *
  * Entries are partitioned by owner: the key is a one-way digest of the
  * server-derived owner key (the learner key), so a claimed or switched owner
@@ -41,10 +42,8 @@ export const MAX_THUMBNAIL_CACHE_BYTES = 64 * 1024 * 1024;
  * derived differently, so entries derived the old way are loaded again.
  *
  * 2: a video without a poster carries its opening frame as one.
- * 3: a course without slides keeps the static cover of its first interactive
- *    page instead of no thumbnail.
  */
-export const COURSE_THUMBNAIL_FORMAT = 3;
+export const COURSE_THUMBNAIL_FORMAT = 2;
 
 /** How long after a write the bounds are enforced (writes come in bursts). */
 const EVICTION_DELAY_MS = 1000;
@@ -68,15 +67,15 @@ export function __resetCourseThumbnailOwnerKeyForTesting(): void {
 }
 
 /**
- * A cached thumbnail of `stageId` at `version`: the cover (a slide's media as
- * fresh object URLs the caller owns, like a loaded one; an interactive cover
- * as-is), null for a course with no cover at all, or undefined on a miss.
+ * A cached thumbnail of `stageId` at `version`: the slide (its media as fresh
+ * object URLs the caller owns, like a loaded one), null for a course without a
+ * slide, or undefined on a miss.
  */
 export async function readCachedCourseThumbnail(
   ownerKey: string,
   stageId: string,
   version: number,
-): Promise<CourseThumbnail | null | undefined> {
+): Promise<Slide | null | undefined> {
   const record = await db.courseThumbnails.get([ownerKey, stageId]);
   if (!record || record.version !== version || record.format !== COURSE_THUMBNAIL_FORMAT) {
     return undefined;
@@ -84,37 +83,35 @@ export async function readCachedCourseThumbnail(
   void db.courseThumbnails
     .update([ownerKey, stageId], { usedAt: Date.now() })
     .catch((error: unknown) => log.warn('Could not touch a cached thumbnail:', error));
-  const cover = record.cover;
-  if (!cover) return null;
-  if (cover.kind === 'interactive') return structuredClone(cover);
-  const slide = structuredClone(cover.slide);
+  if (!record.slide) return null;
+  const slide = structuredClone(record.slide);
   const bytesBySlot = new Map(record.media.map((entry) => [entry.slot, entry.blob]));
   let index = 0;
   for (const slot of slideMediaReferenceSlots(slide)) {
     const blob = bytesBySlot.get(index++);
     if (blob) slot.write(URL.createObjectURL(blob));
   }
-  return { kind: 'slide', slide };
+  return slide;
 }
 
 /**
  * Keep the thumbnail of `stageId` at `version`, replacing whatever the cache
- * held for the course. A slide's media slots holding object URLs are stored as
- * their bytes; everything else in the cover is stored as is.
+ * held for the course. Media slots holding object URLs are stored as their
+ * bytes; everything else in the slide is stored as is.
  */
 export async function writeCachedCourseThumbnail(
   ownerKey: string,
   stageId: string,
   version: number,
-  cover: CourseThumbnail | null,
+  slide: Slide | null,
 ): Promise<void> {
-  const stored = cover ? structuredClone(cover) : null;
+  const stored = slide ? structuredClone(slide) : null;
   // Every object URL is fetched before the first await: a fetch resolves its
   // blob URL when it starts, so the caller may revoke them right after.
   const reads: Array<Promise<{ slot: number; blob: Blob }>> = [];
-  if (stored?.kind === 'slide') {
+  if (stored) {
     let index = 0;
-    for (const slot of slideMediaReferenceSlots(stored.slide)) {
+    for (const slot of slideMediaReferenceSlots(stored)) {
       const slotIndex = index++;
       const value = slot.read();
       if (!value?.startsWith('blob:')) continue;
@@ -131,7 +128,7 @@ export async function writeCachedCourseThumbnail(
     stageId,
     version,
     format: COURSE_THUMBNAIL_FORMAT,
-    cover: stored,
+    slide: stored,
     media,
     bytes,
     usedAt: Date.now(),
@@ -177,9 +174,14 @@ export async function evictCourseThumbnails(
 }
 
 /**
- * Load a course's thumbnail at `version` (its `updatedAt`): from the cache
- * when it holds that version, otherwise from the server, keeping a complete
- * result for the next visit.
+ * Load a course's cover at `version` (its `updatedAt`): from the cache when
+ * it holds that version, otherwise from the server.
+ *
+ * Only first-slide covers use the cache. An interactive cover is rendered
+ * live from the current scene on every visit, so it is neither read from nor
+ * written to the cache — a slide-less course is simply read again next time,
+ * and an edit is reflected the moment it is saved. A course with no cover at
+ * all is cached as null, as before.
  */
 export async function loadCourseThumbnail(
   stageId: string,
@@ -190,16 +192,21 @@ export async function loadCourseThumbnail(
   try {
     ownerKey = await courseThumbnailOwnerKey();
     const cached = await readCachedCourseThumbnail(ownerKey, stageId, version);
-    if (cached !== undefined) return cached;
-  } catch (error: unknown) {
+    if (cached !== undefined) return cached === null ? null : { kind: 'slide', slide: cached };
+  } catch (error) {
     log.warn(`Could not read the cached thumbnail of ${stageId}:`, error);
   }
   signal.throwIfAborted();
   const { cover, complete } = await loadCourseCover(stageId, signal);
-  if (ownerKey !== undefined && complete && !signal.aborted) {
+  if (ownerKey !== undefined && complete && !signal.aborted && cover?.kind === 'slide') {
     // Not awaited: the card shows the thumbnail now. The write reads the
     // slide's object URLs synchronously, before the loader can release them.
-    void writeCachedCourseThumbnail(ownerKey, stageId, version, cover).catch((error: unknown) =>
+    void writeCachedCourseThumbnail(ownerKey, stageId, version, cover.slide).catch(
+      (error: unknown) => log.warn(`Could not cache the thumbnail of ${stageId}:`, error),
+    );
+  }
+  if (ownerKey !== undefined && complete && !signal.aborted && cover === null) {
+    void writeCachedCourseThumbnail(ownerKey, stageId, version, null).catch((error: unknown) =>
       log.warn(`Could not cache the thumbnail of ${stageId}:`, error),
     );
   }

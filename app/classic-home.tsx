@@ -109,7 +109,7 @@ import { FolderCard } from '@/components/discovery/folder-card';
 import { NewFolderDialog } from '@/components/discovery/folder-dialogs';
 import { MoveToFolderMenu } from '@/components/discovery/move-to-folder-menu';
 import { LibrarySkeleton } from '@/components/discovery/library-skeleton';
-import { InteractiveCover } from '@/components/discovery/interactive-cover';
+import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
@@ -2048,7 +2048,11 @@ function ClassroomCard({
               viewportRatio={cover.slide.viewportRatio ?? 0.5625}
             />
           ) : (
-            <InteractiveCover cover={cover.cover} />
+            <LiveInteractiveCover
+              scene={cover.scene}
+              size={thumbWidth}
+              visible={nearViewport && thumbWidth > 0}
+            />
           )
         ) : cover || (cover === undefined && requestThumbnail) ? (
           // Still loading, or loaded and waiting for the card's width.

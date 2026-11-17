@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Slide } from '@openmaic/dsl';
 import type { CourseThumbnail } from '@/lib/utils/course-cover';
+import type { Scene } from '@/lib/types/stage';
 
 const mocks = vi.hoisted(() => ({
   learnerKey: vi.fn<() => Promise<string>>(),
@@ -79,6 +80,18 @@ async function bytesAt(url: string): Promise<string> {
   return (await fetch(url)).text();
 }
 
+/** A minimal interactive scene: the live cover renders its HTML. */
+function interactiveScene(): Scene {
+  return {
+    id: 'scene-interactive',
+    stageId: 'stage-interactive',
+    type: 'interactive',
+    title: 'Orbit simulator',
+    order: 1,
+    content: { type: 'interactive', html: '<!doctype html><p>Orbit</p>' },
+  } as unknown as Scene;
+}
+
 /** The fire-and-forget cache write of a server load has landed. */
 async function cached(stageId: string, version: number): Promise<void> {
   await vi.waitFor(async () => {
@@ -147,23 +160,21 @@ describe('course thumbnail cache', () => {
     expect(mocks.loadCourseCover).toHaveBeenCalledTimes(1);
   });
 
-  it('caches the interactive cover of a course without slides, without media bytes', async () => {
+  it('does not cache a course whose cover is interactive', async () => {
     const interactive: CourseThumbnail = {
       kind: 'interactive',
-      cover: { title: 'Orbit simulator', widgetType: 'simulation' },
+      scene: interactiveScene(),
     };
-    mocks.loadCourseCover.mockResolvedValueOnce({ cover: interactive, complete: true });
+    mocks.loadCourseCover.mockImplementation(async () => ({ cover: interactive, complete: true }));
 
     expect(await loadCourseThumbnail('stage-interactive', 3, signal())).toStrictEqual(interactive);
-    await cached('stage-interactive', 3);
+    await new Promise((resolve) => setTimeout(resolve, 20));
 
-    // Reads back equal, without reading the course again, and the entry
-    // carries no media bytes (an interactive cover has none to keep).
+    // No entry is written, so every visit reads the course again — the live
+    // cover renders from the current scene and has no cache to go stale.
+    expect(await db.courseThumbnails.toArray()).toEqual([]);
     expect(await loadCourseThumbnail('stage-interactive', 3, signal())).toStrictEqual(interactive);
-    expect(mocks.loadCourseCover).toHaveBeenCalledTimes(1);
-    const [record] = await db.courseThumbnails.toArray();
-    expect(record.media).toEqual([]);
-    expect(record.bytes).toBe(0);
+    expect(mocks.loadCourseCover).toHaveBeenCalledTimes(2);
   });
 
   it('reads a course again when its updatedAt changed, and replaces the entry', async () => {
@@ -260,7 +271,7 @@ describe('course thumbnail cache', () => {
         ownerKey: 'o',
         stageId,
         version: 1,
-        cover: null,
+        slide: null,
         media: [],
         bytes: 100,
         usedAt: index + 1,

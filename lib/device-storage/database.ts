@@ -26,7 +26,7 @@
  */
 import Dexie, { type EntityTable, type Table } from 'dexie';
 
-import type { CourseThumbnail } from '@/lib/utils/course-cover';
+import type { Slide } from '@openmaic/dsl';
 
 import type { Scene } from '@/lib/types/stage';
 
@@ -123,8 +123,8 @@ export interface CourseThumbnailRecord {
    * another format (or none: written before formats) is read as a miss.
    */
   format?: number;
-  /** The cover, with a slide's media slots that held bytes emptied, or null: the course has no cover. */
-  cover: CourseThumbnail | null;
+  /** The first slide with its media slots that held bytes emptied, or null: the course has none. */
+  slide: Slide | null;
   /** The bytes of those media slots, by slot index (`slideMediaReferenceSlots` order). */
   media: Array<{ slot: number; blob: Blob }>;
   /** Total media bytes, for the cache's size bound. */

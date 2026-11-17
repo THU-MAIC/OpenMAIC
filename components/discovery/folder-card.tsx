@@ -23,8 +23,9 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import { InteractiveCover } from '@/components/discovery/interactive-cover';
+import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
-import type { CourseThumbnail } from '@/lib/utils/course-cover';
+import { firstInteractiveCover, type CourseThumbnail } from '@/lib/utils/course-cover';
 import type { FolderRecord } from '@/lib/types/folder';
 import type { DeleteFolderMode, StageListItem } from '@/lib/utils/stage-storage';
 
@@ -341,7 +342,7 @@ export function FolderCard({
             : 'ring-violet-200/50 dark:ring-violet-800/40',
         )}
       >
-        <FolderTileCover covers={covers} courseCount={courseCount} />
+        <FolderTileCover covers={covers} courseCount={courseCount} live={nearViewport} />
 
         {dropActive && (
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-violet-500/20 backdrop-blur-[2px]">
@@ -521,9 +522,12 @@ export function FolderCard({
 export function FolderTileCover({
   covers: coverSlides,
   courseCount,
+  live = false,
 }: {
   covers: CourseThumbnail[];
   courseCount: number;
+  /** Whether the tile is near the viewport; live covers render only on screen. */
+  readonly live?: boolean;
 }) {
   const { t } = useI18n();
   const [thumbWidth, setThumbWidth] = useState(0);
@@ -535,7 +539,12 @@ export function FolderTileCover({
   return (
     <>
       {hasCovers ? (
-        <CoverStack covers={covers} thumbWidth={thumbWidth} setThumbWidth={setThumbWidth} />
+        <CoverStack
+          covers={covers}
+          thumbWidth={thumbWidth}
+          setThumbWidth={setThumbWidth}
+          live={live}
+        />
       ) : courseCount === 0 ? (
         // Truly empty folder: folder icon.
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
@@ -577,10 +586,13 @@ function CoverStack({
   covers,
   thumbWidth,
   setThumbWidth,
+  live,
 }: {
   covers: CourseThumbnail[];
   thumbWidth: number;
   setThumbWidth: (w: number) => void;
+  /** Near-viewport; only the front layer ever renders live. */
+  readonly live: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -633,8 +645,14 @@ function CoverStack({
                     viewportSize={cover.slide.viewportSize ?? 1000}
                     viewportRatio={cover.slide.viewportRatio ?? 0.5625}
                   />
+                ) : isFront ? (
+                  <LiveInteractiveCover
+                    scene={cover.scene}
+                    size={Math.round((thumbWidth * widthPct) / 100)}
+                    visible={live && thumbWidth > 0}
+                  />
                 ) : (
-                  <InteractiveCover cover={cover.cover} />
+                  <InteractiveCover cover={firstInteractiveCover([cover.scene])!} />
                 )}
               </div>
             )}

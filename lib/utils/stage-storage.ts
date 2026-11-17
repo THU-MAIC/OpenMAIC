@@ -11,7 +11,7 @@ import { db } from '@/lib/device-storage/database';
 import type { FolderRecord } from '@/lib/types/folder';
 import { FolderNameError } from './folder-name-validation';
 export { FolderNameError } from './folder-name-validation';
-import { firstInteractiveCover, type CourseThumbnail } from './course-cover';
+import type { CourseThumbnail } from './course-cover';
 import {
   ChatStorageLockUnavailableError,
   saveChatSessions,
@@ -1322,9 +1322,9 @@ async function slideCoverFromDocument(
 
 /**
  * A course's cover: its first slide ({@link loadFirstSlideThumbnail}), or —
- * only when the course has no slide at all — the static cover of its first
- * interactive page (title and widget kind, without running its HTML). A
- * course with neither has no cover (`null`).
+ * only when the course has no slide at all — its first interactive scene,
+ * which the surfaces render live in a sandboxed thumbnail iframe. A course
+ * with neither has no cover (`null`).
  *
  * Interactive covers read only the already-loaded document, so they are
  * always complete.
@@ -1339,8 +1339,11 @@ export async function loadCourseCover(
   if (slideCover.slide) {
     return { cover: { kind: 'slide', slide: slideCover.slide }, complete: slideCover.complete };
   }
-  const interactive = firstInteractiveCover(document?.scenes ?? []);
-  return { cover: interactive && { kind: 'interactive', cover: interactive }, complete: true };
+  const interactive = document?.scenes.find((scene) => scene.content?.type === 'interactive');
+  return {
+    cover: interactive ? { kind: 'interactive', scene: interactive } : null,
+    complete: true,
+  };
 }
 
 /**

@@ -70,7 +70,14 @@ describe('CourseThumbnailLoader', () => {
     const h = harness(1);
     const interactive = {
       kind: 'interactive' as const,
-      cover: { title: 'Orbit simulator', widgetType: 'simulation' as const },
+      scene: {
+        id: 'scene-1',
+        stageId: 'a',
+        type: 'interactive',
+        title: 'Orbit simulator',
+        order: 1,
+        content: { type: 'interactive', html: '<p>Orbit</p>' },
+      } as never,
     };
     h.loader.request('a', 1);
     await h.settle('a', interactive);
