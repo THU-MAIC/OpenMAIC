@@ -13,6 +13,8 @@ export const ALIDOCMIND_DEFAULT_BASE = 'https://docmind-api.cn-hangzhou.aliyuncs
  * configurable (`PDF_MINICPM_OCR_BASE_URL` or openmaic.yml `baseUrl`).
  */
 export const MINICPM_OCR_DEFAULT_BASE = 'https://api.modelbest.cn/v1';
+/** The DeepSeek API root; OCR is served at `/tools/ocr` under it. */
+export const DEEPSEEK_OCR_DEFAULT_BASE = 'https://api.deepseek.com/v1';
 
 /**
  * PDF Provider Registry
@@ -66,6 +68,16 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     // The hosted API needs a key; a self-hosted web demo usually does not.
     apiKeyOptionalWithBaseUrl: true,
     legacyEnv: { prefix: 'PDF_MINICPM_OCR', baseUrlOptional: true, keyless: true },
+  },
+
+  'deepseek-ocr': {
+    id: 'deepseek-ocr',
+    name: 'DeepSeek OCR',
+    requiresApiKey: true,
+    icon: '/logos/deepseek.svg',
+    features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
+    displayEndpoint: `${DEEPSEEK_OCR_DEFAULT_BASE}/tools/ocr`,
+    legacyEnv: { prefix: 'PDF_DEEPSEEK_OCR', baseUrlOptional: true },
   },
 };
 

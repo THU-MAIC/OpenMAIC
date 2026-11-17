@@ -5,7 +5,13 @@
 /**
  * PDF Provider IDs
  */
-export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud' | 'alidocmind' | 'minicpm-ocr';
+export type PDFProviderId =
+  | 'unpdf'
+  | 'mineru'
+  | 'mineru-cloud'
+  | 'alidocmind'
+  | 'minicpm-ocr'
+  | 'deepseek-ocr';
 
 /**
  * PDF Provider Configuration

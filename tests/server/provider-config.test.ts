@@ -43,6 +43,9 @@ const ENV_PREFIXES_TO_CLEAR = [
   'PDF_UNPDF',
   'PDF_MINERU',
   'PDF_MINERU_CLOUD',
+  'PDF_DEEPSEEK_OCR',
+  'TTS_DEEPSEEK',
+  'ASR_DEEPSEEK',
   'IMAGE_OPENAI',
   'IMAGE_SEEDREAM',
   'IMAGE_QWEN_IMAGE',
@@ -573,6 +576,26 @@ pdf:
       expect(providers['mineru-cloud']).toBeDefined();
       expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-key');
       expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+    });
+
+    it('includes DeepSeek OCR from env when only API key is configured', async () => {
+      vi.stubEnv('PDF_DEEPSEEK_OCR_API_KEY', 'sk-ds-ocr');
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerPDFProviders()['deepseek-ocr']).toBeDefined();
+      expect(resolvePDFApiKey('deepseek-ocr')).toBe('sk-ds-ocr');
+      expect(resolvePDFBaseUrl('deepseek-ocr')).toBeUndefined();
+    });
+
+    it('maps the DeepSeek speech env prefixes to their providers', async () => {
+      vi.stubEnv('TTS_DEEPSEEK_API_KEY', 'sk-ds-tts');
+      vi.stubEnv('ASR_DEEPSEEK_API_KEY', 'sk-ds-asr');
+      const { getServerTTSProviders, getServerASRProviders } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerTTSProviders()['deepseek-tts']).toBeDefined();
+      expect(getServerASRProviders()['deepseek-asr']).toBeDefined();
     });
 
     it('includes MinerU Cloud from YAML when only API key is configured', async () => {

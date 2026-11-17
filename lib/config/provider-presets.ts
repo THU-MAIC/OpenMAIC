@@ -110,6 +110,8 @@ const MODALITY_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
   image: 'image',
   video: 'video',
   tts: 'tts',
+  asr: 'asr',
+  document: 'document',
   webSearch: 'webSearch',
   webFetch: 'webFetch',
 };
@@ -166,9 +168,10 @@ export function tokenPlanToPreset(plan: TokenPlanPreset): ProviderPreset {
     };
     const root = capability === 'chat' ? 'llm' : capability;
     if (lead) recommended[root as SlotId] = lead;
-    // A capability without models to pick (web search or fetch) is served by the
-    // provider alone: the recommendation names its registry entry, which
-    // becomes a provider-only assignment.
+    // A capability without models to pick (web search or fetch, a speech or
+    // OCR tool without a model parameter) is served by the provider alone:
+    // the recommendation names its registry entry, which becomes a
+    // provider-only assignment.
     else if (!target.defaultModels?.length) recommended[root as SlotId] = target.providerId;
     for (const [stage, model] of Object.entries(target.stageRoutes ?? {})) {
       const slot = STAGE_SLOTS[stage as LlmStage];

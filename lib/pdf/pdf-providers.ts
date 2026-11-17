@@ -148,6 +148,7 @@ import { parseMinerUPdfChunks } from './mineru-chunks';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithMiniCPMOCR } from './minicpm-ocr';
 import { parseWithAliDocMindClient } from './alidocmind-client';
+import { parseWithDeepSeekOCR } from './deepseek-ocr';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import { MaterialSourceRefusedError } from '@/lib/server/material-extraction/errors';
 
@@ -349,6 +350,10 @@ export async function parsePDF(
 
     case 'minicpm-ocr':
       result = await parseWithMiniCPMOCR(config, pdfBuffer, options);
+      break;
+
+    case 'deepseek-ocr':
+      result = await parseWithDeepSeekOCR(config, pdfBuffer, options);
       break;
 
     default:

@@ -195,7 +195,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['atlascloud', 2],
       ['anthropic', 2],
       ['google', 4],
-      ['deepseek', 4],
+      // The TTS_/ASR_DEEPSEEK env maps.
+      ['deepseek', 8],
       ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],

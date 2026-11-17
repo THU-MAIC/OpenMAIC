@@ -201,12 +201,30 @@ export const MINICPM_OCR_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.bmp,
 
 export const MINICPM_OCR_MIMES: readonly string[] = [M.pdf, ...MINICPM_OCR_IMAGE_MIMES];
 
+/**
+ * DeepSeek OCR: PDF, Word, PowerPoint and images, detected from the content.
+ * https://api-docs.deepseek.com/guides/ocr
+ */
+export const DEEPSEEK_OCR_MIMES: readonly string[] = [
+  M.pdf,
+  M.doc,
+  M.docx,
+  M.ppt,
+  M.pptx,
+  M.png,
+  M.jpeg,
+  M.webp,
+  M.gif,
+  M.bmp,
+];
+
 export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
   unpdf: [M.pdf],
   mineru: MINERU_SELFHOST_MIMES,
   'mineru-cloud': MINERU_CLOUD_MIMES,
   alidocmind: ALIDOCMIND_MIMES,
   'minicpm-ocr': MINICPM_OCR_MIMES,
+  'deepseek-ocr': DEEPSEEK_OCR_MIMES,
   'plain-text': PLAIN_TEXT_MIMES,
 };
 

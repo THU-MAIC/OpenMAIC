@@ -109,6 +109,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
   TTS_XIAOMI: 'xiaomi-tts',
+  TTS_DEEPSEEK: 'deepseek-tts',
   TTS_GOOGLE: 'google-tts',
   TTS_LEMONADE: 'lemonade-tts',
 };
@@ -120,6 +121,7 @@ const ASR_ENV_MAP: Record<string, string> = {
   ASR_FUNASR: 'funasr-asr',
   ASR_LEMONADE: 'lemonade-asr',
   ASR_XIAOMI: 'xiaomi-asr',
+  ASR_DEEPSEEK: 'deepseek-asr',
 };
 
 /** PDF providers declaring legacy env variables, in registry order. */

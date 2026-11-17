@@ -92,6 +92,7 @@ export type BuiltInTTSProviderId =
   | 'elevenlabs-tts'
   | 'minimax-tts'
   | 'xiaomi-tts'
+  | 'deepseek-tts'
   | 'google-tts'
   | 'lemonade-tts'
   | 'browser-native-tts';
@@ -232,7 +233,8 @@ export type BuiltInASRProviderId =
   | 'funasr-asr'
   | 'lemonade-asr'
   | 'azure-asr'
-  | 'xiaomi-asr';
+  | 'xiaomi-asr'
+  | 'deepseek-asr';
 
 export type ASRProviderId = BuiltInASRProviderId | `custom-asr-${string}`;
 
