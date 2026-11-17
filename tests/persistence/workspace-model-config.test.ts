@@ -215,7 +215,8 @@ describe('instance secret file', () => {
       resetInstanceKeyForTests();
       const first = instanceKey({}, dir);
       const file = path.join(dir, 'instance-secret.key');
-      expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+      // Windows has no POSIX permission bits: a file there always reports 0o666.
+      if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
       resetInstanceKeyForTests();
       expect(instanceKey({}, dir).kid).toBe(first.kid);
       resetInstanceKeyForTests();
