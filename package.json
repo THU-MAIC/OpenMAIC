@@ -8,7 +8,7 @@
   },
   "scripts": {
     "postinstall": "pnpm run build:packages",
-    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../geometry && pnpm run build && cd ../generation && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs && node scripts/sync-interactive-assets.mjs && node scripts/prepare-code-editor.mjs",
+    "build:packages": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build && cd ../@openmaic/dsl && pnpm run build && cd ../geometry && pnpm run build && cd ../generation && pnpm run build && cd ../skills && pnpm run build && cd ../storage && pnpm run build && cd ../importer && pnpm run build && cd ../renderer && pnpm run build && cd ../editor && pnpm run build && cd ../../.. && node scripts/sync-maic-importer.mjs && node scripts/sync-interactive-assets.mjs && node scripts/prepare-code-editor.mjs",
     "sync:maic-importer": "node scripts/sync-maic-importer.mjs",
     "build:standalone-player": "node scripts/build-standalone-player.mjs",
     "gen:video-export-katex": "node scripts/generate-video-export-katex.mjs",

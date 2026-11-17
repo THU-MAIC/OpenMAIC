@@ -36,6 +36,7 @@ export const OPENMAIC_PACKAGES = [
   'geometry',
   'generation',
   'storage',
+  'skills',
   'renderer',
   'editor',
   'importer',
