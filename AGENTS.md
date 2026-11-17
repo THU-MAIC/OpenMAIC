@@ -30,7 +30,7 @@ Guidance for coding agents working in this repository, including the automated C
 
 ## Staging review: leak prevention (private, P1)
 
-This repository is the private pre-review stage for contributions to the public OpenMAIC repository. Every PR here will be copied **verbatim** to the public repo after review: its commits (diffs, file names, commit messages and trailers) and its PR title and body. A PR that only adds `drafts/issue-<slug>.md` is an issue draft; the whole file becomes a public issue.
+This repository is the private pre-review stage for contributions to the public OpenMAIC repository. After review, every PR here is published to the public repo verbatim: its final diff (as one squashed commit), file names, the PR title (as the commit message), the PR body, and the Co-Authored-By trailers of its commits. Review the commit messages too, since they are visible here and may be reused. A PR that only adds `drafts/issue-<slug>.md` is an issue draft; the whole file becomes a public issue.
 
 In addition to the normal Code Review Rules above, review every PR here against the policy below.
 
