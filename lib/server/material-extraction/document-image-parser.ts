@@ -5,7 +5,7 @@ import { isTransientExtractionError, MaterialExtractionError } from './errors';
 import type { ImagePlan, ImageReference } from './document-image-apply.mjs';
 import type { ImagePathIndex } from './document-images';
 
-type PlanJob = { kind: 'plan'; text: string };
+type PlanJob = { kind: 'plan'; text: string; includeAllTargets?: boolean };
 type RewriteJob = {
   kind: 'rewrite';
   blocks: Array<{ type: string; text?: string }>;

@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Локальный)",
     "providerBrowserNativeTTS": "Встроенный TTS браузера",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "Загрузить",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "Этот сохранённый голос нужно клонировать заново. Загрузите исходную аудиозапись в настройках голоса.",
+    "qwenCloneNeedsReclone": "Нужно клонировать заново",
+    "qwenCloneRecloneRequired": "Этот сохранённый голос несовместим с текущей моделью клонирования. Загрузите исходную аудиозапись ещё раз, чтобы клонировать его заново.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "Генерация видео",
       "capWebSearch": "Веб-поиск",
       "capWebFetch": "Загрузка веб-страниц",
+      "capAsr": "Распознавание речи",
+      "capDocument": "Обработка документов",
       "saved": "Настройки подключения сохранены",
       "stageInteractive": "Интерактив",
       "stageSlide": "Слайды",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Загрузка веб-страниц",
           "desc": "Позволяет агенту читать разрешённые в сеансе веб-страницы."
+        },
+        "materialChapters": {
+          "name": "Распознавание глав",
+          "desc": "Определяет главы и разделы в длинных документах."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "Поиск",
           "fetch": "Чтение",
           "image": "Изобр.",
-          "video": "Видео"
+          "video": "Видео",
+          "parse": "Разбор",
+          "chapters": "Главы"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Загрузка веб-страниц",
     "webFetchHint": "Выберите способ чтения веб-страниц. Размещённым сервисам передаются только публичные URL, разрешённые в сеансе. Результаты остаются недоверенными данными; при ошибке сервис не меняется.",
     "webFetchApiKey": "Ключ API",
-    "webFetchSharedKeyHint": "Этот ключ также используется для чата с этим провайдером. Его изменение или удаление влияет на чат."
+    "webFetchSharedKeyHint": "Этот ключ также используется для чата с этим провайдером. Его изменение или удаление влияет на чат.",
+    "autoConfirmRecommended": "Автоматически подтверждать рекомендуемые ответы",
+    "autoConfirmRecommendedDesc": "Если агент задаёт вопрос с рекомендуемым вариантом и вы не отвечаете, он выбирается после короткого отсчёта. Любое действие останавливает отсчёт."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "Обработка не завершена",
           "description": "Не удалось завершить обработку. Можно повторить попытку позже."
+        },
+        "pages_failed": {
+          "label": "Не удалось обработать страницы PDF",
+          "description": "Не удалось обработать страницы {{firstPage}}–{{lastPage}} PDF, поэтому этот материал пока нельзя прочитать. Попробуйте обработать его позже.",
+          "descriptionWithoutCount": "Не удалось обработать некоторые страницы PDF, поэтому этот материал пока нельзя прочитать. Попробуйте обработать его позже."
         },
         "too_many_pages": {
           "label": "Слишком много страниц",
@@ -2910,6 +2929,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Отправка…",
+    "submitted": "Отправлено",
+    "resubmit": "Отправить изменения",
     "quizPassed": "Тест пройден: {{score}} из {{total}} ответов верны. Можно продолжить.",
     "quizRetry": "Верных ответов: {{score}} из {{total}}. Проверьте ответы и попробуйте снова.",
     "quizCorrect": "Последний ответ: верно",

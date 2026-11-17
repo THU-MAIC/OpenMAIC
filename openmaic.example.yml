@@ -122,6 +122,10 @@ slots:
   #   model: anthropic:claude-sonnet-4-6
   #   fallback: openai:gpt-5.4-mini
 
+  # Chapter recognition for long documents follows llm unless assigned here.
+  # This optional step makes one attempt; it does not use model fallbacks.
+  # material.chapters: openai:gpt-5.5
+
   # The workbench agent needs a model with tool calling. It may set
   # thinking.mode but not thinking.effort; an effort set on llm is dropped
   # for the agent.

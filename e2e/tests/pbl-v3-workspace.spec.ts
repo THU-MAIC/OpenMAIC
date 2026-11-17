@@ -966,6 +966,9 @@ test('installed sample opens in the normal classroom and preserves progress afte
   };
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  // Refresh is outside the drawer; reopen it to inspect the refreshed build.
+  await expect(taskDetails).toHaveCount(0);
+  await page.getByRole('button', { name: /^Current task$/ }).click();
   await expect(page.getByTestId('pbl-build-status').locator('.animate-spin')).toHaveCount(1);
   await page.getByRole('button', { name: 'Close task details', exact: true }).click();
   await expect(page.locator('.pbl-task-dock [data-action="compile"] .animate-spin')).toHaveCount(1);
@@ -1058,11 +1061,12 @@ test('installed sample opens in the normal classroom and preserves progress afte
     page.getByText('1/2 correct. Review your answers and try again.', { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole('button', { name: /^Continue(?: to|$)/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Submitted', exact: true })).toBeDisabled();
   await page.getByRole('radio', { name: 'Returns a value' }).check();
   await expect(
     page.getByText('Selection changed. Submit again to update feedback.', { exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Submit answers' }).click();
+  await page.getByRole('button', { name: 'Submit changes', exact: true }).click();
   await expect(
     page.getByText('Quiz passed: 2/2 correct. You can continue.', { exact: true }),
   ).toBeVisible();

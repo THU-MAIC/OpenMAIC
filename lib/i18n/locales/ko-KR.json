@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (로컬)",
     "providerBrowserNativeTTS": "브라우저 기본 TTS",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "업로드",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "저장된 이 음성은 다시 복제해야 합니다. 음성 설정에서 참조 오디오를 업로드하세요.",
+    "qwenCloneNeedsReclone": "재복제 필요",
+    "qwenCloneRecloneRequired": "저장된 이 음성은 현재 복제 모델과 호환되지 않습니다. 참조 오디오를 다시 업로드하여 다시 복제하세요.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "영상 생성",
       "capWebSearch": "웹 검색",
       "capWebFetch": "웹 페이지 가져오기",
+      "capAsr": "음성 인식",
+      "capDocument": "문서 파싱",
       "saved": "연결 설정이 저장되었습니다",
       "stageInteractive": "인터랙티브",
       "stageSlide": "슬라이드",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "웹 페이지 가져오기",
           "desc": "에이전트가 세션에서 허용된 웹 페이지를 읽는 데 사용합니다."
+        },
+        "materialChapters": {
+          "name": "챕터 인식",
+          "desc": "긴 문서의 장과 절을 식별합니다."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "검색",
           "fetch": "가져오기",
           "image": "이미지",
-          "video": "동영상"
+          "video": "동영상",
+          "parse": "분석",
+          "chapters": "챕터"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "웹 페이지 가져오기",
     "webFetchHint": "웹 페이지를 읽는 방법을 선택하세요. 호스팅 서비스에는 세션에서 허용된 공개 URL만 전달됩니다. 결과는 신뢰할 수 없는 데이터로 취급하며, 실패해도 다른 서비스로 전환하지 않습니다.",
     "webFetchApiKey": "API 키",
-    "webFetchSharedKeyHint": "이 키는 같은 제공업체와의 채팅에도 사용됩니다. 키를 변경하거나 삭제하면 채팅에도 영향을 줍니다."
+    "webFetchSharedKeyHint": "이 키는 같은 제공업체와의 채팅에도 사용됩니다. 키를 변경하거나 삭제하면 채팅에도 영향을 줍니다.",
+    "autoConfirmRecommended": "추천 답변 자동 확인",
+    "autoConfirmRecommendedDesc": "에이전트가 질문하며 추천 항목을 제시할 때, 응답이 없으면 짧은 카운트다운 후 그 항목을 선택합니다. 어떤 조작이든 하면 카운트다운이 멈춥니다."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "분석 미완료",
           "description": "분석을 완료하지 못했습니다. 나중에 다시 시도할 수 있습니다."
+        },
+        "pages_failed": {
+          "label": "PDF 페이지 분석 실패",
+          "description": "PDF {{firstPage}}–{{lastPage}}페이지 분석에 실패하여 아직 이 자료를 읽을 수 없습니다. 나중에 다시 분석해 주세요.",
+          "descriptionWithoutCount": "PDF 일부 페이지 분석에 실패하여 아직 이 자료를 읽을 수 없습니다. 나중에 다시 분석해 주세요."
         },
         "too_many_pages": {
           "label": "페이지 수 초과",
@@ -2910,6 +2929,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "제출 중…",
+    "submitted": "제출됨",
+    "resubmit": "변경 사항 제출",
     "quizPassed": "퀴즈 통과: {{total}}문항 중 {{score}}문항 정답. 계속 진행할 수 있습니다.",
     "quizRetry": "{{total}}문항 중 {{score}}문항 정답. 답을 확인하고 다시 제출하세요.",
     "quizCorrect": "이전 제출: 정답",

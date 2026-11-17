@@ -36,7 +36,9 @@ order:
    keep it fixed, and let only each page's layout vary with its content.
    Settle the plan with the user through `ask_user` before creating anything:
    there is no outline tool to plan with, so the plan is your words and their
-   sign-off. Skip that confirmation round when the user already gave a complete
+   sign-off. Keep the question to one short line and put the plan itself in
+   its `details`; keep option labels to a few words, and mark the option that
+   accepts your proposed plan as recommended. Skip that confirmation round when the user already gave a complete
    page structure or explicitly asked you to go ahead directly — their message
    is the sign-off. A topic skill's structural constraints are a diagnostic the
    runtime checks against the real stage after each page; you decide how to

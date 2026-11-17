@@ -25,6 +25,8 @@ import {
   Image as ImageIcon,
   Video,
   Volume2,
+  Mic,
+  FileText,
   Search,
   Globe,
   type LucideIcon,
@@ -78,6 +80,8 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   image: 'settings.imageSettings',
   video: 'settings.videoSettings',
   tts: 'settings.ttsSettings',
+  asr: 'settings.asrSettings',
+  document: 'settings.pdfSettings',
   webSearch: 'settings.webSearchSettings',
   webFetch: 'settings.webFetchSettings',
 };
@@ -87,6 +91,8 @@ const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
   image: ImageIcon,
   video: Video,
   tts: Volume2,
+  asr: Mic,
+  document: FileText,
   webSearch: Search,
   webFetch: Globe,
 };
@@ -126,6 +132,8 @@ const MODEL_PLAN_CAPABILITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   image: 'settings.tokenPlan.capImage',
   video: 'settings.tokenPlan.capVideo',
   tts: 'settings.tokenPlan.capTts',
+  asr: 'settings.tokenPlan.capAsr',
+  document: 'settings.tokenPlan.capDocument',
   webSearch: 'settings.tokenPlan.capWebSearch',
   webFetch: 'settings.tokenPlan.capWebFetch',
 };
@@ -149,7 +157,7 @@ function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
     }
   }
   // Modalities with no model concept (e.g. web search) do not disclose a model.
-  for (const capability of ['webSearch', 'webFetch'] as const) {
+  for (const capability of ['asr', 'document', 'webSearch', 'webFetch'] as const) {
     if (preset.modalities[capability]) items.push({ capability });
   }
   return items;

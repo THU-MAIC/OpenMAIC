@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（ローカル）",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "アップロード",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "この保存済み音声は再クローンが必要です。音声設定で参照音声をアップロードしてください。",
+    "qwenCloneNeedsReclone": "再クローンが必要",
+    "qwenCloneRecloneRequired": "この保存済み音声は現在のクローンモデルと互換性がありません。参照音声を再度アップロードして再クローンしてください。",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "動画生成",
       "capWebSearch": "ウェブ検索",
       "capWebFetch": "Webページ取得",
+      "capAsr": "音声認識",
+      "capDocument": "ドキュメント解析",
       "saved": "接続設定を保存しました",
       "stageInteractive": "インタラクティブ",
       "stageSlide": "スライド",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Webページ取得",
           "desc": "エージェントがセッションで許可されたWebページを読み取るために使います。"
+        },
+        "materialChapters": {
+          "name": "章構成の認識",
+          "desc": "長い資料の章と節を認識します。"
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "検索",
           "fetch": "取得",
           "image": "画像",
-          "video": "動画"
+          "video": "動画",
+          "parse": "解析",
+          "chapters": "章構成"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Webページ取得",
     "webFetchHint": "Webページの読み取り方法を選択します。ホスト型サービスには、セッションで許可された公開URLのみが送信されます。結果は信頼できないデータとして扱い、失敗しても別のサービスには切り替えません。",
     "webFetchApiKey": "APIキー",
-    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。"
+    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。",
+    "autoConfirmRecommended": "おすすめの回答を自動で確定",
+    "autoConfirmRecommendedDesc": "エージェントが質問でおすすめの選択肢を示したとき、操作がなければ短いカウントダウンの後にそれを選びます。何か操作するとカウントダウンは止まります。"
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "解析が完了しませんでした",
           "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
+        },
+        "pages_failed": {
+          "label": "PDFページの解析に失敗",
+          "description": "PDFの{{firstPage}}～{{lastPage}}ページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。",
+          "descriptionWithoutCount": "PDFの一部のページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。"
         },
         "too_many_pages": {
           "label": "ページ数が多すぎます",
@@ -2910,6 +2929,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "送信中…",
+    "submitted": "送信済み",
+    "resubmit": "変更を送信",
     "quizPassed": "クイズ合格：{{total}} 問中 {{score}} 問正解。次へ進めます。",
     "quizRetry": "{{total}} 問中 {{score}} 問正解。回答を見直して再送信してください。",
     "quizCorrect": "前回の回答：正解",

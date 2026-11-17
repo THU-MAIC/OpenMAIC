@@ -174,3 +174,18 @@ describe('materialsPromptBlock', () => {
     );
   });
 });
+
+it('loads the chapter navigation, disclosure, clarification and read-coverage guidance', () => {
+  const prompt = materialsPromptBlock([]);
+  expect(prompt).toContain('use its offset to read it instead of paging from the beginning');
+  expect(prompt).toContain(
+    'The first time you read a chapter using the tree in a conversation, add one short sentence to your reply saying the chapters were automatically recognized from headings and may be inaccurate. No need to repeat it.',
+  );
+  expect(prompt).toContain(
+    'If a chapter is marked "not located" but its sections have offsets, start reading at its first section with an offset.',
+  );
+  expect(prompt).toContain(
+    'If the requested chapter is missing or ambiguous, ask the user instead of guessing',
+  );
+  expect(prompt).toContain('Never claim to have read parts you have not read');
+});

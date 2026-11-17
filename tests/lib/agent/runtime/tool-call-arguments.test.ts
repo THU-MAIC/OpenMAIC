@@ -65,6 +65,37 @@ describe('toolCallArguments', () => {
     expect(replayToolCallArguments({ a: 1, [TOOL_ARGUMENTS_ERROR_KEY]: 'x' })).toEqual({ a: 1 });
     expect(replayToolCallArguments('{"a":1}')).toEqual({ a: 1 });
   });
+
+  it('replays the same bytes before and after JSONB-style key reordering', () => {
+    const inMemory = {
+      studentFeedback: '原回答',
+      reuseFeedback: true,
+      details: { version: 3, path: 'PLAN.md' },
+      steps: [{ z: 1, a: 2 }, 'next'],
+    };
+    const reloaded = {
+      steps: [{ a: 2, z: 1 }, 'next'],
+      details: { path: 'PLAN.md', version: 3 },
+      reuseFeedback: true,
+      studentFeedback: '原回答',
+    };
+    const original = JSON.stringify(inMemory);
+    expect(JSON.stringify(inMemory)).not.toBe(JSON.stringify(reloaded));
+    expect(JSON.stringify(replayToolCallArguments(inMemory))).toBe(
+      JSON.stringify(replayToolCallArguments(reloaded)),
+    );
+    expect(replayToolCallArguments(inMemory)).toEqual(inMemory);
+    expect(JSON.stringify(inMemory)).toBe(original);
+  });
+
+  it('retains data keys without changing prototypes while canonicalizing', () => {
+    const args = JSON.parse('{"z":1,"__proto__":{"safe":"data"},"a":[2,1]}');
+    const replay = replayToolCallArguments(args);
+    expect(Object.hasOwn(replay, '__proto__')).toBe(true);
+    expect(Object.getPrototypeOf(replay)).toBe(Object.prototype);
+    expect(replay.a).toEqual([2, 1]);
+    expect(JSON.stringify(replay)).toBe('{"__proto__":{"safe":"data"},"a":[2,1],"z":1}');
+  });
 });
 
 describe('stream-fn tool-call arguments', () => {

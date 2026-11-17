@@ -24,6 +24,7 @@ export {
 
 // Prompt IDs constant
 export const PROMPT_IDS = {
+  MATERIAL_CHAPTERS: 'material-chapters',
   INTERACTIVE_OUTLINES: 'interactive-outlines',
   TASK_ENGINE_OUTLINES: 'task-engine-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',

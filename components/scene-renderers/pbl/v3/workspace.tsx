@@ -45,6 +45,7 @@ import { TestEvaluation } from './test-evaluation';
 import { TeachingRunNotice } from './teaching-run-notice';
 import { PendingAction } from './pending-action';
 import { TaskDock } from './task-dock';
+import { DismissibleDetails } from './dismissible-details';
 import { ProjectOverview } from './project-overview';
 import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
@@ -336,6 +337,10 @@ function PBLV3WorkspaceContent({
     void command('begin');
   }, [view, pending, dirtyFiles, command, initialStart]);
   const quiz = view?.state.collected[view.state.position.milestoneId ?? '']?.quiz;
+  const quizUnchanged =
+    !!recordedAnswers &&
+    answers.length === recordedAnswers.length &&
+    answers.every((answer, index) => answer === recordedAnswers[index]);
   // All teaching actions share their prerequisites, with an explicit path out
   // of each blocked state. Draft input stays editable during recovery.
   const blockedReason =
@@ -501,7 +506,7 @@ function PBLV3WorkspaceContent({
                 {t('pblV3.report')}
               </button>
             )}
-            <details className="relative text-xs">
+            <DismissibleDetails className="relative text-xs">
               <summary
                 data-pbl-tour="environment"
                 aria-label={t('pblV3.ide.environmentDetails')}
@@ -530,7 +535,7 @@ function PBLV3WorkspaceContent({
                   </p>
                 )}
               </div>
-            </details>
+            </DismissibleDetails>
           </>
         )}
         <button
@@ -1159,6 +1164,7 @@ function PBLV3WorkspaceContent({
                         className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-transparent bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-default disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none motion-reduce:transition-none sm:w-auto sm:justify-self-end"
                         disabled={
                           disabled ||
+                          quizUnchanged ||
                           view.questions.some(
                             (question, index) =>
                               !Number.isInteger(answers[index]) ||
@@ -1171,10 +1177,20 @@ function PBLV3WorkspaceContent({
                       >
                         {pendingAction === 'quiz' ? (
                           <LoaderCircle aria-hidden="true" size={16} className="animate-spin" />
+                        ) : quizUnchanged ? (
+                          <Check aria-hidden="true" size={16} />
                         ) : (
                           <ClipboardCheck aria-hidden="true" size={16} />
                         )}
-                        {t('pblV3.submitQuiz')}
+                        {t(
+                          pendingAction === 'quiz'
+                            ? 'pblV3.submitting'
+                            : quizUnchanged
+                              ? 'pblV3.submitted'
+                              : quiz
+                                ? 'pblV3.resubmit'
+                                : 'pblV3.submitQuiz',
+                        )}
                       </button>
                     )}
                   </TaskDock>

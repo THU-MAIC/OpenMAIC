@@ -35,7 +35,7 @@ function getFeatureLabel(feature: string, t: (key: string) => string): string {
 }
 
 /**
- * A document parsing service. MinerU Cloud takes a key; AliDocMind's key pair
+ * A document parsing service. MinerU Cloud and DeepSeek OCR take a key; AliDocMind's key pair
  * and a self-hosted MinerU are the server's to configure; the built-in
  * parsers need nothing.
  */

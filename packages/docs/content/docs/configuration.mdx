@@ -125,13 +125,14 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
 | `agent` | chat | `llm` | The workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
 | `agent.title` | chat | `agent` | Workbench session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `material.chapters` | chat | `llm` | Optional chapter recognition after parsing long materials with self-hosted MinerU |
 | `tts` | tts | — | Text to speech |
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
 | `image` | image | — | Image generation |
 | `video` | video | — | Video generation |
 | `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
 | `webSearch` | webSearch | — | Web search |
-| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind, MiniCPM-OCR). The built-in PDF text extraction needs no service |
+| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind, MiniCPM-OCR, DeepSeek OCR). The built-in PDF text extraction needs no service |
 
 How a slot resolves:
 
@@ -430,6 +431,7 @@ Per-stage routes do not map one to one onto slots, so they are not translated. R
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat`, `maic-agent` | None: these stages were removed. Drop them |
 
 Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
@@ -615,6 +617,10 @@ TTS_QWEN_BASE_URL=         # optional override
 TTS_XIAOMI_API_KEY=
 TTS_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 
+# DeepSeek TTS
+TTS_DEEPSEEK_API_KEY=
+TTS_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+
 # Any OpenAI-compatible TTS endpoint
 TTS_OPENAI_API_KEY=
 TTS_OPENAI_BASE_URL=
@@ -623,7 +629,7 @@ TTS_OPENAI_BASE_URL=
 TTS_VOXCPM_BASE_URL=http://localhost:8000
 ```
 
-Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, `TTS_XIAOMI_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
+Supported TTS prefixes include `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_ELEVENLABS_`, `TTS_GOOGLE_`, `TTS_VOXCPM_`, `TTS_XIAOMI_`, `TTS_DEEPSEEK_`, and `TTS_LEMONADE_`. Local Lemonade TTS and VoxCPM2 do not require an API key. Browser-native TTS requires no server configuration.
 
 Administrators can force-disable a TTS provider on the server with `TTS_<PROVIDER>_ENABLED=false`. See the dedicated [VoxCPM2](./voxcpm.mdx) section for self-hosted TTS and voice cloning.
 
@@ -645,6 +651,10 @@ ASR_QWEN_BASE_URL=         # optional override
 # Xiaomi MiMo ASR
 ASR_XIAOMI_API_KEY=
 ASR_XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
+
+# DeepSeek ASR
+ASR_DEEPSEEK_API_KEY=
+ASR_DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
 
 # Azure ASR
 ASR_AZURE_API_KEY=
@@ -739,6 +749,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 # Optional backend for self-hosted MinerU
 PDF_MINERU_BACKEND=pipeline
 
+# Optional, read at runtime: total PDF page limit / pages per chunk / concurrent requests.
+# Defaults: 1000 / 50 / 4; positive integers only. Applies to self-hosted PDF parsing.
+# CHUNK_PAGES also sets the length threshold for chapter recognition in PDF, Word and PPT.
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
+
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=
 PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
@@ -754,9 +771,15 @@ PDF_MINICPM_OCR_API_KEY=
 # (https://api.modelbest.cn/v1). A self-hosted MiniCPM-OCR web demo serves the
 # same routes under /api and usually needs no key.
 # PDF_MINICPM_OCR_BASE_URL=http://127.0.0.1:8966/api
+
+# DeepSeek OCR (uses a DeepSeek API key)
+PDF_DEEPSEEK_OCR_API_KEY=
+PDF_DEEPSEEK_OCR_BASE_URL=https://api.deepseek.com/v1
 ```
 
-`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU, AliDocMind or MiniCPM-OCR provider.
+`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU, AliDocMind, MiniCPM-OCR or DeepSeek OCR provider.
+
+DeepSeek OCR (`deepseek-ocr`) supports PDF, DOC, DOCX, PPT, PPTX, PNG, JPEG, WebP, GIF, and BMP, up to 100 MiB and 1,000 pages per file; the service limits a request to 180 seconds. It returns Markdown with headings, HTML tables, and LaTeX equations. Figures are cropped from PDFs and images; Word and PowerPoint files yield text only.
 
 AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. MiniCPM-OCR parses PDF and PNG, JPG/JPEG, BMP, and WebP. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
 

@@ -27,6 +27,7 @@ export const MS = 'settings.modelSettings';
 
 const SLOT_ICONS: Record<string, LucideIcon> = {
   llm: Sparkles,
+  'material.chapters': ListTree,
   'course.research': Search,
   'course.outline': ListTree,
   'course.agents': Users,

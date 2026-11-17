@@ -37,8 +37,9 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
         signal: input.config.signal,
       };
       let parsed;
-      if (id === 'alidocmind') {
-        // AliDocMind handles pdf/docx/pptx/xlsx/images through one flow.
+      if (id === 'alidocmind' || id === 'deepseek-ocr') {
+        // AliDocMind and DeepSeek OCR handle every type they accept (PDF,
+        // Office documents, images) through one flow.
         parsed = await parsePDF(config, input.buffer, {
           fileName: input.fileName,
           mimeType: input.mimeType,
