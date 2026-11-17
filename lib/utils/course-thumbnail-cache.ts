@@ -180,8 +180,9 @@ export async function evictCourseThumbnails(
  * Only first-slide covers use the cache. An interactive cover is rendered
  * live from the current scene on every visit, so it is neither read from nor
  * written to the cache — a slide-less course is simply read again next time,
- * and an edit is reflected the moment it is saved. A course with no cover at
- * all is cached as null, as before.
+ * and an edit is reflected the moment it is saved. A cached null is a miss
+ * for the same reason, so nulls are neither trusted nor written; a course
+ * with no cover at all is read per visit too.
  */
 export async function loadCourseThumbnail(
   stageId: string,
@@ -191,8 +192,11 @@ export async function loadCourseThumbnail(
   let ownerKey: string | undefined;
   try {
     ownerKey = await courseThumbnailOwnerKey();
+    // Only a cached first slide is trusted: a cached null just means "no
+    // slide", which since live covers is no longer "no cover" — the course is
+    // read again instead (also migrating records written before them).
     const cached = await readCachedCourseThumbnail(ownerKey, stageId, version);
-    if (cached !== undefined) return cached === null ? null : { kind: 'slide', slide: cached };
+    if (cached) return { kind: 'slide', slide: cached };
   } catch (error) {
     log.warn(`Could not read the cached thumbnail of ${stageId}:`, error);
   }
@@ -203,11 +207,6 @@ export async function loadCourseThumbnail(
     // slide's object URLs synchronously, before the loader can release them.
     void writeCachedCourseThumbnail(ownerKey, stageId, version, cover.slide).catch(
       (error: unknown) => log.warn(`Could not cache the thumbnail of ${stageId}:`, error),
-    );
-  }
-  if (ownerKey !== undefined && complete && !signal.aborted && cover === null) {
-    void writeCachedCourseThumbnail(ownerKey, stageId, version, null).catch((error: unknown) =>
-      log.warn(`Could not cache the thumbnail of ${stageId}:`, error),
     );
   }
   return cover;

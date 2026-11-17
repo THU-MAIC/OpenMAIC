@@ -85,3 +85,68 @@ describe('useInteractiveCoverSlot', () => {
     expect(states.get('fresh')).toBe(false);
   });
 });
+
+describe('useInteractiveCoverSlot: queued duplicates', () => {
+  const div2 = document.createElement('div');
+  let roots2: Root[] = [];
+
+  function mount2(key: string | null, id: string) {
+    const root = createRoot(div2.appendChild(document.createElement('div')));
+    roots2.push(root);
+    states.set(id, false);
+    mount(key, (holding) => states.set(id, holding), root);
+  }
+
+  beforeEach(() => {
+    __resetInteractiveCoverSlotsForTesting();
+    roots2 = [];
+  });
+
+  afterEach(() => {
+    for (const root of roots2) act(() => root.unmount());
+    roots2 = [];
+    div2.remove();
+  });
+
+  it('grants a queued duplicate as a shared holder instead of dropping it', () => {
+    for (let i = 0; i < MAX_LIVE_INTERACTIVE_COVERS; i++) mount2(`stage-${i}`, `p${i}`);
+    // Both surfaces of a new course wait while the cap is full.
+    mount2('stage-dup', 'dup1');
+    mount2('stage-dup', 'dup2');
+    expect(states.get('dup1')).toBe(false);
+    expect(states.get('dup2')).toBe(false);
+
+    act(() => roots2[0]!.unmount());
+    roots2.shift();
+    // The first duplicate takes the freed slot as a new holder…
+    expect(states.get('dup1')).toBe(true);
+
+    act(() => roots2[1]!.unmount());
+    roots2.shift();
+    // …and the second then shares it, rather than being discarded.
+    expect(states.get('dup2')).toBe(true);
+  });
+
+  it('a shared grant consumes no slot, so one release serves two waiters', () => {
+    for (let i = 0; i < MAX_LIVE_INTERACTIVE_COVERS; i++) mount2(`stage-${i}`, `p${i}`);
+    mount2('stage-dup', 'dup1');
+    mount2('stage-dup', 'dup2');
+    mount2('stage-new', 'fresh');
+    expect(states.get('dup1')).toBe(false);
+    expect(states.get('dup2')).toBe(false);
+    expect(states.get('fresh')).toBe(false);
+
+    act(() => roots2[0]!.unmount());
+    roots2.shift();
+    // The freed slot goes to dup1 as a new holder, and dup2 then shares it
+    // in the same pass (a shared grant consumes no slot)…
+    expect(states.get('dup1')).toBe(true);
+    expect(states.get('dup2')).toBe(true);
+    // …but the cap is full again, so the new course still waits.
+    expect(states.get('fresh')).toBe(false);
+
+    act(() => roots2[1]!.unmount());
+    roots2.shift();
+    expect(states.get('fresh')).toBe(true);
+  });
+});

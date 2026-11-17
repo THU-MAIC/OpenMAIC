@@ -151,12 +151,37 @@ describe('course thumbnail cache', () => {
     expect(mocks.loadCourseCover).toHaveBeenCalledTimes(2);
   });
 
-  it('caches a course without a cover too', async () => {
+  it('does not trust or write a cached null: a cover-less course is read per visit', async () => {
     mocks.loadCourseCover.mockResolvedValueOnce({ cover: null, complete: true });
     expect(await loadCourseThumbnail('stage-empty', 1, signal())).toBeNull();
-    await cached('stage-empty', 1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await db.courseThumbnails.toArray()).toEqual([]);
 
-    expect(await loadCourseThumbnail('stage-empty', 1, signal())).toBeNull();
+    // No null record was written, so the next visit reads the course again.
+    expect(await loadCourseThumbnail('stage-empty', 1, signal())).not.toBeNull();
+    expect(mocks.loadCourseCover).toHaveBeenCalledTimes(2);
+  });
+
+  it('a pre-live-cover null record does not suppress the cover', async () => {
+    // A slide-less course opened before live covers cached null at this
+    // version; that record must not hide the interactive cover now.
+    await db.courseThumbnails.put({
+      ownerKey: 'anon:owner-a',
+      stageId: 'stage-interactive',
+      version: 3,
+      format: COURSE_THUMBNAIL_FORMAT,
+      slide: null,
+      media: [],
+      bytes: 0,
+      usedAt: 1,
+    });
+    const interactive: CourseThumbnail = {
+      kind: 'interactive',
+      scene: interactiveScene(),
+    };
+    mocks.loadCourseCover.mockImplementation(async () => ({ cover: interactive, complete: true }));
+
+    expect(await loadCourseThumbnail('stage-interactive', 3, signal())).toStrictEqual(interactive);
     expect(mocks.loadCourseCover).toHaveBeenCalledTimes(1);
   });
 

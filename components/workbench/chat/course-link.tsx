@@ -40,12 +40,13 @@
  * set, which is view state and nothing more.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, MoreHorizontal } from 'lucide-react';
 import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
+import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { cn } from '@/lib/utils/cn';
 import { useWorkbenchCourseNavigation } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
@@ -73,8 +74,12 @@ function CourseCover({
     return requestThumbnail(courseId, version);
   }, [courseId, version, requestThumbnail]);
   const cover = version === null ? null : thumbnails[courseId];
+  // A transcript keeps its earlier cards mounted, so the live cover's slot is
+  // requested only while this chip is actually near the viewport.
+  const thumbRef = useRef<HTMLSpanElement>(null);
+  const nearViewport = useNearViewport(thumbRef);
   return (
-    <span className={styles.courseLink.thumb} aria-hidden="true">
+    <span ref={thumbRef} className={styles.courseLink.thumb} aria-hidden="true">
       {cover ? (
         cover.kind === 'slide' ? (
           <SlideThumbnail
@@ -84,7 +89,12 @@ function CourseCover({
             viewportRatio={cover.slide.viewportRatio ?? 0.5625}
           />
         ) : (
-          <LiveInteractiveCover scene={cover.scene} size={COVER_WIDTH} compact visible />
+          <LiveInteractiveCover
+            scene={cover.scene}
+            size={COVER_WIDTH}
+            compact
+            visible={nearViewport}
+          />
         )
       ) : (
         <BookOpen className={styles.courseLink.glyph} />

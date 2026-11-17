@@ -17,9 +17,18 @@ const holderCounts = new Map<string, number>();
 const waiters: Array<{ key: string; grant: () => void }> = [];
 
 function grantWaiters(): void {
-  while (holders.size < MAX_LIVE_INTERACTIVE_COVERS && waiters.length > 0) {
-    const next = waiters.shift()!;
-    if (holders.has(next.key)) continue;
+  while (waiters.length > 0) {
+    const next = waiters[0]!;
+    if (holders.has(next.key)) {
+      // A surface of a course that gained its slot while this one waited:
+      // share it, the way an arriving duplicate would.
+      waiters.shift();
+      holderCounts.set(next.key, holderCounts.get(next.key)! + 1);
+      next.grant();
+      continue;
+    }
+    if (holders.size >= MAX_LIVE_INTERACTIVE_COVERS) break; // it keeps waiting
+    waiters.shift();
     holders.add(next.key);
     holderCounts.set(next.key, 1);
     next.grant();

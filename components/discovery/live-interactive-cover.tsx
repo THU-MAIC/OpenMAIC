@@ -41,5 +41,11 @@ export function LiveInteractiveCover({
     const cover = firstInteractiveCover([scene]);
     return cover ? <InteractiveCover cover={cover} compact={compact} /> : null;
   }
-  return <ThumbnailInteractive content={content} size={size} />;
+  return (
+    // Inert, not just pointer-transparent: the card around this cover is a
+    // button, and Tab must not reach links or forms inside the live page.
+    <div inert className="h-full w-full">
+      <ThumbnailInteractive content={content} size={size} />
+    </div>
+  );
 }
