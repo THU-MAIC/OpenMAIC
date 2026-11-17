@@ -373,28 +373,29 @@ function PBLV3WorkspaceContent({
       (!['open', 'prepare'].includes(pendingAction ?? '') &&
         !!workbench &&
         workbench.revision >= view!.revision));
-  // Only a brand-new project's actual open/prepare request blocks input.
-  // Continue/recovery and passive unavailable views remain usable, independently
-  // of whether this study still needs its guide.
+  // First entry includes the HTTP request AND its matching workspace snapshot.
+  // Keep one barrier until the guide can take over before paint. Continue/recovery
+  // and passive unavailable views remain usable.
   const [entrySettled, setEntrySettled] = useState(false);
+  const [entrySlow, setEntrySlow] = useState(false);
+  const entryReady = onboardingReady && draftsRestored;
   const entryLoading =
     initialEntry &&
     !entrySettled &&
-    pending &&
-    ['open', 'prepare'].includes(pendingAction ?? '') &&
+    !entryReady &&
     !view?.busy &&
     view?.state.status !== 'completed' &&
     !onboardingBlocked &&
     !['unavailable', 'retrying'].includes(stream.status);
   useEffect(() => {
-    if (onboardingReady || onboardingBlocked || ['unavailable', 'retrying'].includes(stream.status))
+    if (entryReady || onboardingBlocked || ['unavailable', 'retrying'].includes(stream.status))
       setEntrySettled(true);
-  }, [onboardingReady, onboardingBlocked, stream.status]);
+  }, [entryReady, onboardingBlocked, stream.status]);
   useEffect(() => {
     if (!entryLoading) return;
-    // Do not trap a learner behind an unconfirmed remote operation. Releasing
-    // the modal does not cancel or retry it; the normal pending UI stays visible.
-    const timer = window.setTimeout(() => setEntrySettled(true), 30_000);
+    // A slow operation needs an exit, not an apparently usable workspace.
+    // Returning to the Hero does not cancel or retry the unconfirmed request.
+    const timer = window.setTimeout(() => setEntrySlow(true), 30_000);
     return () => window.clearTimeout(timer);
   }, [entryLoading]);
   const onboarding = useWorkbenchOnboarding({
@@ -822,31 +823,29 @@ function PBLV3WorkspaceContent({
                   <LearningConversation
                     waitingToStart={waitingToStart}
                     overview={
-                      !onboarding.active && !entryLoading ? (
-                        <ProjectOverview
-                          key={view.id}
-                          view={view}
-                          hero={projectHero}
-                          startAction={
-                            waitingToStart ? (
-                              <button
-                                type="button"
-                                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground disabled:opacity-50"
-                                disabled={
-                                  !onboardingReady ||
-                                  (blockedReason !== null && blockedReason !== 'opening') ||
-                                  onboarding.active ||
-                                  entryLoading
-                                }
-                                onClick={() => void command('begin')}
-                              >
-                                <ArrowRight size={18} aria-hidden="true" />
-                                {t('pblV3.overview.startLearning')}
-                              </button>
-                            ) : undefined
-                          }
-                        />
-                      ) : undefined
+                      <ProjectOverview
+                        key={view.id}
+                        view={view}
+                        hero={projectHero}
+                        startAction={
+                          waitingToStart ? (
+                            <button
+                              type="button"
+                              className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground transition-colors enabled:hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={
+                                !onboardingReady ||
+                                (blockedReason !== null && blockedReason !== 'opening') ||
+                                onboarding.active ||
+                                entryLoading
+                              }
+                              onClick={() => void command('begin')}
+                            >
+                              <ArrowRight size={18} aria-hidden="true" />
+                              {t('pblV3.overview.startLearning')}
+                            </button>
+                          ) : undefined
+                        }
+                      />
                     }
                     modalActive={onboarding.active || entryLoading}
                     view={view}
@@ -1279,7 +1278,12 @@ function PBLV3WorkspaceContent({
           />
         </>
       )}
-      {entryLoading && <WorkbenchLoading root={workspaceRoot} />}
+      {entryLoading && (
+        <WorkbenchLoading
+          root={workspaceRoot}
+          onReturnToHero={entrySlow ? onReturnToHero : undefined}
+        />
+      )}
       {view && onboarding.active && (
         <WorkbenchOnboarding
           key={view.id}

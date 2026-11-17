@@ -3376,6 +3376,8 @@
       "waiting": "Hướng dẫn sẽ có khi môi trường học tập sẵn sàng.",
       "loading": "Đang tải không gian làm việc",
       "loadingDetail": "Đang kết nối môi trường học tập và chuẩn bị tệp dự án. Vui lòng chờ.",
+      "loadingSlowDetail": "Việc chuẩn bị đang lâu hơn dự kiến. Bạn có thể quay lại phần giới thiệu dự án; quá trình chuẩn bị môi trường đã bắt đầu sẽ tiếp tục chạy trong nền.",
+      "loadingReturn": "Quay lại phần giới thiệu dự án",
       "steps": {
         "progress": {
           "title": "Xem tiến độ và nhiệm vụ hiện tại",

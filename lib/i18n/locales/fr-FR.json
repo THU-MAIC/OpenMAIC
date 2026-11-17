@@ -3376,6 +3376,8 @@
       "waiting": "Le guide sera disponible lorsque l’environnement sera prêt.",
       "loading": "Chargement de l’espace de travail",
       "loadingDetail": "Connexion à l’environnement et préparation des fichiers du projet. Veuillez patienter.",
+      "loadingSlowDetail": "La préparation prend plus de temps. Vous pouvez revenir à la présentation du projet ; la préparation déjà lancée continue en arrière-plan.",
+      "loadingReturn": "Revenir à la présentation du projet",
       "steps": {
         "progress": {
           "title": "Consulter la progression et la tâche actuelle",

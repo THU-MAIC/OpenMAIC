@@ -25,6 +25,7 @@ async function project(
     completedArtifacts = completed,
     prepareGate,
     prepareFailure = false,
+    lagPreparationWorkbench = false,
     beginGate,
     beginFailures = 0,
     existingQueuedRun = false,
@@ -50,6 +51,7 @@ async function project(
     completedArtifacts?: boolean;
     prepareGate?: Promise<void>;
     prepareFailure?: boolean;
+    lagPreparationWorkbench?: boolean;
     beginGate?: Promise<void>;
     beginFailures?: number;
     existingQueuedRun?: boolean;
@@ -244,7 +246,7 @@ async function project(
         await prepareGate;
         view.environment = { state: 'running', ready: true };
         view.revision++;
-        workbench.revision = view.revision;
+        if (!lagPreparationWorkbench) workbench.revision = view.revision;
       }
       if (body.command.type === 'begin') {
         if (beginFailures-- > 0)
@@ -523,9 +525,8 @@ for (const entry of [
     }
     if (entry === 'delayed-guide') {
       await expect(page.locator('#pbl-project-overview')).toBeVisible();
-      await expect(
-        page.getByRole('button', { name: 'Start learning', exact: true }),
-      ).toBeDisabled();
+      await expect(page.getByTestId('pbl-workbench-loading')).toBeVisible();
+      await expect(page.locator('#pbl-project-overview button').last()).toBeDisabled();
       expect(fixture.commands).toEqual([]);
       fixture.workbench.environmentId = fixture.view.environmentId!;
       await fixture.publish();
@@ -887,28 +888,42 @@ for (const completed of [false, true]) {
   });
 }
 
-test('a hung initial prepare releases the barrier without retrying the unknown operation', async ({
-  page,
-  learningEvents,
-}) => {
-  await page.clock.install();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
+for (const outcome of ['return', 'complete'] as const) {
+  test(`a slow initial prepare stays covered until ${outcome} without retrying`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.clock.install();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fixture = await project(page, learningEvents, {
+      environmentReady: false,
+      prepareGate: gate,
+    });
+    await expect.poll(() => fixture.commands).toEqual(['prepare']);
+    await expect(page.getByTestId('pbl-workbench-loading')).toBeVisible();
+    await page.clock.runFor(30_100);
+    await expect(page.getByTestId('pbl-workbench-loading')).toBeVisible();
+    const exit = page.getByRole('dialog').getByRole('button', {
+      name: 'Back to project introduction',
+      exact: true,
+    });
+    await expect(exit).toBeEnabled();
+    expect(fixture.commands).toEqual(['prepare']);
+    if (outcome === 'return') {
+      await exit.click();
+      release();
+      await expect(page.getByTestId('pbl-v3-workspace')).toHaveCount(0);
+    } else {
+      release();
+      await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+      await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
+      expect(fixture.commands).toEqual(['prepare']);
+    }
   });
-  const fixture = await project(page, learningEvents, {
-    environmentReady: false,
-    prepareGate: gate,
-  });
-  await expect.poll(() => fixture.commands).toEqual(['prepare']);
-  await expect(page.getByTestId('pbl-workbench-loading')).toBeVisible();
-  await page.clock.runFor(30_100);
-  await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
-  expect(fixture.commands).toEqual(['prepare']);
-  await page.getByRole('button', { name: 'Back to project overview', exact: true }).click();
-  release();
-  await expect(page.getByTestId('pbl-v3-workspace')).toHaveCount(0);
-});
+}
 
 test('uses the current progress anchor after a live stage transition', async ({
   page,
@@ -1165,7 +1180,7 @@ test('requires a current matching snapshot only for entry and prioritizes real f
 }) => {
   const fixture = await project(page, learningEvents, { staleWorkbench: true });
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
-  await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
+  await expect(page.getByTestId('pbl-workbench-loading')).toBeVisible();
   await expect(tour(page)).toHaveCount(0);
   fixture.workbench.environmentId = fixture.view.environmentId!;
   fixture.workbench.revision = fixture.view.revision;
@@ -1535,7 +1550,7 @@ test('hides Latest during the guide and restores the working control after dismi
 });
 
 for (const started of [false, true]) {
-  test(`editing during restore defers auto-entry and preserves spaces/focus (Continue=${started})`, async ({
+  test(`preparation protects first entry and preserves returning drafts (Continue=${started})`, async ({
     page,
     learningEvents,
   }) => {
@@ -1551,9 +1566,22 @@ for (const started of [false, true]) {
       prepareGate: gate,
     });
     await expect.poll(() => fixture.commands).toContain('prepare');
-    if (!started) await page.clock.runFor(30_100);
-    await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
     const composer = page.locator('[data-pbl-tour="composer"] textarea');
+    if (!started) {
+      await page.clock.runFor(30_100);
+      await expect(page.getByTestId('pbl-workbench-loading')).toBeVisible();
+      await page.keyboard.press('Tab');
+      await page.keyboard.type('blocked');
+      await expect(composer).toHaveValue('');
+      release();
+      await expect(tour(page)).toBeVisible();
+      await finish(page);
+      await composer.fill('Words with spaces after recovery');
+      await expect(composer).toBeFocused();
+      await expect(composer).toHaveValue('Words with spaces after recovery');
+      return;
+    }
+    await expect(page.getByTestId('pbl-workbench-loading')).toHaveCount(0);
     await composer.fill('A draft before recovery');
     // Deferral lasts for this visit even if the learner clears the draft.
     await composer.fill('');
@@ -2355,3 +2383,64 @@ test('independent columns, narrow assistant and a single scrolling tab row', asy
   expect(narrow.assistant.width).toBeGreaterThan(200);
   expect(narrow.assistant.width / width).toBeLessThan(0.23);
 });
+
+for (const width of [1365, 390]) {
+  test(`first-entry barrier hands off to a populated guide after a delayed snapshot at ${width}px`, async ({
+    page,
+    learningEvents,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    let release!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fixture = await project(page, learningEvents, {
+      environmentReady: false,
+      prepareGate,
+      lagPreparationWorkbench: true,
+      opening: true,
+      finishedWork: 'A complete application that preserves its saved records. '.repeat(45),
+    });
+    const loading = page.getByTestId('pbl-workbench-loading');
+    await expect(loading).toBeVisible();
+    release();
+    await expect.poll(() => fixture.view.environment?.ready).toBe(true);
+    // The prepare response has arrived, but the stream still has the prior revision.
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeDisabled();
+    await expect(loading).toBeVisible();
+    await expect(tour(page)).toHaveCount(0);
+    await expect(page.locator('#pbl-project-overview')).toBeVisible();
+    await expect(page.locator('#pbl-project-overview button').last()).toBeDisabled();
+    // An HTTP view already exists; neither clicks nor Tab may reach the workspace
+    // while its independently delivered matching snapshot is still missing.
+    await loading.click({ position: { x: 10, y: 10 } });
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))).toBe(
+      true,
+    );
+    expect(fixture.commands).toEqual(['prepare']);
+    fixture.workbench.environmentId = fixture.view.environmentId!;
+    await fixture.publish();
+    await expect(loading).toHaveCount(0);
+    await expect(tour(page)).toHaveAttribute('data-step', 'progress');
+    await next(page).click();
+    await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+    await expect(page.locator('#pbl-project-overview')).toBeVisible();
+    await expect(page.locator('#pbl-project-overview button').last()).toBeDisabled();
+    await correctSpotlight(page, '[data-testid="pbl-assistant"]');
+    if (width === 390) {
+      const reading = page.getByTestId('pbl-project-start');
+      const bounds = (await reading.boundingBox())!;
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height - 25);
+      await page.mouse.wheel(0, 500);
+      await expect.poll(() => reading.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+      await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
+    }
+    await page.screenshot({ path: testInfo.outputPath('overview-during-guide.png') });
+    expect(fixture.commands).toEqual(['prepare']);
+    await finish(page);
+    await expect(page.getByRole('button', { name: 'Start learning', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Start learning', exact: true }).click();
+    await expect.poll(() => fixture.commands).toEqual(['prepare', 'begin']);
+  });
+}

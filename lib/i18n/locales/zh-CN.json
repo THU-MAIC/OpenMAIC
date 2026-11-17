@@ -3376,6 +3376,8 @@
       "waiting": "学习环境就绪后即可查看新手指引。",
       "loading": "页面正在加载中",
       "loadingDetail": "正在连接学习环境、准备项目文件，请稍候。",
+      "loadingSlowDetail": "准备时间稍长，可先返回项目介绍页。已开始的环境准备会在后台继续。",
+      "loadingReturn": "先返回项目介绍",
       "steps": {
         "progress": {
           "title": "在这里查看进度和当前任务",
