@@ -1003,3 +1003,34 @@ it('retains multiple uncertain submissions while a read-blocked retry is skipped
   expect(editor.buffer?.text).toBe('Submitted plan');
   expect(editor.readError).toBe('Plan read failed');
 });
+
+it.each(['reload', 'close'] as const)(
+  'preserves another file save failure after %s of a read-blocked retry',
+  async (action) => {
+    vi.useFakeTimers();
+    await mount(createElement(Editor, { value: view(`remaining-failure-${action}`) }));
+    save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+    await act(async () => editor.edit('Submitted plan'));
+    await act(async () => editor.save());
+    read.mockRejectedValueOnce(new Error('Plan read failed'));
+    await act(async () => editor.reload());
+    await act(async () => editor.select('main.py'));
+    await act(async () => editor.edit('Submitted code'));
+    save.mockRejectedValueOnce(new Error('Code acknowledgement lost'));
+    await act(async () => editor.save());
+    const codeRequest = save.mock.calls[1]![3];
+    await act(async () => editor.select('PLAN.md'));
+    if (action === 'reload') await act(async () => editor.reload());
+    else await act(async () => editor.close('PLAN.md'));
+    await act(async () => editor.select('main.py'));
+    await act(async () => vi.advanceTimersByTimeAsync(1500));
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(editor.saveError).toBe('Code acknowledgement lost');
+    await act(async () => editor.save());
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(save.mock.calls[2]?.slice(0, 3)).toEqual(['main.py', 'Submitted code', 'a'.repeat(64)]);
+    expect(save.mock.calls[2]![3]).toBe(codeRequest);
+    expect(editor.saveError).toBe('');
+    expect(editor.anyDirty).toBe(false);
+  },
+);

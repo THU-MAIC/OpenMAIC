@@ -47,7 +47,7 @@ export function useProjectEditor(
   const sequence = useRef(0),
     mounted = useRef(true);
   const inFlight = useRef<Promise<void> | null>(null),
-    failed = useRef(false);
+    failed = useRef<string | null>(null);
   const retrySaves = useRef(
     new Map<string, { name: string; buffer: EditorBuffer; request: FileSaveRequest }>(),
   );
@@ -93,6 +93,15 @@ export function useProjectEditor(
     },
     [],
   );
+  const clearFileFailure = useCallback((name: string) => {
+    retrySaves.current.delete(name);
+    if (unavailableSave.current?.name === name) unavailableSave.current = null;
+    // Recovering one file must not authorize retrying another failed write.
+    if (failed.current === name) {
+      failed.current = null;
+      setSaveError('');
+    }
+  }, []);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -151,10 +160,7 @@ export function useProjectEditor(
             (rejected?.name === path && rejected.environment === existing?.environment) ||
             (retry?.name === path && retry.buffer.environment === existing?.environment)
           ) {
-            unavailableSave.current = null;
-            retrySaves.current.delete(path);
-            failed.current = false;
-            setSaveError('');
+            clearFileFailure(path);
           }
         };
         const clearConflict = () =>
@@ -215,10 +221,7 @@ export function useProjectEditor(
           (unavailableSave.current?.name === path &&
             unavailableSave.current.environment === existing?.environment)
         ) {
-          failed.current = false;
-          retrySaves.current.delete(path);
-          unavailableSave.current = null;
-          setSaveError('');
+          clearFileFailure(path);
         }
       } catch (error) {
         if (isCurrent()) {
@@ -235,7 +238,7 @@ export function useProjectEditor(
         }
       }
     },
-    [updateBuffers, updateReadErrors],
+    [updateBuffers, updateReadErrors, clearFileFailure],
   );
   useEffect(() => {
     const { buffers } = current.current;
@@ -381,7 +384,7 @@ export function useProjectEditor(
               unavailableSave.current = { name, environment: buffer.environment };
           }
           if (mounted.current) {
-            failed.current = true;
+            failed.current = name;
             setSaveError((error as Error).message);
           }
           return;
@@ -418,10 +421,7 @@ export function useProjectEditor(
       (retrySaves.current.has(name) || unavailableSave.current?.name === name) &&
       !inFlight.current
     ) {
-      retrySaves.current.delete(name);
-      failed.current = false;
-      unavailableSave.current = null;
-      setSaveError('');
+      clearFileFailure(name);
     }
     if (tabs.length === 1 && name === 'PLAN.md') {
       void load(true);
@@ -469,7 +469,7 @@ export function useProjectEditor(
     close,
     reload: () => load(true),
     save: () => {
-      failed.current = false;
+      failed.current = null;
       setSaveError('');
       return pump();
     },
