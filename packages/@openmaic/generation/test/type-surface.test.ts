@@ -30,7 +30,6 @@ type _SceneContentKeys = Assert<
     | 'baselineContent'
     | 'pblLoopFallback'
     | 'design'
-    | 'tokens'
     | 'onFailure'
     | 'logger'
   >

@@ -489,7 +489,7 @@ describe('generation and deck tools', () => {
     expect(prompts[2]).toContain('Entropy of mixing');
   });
 
-  it('declares design as an optional slide-only look brief, apart from the content fields', () => {
+  it('declares design as an optional look brief for slide and interactive pages, apart from the content fields', () => {
     const generate = find(buildGenerationTools(deps(state(document([])).store)), 'generate_scene');
     const schema = generate.parameters as unknown as {
       required?: string[];
@@ -501,7 +501,7 @@ describe('generation and deck tools', () => {
       description: SLIDE_DESIGN_DESCRIPTION,
     });
     const design = schema.properties.design.description ?? '';
-    expect(design).toMatch(/^Slide pages only/);
+    expect(design).toContain('course-wide visual style the agent fixed, restated per page');
     for (const part of ['at a glance', 'visual style', 'palette', 'layout', 'proportions']) {
       expect(design).toContain(part);
     }
@@ -566,21 +566,79 @@ describe('generation and deck tools', () => {
     expect(users[0]).not.toContain('Design Brief');
   });
 
-  it('rejects design on non-slide pages without writing anything', async () => {
+  it('rejects design on quiz and pbl pages without writing anything', async () => {
     const current = state(document([]));
     const aiCall = vi.fn();
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    for (const type of ['quiz', 'pbl'] as const) {
+      const response = await generate.execute('call', {
+        stageId: 'stage-test',
+        order: 1,
+        title: 'Check',
+        type,
+        brief: 'Check understanding',
+        design: 'Two columns',
+      } as never);
+      expect(response).toMatchObject({
+        isError: true,
+        details: { error: 'design-requires-slide-or-interactive' },
+      });
+      expect(aiCall).not.toHaveBeenCalled();
+      expect(current.get()?.scenes).toHaveLength(0);
+    }
+  });
+
+  it('threads design into the content prompt for interactive pages', async () => {
+    const current = state(document([]));
+    const users: string[] = [];
+    let calls = 0;
+    const aiCall = vi.fn(async (_system: string, user: string) => {
+      calls += 1;
+      users.push(user);
+      return calls === 1
+        ? '<!DOCTYPE html><html><head></head><body><div>Simulation</div></body></html>'
+        : '[]';
+    });
     const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
     const response = await generate.execute('call', {
       stageId: 'stage-test',
       order: 1,
-      title: 'Check',
-      type: 'quiz',
-      brief: 'Check understanding',
-      design: 'Two columns',
+      title: 'Simulation',
+      type: 'interactive',
+      widgetType: 'simulation',
+      brief: 'Interactive simulation',
+      design: 'Dark charcoal background #121212 with emerald accent #10b981',
     } as never);
-    expect(response).toMatchObject({ isError: true, details: { error: 'design-requires-slide' } });
-    expect(aiCall).not.toHaveBeenCalled();
-    expect(current.get()?.scenes).toHaveLength(0);
+    expect(response).not.toMatchObject({ isError: true });
+    expect(users[0]).toContain('## Course Visual Style');
+    expect(users[0]).toContain('Dark charcoal background #121212 with emerald accent #10b981');
+    expect(users[0]).toContain(
+      'Follow this style for page background, panels, text and accent colours:',
+    );
+  });
+
+  it('generates an interactive page without the visual style section when no design is given', async () => {
+    const current = state(document([]));
+    const users: string[] = [];
+    let calls = 0;
+    const aiCall = vi.fn(async (_system: string, user: string) => {
+      calls += 1;
+      users.push(user);
+      return calls === 1
+        ? '<!DOCTYPE html><html><head></head><body><div>Simulation</div></body></html>'
+        : '[]';
+    });
+    const generate = find(buildGenerationTools(deps(current.store, { aiCall })), 'generate_scene');
+    await generate.execute('call', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Simulation',
+      type: 'interactive',
+      widgetType: 'simulation',
+      brief: 'Interactive simulation',
+    } as never);
+    expect(users[0]).toBeDefined();
+    expect(users[0]).not.toContain('Course Visual Style');
   });
 
   it('tells the agent to keep one course-wide design style across slide designs', () => {

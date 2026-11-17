@@ -36,7 +36,6 @@ const SNIPPET_IDS = [
   'interactive-math',
   'interactive-libraries',
   'interactive-observation',
-  'interactive-theme-tokens',
   'slide-image-instructions',
   'slide-generated-image-instructions',
   'slide-video-instructions',

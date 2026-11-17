@@ -8,12 +8,10 @@ import {
   generateSceneContent,
   PBLGenerationError,
   type AICallFn,
-  type InteractiveDesignPalette,
   type ImageMapping,
   type PdfImage,
   type SceneContentFailureCode,
   type SceneGenerationContext,
-  resolveDesignTokens,
 } from '@openmaic/generation';
 
 import { putSceneBringingCurrent } from './document-writes';
@@ -43,7 +41,7 @@ const SUPPORTED_SCENE_TYPES = new Set(['slide', 'quiz', 'interactive', 'pbl']);
 const log = createLogger('AgentGenerationTools');
 
 export const SLIDE_DESIGN_DESCRIPTION =
-  'Slide pages only: the designer brief for how this page looks, written the way a designer hands a layout to a production artist. Say (1) what the page must make obvious at a glance; (2) the visual style: background, palette with its roles (title, accent, panels), tone and density; (3) the layout: the regions with rough proportions (for example a title band across the top 15%, then a 60/40 split) and which piece of content sits in each region and in what form (table, numbered steps, cards, diagram, chart, formula, image). Refer to the content by role ("the comparison table", "the three steps"); do not restate it: the words on the page come from brief and materialFacts, and this text is never written onto the page. Write it for every slide you generate; leave it out only to let the generator design the page freely.';
+  'The course-wide visual style the agent fixed, restated per page: say (1) what the page must make obvious at a glance; (2) the visual style: background, palette with its roles (title, accent, panels), tone and density; (3) for slides, the layout: the regions with rough proportions (for example a title band across the top 15%, then a 60/40 split) and which piece of content sits in each region and in what form (table, numbered steps, cards, diagram, chart, formula, image). Refer to the content by role ("the comparison table", "the three steps"); do not restate it: the words on the page come from brief and materialFacts, and this text is never written onto the page. Write it for every slide and interactive page you generate; leave it out only to let the generator design the page freely.';
 
 const SceneParams = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
@@ -79,22 +77,6 @@ const SceneParams = Type.Object({
       {
         description:
           'Interactive pages only: widget configuration object matching widgetType (e.g. { concept, keyVariables } for simulation, { diagramType, nodes } for diagram, { language } for code, { gameType, challenge } for game, { visualizationType, objects } for visualization3d). Must be a plain object. Defaults to { concept: title } when widgetType is set; when only widgetOutline is set, widgetType defaults to simulation.',
-      },
-    ),
-  ),
-  palette: Type.Optional(
-    Type.Object(
-      {
-        background: Type.Optional(Type.String()),
-        surface: Type.Optional(Type.String()),
-        text: Type.Optional(Type.String()),
-        muted: Type.Optional(Type.String()),
-        border: Type.Optional(Type.String()),
-        accent: Type.Optional(Type.String()),
-      },
-      {
-        description:
-          'Interactive pages only: the six course colour roles fixed for this course. Copy these values from the course style used by its slides; do not infer them from the widget brief.',
       },
     ),
   ),
@@ -313,7 +295,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
     name: 'generate_scene',
     label: 'Generate page',
     description:
-      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Content and look are separate inputs: brief and materialFacts say what the page teaches; for a slide, design says how it looks (style and layout). Interactive pages accept widgetType, widgetOutline, and the course palette (background, surface, text, muted, border, accent). To put a source figure, table image or generated image on the page, pass it in `media`; one { src, description, width, height } per image, where src is the id returned by use_material_media or generate_image. The content model places them; a page generated without `media` has no images.',
+      'Generate and durably persist one page from an explicit title, type, and brief. Reusing an order replaces that page. Content and look are separate inputs: brief and materialFacts say what the page teaches; for a slide or interactive page, design says how it looks (the course-wide visual style the agent fixed, restated per page) and is rejected for other page types. Interactive pages accept widgetType (simulation/diagram/code/game/visualization3d) plus a matching widgetOutline object; both are rejected for other page types. To put a source figure, table image or generated image on the page, pass it in `media`: one { src, description, width, height } per image, where src is the id returned by use_material_media or generate_image. The content model places them; a page generated without `media` has no images.',
     parameters: SceneParams,
     async execute(_callId, params, signal) {
       if (!Number.isInteger(params.order) || params.order < 1) {
@@ -370,13 +352,6 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           true,
         );
       }
-      if (params.type !== 'interactive' && params.palette !== undefined) {
-        return result(
-          'generate_scene only accepts palette for interactive pages.',
-          { error: 'palette-requires-interactive', type: params.type },
-          true,
-        );
-      }
       if (
         params.widgetOutline !== undefined &&
         (typeof params.widgetOutline !== 'object' ||
@@ -390,10 +365,14 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         );
       }
       const design = params.design?.trim();
-      if (params.design !== undefined && params.type !== 'slide') {
+      if (
+        params.design !== undefined &&
+        params.type !== 'slide' &&
+        params.type !== 'interactive'
+      ) {
         return result(
-          'generate_scene only accepts design for slide pages.',
-          { error: 'design-requires-slide', type: params.type },
+          'generate_scene only accepts design for slide and interactive pages.',
+          { error: 'design-requires-slide-or-interactive', type: params.type },
           true,
         );
       }
@@ -490,9 +469,6 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           ...(assignedImages.length ? { assignedImages, imageMapping } : {}),
           ...(params.instruction ? { editDirective: params.instruction } : {}),
           ...(baseline ? { baselineContent: baseline } : {}),
-          ...(params.palette
-            ? { tokens: resolveDesignTokens(params.palette as Partial<InteractiveDesignPalette>) }
-            : {}),
           onFailure: (failure) => {
             contentFailure = failure.code;
           },

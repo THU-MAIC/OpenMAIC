@@ -49,7 +49,6 @@ import {
   formatWidgetVariables,
   resolveWidgetDesignIdea,
 } from './widget-outline-format.js';
-import { DEFAULT_DESIGN_TOKENS, injectDesignTokenCss, type CourseDesignTokens } from './theme.js';
 import type {
   GeneratedInteractiveContent,
   GeneratedPBLContent,
@@ -126,7 +125,6 @@ export interface SceneContentOptions {
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
   design?: string;
-  tokens?: CourseDesignTokens;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -289,7 +287,7 @@ export async function generateSceneContent(
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
-      tokens: options.tokens,
+      design: options.design,
     });
   }
 
@@ -1279,7 +1277,6 @@ export interface GenerateWidgetContentOptions {
   logger?: GenerationLogger;
   onFailure?: (failure: SceneContentFailure) => void;
   design?: string;
-  tokens?: CourseDesignTokens;
 }
 
 /**
@@ -1300,18 +1297,8 @@ export async function generateWidgetContent(
     return null;
   }
 
-  const tokens = options.tokens ?? DEFAULT_DESIGN_TOKENS;
-  const themeVars = {
-    styleName: tokens.isDark ? 'Dark' : 'Light',
-    isLightStyle: !tokens.isDark,
-    themeBackground: tokens.background,
-    themeSurface: tokens.surface,
-    themeText: tokens.text,
-    themeMuted: tokens.mutedText,
-    themeBorder: tokens.border,
-    themeAccent: tokens.accent,
-    themeFont: tokens.font,
-  };
+  const design = (options.design ?? outline.design)?.trim();
+  const designVars = design ? { design } : {};
 
   // Select appropriate prompt based on widget type
   let promptId: PromptId;
@@ -1327,7 +1314,7 @@ export async function generateWidgetContent(
         variables: formatWidgetVariables(widgetOutline.keyVariables),
         designIdea: resolveWidgetDesignIdea(outline),
         languageDirective: languageDirective || '',
-        ...themeVars,
+        ...designVars,
       };
       break;
 
@@ -1344,7 +1331,7 @@ export async function generateWidgetContent(
         hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
         hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
-        ...themeVars,
+        ...designVars,
       };
       break;
     }
@@ -1360,7 +1347,7 @@ export async function generateWidgetContent(
         testCases: '', // AI generates appropriate test cases based on challenge
         hints: '', // AI generates progressive hints based on challenge
         languageDirective: languageDirective || '',
-        ...themeVars,
+        ...designVars,
       };
       break;
 
@@ -1373,7 +1360,7 @@ export async function generateWidgetContent(
         keyPoints: (outline.keyPoints || []).join('\n'),
         scoring: { correctPoints: 10, speedBonus: 5 },
         languageDirective: languageDirective || '',
-        ...themeVars,
+        ...designVars,
       };
       break;
 
@@ -1387,7 +1374,7 @@ export async function generateWidgetContent(
         objects: widgetOutline.objects || [],
         interactions: widgetOutline.interactions || [],
         languageDirective: languageDirective || '',
-        ...themeVars,
+        ...designVars,
       };
       break;
 
@@ -1408,7 +1395,7 @@ export async function generateWidgetContent(
         successCriteria: widgetOutline.successCriteria || [],
         errorConsequences: widgetOutline.errorConsequences || [],
         languageDirective: languageDirective || '',
-        ...themeVars,
+        ...designVars,
       };
       break;
 
@@ -1449,11 +1436,8 @@ export async function generateWidgetContent(
   // Extract widget config from HTML if present
   const widgetConfig = extractWidgetConfig(html, widgetType);
 
-  const processedHtml = postProcessInteractiveHtml(html);
-  const themedHtml = injectDesignTokenCss(processedHtml, tokens);
-
   return {
-    html: themedHtml,
+    html: postProcessInteractiveHtml(html),
     widgetType,
     widgetConfig,
   };
