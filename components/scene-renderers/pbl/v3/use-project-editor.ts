@@ -32,12 +32,17 @@ export function useProjectEditor(
   const [tabs, setTabs] = useState(initial.tabs.length ? initial.tabs : ['PLAN.md']);
   const [buffers, setBuffers] = useState<Record<string, EditorBuffer>>(initial.buffers);
   const [loading, setLoading] = useState(false);
+  // Keep cached content visible, but do not accept edits until its fresh read settles.
+  const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [readErrors, setReadErrors] = useState<
     Record<string, { source: ReturnType<typeof editorSource>; message: string }>
   >({});
   const readTickets = useRef(new Map<string, number>());
+  // Only display verified buffers during background refreshes. Persisted drafts
+  // and changed sources/revisions still require their normal recovery read.
+  const verifiedReads = useRef(new Map<string, { source: string | null; revision: number }>());
   const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
     mounted = useRef(true);
@@ -56,8 +61,19 @@ export function useProjectEditor(
     path,
     options,
     recoveryConflicts,
+    refreshing,
   });
-  current.current = { view, buffers, read, onError, onSave, path, options, recoveryConflicts };
+  current.current = {
+    view,
+    buffers,
+    read,
+    onError,
+    onSave,
+    path,
+    options,
+    recoveryConflicts,
+    refreshing,
+  };
   const updateBuffers = useCallback(
     (update: (previous: Record<string, EditorBuffer>) => Record<string, EditorBuffer>) => {
       const next = update(current.current.buffers);
@@ -81,7 +97,7 @@ export function useProjectEditor(
   }, [view.id, path, tabs, buffers, onError]);
   const dirty = (name: string) => !!buffers[name] && buffers[name].text !== buffers[name].saved;
   const load = useCallback(
-    async (discard = false, name = current.current.path) => {
+    async (discard = false, name = current.current.path, background = false) => {
       const { view, read } = current.current;
       const path = name;
       if ((!view.environment?.ready && !view.completedFilesAvailable) || !view.files.includes(path))
@@ -89,6 +105,7 @@ export function useProjectEditor(
       const active = path === current.current.path;
       const ticket = active ? ++sequence.current : sequence.current;
       const source = editorSource(view);
+      const baseHash = current.current.buffers[path]?.hash;
       const readTicket = (readTickets.current.get(path) ?? 0) + 1;
       readTickets.current.set(path, readTicket);
       const isCurrent = () =>
@@ -98,10 +115,17 @@ export function useProjectEditor(
         view.id === current.current.view.id &&
         source === editorSource(current.current.view) &&
         current.current.view.files.includes(path);
-      if (active) setLoading(true);
+      if (active) {
+        setLoading(!background);
+        setRefreshing(background);
+      }
       try {
         const result = await read(path);
         if (!isCurrent()) return;
+        // A save can finish while a non-blocking read is in flight. Its newer
+        // acknowledged base wins over that read, even if typing is now clean.
+        if (background && current.current.buffers[path]?.hash !== baseHash) return;
+        verifiedReads.current.delete(path);
         setReadErrors((previous) => {
           if (previous[path]?.source !== source) return previous;
           const next = { ...previous };
@@ -170,6 +194,7 @@ export function useProjectEditor(
           return;
         }
         clearConflict();
+        verifiedReads.current.set(path, { source, revision: view.revision });
         updateBuffers((previous) => ({
           ...previous,
           [path]: { ...result, saved: result.text, environment: editorSource(view)! },
@@ -185,28 +210,44 @@ export function useProjectEditor(
           setSaveError('');
         }
       } catch (error) {
-        if (isCurrent())
+        if (isCurrent()) {
+          verifiedReads.current.delete(path);
           setReadErrors((previous) => ({
             ...previous,
             [path]: { source, message: (error as Error).message },
           }));
+        }
       } finally {
-        if (active && ticket === sequence.current) setLoading(false);
+        if (active && ticket === sequence.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [updateBuffers],
   );
   useEffect(() => {
     const { buffers } = current.current;
+    if (!view.environment?.ready && !view.completedFilesAvailable) verifiedReads.current.clear();
     const buffer = buffers[path];
+    const verified = verifiedReads.current.get(path);
+    const reusable =
+      buffer?.environment === selectedSource &&
+      verified?.source === selectedSource &&
+      verified?.revision === view.revision;
     if (
       !buffer ||
       buffer.text === buffer.saved ||
       buffer.environment !== selectedSource ||
       unavailableSave.current?.name === path
     )
-      void load();
-    else setLoading(false);
+      // Shell writes need not advance the study revision. Keep revalidating
+      // clean files, but do not block a tab switch on an already verified read.
+      void load(false, path, reusable && unavailableSave.current?.name !== path);
+    else {
+      setLoading(false);
+      setRefreshing(false);
+    }
     // Recovery must include background tabs; otherwise their retained drafts
     // would keep the study dirty even after the visible file resumed saving.
     for (const [name, buffer] of Object.entries(buffers))
@@ -371,6 +412,7 @@ export function useProjectEditor(
       delete next[name];
       return next;
     });
+    verifiedReads.current.delete(name);
     const next = tabs.filter((p) => p !== name);
     if (!next.length) next.push('PLAN.md');
     setTabs(next);
@@ -381,6 +423,7 @@ export function useProjectEditor(
     tabs,
     buffer: buffers[path],
     loading,
+    refreshing,
     saving,
     saveError,
     readError: readErrors[path]?.source === selectedSource ? readErrors[path].message : '',
@@ -404,6 +447,7 @@ export function useProjectEditor(
       const { path, view, options, recoveryConflicts } = current.current;
       const b = current.current.buffers[path];
       if (
+        current.current.refreshing ||
         !options.enabled ||
         !options.canEdit(path) ||
         !b ||

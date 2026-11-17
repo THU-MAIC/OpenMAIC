@@ -144,7 +144,8 @@ export function LearningWorkbenchPanel({
   }, [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   const editable = canEdit(path);
-  const canSave = !disabled && !editor.loading && !stale && !!buffer && editable;
+  const canSave =
+    !disabled && !editor.loading && !editor.refreshing && !stale && !!buffer && editable;
   const pendingReason =
     pendingAction === 'evaluate' || (pendingAction === 'collect' && view.stage.kind === 'check')
       ? 'testing'
@@ -163,11 +164,10 @@ export function LearningWorkbenchPanel({
           ? 'operation'
           : pending
             ? pendingReason
-            : editor.loading || !work
-              ? 'loading'
-              : (access(path).reason ??
-                work.editReason ??
-                (work.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
+            : (access(path).reason ??
+              (editor.loading || editor.refreshing || !work ? 'loading' : null) ??
+              work?.editReason ??
+              (work?.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
   const editMessage =
     editReason === 'environment'
       ? t(environmentNoticeKeys[environmentNotice(view.environment, pendingAction === 'prepare')])

@@ -675,3 +675,148 @@ it.each([false, true])(
     expect(editor.buffer?.changes).toEqual([]);
   },
 );
+
+it('refreshes verified tabs without blocking and rereads new revisions and remounted drafts', async () => {
+  const value = view('verified-tabs');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  expect(read).toHaveBeenCalledTimes(2);
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.loading).toBe(false);
+  expect(read).toHaveBeenCalledTimes(3);
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
+  expect(read).toHaveBeenCalledTimes(4);
+  await act(async () => editor.select('main.py'));
+  expect(read).toHaveBeenCalledTimes(5);
+  await act(async () => editor.reload());
+  expect(read).toHaveBeenCalledTimes(6);
+  await leave();
+  read.mockResolvedValueOnce({ text: 'Changed while away', hash: 'c'.repeat(64) });
+  await mount(createElement(Editor, { value: { ...value, revision: 2 } }));
+  expect(read).toHaveBeenCalledTimes(7);
+  expect(editor.buffer?.text).toBe('Changed while away');
+});
+
+it('invalidates verified reads after environment loss or a failed refresh', async () => {
+  const value = view('verified-recovery');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  await act(async () =>
+    root!.render(
+      createElement(Editor, {
+        value: { ...value, environment: { ...value.environment!, ready: false } },
+      }),
+    ),
+  );
+  await act(async () => root!.render(createElement(Editor, { value })));
+  expect(read).toHaveBeenCalledTimes(3);
+  await act(async () => editor.select('PLAN.md'));
+  expect(read).toHaveBeenCalledTimes(4);
+  read.mockRejectedValueOnce(new Error('Refresh unavailable'));
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('Refresh unavailable');
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.select('PLAN.md'));
+  expect(read).toHaveBeenCalledTimes(7);
+  expect(editor.readError).toBe('');
+});
+
+// Terminal writes can change a file without changing the study revision.
+it('shows the verified buffer immediately and then receives same-revision file changes', async () => {
+  const value = view('background-refresh');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  let finish!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.loading).toBe(false);
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.refreshing).toBe(true);
+  await act(async () => editor.edit('Typing into the old copy'));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => finish({ text: 'Changed in the terminal', hash: 'c'.repeat(64) }));
+  expect(editor.buffer?.text).toBe('Changed in the terminal');
+  expect(editor.buffer?.hash).toBe('c'.repeat(64));
+  expect(editor.refreshing).toBe(false);
+  await act(async () => editor.edit('Editing the refreshed copy'));
+  expect(editor.buffer?.text).toBe('Editing the refreshed copy');
+});
+
+it('keeps an acknowledged save when an older background read returns afterward', async () => {
+  vi.useFakeTimers();
+  let acknowledge!: (value: { hash: string }) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  await mount(createElement(Editor, { value: view('background-save-race') }));
+  await act(async () => editor.edit('Newer saved answer'));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  // An already submitted save can settle while a clean reverted tab is revalidated.
+  await act(async () => editor.edit('Saved source'));
+  await act(async () => editor.select('main.py'));
+  let finish!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  await act(async () => acknowledge({ hash: 'b'.repeat(64) }));
+  await act(async () => finish({ text: 'Saved source', hash: 'a'.repeat(64) }));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.buffer?.hash).toBe('b'.repeat(64));
+  expect(editor.refreshing).toBe(false);
+});
+
+it('does not let a late refresh unlock the newly selected file', async () => {
+  await mount(createElement(Editor, { value: view('refresh-tab-switch') }));
+  await act(async () => editor.select('main.py'));
+  let finishPlan!: (value: { text: string; hash: string }) => void;
+  let finishCode!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishPlan = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishCode = resolve;
+      }),
+  );
+  await act(async () => editor.select('main.py'));
+  await act(async () => finishPlan({ text: 'Late plan', hash: 'late-plan' }));
+  expect(editor.refreshing).toBe(true);
+  await act(async () => editor.edit('Blocked until this file settles'));
+  expect(editor.buffer?.text).toBe('Saved source');
+  await act(async () => finishCode({ text: 'Current code', hash: 'current-code' }));
+  expect(editor.refreshing).toBe(false);
+  expect(editor.buffer?.text).toBe('Current code');
+});
+
+it('clears the pending refresh state after a read failure and permits explicit recovery', async () => {
+  await mount(createElement(Editor, { value: view('refresh-failure') }));
+  await act(async () => editor.select('main.py'));
+  read.mockRejectedValueOnce(new Error('Refresh unavailable'));
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.refreshing).toBe(false);
+  expect(editor.readError).toBe('Refresh unavailable');
+  expect(editor.buffer?.text).toBe('Saved source');
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('');
+  expect(editor.refreshing).toBe(false);
+  await act(async () => editor.edit('Recovered edit'));
+  expect(editor.buffer?.text).toBe('Recovered edit');
+});
