@@ -178,8 +178,12 @@ describe('local media command cancellation', () => {
     const abortedAt = Date.now();
     controller.abort(new Error('material deleted'));
     await expect(running).rejects.toThrow('material deleted');
-    // Not before the grace ran out and SIGKILL ended it.
-    expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(280);
+    // Not before the grace ran out and SIGKILL ended it. Windows has no signal
+    // a child can ignore: the first kill ends it at once, so there is no grace
+    // to wait out there, only the rejection and the dead child below.
+    if (process.platform !== 'win32') {
+      expect(Date.now() - abortedAt).toBeGreaterThanOrEqual(280);
+    }
     expect(() => process.kill(pid, 0)).toThrow();
   });
 });
