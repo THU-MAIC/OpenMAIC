@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
+import { isExportBusy, setExportBusy, useExportBusy } from '@/lib/store/export-busy';
+import { useCallback } from 'react';
 import type pptxgen from 'pptxgenjs';
 import { validateShapeGeometry, RENDER_PATH_LIMITS, shapeToTextFallback } from '@openmaic/geometry';
 import tinycolor from 'tinycolor2';
@@ -1428,8 +1429,7 @@ export interface PptxExportChoice {
 }
 
 export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
-  const [exporting, setExporting] = useState(false);
-  const exportingRef = useRef(false);
+  const exporting = useExportBusy('pptx');
   const { t } = useI18n();
 
   const scenes = useStageStore((s) => s.scenes);
@@ -1460,13 +1460,12 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
   // get a toast instead of silence.
   const withExportGuard = useCallback(
     (action: () => Promise<void>, hasPptxContent = true) => {
-      if (exportingRef.current) return;
+      if (isExportBusy('pptx')) return;
       if (!hasPptxContent) {
         toast.warning(t('export.noSlides'));
         return;
       }
-      exportingRef.current = true;
-      setExporting(true);
+      setExportBusy('pptx', true);
       setTimeout(async () => {
         try {
           await action();
@@ -1474,8 +1473,7 @@ export function useExportPPTX({ classroomOrigin }: UseExportPPTXOptions = {}) {
           log.error('Export failed:', err);
           toast.error(t('export.exportFailed'));
         } finally {
-          exportingRef.current = false;
-          setExporting(false);
+          setExportBusy('pptx', false);
         }
       }, 100);
     },

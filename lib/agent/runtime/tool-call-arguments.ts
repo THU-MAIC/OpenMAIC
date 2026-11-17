@@ -76,10 +76,23 @@ export function toolCallArguments(value: unknown): Record<string, unknown> {
 /** Arguments to replay to a provider: always a plain object, never the diagnosis. */
 export function replayToolCallArguments(value: unknown): Record<string, unknown> {
   const args = toolCallArguments(value);
-  if (!Object.prototype.hasOwnProperty.call(args, TOOL_ARGUMENTS_ERROR_KEY)) return args;
   const rest = { ...args };
   delete rest[TOOL_ARGUMENTS_ERROR_KEY];
-  return rest;
+  return stableArguments(rest) as Record<string, unknown>;
+}
+
+/** JSONB reorders keys on reload. Canonicalize every request view, including
+ * calls still in memory, so resume does not invalidate their cached prefix.
+ * Arrays retain their semantic order; execution arguments are never mutated.
+ */
+function stableArguments(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableArguments);
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, stableArguments(value[key])]),
+  );
 }
 
 /**

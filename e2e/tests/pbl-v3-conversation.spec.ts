@@ -841,7 +841,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await expect(choice).toBeEnabled();
   await choice.click();
   await expect(choice).toHaveAttribute('aria-pressed', 'true');
-  await expect(choice).toBeEnabled();
+  await expect(choice).toHaveAttribute('aria-busy', 'false');
+  await expect(choice).toBeDisabled();
+  await expect(details.getByText('Submitted', { exact: true })).toBeVisible();
 
   await expect(details.getByRole('listitem')).toHaveCount(0);
   expect((await page.getByLabel('Your message', { exact: true }).boundingBox())?.y).toBe(
@@ -1392,6 +1394,8 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   ];
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await expect(details).toHaveCount(0);
+  await task.getByRole('button', { name: /^Current task$/ }).click();
   await expect(details.getByTestId('pbl-test-locations')).toContainText('src/Greeting.java:7');
   await expect(details.getByTestId('pbl-test-locations')).toContainText('Symbol not found');
   await expect(summary).toContainText('Code could not compile');
@@ -1412,7 +1416,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.busy = false;
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
-  await details.getByRole('button', { name: 'Close task details' }).click({ timeout: 7000 });
+  await expect(details).toHaveCount(0);
   await runTests.click();
   await expect(summary).toHaveAttribute('data-state', 'running');
   // Refresh/reopen during a completed run must still collect it automatically.

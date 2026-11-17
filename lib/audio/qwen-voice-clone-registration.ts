@@ -264,6 +264,7 @@ export const qwenVoiceCloneRegistrationAdapter: VoiceRegistrationAdapter = {
     if (isQwenCloneVoice(voiceId, configuredVoices))
       assertQwenVoiceTarget(voiceId, resolveRegistrationModel());
   },
+  cloneTarget: resolveRegistrationModel,
   minReferenceDurationSeconds: QWEN_MIN_REFERENCE_DURATION_SECONDS,
   supportsRegistration: () => true,
   supportsBootstrapReferenceClip: false,

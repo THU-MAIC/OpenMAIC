@@ -508,6 +508,7 @@ export async function parseWithDeepSeekOCR(
       fileName,
       pageCount: json.page_count ?? pages.length,
       parser: 'deepseek-ocr',
+      textFormat: 'markdown',
       imageMapping: Object.fromEntries(pdfImages.map((image) => [image.id, image.src])),
       pdfImages,
     },

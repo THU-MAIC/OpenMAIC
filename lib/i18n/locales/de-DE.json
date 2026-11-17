@@ -1493,6 +1493,8 @@
     "qwenCloneUploadShort": "Hochladen",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "Diese gespeicherte Stimme muss erneut geklont werden. Laden Sie das Referenzaudio in den Stimmeinstellungen hoch.",
+    "qwenCloneNeedsReclone": "Erneut klonen",
+    "qwenCloneRecloneRequired": "Diese gespeicherte Stimme ist mit dem aktuellen Klonmodell nicht kompatibel. Laden Sie ihr Referenzaudio erneut hoch, um sie neu zu klonen.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -2191,6 +2193,10 @@
         "webFetch": {
           "name": "Webseiten abrufen",
           "desc": "Lässt den Agent in der Sitzung zugelassene Webseiten lesen."
+        },
+        "materialChapters": {
+          "name": "Kapitelerkennung",
+          "desc": "Erkennt Kapitel und Abschnitte in langen Dokumenten."
         }
       },
       "source": {
@@ -2206,7 +2212,9 @@
           "search": "Suche",
           "fetch": "Abruf",
           "image": "Bild",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Analyse",
+          "chapters": "Kapitel"
         }
       },
       "empty": {
@@ -2277,6 +2285,11 @@
         "processing_interrupted": {
           "label": "Analyse nicht abgeschlossen",
           "description": "Die Analyse konnte nicht abgeschlossen werden. Sie können es später erneut versuchen."
+        },
+        "pages_failed": {
+          "label": "PDF-Seiten konnten nicht analysiert werden",
+          "description": "Die Analyse der PDF-Seiten {{firstPage}}–{{lastPage}} ist fehlgeschlagen. Dieses Material kann daher noch nicht gelesen werden. Versuche es später erneut.",
+          "descriptionWithoutCount": "Die Analyse einiger PDF-Seiten ist fehlgeschlagen. Dieses Material kann daher noch nicht gelesen werden. Versuche es später erneut."
         },
         "too_many_pages": {
           "label": "Zu viele Seiten",
@@ -2914,6 +2927,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Wird gesendet…",
+    "submitted": "Gesendet",
+    "resubmit": "Änderungen senden",
     "quizPassed": "Quiz bestanden: {{score}}/{{total}} richtig. Du kannst fortfahren.",
     "quizRetry": "{{score}}/{{total}} richtig. Prüfe deine Antworten und versuche es erneut.",
     "quizCorrect": "Letzte Abgabe: richtig",

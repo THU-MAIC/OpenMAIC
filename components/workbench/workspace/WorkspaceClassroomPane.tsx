@@ -37,7 +37,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
-import { useEditorWarmup, warmEditorSurfaces } from '@/lib/edit/use-editor-warmup';
+import { useEditorWarmup, warmEditor } from '@/lib/edit/use-editor-warmup';
 import { shouldCollapseFullscreenOnEscape } from '@/lib/workbench/classroom-fullscreen';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
@@ -157,7 +157,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   // round trips.
   const opensInEditor = preferences[courseId] === 'editing';
   useEffect(() => {
-    if (opensInEditor && !hidden) warmEditorSurfaces();
+    if (opensInEditor && !hidden) warmEditor();
   }, [opensInEditor, hidden]);
 
   const rememberMode = (mode: ClassroomMode) => {
@@ -311,6 +311,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               <span>{t('workspace.talkAboutCourse')}</span>
             </button>
           ) : null}
+          {/* Export, as in the full-screen header: the download menu must not
+              hide behind full screen. Only once the tab's course is the loaded
+              one, since it exports the loaded stage. */}
+          {loadedCourseId === courseId ? (
+            <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
+          ) : null}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
           <button
@@ -332,7 +338,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           actions={
             <>
               {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
-              {/* Export and sharing, which the split view leaves to this size. */}
+              {/* Export, as in the split header. */}
               <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
               {/* The editor portals its undo/redo here while editing; empty, it
               takes no space. It sits with the other editing control (the

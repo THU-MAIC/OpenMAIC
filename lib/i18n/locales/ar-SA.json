@@ -1493,6 +1493,8 @@
     "qwenCloneUploadShort": "تحميل",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "يجب استنساخ هذا الصوت المحفوظ من جديد. ارفع التسجيل الصوتي المرجعي في إعدادات الصوت.",
+    "qwenCloneNeedsReclone": "يلزم إعادة الاستنساخ",
+    "qwenCloneRecloneRequired": "هذا الصوت المحفوظ غير متوافق مع نموذج الاستنساخ الحالي. ارفع التسجيل الصوتي المرجعي مرة أخرى لاستنساخه من جديد.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -2191,6 +2193,10 @@
         "webFetch": {
           "name": "جلب صفحات الويب",
           "desc": "يتيح للوكيل قراءة صفحات الويب المسموح بها في الجلسة."
+        },
+        "materialChapters": {
+          "name": "التعرف على الفصول",
+          "desc": "يتعرف على الفصول والأقسام في المستندات الطويلة."
         }
       },
       "source": {
@@ -2206,7 +2212,9 @@
           "search": "البحث",
           "fetch": "الجلب",
           "image": "صورة",
-          "video": "فيديو"
+          "video": "فيديو",
+          "parse": "تحليل",
+          "chapters": "الفصول"
         }
       },
       "empty": {
@@ -2277,6 +2285,11 @@
         "processing_interrupted": {
           "label": "لم يكتمل التحليل",
           "description": "تعذّر إكمال التحليل. يمكنك المحاولة مجددًا لاحقًا."
+        },
+        "pages_failed": {
+          "label": "تعذّر تحليل صفحات PDF",
+          "description": "تعذّر تحليل الصفحات {{firstPage}}–{{lastPage}} من ملف PDF، لذا لا يمكن قراءة هذه المادة حاليًا. حاول تحليلها مرة أخرى لاحقًا.",
+          "descriptionWithoutCount": "تعذّر تحليل بعض صفحات ملف PDF، لذا لا يمكن قراءة هذه المادة حاليًا. حاول تحليلها مرة أخرى لاحقًا."
         },
         "too_many_pages": {
           "label": "عدد الصفحات كبير جدًا",
@@ -2914,6 +2927,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "جارٍ الإرسال…",
+    "submitted": "تم الإرسال",
+    "resubmit": "إرسال التغييرات",
     "quizPassed": "اجتزت الاختبار: {{score}}/{{total}} إجابات صحيحة. يمكنك المتابعة.",
     "quizRetry": "{{score}}/{{total}} إجابات صحيحة. راجع إجاباتك وحاول مجددًا.",
     "quizCorrect": "الإجابة السابقة: صحيحة",

@@ -195,8 +195,8 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['atlascloud', 2],
       ['anthropic', 2],
       ['google', 4],
-      // TTS_/ASR_/PDF_DEEPSEEK env maps and the optional OCR base URL.
-      ['deepseek', 11],
+      // The TTS_/ASR_DEEPSEEK env maps.
+      ['deepseek', 8],
       ['kimi', 4],
       ['minimax', 13],
       ['glm', 6],
@@ -216,8 +216,6 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['elevenlabs', 2],
       ['whisper', 1],
       ['funasr', 3],
-      ['unpdf', 2],
-      ['mineru', 5],
       ['seedream', 2],
       ['banana', 2],
       ['nano', 2],

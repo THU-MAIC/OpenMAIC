@@ -2103,9 +2103,11 @@ describe('public extraction failure explanations', () => {
       expect(dialog.textContent).toBe(
         reasonCode === 'too_many_pages'
           ? 'workspace.knowledgeBase.failure.too_many_pages.descriptionWithoutLimit'
-          : `workspace.knowledgeBase.failure.${reasonCode}.description${
-              reasonCode === 'media_too_long' ? '{"minutes":90}' : ''
-            }`,
+          : reasonCode === 'pages_failed'
+            ? 'workspace.knowledgeBase.failure.pages_failed.descriptionWithoutCount'
+            : `workspace.knowledgeBase.failure.${reasonCode}.description${
+                reasonCode === 'media_too_long' ? '{"minutes":90}' : ''
+              }`,
       );
       expect(document.body.innerHTML).not.toContain('PRIVATE_RAW_DETAIL');
       await act(async () => {
@@ -2510,6 +2512,35 @@ it.each([
     await page.dispose();
   },
 );
+
+it('shows the failed physical page range in the library failure popover', async () => {
+  library = () =>
+    json({
+      materials: [
+        source('pages-failed', {
+          extraction: {
+            status: 'failed',
+            reasonCode: 'pages_failed',
+            reasonValues: { firstPage: 101, lastPage: 150 },
+            reason: 'PRIVATE_DIAGNOSTIC',
+          },
+        }),
+      ],
+      limits: LIMITS,
+    });
+  const page = await openPage();
+  const status = page.query('kb-status-pages-failed')!;
+  expect(status.textContent).toBe('workspace.knowledgeBase.failure.pages_failed.label');
+  await act(async () => {
+    status.querySelector('button')!.click();
+  });
+  await settle();
+  expect(document.querySelector('[role="dialog"]')!.textContent).toBe(
+    'workspace.knowledgeBase.failure.pages_failed.description{"firstPage":101,"lastPage":150}',
+  );
+  expect(document.body.innerHTML).not.toContain('PRIVATE_DIAGNOSTIC');
+  await page.dispose();
+});
 
 it('does not lead with Parse again for a PDF refused for too many pages', async () => {
   library = () =>

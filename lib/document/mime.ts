@@ -194,6 +194,14 @@ export const ALIDOCMIND_MIMES: readonly string[] = [
 ];
 
 /**
+ * MiniCPM-OCR parses PDFs and images; its pipeline accepts PNG, JPG/JPEG,
+ * BMP and WebP (no GIF or JP2).
+ */
+export const MINICPM_OCR_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.bmp, M.webp];
+
+export const MINICPM_OCR_MIMES: readonly string[] = [M.pdf, ...MINICPM_OCR_IMAGE_MIMES];
+
+/**
  * DeepSeek OCR: PDF, Word, PowerPoint and images, detected from the content.
  * https://api-docs.deepseek.com/guides/ocr
  */
@@ -215,6 +223,7 @@ export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = 
   mineru: MINERU_SELFHOST_MIMES,
   'mineru-cloud': MINERU_CLOUD_MIMES,
   alidocmind: ALIDOCMIND_MIMES,
+  'minicpm-ocr': MINICPM_OCR_MIMES,
   'deepseek-ocr': DEEPSEEK_OCR_MIMES,
   'plain-text': PLAIN_TEXT_MIMES,
 };

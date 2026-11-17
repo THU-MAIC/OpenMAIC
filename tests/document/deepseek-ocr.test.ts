@@ -159,7 +159,11 @@ describe('parseWithDeepSeekOCR', () => {
     expect(policy).toMatchObject({ rejectRedirects: true, allowLocalNetworks: undefined });
     expect(result.text).toBe('Hello');
     expect(result.images).toEqual([]);
-    expect(result.metadata).toMatchObject({ parser: 'deepseek-ocr', pageCount: 1 });
+    expect(result.metadata).toMatchObject({
+      parser: 'deepseek-ocr',
+      textFormat: 'markdown',
+      pageCount: 1,
+    });
   });
 
   it('requires an API key', async () => {

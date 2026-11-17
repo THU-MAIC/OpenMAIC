@@ -125,13 +125,14 @@ Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain 
 | `classroom` | chat | `llm` | Classroom chat, quiz grading and the project-based learning runtime |
 | `agent` | chat | `llm` | The workbench agent. **Requires tool calling.** Also accepts `api` and `contextWindow` |
 | `agent.title` | chat | `agent` | Workbench session titles. Configurable in `openmaic.yml` only; the model settings do not show it |
+| `material.chapters` | chat | `llm` | Optional chapter recognition after parsing long materials with self-hosted MinerU |
 | `tts` | tts | — | Text to speech |
 | `asr` | asr | — | Speech recognition (voice input, audio and video transcripts) |
 | `image` | image | — | Image generation |
 | `video` | video | — | Video generation |
 | `webFetch` | webFetch | — | Web page extraction (default: `builtin`) |
 | `webSearch` | webSearch | — | Web search |
-| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind, DeepSeek OCR). The built-in PDF text extraction needs no service |
+| `document` | document | — | The document parsing service (MinerU, MinerU Cloud, AliDocMind, MiniCPM-OCR, DeepSeek OCR). The built-in PDF text extraction needs no service |
 
 How a slot resolves:
 
@@ -177,6 +178,8 @@ A reference without `:model` means the provider's default model: the model a tok
 Fallbacks apply to language-model slots: `llm` and every slot below it. A `fallback` on a `tts`, `asr`, `image`, `video`, `webSearch`, `webFetch` or `document` slot is refused, at startup for `openmaic.yml` and on save in the model settings.
 
 A slot's `fallback` is tried once when a call on the primary model fails after its own retries with a retryable failure: a transient SDK error, a timeout, a network error, a rate limit (429), capacity (503), or empty output. An explicit quota refusal from the provider (an OpenAI-compatible code such as `insufficient_quota`, whatever its HTTP status) is not retried on the primary model: the call goes to the fallback at once. Content-safety refusals and other 4xx errors never fall back. The fallback applies to both regular and streaming calls and uses the slot's `thinking` parameters.
+
+Fallback requests cap `maxOutputTokens` at the fallback model's known output window, while preserving a smaller caller limit. If the caller omits the limit, the known window is used; if the window is unknown, the request's limit is left unchanged. `eval-*` and `verify-model` calls never switch models, even when a fallback is configured.
 
 The fallback belongs to the assignment and is inherited with it: `course.content.slide` without an assignment of its own uses the model and the fallback of `course.content`. A slot with a requirement does not retry on a fallback that fails it.
 
@@ -428,6 +431,7 @@ Per-stage routes do not map one to one onto slots, so they are not translated. R
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat`, `maic-agent` | None: these stages were removed. Drop them |
 
 Several stages share a slot: give the slot the one model they should use. A route's `thinking` moves to the slot's `thinking`, and a `maic-agent-driver` route's `api` and `contextWindow` move to the `agent` slot. Before:
@@ -745,6 +749,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 # Optional backend for self-hosted MinerU
 PDF_MINERU_BACKEND=pipeline
 
+# Optional, read at runtime: total PDF page limit / pages per chunk / concurrent requests.
+# Defaults: 1000 / 50 / 4; positive integers only. Applies to self-hosted PDF parsing.
+# CHUNK_PAGES also sets the length threshold for chapter recognition in PDF, Word and PPT.
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
+
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=
 PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
@@ -754,16 +765,23 @@ ALIDOCMIND_ACCESS_KEY_ID=
 ALIDOCMIND_ACCESS_KEY_SECRET=
 ALIDOCMIND_BASE_URL=       # optional override
 
+# MiniCPM-OCR (hosted API by default)
+PDF_MINICPM_OCR_API_KEY=
+# Optional. Leave it commented to use the hosted default
+# (https://api.modelbest.cn/v1). A self-hosted MiniCPM-OCR web demo serves the
+# same routes under /api and usually needs no key.
+# PDF_MINICPM_OCR_BASE_URL=http://127.0.0.1:8966/api
+
 # DeepSeek OCR (uses a DeepSeek API key)
 PDF_DEEPSEEK_OCR_API_KEY=
 PDF_DEEPSEEK_OCR_BASE_URL=https://api.deepseek.com/v1
 ```
 
-`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU, AliDocMind or DeepSeek OCR provider.
+`unpdf` is built into OpenMAIC and supports basic PDF parsing. For Office documents, images, and material requiring OCR, table, formula, or layout analysis, select a compatible MinerU, AliDocMind, MiniCPM-OCR or DeepSeek OCR provider.
 
 DeepSeek OCR (`deepseek-ocr`) supports PDF, DOC, DOCX, PPT, PPTX, PNG, JPEG, WebP, GIF, and BMP, up to 100 MiB and 1,000 pages per file; the service limits a request to 180 seconds. It returns Markdown with headings, HTML tables, and LaTeX equations. Figures are cropped from PDFs and images; Word and PowerPoint files yield text only.
 
-AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
+AliDocMind document parsing supports PDF, DOCX, PPTX, XLSX, and PNG, JPG/JPEG, BMP, and GIF. MiniCPM-OCR parses PDF and PNG, JPG/JPEG, BMP, and WebP. Audio and video material is currently supported only through AliDocMind: MP4, MOV, AVI, MKV, and WMV for video; MP3, WAV, and AAC for audio. M4A is not supported.
 
 ### Web search
 
@@ -824,6 +842,8 @@ pdf:
   alidocmind:
     accessKeyId: your-access-key-id
     accessKeySecret: your-access-key-secret
+  minicpm-ocr:
+    apiKey: your-minicpm-ocr-api-key
 
 image:
   seedream:
@@ -844,7 +864,7 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
+Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `minicpm-ocr`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
 
 ## Model authorization for server-managed providers
 

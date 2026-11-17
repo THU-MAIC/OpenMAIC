@@ -1493,6 +1493,8 @@
     "qwenCloneUploadShort": "Subir",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "Es necesario volver a clonar esta voz guardada. Sube el audio de referencia en los ajustes de voz.",
+    "qwenCloneNeedsReclone": "Requiere reclonación",
+    "qwenCloneRecloneRequired": "Esta voz guardada no es compatible con el modelo de clonación actual. Vuelve a subir su audio de referencia para clonarla de nuevo.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -2191,6 +2193,10 @@
         "webFetch": {
           "name": "Obtener páginas web",
           "desc": "Permite al agente leer páginas web autorizadas en la sesión."
+        },
+        "materialChapters": {
+          "name": "Reconocimiento de capítulos",
+          "desc": "Identifica capítulos y secciones en documentos largos."
         }
       },
       "source": {
@@ -2206,7 +2212,9 @@
           "search": "Búsqueda",
           "fetch": "Lectura",
           "image": "Imagen",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Análisis",
+          "chapters": "Capítulos"
         }
       },
       "empty": {
@@ -2277,6 +2285,11 @@
         "processing_interrupted": {
           "label": "Análisis sin completar",
           "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        },
+        "pages_failed": {
+          "label": "Error al analizar páginas del PDF",
+          "description": "No se pudieron analizar las páginas {{firstPage}}–{{lastPage}} del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde.",
+          "descriptionWithoutCount": "No se pudieron analizar algunas páginas del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde."
         },
         "too_many_pages": {
           "label": "Demasiadas páginas",
@@ -2914,6 +2927,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Enviando…",
+    "submitted": "Enviado",
+    "resubmit": "Enviar cambios",
     "quizPassed": "Cuestionario aprobado: {{score}}/{{total}} respuestas correctas. Puedes continuar.",
     "quizRetry": "{{score}}/{{total}} respuestas correctas. Revisa tus respuestas e inténtalo de nuevo.",
     "quizCorrect": "Último envío: correcto",

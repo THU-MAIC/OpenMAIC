@@ -17,6 +17,7 @@ import {
   learningStep,
 } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
+import { DismissibleDetails } from './dismissible-details';
 
 export interface TaskDockHandle {
   open: () => void;
@@ -93,6 +94,10 @@ export function TaskDock({
   };
   useEffect(() => {
     if (!open || modalActive) return;
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!drawer.current?.contains(target) && !toggle.current?.contains(target)) setOpenKey(null);
+    };
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpenKey(null);
@@ -100,7 +105,11 @@ export function TaskDock({
       }
     };
     window.addEventListener('keydown', escape, true);
-    return () => window.removeEventListener('keydown', escape, true);
+    document.addEventListener('pointerdown', outside, true);
+    return () => {
+      window.removeEventListener('keydown', escape, true);
+      document.removeEventListener('pointerdown', outside, true);
+    };
   }, [open, modalActive]);
   const copy = (
     <>
@@ -205,16 +214,7 @@ export function TaskDock({
       <div
         className={`flex ${canAdvance ? 'min-h-8' : summary ? 'min-h-12' : 'h-10'} items-center gap-2 px-3 ${canAdvance ? 'py-1' : 'py-2'}`}
       >
-        <details
-          className="relative shrink-0 text-xs"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.currentTarget.open = false;
-              event.currentTarget.querySelector('summary')?.focus();
-              event.stopPropagation();
-            }
-          }}
-        >
+        <DismissibleDetails className="relative shrink-0 text-xs">
           <summary
             data-pbl-tour="progress"
             className="cursor-pointer list-none rounded px-1 py-1 text-muted-foreground hover:bg-muted"
@@ -242,7 +242,7 @@ export function TaskDock({
               </li>
             ))}
           </ol>
-        </details>
+        </DismissibleDetails>
         {canAdvance && (
           <div className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{summary}</div>
         )}

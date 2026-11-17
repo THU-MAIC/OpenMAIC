@@ -58,7 +58,10 @@ import {
 import { STEP_DEADLINES_MS } from '@/lib/server/generation/run/deadline';
 import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { analyzeMaterial } from '@/lib/server/generation/steps/material-analysis';
-import { isTransientExtractionError } from '@/lib/server/material-extraction/errors';
+import {
+  isTransientExtractionError,
+  MaterialExtractionError,
+} from '@/lib/server/material-extraction/errors';
 import {
   resolveExtractionServices,
   type ExtractionServices,
@@ -349,9 +352,9 @@ export interface MaterialExtractionDependencies {
   deadlineMs?: number;
 }
 
-/** A material's extraction ran out of its time budget. Retryable, like a step timeout. */
+/** Exhausting a course upload's full budget must not automatically reparse all its chunks. */
 export class MaterialExtractionTimeoutError extends Error {
-  readonly retryable = true;
+  readonly retryable = false;
 
   constructor(materialId: string, ms: number) {
     super(`The extraction of material ${materialId} did not finish within ${ms / 1000} s`);
@@ -540,6 +543,10 @@ export function failedExtraction(error: unknown): OwnerMaterialExtraction {
             ? 'MATERIAL_QUOTA_EXCEEDED'
             : 'EXTRACTION_FAILED',
     retryable: isTransientExtractionError(error),
+    ...(error instanceof MaterialExtractionError &&
+    (error.reasonCode === 'pages_failed' || error.reasonCode === 'too_many_pages')
+      ? { reasonCode: error.reasonCode, reasonValues: error.reasonValues }
+      : {}),
   };
 }
 

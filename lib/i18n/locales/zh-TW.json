@@ -1493,6 +1493,8 @@
     "qwenCloneUploadShort": "上傳",
     "qwenCloneRefAudioHint": "請使用 5–60 秒的清晰人聲，建議 10–20 秒；音訊將轉換為 24 kHz 單聲道 PCM WAV。",
     "qwenCloneMigrationHint": "此音色需要重新複刻，請在音色設定中上傳原始參考音訊。",
+    "qwenCloneNeedsReclone": "需重新複刻",
+    "qwenCloneRecloneRequired": "此音色與目前的複刻模型不相容，請重新上傳原始參考音訊進行複刻。",
     "qwenCloneSaved": "Qwen 複刻音色已註冊並儲存",
     "qwenCloneSaveFailed": "Qwen 複刻音色註冊失敗",
     "qwenCloneUnsupported": "此瀏覽器不支援錄音，請改為上傳音訊檔案。",
@@ -2191,6 +2193,10 @@
         "webFetch": {
           "name": "網頁擷取",
           "desc": "供智慧體讀取工作階段中已獲准的網頁。"
+        },
+        "materialChapters": {
+          "name": "章節辨識",
+          "desc": "辨識長資料中的章與節。"
         }
       },
       "source": {
@@ -2206,7 +2212,9 @@
           "search": "搜尋",
           "fetch": "擷取",
           "image": "圖像",
-          "video": "影片"
+          "video": "影片",
+          "parse": "解析",
+          "chapters": "章節"
         }
       },
       "empty": {
@@ -2277,6 +2285,11 @@
         "processing_interrupted": {
           "label": "解析未完成",
           "description": "本次解析未能完成，可以稍後重試。"
+        },
+        "pages_failed": {
+          "label": "PDF 頁面解析失敗",
+          "description": "PDF 第 {{firstPage}}–{{lastPage}} 頁解析失敗，這份資料暫時無法讀取，可以稍後重新解析。",
+          "descriptionWithoutCount": "PDF 部分頁面解析失敗，這份資料暫時無法讀取，可以稍後重新解析。"
         },
         "too_many_pages": {
           "label": "頁數過多",
@@ -2914,6 +2927,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "提交中…",
+    "submitted": "已提交",
+    "resubmit": "重新提交",
     "quizPassed": "測驗通過：答對 {{score}}/{{total}} 題，可以繼續。",
     "quizRetry": "答對 {{score}}/{{total}} 題，請檢查答案後重新提交。",
     "quizCorrect": "上次提交：回答正確",

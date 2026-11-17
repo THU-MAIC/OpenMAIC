@@ -176,3 +176,105 @@ it.each(['chosen', 'rationale'] as const)(
     expect(container.querySelector('button')!.disabled).toBe(false);
   },
 );
+
+it('marks only acknowledged answers submitted and enables changed or failed submissions', async () => {
+  const decision: LearningView['decisions'][number] = {
+    id: 'rule',
+    prompt: 'Describe your rule',
+    responseType: 'text',
+    options: [],
+  };
+  const selected = { id: 'rule', chosen: 'Saved rule', rationale: '', revision: 0 };
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const render = (chosen: string, acknowledged = true, pendingChosen?: string) =>
+    act(async () =>
+      root!.render(
+        createElement(DecisionResponseForm, {
+          decision,
+          selected: acknowledged ? selected : undefined,
+          draft: { chosen, rationale: '' },
+          disabled: pendingChosen !== undefined,
+          pendingChosen,
+          onDraftChange: () => {},
+          onSubmit: submit,
+        }),
+      ),
+    );
+  await render('Saved rule');
+  expect(container.querySelector('button')!.disabled).toBe(true);
+  expect(container.querySelector('button')!.textContent).toBe('pblV3.submitted');
+  await render('Changed rule');
+  expect(container.querySelector('button')!.disabled).toBe(false);
+  expect(container.querySelector('button')!.textContent).toBe('pblV3.resubmit');
+  await render('Changed rule', true, 'Changed rule');
+  expect(container.querySelector('button')!.textContent).toBe('pblV3.submitting');
+  await render('Changed rule');
+  expect(container.querySelector('button')!.disabled).toBe(false);
+  await render('First unsaved rule', false);
+  expect(container.querySelector('button')!.textContent).toBe('pblV3.submitDecision');
+});
+
+it('distinguishes pending immediate choices from acknowledged choices and permits retry', async () => {
+  const decision: LearningView['decisions'][number] = {
+    id: 'format',
+    prompt: 'Choose a format',
+    options: [
+      { id: 'plain', label: 'Plain text' },
+      { id: 'json', label: 'JSON' },
+    ],
+  };
+  container = document.createElement('div');
+  document.body.append(container);
+  root = createRoot(container);
+  const render = (chosen?: string, pendingChosen?: string) =>
+    act(async () =>
+      root!.render(
+        createElement(DecisionResponseForm, {
+          decision,
+          selected: chosen ? { id: 'format', chosen, revision: 0 } : undefined,
+          disabled: pendingChosen !== undefined,
+          pendingChosen,
+          onDraftChange: () => {},
+          onSubmit: submit,
+        }),
+      ),
+    );
+  const status = () => container.querySelector('[role="status"]');
+  const options = () => container.querySelectorAll('button');
+  await render();
+  expect(status()).toBeNull();
+  options()[0]!.focus();
+  await render(undefined, 'plain');
+  expect(document.activeElement).toBe(options()[0]);
+  await act(async () => {
+    options()[0]!.click();
+    options()[1]!.click();
+  });
+  expect(submit).not.toHaveBeenCalled();
+  expect(status()!.textContent).toBe('pblV3.submitting');
+  await render('plain');
+  expect(status()!.textContent).toBe('pblV3.submitted');
+  expect(document.activeElement).toBe(options()[0]);
+  expect(options()[0]!.disabled).toBe(false);
+  expect(options()[0]!.getAttribute('aria-disabled')).toBe('true');
+  await act(async () => options()[0]!.click());
+  expect(submit).not.toHaveBeenCalled();
+  expect(options()[1]!.disabled).toBe(false);
+  await render('plain', 'json');
+  expect(status()!.textContent).toBe('pblV3.submitting');
+  expect(status()!.getAttribute('aria-busy')).toBe('true');
+  expect(options()[1]!.getAttribute('aria-pressed')).toBe('true');
+  // Failed replacement: only the prior receipt remains selected; another choice can retry.
+  await render('plain');
+  expect(options()[0]!.getAttribute('aria-pressed')).toBe('true');
+  expect(options()[1]!.getAttribute('aria-pressed')).toBe('false');
+  await act(async () => options()[1]!.click());
+  expect(submit).toHaveBeenCalledWith('json');
+  await render('json');
+  expect(status()!.textContent).toBe('pblV3.submitted');
+  expect(options()[0]!.disabled).toBe(false);
+  expect(options()[1]!.disabled).toBe(false);
+  expect(options()[1]!.getAttribute('aria-disabled')).toBe('true');
+});

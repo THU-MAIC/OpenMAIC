@@ -28,14 +28,19 @@
  * so they do not hold the owner's quota for a day; a publication whose
  * outcome is uncertain keeps them, and an entry whose allocation itself
  * failed part-way expires like any unpublished allocation. What
- * this does not do: cancel a provider call (none of them takes a signal) or
- * bound how long one runs. A late result is refused when it tries to publish.
+ * this does not do: bound how long one runs. A provider that honors the run's
+ * signal stops with it -- its requests are aborted, and a job service is asked
+ * to cancel the job -- while a local parse runs to its own deadline. A late
+ * result is refused when it tries to publish.
  *
  * Document extraction keeps its text and the images the provider found, as
  * derivatives; the text's references to them name the derivatives
  * (`./document-images.ts`). Media extraction keeps its transcript and its
  * images. The session chain still keeps document text only.
  */
+
+import { getChapterSource } from '@/lib/document/chapter-source';
+import { recognizeMaterialChapters } from './chapters';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { AssetQuotaExceededError } from '@openmaic/storage';
@@ -350,6 +355,15 @@ export async function runClaimedOwnerExtraction(
   const extracted = await extractOrReuse(plan, claim.originalName, reuse, state.signal);
   if (extracted.kind === 'reused') return extracted.outcome;
   const outcome = extracted.outcome;
+  if (state.lost) return 'not-authorized';
+  const chapterRecognition = await recognizeMaterialChapters({
+    source: getChapterSource(outcome),
+    providerId: outcome.extractor.id,
+    pageCount: outcome.stats.pages ?? 0,
+    mimeType: mime,
+    ownerId: claim.ownerId,
+    signal: state.signal,
+  });
 
   if (state.lost) return 'not-authorized';
   const options = resultOptions(outcome.extractor.id);
@@ -414,6 +428,7 @@ export async function runClaimedOwnerExtraction(
         },
         extractor: { ...outcome.extractor, options },
         stats: { ...outcome.stats },
+        ...chapterRecognition,
         derivatives,
       },
       now(),
@@ -490,7 +505,7 @@ async function extractOrReuse(
   if (plan.kind === 'media') {
     const reused = await reuse(plannedExtractor(plan));
     if (reused) return { kind: 'reused', outcome: reused };
-    return { kind: 'extracted', outcome: await runSourceExtraction(plan, title) };
+    return { kind: 'extracted', outcome: await runSourceExtraction(plan, title, signal) };
   }
   const errors: string[] = [];
   const failures: unknown[] = [];
@@ -498,7 +513,7 @@ async function extractOrReuse(
     const reused = await reuse({ id: provider.id, version: provider.version });
     if (reused) return { kind: 'reused', outcome: reused };
     try {
-      const artifact = await extractWithDocumentProvider(provider, plan);
+      const artifact = await extractWithDocumentProvider(provider, plan, signal);
       return {
         kind: 'extracted',
         outcome: await ownerDocumentOutcome(artifact, provider, { signal }),
@@ -547,6 +562,10 @@ async function publishReused(
     text: hit.result.text,
     extractor: hit.result.extractor,
     stats: hit.result.stats,
+    ...(hit.result.chapters ? { chapters: hit.result.chapters } : {}),
+    ...(hit.result.chapterPageCount === undefined
+      ? {}
+      : { chapterPageCount: hit.result.chapterPageCount }),
     derivatives: hit.result.derivatives.map((derivative, index) => ({
       ...derivative,
       id: createId(),
