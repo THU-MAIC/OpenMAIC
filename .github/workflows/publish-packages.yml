@@ -46,6 +46,7 @@ on:
       - "packages/@openmaic/geometry/package.json"
       - "packages/@openmaic/generation/package.json"
       - "packages/@openmaic/storage/package.json"
+      - "packages/@openmaic/skills/package.json"
       - "packages/@openmaic/renderer/package.json"
       - "packages/@openmaic/editor/package.json"
       - "packages/@openmaic/importer/package.json"
@@ -128,6 +129,7 @@ jobs:
           --filter "@openmaic/geometry" --filter "@openmaic/dsl"
           --filter "@openmaic/generation"
           --filter "@openmaic/storage"
+          --filter "@openmaic/skills"
           --filter "@openmaic/renderer"
           --filter "@openmaic/editor"
           --filter "@openmaic/importer"
@@ -174,7 +176,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir "$RELEASE_ARTIFACTS"
-          for pkg in dsl geometry generation storage renderer editor importer; do
+          for pkg in dsl geometry generation storage skills renderer editor importer; do
             echo "::group::@openmaic/$pkg"
             ( cd "packages/@openmaic/$pkg" \
               && pnpm pack --config.ignore-scripts=true --pack-destination "$RELEASE_ARTIFACTS" )
@@ -217,7 +219,7 @@ jobs:
           pnpm --filter "@openmaic/geometry" --filter "@openmaic/dsl" \
             --filter "@openmaic/generation" --filter "@openmaic/renderer" \
             --filter "@openmaic/editor" \
-            --filter "@openmaic/importer" run test
+            --filter "@openmaic/importer" --filter "@openmaic/skills" run test
           node scripts/assert-pg-contract-suites.mjs --capture-baseline "$STORAGE_PG_BASELINE"
           pnpm --filter "@openmaic/storage" exec \
             vitest run --reporter=default --reporter=json \
@@ -226,7 +228,7 @@ jobs:
             --baseline "$STORAGE_PG_BASELINE"
           pnpm --filter "@openmaic/geometry" --filter "@openmaic/dsl" --filter "@openmaic/generation" \
             --filter "@openmaic/storage" --filter "@openmaic/renderer" \
-            --filter "@openmaic/editor" run typecheck
+            --filter "@openmaic/editor" --filter "@openmaic/skills" run typecheck
 
       # KNOWN LIMITATION: this smoke test reads the writable local directory,
       # not the uploaded snapshot. Because upload already happened, a test
@@ -384,7 +386,7 @@ jobs:
           node scripts/verify-package-artifacts.mjs "$RELEASE_ARTIFACTS"
 
           node scripts/check-package-version-bumps.mjs --release
-          for pkg in dsl geometry generation storage renderer editor importer; do
+          for pkg in dsl geometry generation storage skills renderer editor importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             planned="$(node -e 'const plan = require(process.env.RELEASE_PLAN_PATH);
@@ -457,7 +459,7 @@ jobs:
           PUBLISHED_VERSIONS: ${{ needs.publish.outputs.published_versions }}
         run: |
           set -euo pipefail
-          for pkg in dsl geometry generation storage renderer editor importer; do
+          for pkg in dsl geometry generation storage skills renderer editor importer; do
             name="@openmaic/$pkg"
             version="$(node -p "require('./packages/@openmaic/$pkg/package.json').version")"
             tag="$name@$version"

@@ -1,0 +1,191 @@
+import { describe, it, expect } from 'vitest';
+import JSZip from 'jszip';
+import {
+  SkillPackage,
+  skillPackageFromLegacyContent,
+  exportSkillPackage,
+  importSkillPackage,
+  patchSkillPackage,
+} from '../src/index';
+const bytes = (text: string) => new TextEncoder().encode(text);
+const entry = {
+  path: 'SKILL.md',
+  bytes: bytes('---\nname: lesson-plan\ndescription: Plan a lesson\n---\nUse references/guide.md.'),
+};
+const guide = { path: 'references/guide.md', bytes: bytes('Check prerequisites.') };
+describe('directory packages', () => {
+  it('versions all file bytes and ignores input ordering', () => {
+    const a = new SkillPackage([entry, guide]);
+    expect(new SkillPackage([guide, entry]).manifest.revision).toBe(a.manifest.revision);
+    const b = patchSkillPackage(a, a.manifest.revision, [
+      { path: guide.path, bytes: bytes('Changed reference') },
+    ]);
+    expect(b.manifest.revision).not.toBe(a.manifest.revision);
+    expect(a.read(guide.path)).toEqual(guide.bytes);
+    expect(() => patchSkillPackage(b, a.manifest.revision, [])).toThrow('REVISION_CONFLICT');
+  });
+  it('round-trips references, binary assets, root files and inert scripts without title', async () => {
+    const a = new SkillPackage([
+      entry,
+      guide,
+      { path: 'assets/example.bin', bytes: new Uint8Array([0, 255, 13]) },
+      { path: 'outline-constraints.json', bytes: bytes('{}') },
+      { path: 'scripts/task.py', bytes: bytes('print(1)') },
+    ]);
+    const b = await importSkillPackage(await exportSkillPackage(a));
+    expect(b.manifest).toEqual(a.manifest);
+    expect(b.entries()).toEqual(a.entries());
+  });
+  it('owns its bytes and returns independent reads', () => {
+    const input = Uint8Array.from(entry.bytes);
+    const a = new SkillPackage([{ ...entry, bytes: input }]);
+    input.fill(0);
+    a.read('SKILL.md').fill(0);
+    expect(a.read('SKILL.md')).toEqual(entry.bytes);
+  });
+  it.each(['../secret', '/secret', 'a/../secret', 'a\\secret', 'a//secret', 'a:secret'])(
+    'rejects unsafe path %s',
+    (path) => {
+      expect(() => new SkillPackage([entry, { path, bytes: bytes('x') }])).toThrow(
+        'INVALID_PACKAGE',
+      );
+    },
+  );
+  it('rejects conflicting files and deletion of the entry', () => {
+    expect(() => new SkillPackage([entry, entry])).toThrow();
+    expect(
+      () =>
+        new SkillPackage([
+          entry,
+          { path: 'a', bytes: bytes('x') },
+          { path: 'a/b', bytes: bytes('y') },
+        ]),
+    ).toThrow();
+    const a = new SkillPackage([entry]);
+    expect(() =>
+      patchSkillPackage(a, a.manifest.revision, [{ path: 'SKILL.md', bytes: null }]),
+    ).toThrow();
+  });
+  it('rejects mismatched archive root and links', async () => {
+    const zip = new JSZip();
+    zip.file('other/SKILL.md', entry.bytes);
+    await expect(
+      importSkillPackage(await zip.generateAsync({ type: 'uint8array' })),
+    ).rejects.toThrow();
+    const links = new JSZip();
+    links.file('lesson-plan/SKILL.md', entry.bytes);
+    links.file('lesson-plan/assets/link', bytes('/secret'), { unixPermissions: 0o120777 });
+    await expect(
+      importSkillPackage(await links.generateAsync({ type: 'uint8array', platform: 'UNIX' })),
+    ).rejects.toThrow();
+  });
+});
+
+it('rejects differing local and central filenames before JSZip can collapse entries', async () => {
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes);
+  zip.file('lesson-plan/assets/a.bin', bytes('first'));
+  zip.file('lesson-plan/assets/b.bin', bytes('second'));
+  const archive = await zip.generateAsync({ type: 'nodebuffer' });
+  const target = Buffer.from('lesson-plan/assets/b.bin');
+  for (let i = 0; i < archive.length - 30; i++) {
+    if (
+      archive.readUInt32LE(i) === 0x04034b50 &&
+      archive.subarray(i + 30, i + 30 + target.length).equals(target)
+    ) {
+      archive[i + 30 + target.length - 5] = 'a'.charCodeAt(0);
+      break;
+    }
+  }
+  await expect(importSkillPackage(archive)).rejects.toThrow('INVALID_PACKAGE');
+});
+
+it('rejects non-round-trippable file names', () => {
+  expect(() => new SkillPackage([entry, { path: 'assets/\ud800.txt', bytes: bytes('x') }])).toThrow(
+    'INVALID_PACKAGE',
+  );
+});
+it('rejects unicode extra-field aliases and accepts ordinary Unicode resources', async () => {
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes);
+  zip.file('lesson-plan/assets/é.txt', bytes('sample'));
+  const archive = await zip.generateAsync({ type: 'nodebuffer' });
+  const valid = await importSkillPackage(archive);
+  expect(valid.read('assets/é.txt')).toEqual(bytes('sample'));
+  // Replace only the Unicode extra-field name, leaving raw local/central names intact.
+  for (let i = 0; i < archive.length - 9; i++) {
+    if (archive.readUInt16LE(i) === 0x7075 && archive[i + 4] === 1 && archive[i + 9] === 108) {
+      archive[i + 9] = 120;
+      break;
+    }
+  }
+  await expect(importSkillPackage(archive)).rejects.toThrow('INVALID_PACKAGE');
+});
+it('bounds real decompression for every resource, not just the entry', async () => {
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes);
+  zip.file('lesson-plan/assets/large.txt', new Uint8Array(2 * 1024 * 1024 + 1));
+  await expect(
+    importSkillPackage(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' })),
+  ).rejects.toThrow('LIMIT_EXCEEDED');
+});
+
+it('paginates resource text without splitting Unicode and never claims partial coverage', async () => {
+  const { readSkillResource } = await import('../src/index');
+  const skill = new SkillPackage([entry, { path: 'references/example.txt', bytes: bytes('a😀b') }]);
+  expect(readSkillResource(skill, 'references/example.txt', 0, 2)).toMatchObject({
+    text: 'a😀',
+    complete: false,
+    nextOffset: 2,
+    revision: skill.manifest.revision,
+  });
+  expect(readSkillResource(skill, 'references/example.txt', 2, 2)).toMatchObject({
+    text: 'b',
+    complete: false,
+    nextOffset: null,
+  });
+  expect(readSkillResource(skill)).toMatchObject({ complete: true });
+  expect(() => readSkillResource(skill, 'references/example.txt', -1)).toThrow();
+});
+
+it('adapts legacy content into a standard single-file package while preserving the body', async () => {
+  const content = '# Existing method\nKeep existing instructions.\n';
+  const skill = skillPackageFromLegacyContent({
+    name: 'legacy-method',
+    title: 'Legacy method',
+    description: 'Existing method',
+    content,
+  });
+  expect(skill.manifest.title).toBe('Legacy method');
+  expect(new TextDecoder().decode(skill.read('SKILL.md')).endsWith(content)).toBe(true);
+  expect((await importSkillPackage(await exportSkillPackage(skill))).manifest).toEqual(
+    skill.manifest,
+  );
+});
+
+it('accepts CR-only entry frontmatter without changing stored bytes', () => {
+  const content = bytes('---\rname: lesson-plan\rdescription: Method\r---\rUse evidence.');
+  const skill = new SkillPackage([{ path: 'SKILL.md', bytes: content }]);
+  expect(skill.manifest.name).toBe('lesson-plan');
+  expect(skill.read('SKILL.md')).toEqual(content);
+});
+it('decodes legacy CP437 ZIP resource names with and without Unicode extras', async () => {
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes);
+  zip.file('lesson-plan/assets/é.txt', bytes('Legacy encoding'));
+  const archive = await zip.generateAsync({
+    type: 'nodebuffer',
+    encodeFileName: (name) =>
+      Uint8Array.from(Array.from(name, (c) => (c === 'é' ? 0x82 : c.charCodeAt(0)))),
+  });
+  expect((await importSkillPackage(archive)).read('assets/é.txt')).toEqual(
+    bytes('Legacy encoding'),
+  );
+  // Mark Unicode path fields unknown so decoding must use the raw CP437 names.
+  for (let i = 0; i < archive.length - 9; i++)
+    if (archive.readUInt16LE(i) === 0x7075 && archive[i + 4] === 1 && archive[i + 9] === 108)
+      archive.writeUInt16LE(0x7777, i);
+  expect((await importSkillPackage(archive)).read('assets/é.txt')).toEqual(
+    bytes('Legacy encoding'),
+  );
+});

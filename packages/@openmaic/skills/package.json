@@ -1,0 +1,42 @@
+{
+  "name": "@openmaic/skills",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Portable Agent Skills directory packages and immutable revisions.",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.1",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22",
+    "typescript": "^5",
+    "vitest": "^4.1.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/THU-MAIC/OpenMAIC",
+    "directory": "packages/@openmaic/skills"
+  }
+}
