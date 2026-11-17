@@ -3044,6 +3044,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Lernen starten",
       "title": "Projektübersicht",
       "expand": "Aufklappen",
       "collapse": "Einklappen",
@@ -3397,6 +3398,8 @@
       "waiting": "Die Anleitung ist verfügbar, sobald die Lernumgebung bereit ist.",
       "loading": "Arbeitsbereich wird geladen",
       "loadingDetail": "Die Lernumgebung wird verbunden und Projektdateien werden vorbereitet. Bitte warten.",
+      "loadingSlowDetail": "Die Vorbereitung dauert länger. Sie können zur Projekteinführung zurückkehren; die bereits gestartete Einrichtung läuft im Hintergrund weiter.",
+      "loadingReturn": "Zurück zur Projekteinführung",
       "steps": {
         "progress": {
           "title": "Fortschritt und aktuelle Aufgabe ansehen",

@@ -3044,6 +3044,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "開始學習",
       "title": "專案總覽",
       "expand": "展開",
       "collapse": "收起",
@@ -3397,6 +3398,8 @@
       "waiting": "學習環境就緒後即可查看新手指引。",
       "loading": "頁面正在載入中",
       "loadingDetail": "正在連接學習環境、準備專案檔案，請稍候。",
+      "loadingSlowDetail": "準備時間稍長，可先返回專案介紹頁。已開始的環境準備會在背景繼續。",
+      "loadingReturn": "先返回專案介紹",
       "steps": {
         "progress": {
           "title": "在這裡查看進度和目前任務",

@@ -3044,6 +3044,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Empezar a aprender",
       "title": "Resumen del proyecto",
       "expand": "Expandir",
       "collapse": "Contraer",
@@ -3397,6 +3398,8 @@
       "waiting": "La guía estará disponible cuando el entorno esté listo.",
       "loading": "Cargando el espacio de trabajo",
       "loadingDetail": "Conectando el entorno de aprendizaje y preparando los archivos. Espera un momento.",
+      "loadingSlowDetail": "La preparación está tardando más. Puedes volver a la presentación del proyecto; la preparación ya iniciada continuará en segundo plano.",
+      "loadingReturn": "Volver a la presentación del proyecto",
       "steps": {
         "progress": {
           "title": "Consulta el progreso y la tarea actual",

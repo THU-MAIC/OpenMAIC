@@ -388,6 +388,10 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'true');
   await expect(page.getByRole('button', { name: 'Learning report', exact: true })).toHaveCount(0);
   await expect(page.getByText('1/7', { exact: true }).first()).toBeVisible();
+  const startLearning = page.getByRole('button', { name: 'Start learning', exact: true });
+  await expect(startLearning).toBeEnabled();
+  expect(calls.filter((c) => c.type === 'begin')).toHaveLength(0);
+  await startLearning.click();
   await expect(page.getByText('Welcome to your greeting project.', { exact: true })).toBeVisible();
   for (const name of ['The project', 'This milestone', 'How learning works'])
     await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();

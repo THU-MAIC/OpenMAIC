@@ -3044,6 +3044,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Start learning",
       "title": "Project overview",
       "expand": "Expand",
       "collapse": "Collapse",
@@ -3397,6 +3398,8 @@
       "waiting": "The workspace guide is available when the learning environment is ready.",
       "loading": "Loading your workspace",
       "loadingDetail": "Connecting the learning environment and preparing project files. Please wait.",
+      "loadingSlowDetail": "Preparation is taking longer. You can return to the project introduction while setup already in progress continues in the background.",
+      "loadingReturn": "Back to project introduction",
       "steps": {
         "progress": {
           "title": "Check progress and the current task",
