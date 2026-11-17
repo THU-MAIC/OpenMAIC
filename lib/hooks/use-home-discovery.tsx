@@ -25,6 +25,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import { toast } from 'sonner';
+import { useAccessCodeGateOpen } from '@/components/access-code-guard';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
@@ -198,7 +199,13 @@ export function useHomeDiscovery({
     triggerFileSelect();
   };
 
+  // Behind an access-code gate these reads are refused (401) until the code
+  // is accepted, and a refused first load would surface as a persistence
+  // error. Wait for the gate; the guard remounts this page once it opens.
+  const gateOpen = useAccessCodeGateOpen();
+
   useEffect(() => {
+    if (!gateOpen) return;
     // Clear stale media store to prevent cross-course thumbnail contamination.
     // The store may hold tasks from a previously visited classroom whose elementIds
     // (gen_img_1, etc.) collide with other courses' placeholders.
@@ -213,7 +220,7 @@ export function useHomeDiscovery({
     };
     window.addEventListener('auth-change', onAuthChange);
     return () => window.removeEventListener('auth-change', onAuthChange);
-  }, [loadClassrooms, loadFolders]);
+  }, [gateOpen, loadClassrooms, loadFolders]);
 
   const deleteCourse = useCallback(
     async (id: string): Promise<boolean> => {
