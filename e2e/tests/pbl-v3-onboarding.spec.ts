@@ -1576,6 +1576,8 @@ for (const started of [false, true]) {
       release();
       await expect(tour(page)).toBeVisible();
       await finish(page);
+      // Wait for the dialog's deferred focus restoration before typing.
+      await expect(page.getByTestId('pbl-v3-workspace')).toBeFocused();
       await composer.fill('Words with spaces after recovery');
       await expect(composer).toBeFocused();
       await expect(composer).toHaveValue('Words with spaces after recovery');
