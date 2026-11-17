@@ -633,7 +633,9 @@ test('failed first start can be retried without automatic opening', async ({
     beginFailures: 1,
   });
   const start = page.getByRole('button', { name: 'Start learning', exact: true });
+  await expect(start).toBeEnabled();
   await start.focus();
+  await expect(start).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByText('Opening temporarily unavailable', { exact: true })).toBeVisible();
   await expect(start).toBeEnabled();
