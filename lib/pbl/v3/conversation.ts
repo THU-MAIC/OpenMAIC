@@ -9,6 +9,22 @@ export type LearningRunFailure =
   | 'contextTurnCapacity'
   | 'contextPreparation';
 
+/** A new answer cannot repair a question whose teaching turn never committed its receipt. */
+export function requiresTeachingReceiptRetry(
+  run:
+    | {
+        status: string;
+        failure: LearningRunFailure | null;
+        canRetry: boolean;
+        requiresReceiptRetry?: boolean;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (typeof run?.requiresReceiptRetry === 'boolean') return run.requiresReceiptRetry;
+  return run?.status === 'failed' && run.failure === 'incomplete' && run.canRetry;
+}
+
 /** Learner-owned conversation with OpenPBL thinking and full tool activity. */
 export interface LearningConversationEntry {
   id: string;

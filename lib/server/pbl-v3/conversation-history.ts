@@ -7,6 +7,53 @@ export const CONVERSATION_BYTES = 512 * 1024;
 
 type HistorySource = NonNullable<LearningView['conversationHistory']>[number];
 
+export interface TeachingTurnDelivery {
+  latestUserSeq: number | undefined;
+  hasDeliveredText: boolean;
+}
+
+// Match String.trim() in the conversation renderer, including non-breaking spaces.
+const proseWhitespace =
+  '\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff';
+
+/** Retries share the real input's sequence; an earlier attempt may have delivered its question. */
+export async function readCurrentTeachingDelivery(
+  db: Queryable,
+  sessionId: string,
+  options: { checkDeliveredText: boolean; progressResetAt?: string },
+): Promise<TeachingTurnDelivery> {
+  const resetAt = options.progressResetAt ? Date.parse(options.progressResetAt) : NaN;
+  const { rows } = await db.query<{ seq: number | null; has_text: boolean }>(
+    `WITH latest_input AS (
+       SELECT max(seq) AS seq FROM agent_session_events
+       WHERE session_id=$1 AND type='user_message'
+     ) SELECT latest.seq, CASE WHEN $2::boolean THEN EXISTS (
+       SELECT 1 FROM agent_session_events e
+       WHERE e.session_id=$1 AND e.seq>latest.seq
+         AND ($3::bigint IS NULL OR e.ts>$3)
+         AND e.type IN ('message_start','message_update','message_end')
+         AND e.data->'message'->>'role'='assistant'
+         AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements(CASE
+             WHEN jsonb_typeof(e.data->'message'->'content')='array'
+               THEN e.data->'message'->'content' ELSE '[]'::jsonb END) block
+           WHERE block->>'type'='text' AND jsonb_typeof(block->'text')='string'
+             AND btrim(block->>'text',$4)<>''
+         )
+     ) ELSE false END AS has_text FROM latest_input latest`,
+    [
+      sessionId,
+      options.checkDeliveredText,
+      Number.isFinite(resetAt) ? resetAt : null,
+      proseWhitespace,
+    ],
+  );
+  return {
+    latestUserSeq: rows[0]?.seq ?? undefined,
+    hasDeliveredText: rows[0]?.has_text ?? false,
+  };
+}
+
 /** List saved conversations for the whole study without loading their messages. */
 export async function readConversationSources(
   db: Queryable,

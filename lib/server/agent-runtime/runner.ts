@@ -1551,7 +1551,17 @@ async function executeSession(
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
       maxOutputTokens: wireOutputTokens,
       omitMaxOutputTokens: wireOutputTokens === undefined,
-      thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
+      // Some providers reject required tools with thinking enabled. Keep that
+      // compatibility mode within recovery; ordinary teaching is unchanged.
+      thinkingConfig: teaching
+        ? () =>
+            teaching.historyWindow?.continuationInstruction
+              ? { mode: 'disabled' }
+              : teaching.thinkingConfig?.()
+        : driver.connection.thinkingConfig,
+      toolChoice: teaching
+        ? () => (teaching.historyWindow?.continuationInstruction ? 'required' : 'auto')
+        : undefined,
       unbounded: !!teaching,
       responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,
       onProgress: teaching ? progress : undefined,

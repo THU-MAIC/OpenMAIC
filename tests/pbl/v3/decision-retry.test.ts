@@ -79,6 +79,87 @@ afterEach(async () => {
   window.sessionStorage.clear();
 });
 
+it.each(['recovered', 'reset', 'timeout'] as const)(
+  'keeps the draft and allows sending after receipt recovery or progress reset: %s',
+  async (result) => {
+    const id = `receipt-recovery-${sequence++}`;
+    let view = {
+      id,
+      revision: 1,
+      state: {
+        status: 'active',
+        position: { milestoneId: 'first', milestoneIndex: 0, stageIndex: 0 },
+        collected: { first: {} },
+      },
+      environment: { ready: true },
+      stage: { kind: 'mentor_say', agent: 'discussion' },
+      role: 'discussion',
+      roleRun:
+        result === 'timeout'
+          ? { status: 'failed', failure: 'timeout', canRetry: true, requiresReceiptRetry: true }
+          : { status: 'failed', failure: 'incomplete', canRetry: true },
+      actions: ['chat'],
+      decisions: [],
+      questions: [],
+      messages: [],
+    } as unknown as LearningView;
+    const requests: Record<string, unknown>[] = [];
+    const response = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (!init?.body) return response(view);
+        const body = JSON.parse(String(init.body));
+        if (body.action === 'open') return response(view);
+        requests.push(body.command);
+        if (body.command.type === 'retry')
+          view = {
+            ...view,
+            roleRun:
+              result === 'reset'
+                ? {
+                    status: 'failed',
+                    failure: 'incomplete',
+                    canRetry: true,
+                    requiresReceiptRetry: false,
+                  }
+                : {
+                    status: 'succeeded',
+                    failure: null,
+                    canRetry: false,
+                    requiresReceiptRetry: false,
+                  },
+          };
+        return response({ view });
+      }),
+    );
+    await mount();
+    await type(0, 'My answer to the displayed question.');
+    const textarea = container.querySelector('textarea')!;
+    const send = () => container.querySelector<HTMLButtonElement>('[aria-label="pblV3.send"]')!;
+    expect(send().disabled).toBe(true);
+    expect(textarea.disabled).toBe(false);
+    expect(container.querySelector('[data-testid="pbl-input-blocked"]')?.textContent).toContain(
+      'pblV3.run.incomplete',
+    );
+    await act(async () => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      textarea
+        .closest('form')!
+        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(requests).toEqual([]);
+    expect(textarea.value).toBe('My answer to the displayed question.');
+    await click('pblV3.retryResponse');
+    expect(requests.map((request) => request.type)).toEqual(['retry']);
+    expect(textarea.value).toBe('My answer to the displayed question.');
+    expect(send().disabled).toBe(false);
+    await act(async () => send().click());
+    expect(requests.map((request) => request.type)).toEqual(['retry', 'chat']);
+    expect(requests[1]?.text).toBe('My answer to the displayed question.');
+  },
+);
+
 it.each(['success', 'retry', 'retry-newer', 'lost-ack'])(
   'acknowledges a decision through the workspace command path: %s',
   async (mode) => {

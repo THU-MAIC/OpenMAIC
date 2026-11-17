@@ -119,6 +119,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
 import { runSession } from '@/lib/server/agent-runtime/runner';
 import type { Message } from '@earendil-works/pi-ai';
 import { preloadInitialPlan } from '@/lib/server/pbl-v3/plan-tool-context';
+import type { TeachingHistoryWindow } from '@/lib/server/pbl-v3/teaching-context';
 import { AGENT_TOOL_TIMEOUT_ENV } from '@/lib/agent/runtime/tool-timeout';
 
 const SESSION_ID = 'session-1';
@@ -823,6 +824,94 @@ describe('runner: unbounded V3 teaching turns', () => {
     );
   });
 });
+
+it.each([false, true])(
+  'requires a tool only while repairing an ended teaching turn (resume: %s)',
+  async (resume) => {
+    const meta = makeMeta({ id: 'pbl-role-receipt-repair' });
+    const session = await makeEntryTree();
+    const store = makeStore(meta);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    const response = 'The saved value stays unchanged. Which operation publishes the new value?';
+    if (resume) {
+      await session.appendMessage({ role: 'user', content: meta.prompt, timestamp: 1 });
+      await session.appendMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: response }],
+        api: 'openai-completions',
+        provider: 'openai',
+        model: 'driver-model',
+        stopReason: 'stop',
+        timestamp: 2,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      });
+    }
+    let complete = false;
+    const historyWindow: TeachingHistoryWindow = { stageKey: 'm:0', studentTurns: 1 };
+    const tool: AgentTool = {
+      name: 'request_skill_review',
+      label: 'Review',
+      description: 'Record the delivered review without advancing learning.',
+      parameters: Type.Object({ response: Type.String() }),
+      execute: vi.fn(async () => {
+        complete = true;
+        return { content: [{ type: 'text' as const, text: 'recorded' }], details: {} };
+      }),
+    };
+    mocks.teachingRunnerConfig.mockResolvedValue({
+      preloadMessages: () => [],
+      tools: [tool],
+      systemPrompt: 'Teaching test',
+      thinkingConfig: () => ({ mode: 'enabled', effort: 'low' }),
+      allowedToolNames: new Set([tool.name]),
+      needsTurnReceipt: () => !complete,
+      isTurnComplete: () => complete,
+      historyWindow,
+    });
+    mocks.streamLLM.mockImplementation((params, _source, thinking) =>
+      resultFrom(
+        params.toolChoice === 'required' && thinking?.mode !== 'disabled'
+          ? [{ type: 'error', error: new Error('Required tools are incompatible with thinking') }]
+          : params.toolChoice === 'required'
+            ? [{ ...toolCallPart({ response }), toolName: tool.name }, finish('tool-calls')]
+            : [{ type: 'text-delta', text: response }, finish('stop')],
+      ),
+    );
+
+    await runSession({ running: new Map(), shuttingDown: false }, meta);
+
+    expect(mocks.streamLLM.mock.calls.map(([params]) => params.toolChoice)).toEqual(
+      resume ? ['required'] : ['auto', 'required'],
+    );
+    expect(tool.execute).toHaveBeenCalledTimes(1);
+    expect(mocks.streamLLM.mock.calls.map((call) => call[2]?.mode)).toEqual(
+      resume ? ['disabled'] : ['enabled', 'disabled'],
+    );
+    expect(historyWindow.deliveredReply).toBe(response);
+    expect(store.finishSession).toHaveBeenCalledWith(
+      meta.id,
+      WORKER_ID,
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+    const messages = (await session.buildContext()).messages;
+    expect(messages.filter((message) => message.role === 'user')).toHaveLength(1);
+    expect(
+      messages.some(
+        (message) =>
+          message.role === 'assistant' &&
+          message.content.some((part) => part.type === 'text' && part.text === response),
+      ),
+    ).toBe(true);
+  },
+);
 
 it('fails an ended teaching turn after one receipt repair rather than continuing indefinitely', async () => {
   const meta = makeMeta({ id: 'pbl-role-no-receipt' });
