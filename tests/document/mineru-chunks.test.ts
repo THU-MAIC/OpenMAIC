@@ -158,6 +158,7 @@ describe('self-hosted MinerU PDF chunks', () => {
       images: ['data:image/png;base64,abc'],
       metadata: {
         parser: 'mineru',
+        textFormat: 'markdown',
         pageCount: 1,
         imageMapping: { img_1: 'data:image/png;base64,abc' },
         pdfImages: [
