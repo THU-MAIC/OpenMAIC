@@ -132,16 +132,13 @@ describe('a course its generation run is producing', () => {
     expect(hasLearnerSceneChange('stage-1', 'scene-2')).toBe(false);
     useStageStore.getState().updateScene('scene-2', { title: 'edited' });
     await flushStageSave();
-    expect(incrementalSave.mock.calls[1]![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-2' },
-      { kind: 'stage' },
-    ]);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 });
 
 describe('incremental stage flush', () => {
   it('marks only the updated scene and drains the pending debounce', async () => {
-    useStageStore.getState().updateScene('scene-2', { actions: [] });
+    useStageStore.getState().updateScene('scene-2', { title: 'changed' });
 
     await flushStageSave();
     expect(incrementalSave).toHaveBeenCalledOnce();
@@ -150,19 +147,6 @@ describe('incremental stage flush', () => {
 
     await vi.advanceTimersByTimeAsync(500);
     expect(incrementalSave).toHaveBeenCalledOnce();
-  });
-
-  it('marks the stage too on a rename, re-versioning the course', async () => {
-    // The library's `updatedAt` (the home cover cache's key) moves only with
-    // a stage write, so a scene title patch must also mark the stage or the
-    // renamed page's cover stays stale.
-    useStageStore.getState().updateScene('scene-2', { title: 'renamed' });
-
-    await flushStageSave();
-    expect(incrementalSave.mock.calls[0]![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-2' },
-      { kind: 'stage' },
-    ]);
   });
 
   it('marks scene membership/order changes as structural', async () => {
@@ -242,10 +226,7 @@ describe('incremental stage flush', () => {
     await flushStageSave();
 
     expect(incrementalSave).toHaveBeenCalledTimes(2);
-    expect(incrementalSave.mock.calls[1]![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-1' },
-      { kind: 'stage' },
-    ]);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
   });
 
   it('drains a mutation that lands between concurrent flush calls', async () => {
@@ -265,10 +246,7 @@ describe('incremental stage flush', () => {
     releaseFirst();
     await Promise.all([first, second]);
     expect(incrementalSave).toHaveBeenCalledTimes(2);
-    expect(incrementalSave.mock.calls[1]![1]).toEqual([
-      { kind: 'stage' },
-      { kind: 'scene', sceneId: 'scene-2' },
-    ]);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
   it('starts a covering round when an older in-flight round reports a failure', async () => {
@@ -305,7 +283,6 @@ describe('incremental stage flush', () => {
     expect(incrementalSave.mock.calls[1]![1]).toEqual([
       { kind: 'chats' },
       { kind: 'scene', sceneId: 'scene-2' },
-      { kind: 'stage' },
     ]);
     await staleFlush;
   });
@@ -376,10 +353,7 @@ describe('incremental stage flush', () => {
     await flushStageSave();
     await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledTimes(2));
     expect(incrementalSave.mock.calls[0]![0]).toBe('stage-1');
-    expect(incrementalSave.mock.calls[0]![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-1' },
-      { kind: 'stage' },
-    ]);
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
     expect(incrementalSave.mock.calls[1]![0]).toBe('stage-2');
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'structure' }, { kind: 'stage' }]);
   });
@@ -398,10 +372,7 @@ describe('incremental stage flush', () => {
     expect(incrementalSave).toHaveBeenCalledTimes(2);
     expect(incrementalSave.mock.calls[0]![0]).toBe('stage-1');
     expect(incrementalSave.mock.calls[1]![0]).toBe('stage-1');
-    expect(incrementalSave.mock.calls[1]![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-1' },
-      { kind: 'stage' },
-    ]);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
   });
 
   it('retains chat dirt when chat persistence reports an isolated failure', async () => {

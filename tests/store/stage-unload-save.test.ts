@@ -110,7 +110,7 @@ describe('beforeunload', () => {
     expect(unloadWrite).toHaveBeenCalledOnce();
     const [stageId, changes, data] = unloadWrite.mock.calls[0]!;
     expect(stageId).toBe('stage-1');
-    expect(changes).toEqual([{ kind: 'scene', sceneId: 'scene-2' }, { kind: 'stage' }]);
+    expect(changes).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
     expect(data.scenes.find((s: Scene) => s.id === 'scene-2').title).toBe('edited');
     expect(event.preventDefault).not.toHaveBeenCalled();
     // The sent change left the queue: the regular save has nothing left to do.
@@ -145,7 +145,6 @@ describe('beforeunload', () => {
       expect(incrementalSave).toHaveBeenCalled();
       expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([
         { kind: 'scene', sceneId: 'scene-2' },
-        { kind: 'stage' },
       ]);
     });
   });
@@ -197,7 +196,7 @@ describe('beforeunload', () => {
     await vi.advanceTimersByTimeAsync(5_000);
     // ...and the newer edit, still queued, is written again after it.
     const lastCall = incrementalSave.mock.calls.at(-1)!;
-    expect(lastCall[1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }, { kind: 'stage' }]);
+    expect(lastCall[1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
     expect(lastCall[2].scenes.find((s: Scene) => s.id === 'scene-2').title).toBe('copy2');
   });
 
@@ -239,10 +238,10 @@ describe('beforeunload', () => {
           finishSave = () => resolve({ failedChanges: [] });
         }),
     );
-    useStageStore.getState().updateScene('scene-1', { actions: [] });
+    useStageStore.getState().updateScene('scene-1', { title: 'in flight' });
     const inFlight = flushStageSave();
     await vi.advanceTimersByTimeAsync(0);
-    useStageStore.getState().updateScene('scene-2', { actions: [] });
+    useStageStore.getState().updateScene('scene-2', { title: 'other scene' });
 
     const event = unloadEvent();
     handleBeforeUnload(event);
@@ -292,10 +291,7 @@ describe('beforeunload', () => {
     finishAggregate();
     await aggregate;
     await vi.advanceTimersByTimeAsync(5_000);
-    expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-2' },
-      { kind: 'stage' },
-    ]);
+    expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
   it('does not ask when the save in flight already carries exactly the pending change', async () => {
@@ -306,7 +302,7 @@ describe('beforeunload', () => {
           finishSave = () => resolve({ failedChanges: [] });
         }),
     );
-    useStageStore.getState().updateScene('scene-2', { actions: [] });
+    useStageStore.getState().updateScene('scene-2', { title: 'only' });
     const inFlight = flushStageSave();
     await vi.advanceTimersByTimeAsync(0);
 
@@ -327,10 +323,7 @@ describe('beforeunload', () => {
     await vi.advanceTimersByTimeAsync(5_000);
 
     expect(incrementalSave).toHaveBeenCalled();
-    expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([
-      { kind: 'scene', sceneId: 'scene-2' },
-      { kind: 'stage' },
-    ]);
+    expect(incrementalSave.mock.calls.at(-1)![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
   it('does not write the same change twice when pagehide follows beforeunload', () => {

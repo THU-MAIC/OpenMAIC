@@ -927,16 +927,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   updateScene: (sceneId, updates) => {
     set({ scenes: scenesWithPatch(get().scenes, sceneId, updates) });
-    // A scene write alone does not re-version the course: the library's
-    // `updatedAt` moves only with a stage write, and data derived per version
-    // — the home cover cache, which renders an interactive page's title —
-    // would keep serving the pre-rename cover. A rename touches the course,
-    // so it marks the stage too.
-    markPendingChanges(
-      get().stage?.id,
-      { kind: 'scene', sceneId },
-      ...(updates.title !== undefined ? ([{ kind: 'stage' }] as PendingChange[]) : []),
-    );
+    markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });
   },
 
   updateSceneMeasurement: (sceneId, content) => {
