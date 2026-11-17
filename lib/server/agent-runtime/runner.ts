@@ -1551,7 +1551,17 @@ async function executeSession(
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
       maxOutputTokens: wireOutputTokens,
       omitMaxOutputTokens: wireOutputTokens === undefined,
-      thinkingConfig: teaching ? teaching.thinkingConfig : driver.connection.thinkingConfig,
+      // Receipt repair is bookkeeping. Some providers reject required tools
+      // with thinking enabled; ordinary teaching retains its existing mode.
+      thinkingConfig: teaching
+        ? () =>
+            teaching.historyWindow?.continuationInstruction
+              ? { mode: 'disabled' }
+              : teaching.thinkingConfig?.()
+        : driver.connection.thinkingConfig,
+      toolChoice: teaching
+        ? () => (teaching.historyWindow?.continuationInstruction ? 'required' : 'auto')
+        : undefined,
       unbounded: !!teaching,
       responseIdleTimeoutMs: teaching ? LLM_FETCH_TIMEOUT_MS : undefined,
       onProgress: teaching ? progress : undefined,

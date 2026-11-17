@@ -159,6 +159,8 @@ export interface CallLlmStreamFnOptions {
   omitMaxOutputTokens?: boolean;
   /** Resolve per model request so a validated teaching transition applies within the same turn. */
   thinkingConfig?: ThinkingConfig | (() => ThinkingConfig);
+  /** Request-local protocol recovery may require a tool; ordinary calls stay automatic. */
+  toolChoice?: () => 'auto' | 'required';
   /** No application-level header/body deadline for this conversation. */
   unbounded?: boolean;
   /** Per-request silence guard, reset by upstream stream parts; never a total turn deadline. */
@@ -455,7 +457,7 @@ async function pump(
           ...(requestStateTail(context) ? [hostStateTailMessage(requestStateTail(context))] : []),
         ],
         tools: toAiTools(context.tools ?? []),
-        toolChoice: 'auto',
+        toolChoice: opts.toolChoice?.() ?? 'auto',
         // pi's loop owns multi-step; one LLM turn per streamFn call.
         stopWhen: stepCountIs(1),
         maxOutputTokens,
