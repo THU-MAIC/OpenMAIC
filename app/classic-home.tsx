@@ -46,6 +46,7 @@ import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { installPageScrollBoundary } from '@/lib/adaptive/page-scroll-boundary';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useAccessCodeGateOpen } from '@/components/access-code-guard';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
@@ -341,7 +342,13 @@ function HomePage() {
     handleFileChange: handlePptxFileChange,
   } = useImportPptx();
 
+  // Behind an access-code gate these reads are refused (401) until the code
+  // is accepted, and a refused load would surface as a persistence error.
+  // Wait for the gate; the guard remounts this page once it opens.
+  const gateOpen = useAccessCodeGateOpen();
+
   useEffect(() => {
+    if (!gateOpen) return;
     // Clear stale media store to prevent cross-course thumbnail contamination.
     // The store may hold tasks from a previously visited classroom whose elementIds
     // (gen_img_1, etc.) collide with other courses' placeholders.
@@ -363,7 +370,7 @@ function HomePage() {
     return () => {
       window.removeEventListener(LIBRARY_CHANGED_EVENT, onLibraryChanged);
     };
-  }, []);
+  }, [gateOpen]);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
