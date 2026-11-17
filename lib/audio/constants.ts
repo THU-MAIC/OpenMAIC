@@ -104,6 +104,15 @@ export function qwenVoiceMatchesTargetModel(voiceId: string, targetModel: string
   return voiceId.trim().startsWith(`${targetModel}-`);
 }
 
+/**
+ * Whether a saved clone must be enrolled again for `targetModel`. Only a
+ * CosyVoice target binds its clone IDs, so other targets never reject one.
+ * The server's check and the settings' markers both use this rule.
+ */
+export function qwenVoiceNeedsReclone(voiceId: string, targetModel: string): boolean {
+  return targetModel.startsWith('cosyvoice-') && !qwenVoiceMatchesTargetModel(voiceId, targetModel);
+}
+
 /** Built-in and explicitly configured Qwen catalogue voices never use the clone model. */
 export function isQwenCatalogVoice(
   voiceId?: string,
