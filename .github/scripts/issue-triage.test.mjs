@@ -22,7 +22,7 @@ const available = [
   'bug',
   'enhancement',
   'documentation',
-  'type:question',
+  'question',
   'area:playback',
   'area:editor',
   'area:storage',
@@ -278,7 +278,7 @@ test('existing human labels win in each group and priorities are never added', (
   const context = makeContext(
     makeThread({
       issue: makeIssue(1434, {
-        labels: ['enhancement', 'area:editor', 'priority:P1', 'status:ready'].map((name) => ({
+        labels: ['enhancement', 'area:editor', 'priority:P1', 'status:blocked'].map((name) => ({
           name,
         })),
       }),
@@ -292,16 +292,16 @@ test('existing human labels win in each group and priorities are never added', (
   assert.equal(plan.comment, null);
 });
 
-test('only existing allowlisted labels are added and question uses type:question', () => {
+test('only existing allowlisted labels are added and question uses question', () => {
   assert.deepEqual(buildPlan(makeResult({ type: 'question' }), makeContext()).labels, [
-    'type:question',
+    'question',
     'area:playback',
   ]);
   assert.deepEqual(
     buildPlan(makeResult(), makeContext(undefined, { available_labels: [] })).labels,
     [],
   );
-  for (const type of ['type:rfc', 'type:epic', 'type:task', 'question']) {
+  for (const type of ['type:rfc', 'type:epic', 'question']) {
     const context = makeContext(
       makeThread({ issue: makeIssue(1434, { labels: [{ name: type }] }) }),
     );
@@ -327,13 +327,7 @@ test('closed PRs can be related context but cannot be proposed for review', () =
 });
 
 test('an existing disposition suppresses unsolicited follow-up comments', () => {
-  for (const name of [
-    'status:needs-info',
-    'status:in-progress',
-    'duplicate',
-    'invalid',
-    'wontfix',
-  ]) {
+  for (const name of ['status:needs-info', 'status:blocked', 'duplicate', 'wontfix']) {
     const context = makeContext(makeThread({ issue: makeIssue(1434, { labels: [{ name }] }) }));
     assert.equal(buildPlan(makeResult(), context).comment, null);
   }
@@ -375,6 +369,25 @@ test('model text cannot inject HTML, images, external links or notification ment
       '/blob/29735f10d0081859ac3db1a50a0cc92f46436004/lib/hooks/use-discussion-tts.ts',
     ),
   );
+});
+
+test('feature requests and questions are pointed to Discussions; bugs are not', () => {
+  const comment = (type, next_action = 'maintainer-review') =>
+    buildPlan(makeResult({ type, next_action }), makeContext()).comment;
+  const feature = comment('enhancement');
+  assert.ok(
+    feature.includes(
+      '[Discussions → Ideas](https://github.com/THU-MAIC/OpenMAIC/discussions/new?category=ideas)',
+    ),
+  );
+  assert.ok(!feature.includes('category=q-a'));
+  const question = comment('question');
+  assert.ok(
+    question.includes(
+      '[Discussions → Q&A](https://github.com/THU-MAIC/OpenMAIC/discussions/new?category=q-a)',
+    ),
+  );
+  assert.ok(!comment('bug', 'investigate').includes('/discussions/'));
 });
 
 test('only the real Actions bot owns a triage comment', () => {
