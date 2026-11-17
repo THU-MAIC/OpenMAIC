@@ -551,3 +551,28 @@ test('schema changes cannot silently add validation keywords the local validator
   }
   visit(schema);
 });
+
+test('inline code stays code while surrounding text is escaped', () => {
+  const rendered = safeText('Call `parseJsonResponse()` from **here** @owner');
+  assert.ok(rendered.includes('`parseJsonResponse()`'));
+  assert.ok(rendered.includes('\\*\\*here\\*\\*'));
+  assert.ok(!rendered.includes('@owner'));
+  assert.equal(safeText('`see https://evil.test/x`'), '`see [external URL omitted]`');
+});
+
+test('team-authored and bot-authored issues get labels but no public comment', () => {
+  const base = makeContext();
+  for (const issue of [
+    { ...base.issue, author_association: 'MEMBER' },
+    { ...base.issue, author_association: 'COLLABORATOR' },
+    { ...base.issue, author_bot: true },
+  ]) {
+    const plan = buildPlan(makeResult(), { ...base, issue });
+    assert.equal(plan.comment, null);
+  }
+  assert.notEqual(
+    buildPlan(makeResult(), { ...base, issue: { ...base.issue, author_association: 'NONE' } })
+      .comment,
+    null,
+  );
+});

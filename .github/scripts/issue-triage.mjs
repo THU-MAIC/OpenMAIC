@@ -200,6 +200,8 @@ export async function collectContext({ github, repo, issueNumber, sha }) {
       ...compactIssue(thread.issue),
       body: clip(thread.issue.body, 16000),
       author: thread.issue.user.login,
+      author_association: thread.issue.author_association,
+      author_bot: thread.issue.user?.type === 'Bot',
       updated_at: thread.issue.updated_at,
     },
     comments: thread.comments.slice(-50).map((c) => ({
@@ -298,7 +300,7 @@ export function trackedFiles() {
   );
 }
 
-export function safeText(value) {
+function escapePlain(value) {
   return value
     .replace(/https?:\/\/\S+/gi, '[external URL omitted]')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -307,6 +309,21 @@ export function safeText(value) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/[\\`*_{}[\]()#!|]/g, '\\$&');
+}
+
+// Inline code spans stay code: inside one, Markdown, links and mentions do not
+// render, so only URLs and control characters are removed.
+function escapeCode(span) {
+  return span
+    .replace(/https?:\/\/[^\s`]+/gi, '[external URL omitted]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ');
+}
+
+export function safeText(value) {
+  return String(value)
+    .split(/(`[^`\n]{1,200}`)/g)
+    .map((part, index) => (index % 2 ? escapeCode(part) : escapePlain(part)))
+    .join('');
 }
 
 export function buildPlan(result, context) {
@@ -331,12 +348,17 @@ export function buildPlan(result, context) {
     context.related_prs.some((pr) => pr.number === ref.number && pr.state === 'open'),
   );
   const canAsk = !context.maintainer_engaged && !incomplete && !openPr;
+  // The team's own issues (and bot reports) get labels and the report only: a
+  // public triage note on a maintainer's tracking issue is noise.
+  const teamIssue =
+    MAINTAINERS.has(context.issue.author_association) || context.issue.author_bot === true;
   const comment =
     confident &&
     result.should_comment &&
     result.next_action !== 'none' &&
     !disposition &&
     !context.maintainer_engaged &&
+    !teamIssue &&
     !incomplete &&
     (result.next_action !== 'needs-info' || canAsk)
       ? renderComment(result, context)
