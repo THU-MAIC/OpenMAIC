@@ -11,8 +11,6 @@ const TYPE_LABELS = new Set([
   'enhancement',
   'documentation',
   'question',
-  'type:question',
-  'type:task',
   'type:epic',
   'type:rfc',
 ]);
@@ -316,12 +314,11 @@ export function buildPlan(result, context) {
   const labels = [];
   const confident = result.confidence >= CONFIDENCE_THRESHOLD;
   const disposition = existing.some(
-    (label) => label.startsWith('status:') || ['duplicate', 'invalid', 'wontfix'].includes(label),
+    (label) => label.startsWith('status:') || ['duplicate', 'wontfix'].includes(label),
   );
   if (confident) {
     if (!existing.some((label) => TYPE_LABELS.has(label))) {
-      const type = result.type === 'question' ? 'type:question' : result.type;
-      if (type !== 'unknown') labels.push(type);
+      if (result.type !== 'unknown') labels.push(result.type);
     }
     if (!existing.some((label) => label.startsWith('area:'))) labels.push(...result.areas);
   }
@@ -359,6 +356,22 @@ export function buildPlan(result, context) {
   };
 }
 
+// Issues are for bugs (see MAINTAINING.md): feature ideas and usage questions
+// are pointed to Discussions, where maintainers accept or answer them.
+function redirect(result, root) {
+  if (result.type === 'enhancement') {
+    return [
+      `Feature ideas are discussed in [Discussions → Ideas](${root}/discussions/new?category=ideas) before they become issues. A maintainer will decide whether to accept this here or move it there.`,
+    ];
+  }
+  if (result.type === 'question') {
+    return [
+      `Usage questions are answered in [Discussions → Q&A](${root}/discussions/new?category=q-a), where answers stay searchable. A maintainer may move this there.`,
+    ];
+  }
+  return [];
+}
+
 function renderComment(result, context) {
   const root = `https://github.com/${context.repository}`;
   const refs = (items, kind) =>
@@ -370,6 +383,7 @@ function renderComment(result, context) {
     safeText(result.summary),
     '',
     `Suggested next step: **${result.next_action}**.`,
+    ...redirect(result, root),
     ...result.questions.map((q) => `- ${safeText(q)}`),
     ...refs(result.related_issues, 'issues'),
     ...refs(result.related_prs, 'pull'),

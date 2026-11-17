@@ -1,0 +1,60 @@
+name: Issue Lifecycle Reminders
+
+# Once a day, apply the issue lifecycle rules in MAINTAINING.md:
+# - remove `status:needs-info` when the issue author has replied;
+# - close as not planned when the author has not replied within 14 days;
+# - remind the assignees of an issue with no activity for 60 days;
+# - close as not planned an unassigned `help wanted` issue with no activity
+#   for 90 days.
+# Exempt: status:blocked, type:epic, type:rfc, priority:P0, priority:P1,
+# pinned issues and issues with a linked open pull request. Logic and tests
+# live in .github/scripts/issue-reminders.mjs.
+#
+# Scheduled runs only comment, label or close when the repository variable
+# ISSUE_REMINDERS_MODE is `apply`; otherwise they report to the job summary.
+# Manual runs are dry runs unless dry_run is unchecked.
+
+on:
+  schedule:
+    - cron: '41 1 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report to the job summary; do not comment, unlabel or close'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: issue-reminders
+  cancel-in-progress: false
+
+jobs:
+  remind:
+    if: github.repository == 'THU-MAIC/OpenMAIC'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      # Linked pull requests are read for activity and exemptions.
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Apply needs-info and staleness rules to open issues
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          REMINDERS_MODE: ${{ vars.ISSUE_REMINDERS_MODE }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const reminders = await import(pathToFileURL(`${process.cwd()}/.github/scripts/issue-reminders.mjs`));
+            const dryRun = reminders.isDryRun(context.eventName, process.env.DRY_RUN_INPUT, process.env.REMINDERS_MODE);
+            const result = await reminders.run({ client: github, repo: context.repo, dryRun, log: core.info });
+            await core.summary.addRaw(reminders.summaryMarkdown(result)).write();
