@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "Web Fetch",
           "desc": "Lets the agent read web pages approved in the session."
+        },
+        "materialChapters": {
+          "name": "Chapter recognition",
+          "desc": "Identifies chapters and sections in long documents."
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "Search",
           "fetch": "Fetch",
           "image": "Image",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Parse",
+          "chapters": "Chapters"
         }
       },
       "empty": {
@@ -2275,6 +2281,11 @@
         "processing_interrupted": {
           "label": "Parsing did not finish",
           "description": "Parsing could not be completed. You can try again later."
+        },
+        "pages_failed": {
+          "label": "PDF pages failed to parse",
+          "description": "PDF pages {{firstPage}}–{{lastPage}} failed to parse, so this material cannot be read yet. Try parsing it again later.",
+          "descriptionWithoutCount": "Some PDF pages failed to parse, so this material cannot be read yet. Try parsing it again later."
         },
         "too_many_pages": {
           "label": "Too many pages",

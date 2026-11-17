@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "Webseiten abrufen",
           "desc": "Lässt den Agent in der Sitzung zugelassene Webseiten lesen."
+        },
+        "materialChapters": {
+          "name": "Kapitelerkennung",
+          "desc": "Erkennt Kapitel und Abschnitte in langen Dokumenten."
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "Suche",
           "fetch": "Abruf",
           "image": "Bild",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Analyse",
+          "chapters": "Kapitel"
         }
       },
       "empty": {
@@ -2275,6 +2281,11 @@
         "processing_interrupted": {
           "label": "Analyse nicht abgeschlossen",
           "description": "Die Analyse konnte nicht abgeschlossen werden. Sie können es später erneut versuchen."
+        },
+        "pages_failed": {
+          "label": "PDF-Seiten konnten nicht analysiert werden",
+          "description": "Die Analyse der PDF-Seiten {{firstPage}}–{{lastPage}} ist fehlgeschlagen. Dieses Material kann daher noch nicht gelesen werden. Versuche es später erneut.",
+          "descriptionWithoutCount": "Die Analyse einiger PDF-Seiten ist fehlgeschlagen. Dieses Material kann daher noch nicht gelesen werden. Versuche es später erneut."
         },
         "too_many_pages": {
           "label": "Zu viele Seiten",

@@ -36,6 +36,7 @@ const EXPECTED_STAGE_SLOTS: Record<LlmStage, SlotId> = {
   'web-search-query-rewrite': 'course.research',
   'maic-agent-driver': 'agent',
   'conversation-title': 'agent.title',
+  'material-chapters': 'material.chapters',
 };
 
 const EXPECTED_ROOTS = {

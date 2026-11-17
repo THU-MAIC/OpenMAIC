@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "Obtener páginas web",
           "desc": "Permite al agente leer páginas web autorizadas en la sesión."
+        },
+        "materialChapters": {
+          "name": "Reconocimiento de capítulos",
+          "desc": "Identifica capítulos y secciones en documentos largos."
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "Búsqueda",
           "fetch": "Lectura",
           "image": "Imagen",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Análisis",
+          "chapters": "Capítulos"
         }
       },
       "empty": {
@@ -2275,6 +2281,11 @@
         "processing_interrupted": {
           "label": "Análisis sin completar",
           "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        },
+        "pages_failed": {
+          "label": "Error al analizar páginas del PDF",
+          "description": "No se pudieron analizar las páginas {{firstPage}}–{{lastPage}} del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde.",
+          "descriptionWithoutCount": "No se pudieron analizar algunas páginas del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde."
         },
         "too_many_pages": {
           "label": "Demasiadas páginas",

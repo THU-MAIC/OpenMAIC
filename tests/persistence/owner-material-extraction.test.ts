@@ -9,12 +9,14 @@ import { afterEach, describe, it, vi } from 'vitest';
 
 import {
   bootExtractionHarness,
+  chapterRecognitionScenario,
   failureReasonScenario,
   failedImageDownloadScenario,
   cancelledImageDownloadScenario,
   documentFallbackScenario,
   documentServiceUnavailableScenario,
   tooManyPagesScenario,
+  failedPagesScenario,
   cacheCollectorOrderScenario,
   claimIntoSameContentScenario,
   sameKeyConcurrentSourcesScenario,
@@ -116,6 +118,13 @@ describe('owner-level material extraction (PGlite)', () => {
     db = undefined;
   });
 
+  it.each(['success', 'error', 'timeout', 'json', 'invalid', 'disabled', 'unassigned', 'cancel'])(
+    'preserves extraction across chapter recognition: %s',
+    async (mode) => {
+      await chapterRecognitionScenario(await boot(), mode);
+    },
+  );
+
   it('starts idle and failed sources once and leaves pending, running and done ones alone', async () => {
     await ensureStartedScenario(await boot());
   });
@@ -142,6 +151,10 @@ describe('owner-level material extraction (PGlite)', () => {
 
   it('keeps public failure reasons on current terminal claims only', async () => {
     await failureReasonScenario(await boot());
+  });
+
+  it('stores failed chunk page ranges in both chains while retaining provider fallback', async () => {
+    await failedPagesScenario(await boot());
   });
 
   it('spends the claim budget on takeovers and keeps a heartbeating lease', async () => {

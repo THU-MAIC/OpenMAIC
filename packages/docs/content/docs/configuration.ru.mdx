@@ -125,6 +125,7 @@ Amazon Bedrock (`preset: bedrock`) подписывает запросы цеп�
 | `classroom` | chat | `llm` | Чат на занятии, проверка тестов и среда выполнения PBL |
 | `agent` | chat | `llm` | Агент workbench. **Требует вызова инструментов.** Также принимает `api` и `contextWindow` |
 | `agent.title` | chat | `agent` | Заголовки сессий workbench. Настраивается только в `openmaic.yml`; в настройках моделей не отображается |
+| `material.chapters` | chat | `llm` | Необязательное распознавание глав после разбора длинных материалов локальным MinerU |
 | `tts` | tts | — | Синтез речи |
 | `asr` | asr | — | Распознавание речи (голосовой ввод, расшифровка аудио и видео) |
 | `image` | image | — | Генерация изображений |
@@ -380,6 +381,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat`, `maic-agent` | Нет: эти этапы удалены. Уберите их |
 
 Если несколько этапов делят один слот, назначьте ему одну модель, которую они должны использовать. `thinking` маршрута переходит в `thinking` слота, а `api` и `contextWindow` маршрута `maic-agent-driver` — в слот `agent`. До:
@@ -686,6 +688,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 
 # MinerU self-hosted опциональный backend
 PDF_MINERU_BACKEND=pipeline
+
+# Необязательно, читается во время выполнения: предел страниц PDF / страниц в части / параллельных запросов.
+# Значения по умолчанию: 1000 / 50 / 4; только положительные целые числа. Для локального разбора PDF.
+# CHUNK_PAGES также задаёт порог длины для распознавания глав в PDF, Word и PPT.
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
 
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=

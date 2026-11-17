@@ -125,6 +125,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 | `classroom` | chat | `llm` | محادثة الصف وتصحيح الاختبارات وبيئة تشغيل PBL |
 | `agent` | chat | `llm` | وكيل workbench. **يتطلب استدعاء الأدوات.** ويقبل أيضًا `api` و`contextWindow` |
 | `agent.title` | chat | `agent` | عناوين جلسات workbench. تُضبط في `openmaic.yml` فقط ولا تظهر في إعدادات النماذج |
+| `material.chapters` | chat | `llm` | التعرّف الاختياري على الفصول بعد تحليل المواد الطويلة بواسطة MinerU المستضاف ذاتيًا |
 | `tts` | tts | — | تحويل النص إلى كلام |
 | `asr` | asr | — | التعرف على الكلام (الإدخال الصوتي وتفريغ الصوت والفيديو) |
 | `image` | image | — | توليد الصور |
@@ -380,6 +381,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat` و`maic-agent` | لا شيء: أُزيلت هذه المراحل. احذفها |
 
 عندما تتشارك عدة مراحل خانة واحدة، أعطِ الخانة النموذج الواحد الذي يجب أن تستخدمه. ينتقل `thinking` الخاص بالمسار إلى `thinking` الخانة، وينتقل `api` و`contextWindow` من مسار `maic-agent-driver` إلى خانة `agent`. قبل:
@@ -686,6 +688,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 
 # MinerU backend اختياري ذاتي الاستضافة
 PDF_MINERU_BACKEND=pipeline
+
+# اختياري، يُقرأ وقت التشغيل: الحد الأقصى لصفحات PDF / الصفحات لكل جزء / الطلبات المتزامنة.
+# القيم الافتراضية: 1000 / 50 / 4؛ أعداد صحيحة موجبة فقط. لتحليل PDF المستضاف ذاتيًا.
+# يحدد CHUNK_PAGES أيضًا حد طول المستند للتعرّف على الفصول في PDF وWord وPPT.
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
 
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=

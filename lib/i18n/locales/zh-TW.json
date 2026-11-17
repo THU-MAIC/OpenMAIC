@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "網頁擷取",
           "desc": "供智慧體讀取工作階段中已獲准的網頁。"
+        },
+        "materialChapters": {
+          "name": "章節辨識",
+          "desc": "辨識長資料中的章與節。"
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "搜尋",
           "fetch": "擷取",
           "image": "圖像",
-          "video": "影片"
+          "video": "影片",
+          "parse": "解析",
+          "chapters": "章節"
         }
       },
       "empty": {
@@ -2275,6 +2281,11 @@
         "processing_interrupted": {
           "label": "解析未完成",
           "description": "本次解析未能完成，可以稍後重試。"
+        },
+        "pages_failed": {
+          "label": "PDF 頁面解析失敗",
+          "description": "PDF 第 {{firstPage}}–{{lastPage}} 頁解析失敗，這份資料暫時無法讀取，可以稍後重新解析。",
+          "descriptionWithoutCount": "PDF 部分頁面解析失敗，這份資料暫時無法讀取，可以稍後重新解析。"
         },
         "too_many_pages": {
           "label": "頁數過多",

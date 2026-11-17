@@ -125,6 +125,7 @@ Amazon Bedrock（`preset: bedrock`）はサーバーの AWS 認証情報チェ�
 | `classroom` | chat | `llm` | 授業中のチャット、クイズの採点、PBL ランタイム |
 | `agent` | chat | `llm` | ワークベンチのエージェント。**ツール呼び出しが必要。** `api` と `contextWindow` も指定可能 |
 | `agent.title` | chat | `agent` | ワークベンチのセッションのタイトル。`openmaic.yml` でのみ設定でき、モデル設定には表示されません |
+| `material.chapters` | chat | `llm` | セルフホストの MinerU で長い資料を解析した後の任意の章認識 |
 | `tts` | tts | — | 音声合成 |
 | `asr` | asr | — | 音声認識（音声入力、音声・動画の文字起こし） |
 | `image` | image | — | 画像生成 |
@@ -380,6 +381,7 @@ MODEL_ROUTES does not carry over to the model configuration: write the per-stage
 | `generate-classroom` | `llm` |
 | `maic-agent-driver` | `agent` |
 | `conversation-title` | `agent.title` |
+| `material-chapters` | `material.chapters` |
 | `pbl-chat`、`maic-agent` | なし：これらのステージは削除されました。削除してください |
 
 複数のステージが 1 つのスロットを共有する場合は、それらが使うべき 1 つのモデルをスロットに指定します。ルートの `thinking` はスロットの `thinking` に、`maic-agent-driver` ルートの `api` と `contextWindow` は `agent` スロットに移します。移行前：
@@ -686,6 +688,13 @@ PDF_MINERU_BASE_URL=http://localhost:8888
 
 # MinerU 自ホストのオプションバックエンド
 PDF_MINERU_BACKEND=pipeline
+
+# 任意、実行時に読み取り：PDF の総ページ数上限 / 分割ごとのページ数 / 同時リクエスト数。
+# 既定値は 1000 / 50 / 4。正の整数のみ。セルフホストの PDF 解析に適用。
+# CHUNK_PAGES は PDF・Word・PPT の章認識を行う長さのしきい値にも使用。
+PDF_MINERU_MAX_PAGES=1000
+PDF_MINERU_CHUNK_PAGES=50
+PDF_MINERU_CHUNK_CONCURRENCY=4
 
 # MinerU Cloud
 PDF_MINERU_CLOUD_API_KEY=

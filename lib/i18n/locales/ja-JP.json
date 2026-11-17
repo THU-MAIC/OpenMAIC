@@ -2189,6 +2189,10 @@
         "webFetch": {
           "name": "Webページ取得",
           "desc": "エージェントがセッションで許可されたWebページを読み取るために使います。"
+        },
+        "materialChapters": {
+          "name": "章構成の認識",
+          "desc": "長い資料の章と節を認識します。"
         }
       },
       "source": {
@@ -2204,7 +2208,9 @@
           "search": "検索",
           "fetch": "取得",
           "image": "画像",
-          "video": "動画"
+          "video": "動画",
+          "parse": "解析",
+          "chapters": "章構成"
         }
       },
       "empty": {
@@ -2275,6 +2281,11 @@
         "processing_interrupted": {
           "label": "解析が完了しませんでした",
           "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
+        },
+        "pages_failed": {
+          "label": "PDFページの解析に失敗",
+          "description": "PDFの{{firstPage}}～{{lastPage}}ページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。",
+          "descriptionWithoutCount": "PDFの一部のページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。"
         },
         "too_many_pages": {
           "label": "ページ数が多すぎます",

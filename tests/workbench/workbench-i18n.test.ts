@@ -269,7 +269,7 @@ describe('workbench hardcoded-copy contract', () => {
   });
 });
 
-it('defines all seven knowledge-base failure explanations in all twelve locale files', () => {
+it('defines all eight knowledge-base failure explanations in all twelve locale files', () => {
   const codes = [
     'storage_full',
     'source_unavailable',
@@ -278,10 +278,12 @@ it('defines all seven knowledge-base failure explanations in all twelve locale f
     'no_text_extracted',
     'processing_interrupted',
     'too_many_pages',
+    'pages_failed',
   ];
   // A page refusal states only the counts the service gave: one wording per case.
   const descriptions: Record<string, string[]> = {
     too_many_pages: ['description', 'descriptionWithoutCount', 'descriptionWithoutLimit'],
+    pages_failed: ['description', 'descriptionWithoutCount'],
   };
   for (const { code } of supportedLocales) {
     const resource = JSON.parse(
@@ -339,6 +341,17 @@ it('states the page counts of a too-many-pages refusal by interpolation in all t
       // The numbers come from the refusal, never from the copy.
       expect(copy[key], code).not.toMatch(/\d/);
     }
+  }
+});
+
+it('states the failed PDF page range in every locale', () => {
+  for (const { code } of supportedLocales) {
+    const resource = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'lib/i18n/locales', `${code}.json`), 'utf8'),
+    );
+    const copy = resource.workspace.knowledgeBase.failure.pages_failed;
+    expect(interpolations(copy.description), code).toEqual(['firstPage', 'lastPage']);
+    expect(interpolations(copy.descriptionWithoutCount), code).toEqual([]);
   }
 });
 

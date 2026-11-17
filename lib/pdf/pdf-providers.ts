@@ -144,6 +144,7 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
 import { extractMinerUResult } from './mineru-parser';
+import { parseMinerUPdfChunks } from './mineru-chunks';
 import { parseWithMinerUCloud } from './mineru-cloud';
 import { parseWithMiniCPMOCR } from './minicpm-ocr';
 import { parseWithAliDocMindClient } from './alidocmind-client';
@@ -749,6 +750,24 @@ export async function parseWithMinerUDocument(
     );
   }
 
+  if (options.mimeType.toLowerCase() === 'application/pdf') {
+    const chunked = await parseMinerUPdfChunks(
+      documentBuffer,
+      (bytes, fileName, signal) =>
+        requestMinerUDocument({ ...config, signal }, bytes, { ...options, fileName }),
+      config.signal,
+    );
+    if (chunked) return chunked;
+  }
+  return extractMinerUResult(await requestMinerUDocument(config, documentBuffer, options));
+}
+
+/** The original single-file request, shared by whole documents and temporary PDF chunks. */
+async function requestMinerUDocument(
+  config: PDFParserConfig,
+  documentBuffer: Buffer,
+  options: { fileName: string; mimeType: string },
+): Promise<Record<string, unknown>> {
   log.info(`[MinerU] Parsing document with MinerU server: ${config.baseUrl}`);
 
   // Create FormData for file upload
@@ -821,10 +840,10 @@ export async function parseWithMinerUDocument(
       throw new Error('MinerU returned no results');
     }
     log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${options.fileName}"`);
-    return extractMinerUResult(fallback);
+    return fallback;
   }
 
-  return extractMinerUResult(fileResult);
+  return fileResult;
 }
 
 // Re-export from constants for convenience

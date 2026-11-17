@@ -38,6 +38,9 @@
  * (`./document-images.ts`). Media extraction keeps its transcript and its
  * images. The session chain still keeps document text only.
  */
+
+import { getChapterSource } from '@/lib/document/chapter-source';
+import { recognizeMaterialChapters } from './chapters';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { AssetQuotaExceededError } from '@openmaic/storage';
@@ -352,6 +355,15 @@ export async function runClaimedOwnerExtraction(
   const extracted = await extractOrReuse(plan, claim.originalName, reuse, state.signal);
   if (extracted.kind === 'reused') return extracted.outcome;
   const outcome = extracted.outcome;
+  if (state.lost) return 'not-authorized';
+  const chapterRecognition = await recognizeMaterialChapters({
+    source: getChapterSource(outcome),
+    providerId: outcome.extractor.id,
+    pageCount: outcome.stats.pages ?? 0,
+    mimeType: mime,
+    ownerId: claim.ownerId,
+    signal: state.signal,
+  });
 
   if (state.lost) return 'not-authorized';
   const options = resultOptions(outcome.extractor.id);
@@ -416,6 +428,7 @@ export async function runClaimedOwnerExtraction(
         },
         extractor: { ...outcome.extractor, options },
         stats: { ...outcome.stats },
+        ...chapterRecognition,
         derivatives,
       },
       now(),
@@ -549,6 +562,10 @@ async function publishReused(
     text: hit.result.text,
     extractor: hit.result.extractor,
     stats: hit.result.stats,
+    ...(hit.result.chapters ? { chapters: hit.result.chapters } : {}),
+    ...(hit.result.chapterPageCount === undefined
+      ? {}
+      : { chapterPageCount: hit.result.chapterPageCount }),
     derivatives: hit.result.derivatives.map((derivative, index) => ({
       ...derivative,
       id: createId(),
