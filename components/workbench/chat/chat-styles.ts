@@ -215,6 +215,9 @@ export const wbStyles = {
      * bordered card's inner padding, and the CARD's edge is what lines up.
      */
     summaryBox: 'group/question flex flex-col py-1',
+    recommended:
+      'shrink-0 rounded-[var(--wb-radius-full)] bg-[var(--wb-accent-soft)] px-1.5 text-[11px] font-medium leading-4 text-[var(--wb-accent)]',
+    autoNote: 'text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-muted)]',
     summaryPointer: 'font-normal text-[var(--wb-text-faint)]',
   },
   /**
@@ -232,6 +235,21 @@ export const wbStyles = {
    * the viewport. A long question scrolls (~22vh) and a long option list scrolls
    * (~34vh); the footer with the submit control is never among what scrolls away.
    */
+  // `ask_user`'s optional supporting material, shared by every question surface.
+  questionDetails: {
+    box: 'rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface-sunken)]/50 px-3 py-2 text-left',
+    // About five lines of 13px prose, faded at the cut so it reads as "more below".
+    bodyClamped:
+      'max-h-[7.25rem] overflow-hidden text-[length:var(--wb-text-sm)] [mask-image:linear-gradient(to_bottom,#000_60%,transparent)] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1',
+    bodyFits:
+      'max-h-[7.25rem] overflow-hidden text-[length:var(--wb-text-sm)] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1',
+    bodyOpen:
+      'max-h-[42vh] overflow-y-auto text-[length:var(--wb-text-sm)] [&_li]:my-0 [&_ol]:my-1 [&_p]:my-1 [&_ul]:my-1',
+    toggle:
+      'mt-1 inline-flex cursor-pointer items-center gap-0.5 rounded-[var(--wb-radius-sm)] border-0 bg-transparent p-0 text-[length:var(--wb-text-xs)] font-medium text-[var(--wb-accent)] hover:underline focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
+    chevron:
+      'size-3.5 transition-transform duration-[var(--wb-duration-base)] motion-reduce:transition-none',
+  },
   questionForm: {
     box: 'flex flex-col gap-2.5 rounded-2xl border border-[var(--wb-accent-line)] bg-[var(--wb-surface)] px-3 py-3 shadow-[0_10px_32px_-14px_rgba(15,23,42,0.22)] motion-safe:animate-[wb-form-fade_var(--wb-duration-base)_var(--wb-ease-out)] motion-reduce:animate-none dark:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.55)]',
     // The same form inside a surface that already draws the frame.
@@ -250,7 +268,7 @@ export const wbStyles = {
      * answer: a wash for the pick, a hairline for where the keys are. They are
      * separate because ↑↓ moves through rows without choosing any of them.
      */
-    row: 'group/qrow flex flex-col rounded-[var(--wb-radius-md)] border border-transparent transition-colors duration-[var(--wb-duration-base)] hover:bg-[var(--wb-surface-sunken)] data-[highlight=true]:border-[var(--wb-line)] data-[highlight=true]:bg-[var(--wb-surface-sunken)] data-[picked=true]:border-[var(--wb-accent-line)] data-[picked=true]:bg-[var(--wb-accent-soft)] motion-reduce:transition-none',
+    row: 'group/qrow relative flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-transparent transition-colors duration-[var(--wb-duration-base)] hover:bg-[var(--wb-surface-sunken)] data-[highlight=true]:border-[var(--wb-line)] data-[highlight=true]:bg-[var(--wb-surface-sunken)] data-[picked=true]:border-[var(--wb-accent-line)] data-[picked=true]:bg-[var(--wb-accent-soft)] motion-reduce:transition-none',
     rowButton:
       'flex w-full cursor-pointer items-start gap-2 rounded-[var(--wb-radius-md)] border-0 bg-transparent px-2 py-[7px] text-left text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] focus-visible:outline-none disabled:cursor-default disabled:opacity-60',
     // The digit shortcut, as a number and nothing more: a filled badge here would
@@ -279,7 +297,25 @@ export const wbStyles = {
     // A way out, not a competing action: text weight, no frame.
     dismiss:
       'inline-flex cursor-pointer items-center rounded-[var(--wb-radius-sm)] border-0 bg-transparent px-1.5 py-1 text-[length:var(--wb-text-sm)] text-[var(--wb-text-muted)] transition-colors duration-[var(--wb-duration-base)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
-    keys: 'ml-auto text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-faint)]',
+    keys: 'text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-faint)]',
+    // The agent's recommendation: a quiet tag on its row, which also carries the
+    // seconds while the auto-confirm countdown runs.
+    recommended:
+      'ml-auto shrink-0 self-center rounded-[var(--wb-radius-full)] bg-[var(--wb-accent-soft)] px-1.5 py-px text-[11px] font-medium leading-4 text-[var(--wb-accent)]',
+    // The countdown's progress: a hairline along the recommended row's bottom
+    // edge. Steps once a tick; reduced motion drops the easing between steps.
+    countdownBar:
+      'pointer-events-none absolute bottom-0 left-0 h-[2px] rounded-[var(--wb-radius-full)] bg-[var(--wb-accent)] opacity-60 transition-[width] duration-300 ease-linear motion-reduce:transition-none',
+    // The footer's right-hand group: the way out, then the primary action.
+    actions: 'ml-auto flex shrink-0 items-center gap-2',
+    // "Auto-confirm": a compact switch with its label, quiet like the hint it
+    // replaces; the track carries the state.
+    autoSwitch:
+      'inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--wb-radius-sm)] border-0 bg-transparent px-0.5 py-0.5 text-[length:var(--wb-text-xs)] leading-[17px] text-[var(--wb-text-muted)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)]',
+    autoTrack:
+      'relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-[var(--wb-radius-full)] bg-[var(--wb-line)] transition-colors duration-[var(--wb-duration-base)] motion-reduce:transition-none data-[on=true]:bg-[var(--wb-accent)] [&[data-on=true]>span]:translate-x-[10px]',
+    autoThumb:
+      'ml-[2px] block size-2.5 rounded-full bg-white shadow-sm transition-transform duration-[var(--wb-duration-base)] motion-reduce:transition-none',
   },
   actionCluster: {
     root: 'flex flex-col overflow-hidden rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface)]',

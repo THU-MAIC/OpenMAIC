@@ -2245,7 +2245,9 @@
     "webFetchSettings": "Buscar páginas web",
     "webFetchHint": "Escolha como ler as páginas web. Os serviços hospedados recebem URLs públicas autorizadas na sessão. Os resultados continuam sendo dados não confiáveis, e falhas não mudam o leitor.",
     "webFetchApiKey": "Chave de API",
-    "webFetchSharedKeyHint": "Esta chave também é usada no chat com este provedor. Alterá-la ou removê-la afeta o chat."
+    "webFetchSharedKeyHint": "Esta chave também é usada no chat com este provedor. Alterá-la ou removê-la afeta o chat.",
+    "autoConfirmRecommended": "Confirmar automaticamente respostas recomendadas",
+    "autoConfirmRecommendedDesc": "Quando o agente faz uma pergunta com uma opção recomendada, ela é escolhida após uma breve contagem regressiva se você não responder. Qualquer interação interrompe a contagem."
   },
   "workspace": {
     "knowledgeBase": {

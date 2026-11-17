@@ -2245,7 +2245,9 @@
     "webFetchSettings": "Web Fetch",
     "webFetchHint": "Choose how web pages are read. Hosted readers receive session-approved public URLs. Results remain untrusted, and failures do not switch readers.",
     "webFetchApiKey": "API Key",
-    "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat."
+    "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat.",
+    "autoConfirmRecommended": "Auto-confirm recommended answers",
+    "autoConfirmRecommendedDesc": "When the workbench agent asks a question and recommends an option, choose it after a short countdown if you don't respond. Any interaction stops the countdown."
   },
   "workspace": {
     "knowledgeBase": {

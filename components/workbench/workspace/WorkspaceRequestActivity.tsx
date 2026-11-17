@@ -14,7 +14,7 @@
  * wrote, then the question with the conversation's own form and send path
  * (`lib/workbench/question-host.ts`), while the transcript points across.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, MotionConfig, motion, useReducedMotion } from 'motion/react';
 import { MessageCircleQuestion, Sparkles } from 'lucide-react';
 import { useWorkbenchStore, type ChatNode } from '@/lib/workbench/session-store';
@@ -43,6 +43,8 @@ import { RosterRevealVisualizer } from '@/components/generation/roster-reveal';
 import { presentTool } from '../chat/tool-presentation';
 import { TextBlock } from '../chat/text-block';
 import { QuestionForm } from '../chat/question-form';
+import { QuestionDetails } from '../chat/question-details';
+import { QuestionSurface } from '../chat/question-surface';
 import { cn } from '@/lib/utils/cn';
 import { closedPreviewRequest } from '@/lib/workbench/preview-tab';
 import { sessionScopedKey } from '@/lib/workbench/request-scope';
@@ -435,9 +437,6 @@ function RequestPreview({
             >
               {asking && view.question ? (
                 <QuestionCard
-                  title={copy.title}
-                  description={copy.description}
-                  agentText={view.question.planText}
                   question={view.question.node}
                   hosted={hosted.node}
                   onHandBack={hosted.handBack}
@@ -578,14 +577,14 @@ function SceneCard({
 }
 
 /**
- * The agent waits on the user: one card. What the agent wrote, as a document
- * with its own scroll; then the question, its options and its actions, in the
- * conversation's own form.
+ * The agent waits on the user: one card, the same shell as the other scenes.
+ *
+ * Generic on purpose — `ask_user` asks anything, so nothing here assumes a
+ * plan. The question is the title; its `details`, when it has any, sit in a
+ * quiet clamped block; then the options, in the conversation's own form and
+ * send path. What the agent said before asking stays in the conversation.
  */
 function QuestionCard({
-  title,
-  description,
-  agentText,
   question,
   hosted,
   onHandBack,
@@ -593,9 +592,6 @@ function QuestionCard({
   t,
 }: {
   readonly skills: readonly string[];
-  readonly title: string;
-  readonly description: string;
-  readonly agentText: string | null;
   readonly question: ChatNode;
   readonly hosted: ChatNode | null;
   readonly onHandBack: () => void;
@@ -605,24 +601,37 @@ function QuestionCard({
   // Node keys repeat across sessions; keying the form by session keeps one
   // conversation's in-flight form state off another's question.
   const sessionId = useWorkbenchStore((s) => s.sessionId);
+  const details = question.questionDetails;
   return (
-    <div data-testid="request-preview-question" className={cn(CARD, 'text-left')}>
-      {/* The same centered composition as the scene card: skills, mark, title, line. */}
-      <div className="flex flex-col items-center px-8 pb-5 pt-5 text-center">
-        <EquippedSkills skills={skills} t={t} className="mb-4" />
-        <span className="flex size-12 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-500 ring-1 ring-violet-400/20">
-          <MessageCircleQuestion className="size-6" aria-hidden="true" />
-        </span>
-        <h2
-          data-testid="request-preview-title"
-          className="mt-3 text-xl font-bold tracking-tight text-[var(--ws-ink)]"
-        >
-          {title}
-        </h2>
-        <p className="mt-1 text-sm text-[var(--ws-ink-mute)]">{description}</p>
+    // The whole card is the question's surface: hovering any of it (the plan
+    // included) pauses an auto-confirm countdown, and pressing any of it stops it.
+    <QuestionSurface
+      testId="request-preview-question"
+      className={cn(CARD, 'mx-auto max-w-xl px-7 pb-5 pt-6 text-left')}
+    >
+      <EquippedSkills skills={skills} t={t} className="mb-3 justify-start" />
+      <div className="flex items-center gap-1.5 text-xs font-medium text-violet-600 dark:text-violet-300">
+        <MessageCircleQuestion className="size-4" aria-hidden="true" />
+        {t('workbench.question.waiting')}
       </div>
-      {agentText ? <AgentDocument text={agentText} /> : null}
-      <div className="wbchat border-t border-[var(--ws-line-soft)] px-8 pb-6 pt-5">
+      <div
+        role="heading"
+        aria-level={2}
+        data-testid="request-preview-title"
+        className="wbchat mt-2 text-lg font-bold leading-snug tracking-tight text-[var(--ws-ink)] [&_.wb-prose]:text-[length:inherit] [&_p]:my-0"
+      >
+        <TextBlock text={question.text} />
+      </div>
+      {details ? (
+        <div className="wbchat mt-4">
+          <QuestionDetails
+            text={details}
+            testId="request-preview-plan"
+            t={t as WorkbenchTranslator}
+          />
+        </div>
+      ) : null}
+      <div className="wbchat mt-4">
         {hosted && answer ? (
           <QuestionForm
             key={sessionScopedKey(sessionId, hosted.key)}
@@ -630,48 +639,12 @@ function QuestionCard({
             onAnswer={answer}
             onDismiss={onHandBack}
             embedded
+            hideQuestion
             t={t as WorkbenchTranslator}
           />
-        ) : (
-          <TextBlock text={question.text} />
-        )}
+        ) : null}
       </div>
-    </div>
-  );
-}
-
-/** What the agent wrote before asking, as a readable document with its own scroll. */
-function AgentDocument({ text }: { readonly text: string }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [atEnd, setAtEnd] = useState(true);
-  const measure = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    setAtEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 4);
-  }, []);
-  useEffect(() => {
-    measure();
-  }, [measure, text]);
-  return (
-    <div className="border-t border-[var(--ws-line-soft)]">
-      <div
-        ref={scrollRef}
-        data-testid="request-preview-plan"
-        onScroll={measure}
-        className="wbchat max-h-[min(30vh,320px)] overflow-y-auto px-8 py-5 text-[13px]"
-        // A soft fade says there is more below; it lifts at the end.
-        style={
-          atEnd
-            ? undefined
-            : {
-                maskImage: 'linear-gradient(to bottom, #000 calc(100% - 48px), transparent)',
-                WebkitMaskImage: 'linear-gradient(to bottom, #000 calc(100% - 48px), transparent)',
-              }
-        }
-      >
-        <TextBlock text={text} />
-      </div>
-    </div>
+    </QuestionSurface>
   );
 }
 

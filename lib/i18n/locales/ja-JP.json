@@ -2245,7 +2245,9 @@
     "webFetchSettings": "Webページ取得",
     "webFetchHint": "Webページの読み取り方法を選択します。ホスト型サービスには、セッションで許可された公開URLのみが送信されます。結果は信頼できないデータとして扱い、失敗しても別のサービスには切り替えません。",
     "webFetchApiKey": "APIキー",
-    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。"
+    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。",
+    "autoConfirmRecommended": "おすすめの回答を自動で確定",
+    "autoConfirmRecommendedDesc": "エージェントが質問でおすすめの選択肢を示したとき、操作がなければ短いカウントダウンの後にそれを選びます。何か操作するとカウントダウンは止まります。"
   },
   "workspace": {
     "knowledgeBase": {

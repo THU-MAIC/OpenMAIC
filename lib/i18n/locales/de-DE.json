@@ -2245,7 +2245,9 @@
     "webFetchSettings": "Webseiten abrufen",
     "webFetchHint": "Wählen Sie, wie Webseiten gelesen werden. Gehostete Dienste erhalten nur öffentliche URLs, die in der Sitzung zugelassen sind. Ergebnisse bleiben nicht vertrauenswürdig; bei Fehlern wird der Dienst nicht gewechselt.",
     "webFetchApiKey": "API-Schlüssel",
-    "webFetchSharedKeyHint": "Dieser Schlüssel wird auch für den Chat mit diesem Anbieter verwendet. Änderungen oder das Entfernen wirken sich auf den Chat aus."
+    "webFetchSharedKeyHint": "Dieser Schlüssel wird auch für den Chat mit diesem Anbieter verwendet. Änderungen oder das Entfernen wirken sich auf den Chat aus.",
+    "autoConfirmRecommended": "Empfohlene Antworten automatisch bestätigen",
+    "autoConfirmRecommendedDesc": "Wenn der Agent eine Frage mit einer empfohlenen Option stellt, wird sie nach einem kurzen Countdown gewählt, falls du nicht reagierst. Jede Interaktion stoppt den Countdown."
   },
   "workspace": {
     "knowledgeBase": {

@@ -34,10 +34,16 @@
     "placeholder": "Viết câu trả lời của bạn",
     "confirm": "Xác nhận",
     "submit": "Gửi",
-    "dismiss": "Bỏ qua",
+    "dismiss": "Thu gọn",
     "inFormBelow": "Hãy trả lời trong biểu mẫu bên dưới",
     "inPreview": "Trả lời trong bản xem trước",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Đề xuất",
+    "autoConfirm": "Tự động xác nhận",
+    "autoConfirmed": "Đã tự chọn phương án đề xuất — bạn có thể đổi bất cứ lúc nào",
+    "showDetails": "Xem thêm",
+    "hideDetails": "Thu gọn",
+    "orAnswerInChat": "Bạn cũng có thể trả lời ngay trong cuộc trò chuyện"
   },
   "material": {
     "maxSelected": "Mỗi lần chỉ chọn được tối đa {{count}} tài liệu",

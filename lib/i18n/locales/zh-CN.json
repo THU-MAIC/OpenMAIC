@@ -2245,7 +2245,9 @@
     "webFetchSettings": "网页抓取",
     "webFetchHint": "选择网页读取方式。托管服务只会收到会话中已获准的公开网址。结果仍是不可信数据，失败时不会切换读取服务。",
     "webFetchApiKey": "API 密钥",
-    "webFetchSharedKeyHint": "此密钥也用于与同一服务商进行对话。修改或移除密钥也会影响对话。"
+    "webFetchSharedKeyHint": "此密钥也用于与同一服务商进行对话。修改或移除密钥也会影响对话。",
+    "autoConfirmRecommended": "自动确认推荐选项",
+    "autoConfirmRecommendedDesc": "Agent 提问并给出推荐选项时，若你一段时间内没有操作，倒计时结束后自动选择推荐项。任何操作都会停止倒计时。"
   },
   "workspace": {
     "knowledgeBase": {
