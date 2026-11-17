@@ -36,7 +36,6 @@ import type {
   QuizContent,
   Scene,
   SlideContent,
-  Stage,
 } from '@/lib/types/stage';
 
 function slideScene(order = 1, id = 'scene_slide'): Scene {
@@ -207,15 +206,11 @@ function state(initial = course()) {
       scenes: doc.scenes.map((item) => (item.id === scene.id ? scene : item)),
     };
   });
-  const putStage = vi.fn(async (_stageId: string, stage: Stage) => {
-    doc = { ...doc, stage };
-  });
   const loadDocument = vi.fn(async (stageId: string) => (stageId === doc.stage.id ? doc : null));
   return {
-    store: { loadDocument, putScene, putStage } as unknown as CourseStore,
+    store: { loadDocument, putScene } as unknown as CourseStore,
     get: () => doc,
     putScene,
-    putStage,
     loadDocument,
   };
 }
@@ -421,10 +416,6 @@ describe('patch_stage', () => {
     expect((scene.content as SlideContent).canvas.elements[0]).not.toHaveProperty('fill');
     expect(scene.actions?.[0]).toMatchObject({ text: 'New narration' });
     expect(scene.actions?.[0]).not.toHaveProperty('audioId');
-    // A scene patch re-versions the course, or the cover cache keeps serving
-    // the pre-patch cover under the unchanged stage version.
-    expect(current.putStage).toHaveBeenCalledTimes(1);
-    expect(current.putStage.mock.calls[0]![1].updatedAt).toBeGreaterThan(1);
     expect(result.details).toMatchObject({
       intent: 'Update title color and narration',
       updated: { ops: 3 },

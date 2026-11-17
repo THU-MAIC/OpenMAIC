@@ -5,7 +5,7 @@ import type { Action } from '@/lib/types/action';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { validateAppScene } from '@/lib/document-store/validators';
 import type { CourseDocument, CourseToolDeps } from './course-tools';
-import { putSceneBringingCurrent, putSceneReversioning } from './document-writes';
+import { putSceneBringingCurrent } from './document-writes';
 import { runStageMutation } from './mutation-fence';
 import {
   applyJsonPointerEdit,
@@ -1198,7 +1198,7 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
       }
       try {
         await runStageMutation(signal, () =>
-          putSceneReversioning(deps.store, loaded.stageId, next, loaded.doc.stage),
+          putSceneBringingCurrent(deps.store, loaded.stageId, next),
         );
       } catch (error) {
         return toolResult(

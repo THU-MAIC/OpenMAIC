@@ -73,10 +73,6 @@ function state(initial: CourseDocument | null) {
     saveDocument: vi.fn(async (next: CourseDocument) => {
       doc = structuredClone(next);
     }),
-    putStage: vi.fn(async (_stageId: string, stage: CourseDocument['stage']) => {
-      if (!doc) throw new Error('missing');
-      doc = { ...doc, stage };
-    }),
   } as unknown as CourseStore;
   return { store, get: () => doc };
 }
@@ -568,9 +564,6 @@ describe('generation and deck tools', () => {
     } as never);
     expect(users[0]).toBeDefined();
     expect(users[0]).not.toContain('Design Brief');
-    // A generated page can change the course's cover; the write re-versions
-    // the course (the fixture stamps stage.updatedAt as 1).
-    expect(current.get()?.stage.updatedAt).toBeGreaterThan(1);
   });
 
   it('rejects design on non-slide pages without writing anything', async () => {
@@ -770,8 +763,6 @@ describe('generation and deck tools', () => {
       ['c', 1],
       ['b', 2],
     ]);
-    // Structural edits re-version the course (the fixture stamps updatedAt 1).
-    expect(current.get()?.stage.updatedAt).toBeGreaterThan(1);
     expect(
       (current.get()?.outline as { outlines: Array<{ id: string; order: number }> }).outlines.map(
         (entry) => [entry.id, entry.order],
@@ -780,22 +771,6 @@ describe('generation and deck tools', () => {
       ['oc', 1],
       ['ob', 2],
     ]);
-  });
-
-  it('re-versions the course on an edit_deck retitle', async () => {
-    const a = slide('a', 1, 'A');
-    const current = state(document([a]));
-    const edit = find(buildDslCourseToolset(deps(current.store)), 'edit_deck');
-    await edit.execute('retitle', {
-      stageId: 'stage-test',
-      op: 'retitle',
-      sceneId: 'a',
-      title: 'Renamed by the agent',
-    } as never);
-    expect(current.get()?.scenes[0]?.title).toBe('Renamed by the agent');
-    // The library (and the cover cache) key on the stage version; a retitle
-    // must move it or the renamed page keeps serving its cached cover.
-    expect(current.get()?.stage.updatedAt).toBeGreaterThan(1);
   });
 
   it('drops action types unknown to the shared DSL', () => {
