@@ -1,12 +1,20 @@
 # PBL explicit first start — PR #2277
 
-The current implementation keeps workbench onboarding in its existing place, then waits at the project overview. The learner chooses **Start learning** before the first teaching request is sent. The existing waiting bubble appears immediately and normal tail following handles all replies.
+The current implementation keeps environment preparation and automatic workbench onboarding in their existing order, then waits at the project overview. The learner chooses **Start learning** before the opening teaching request is sent. The existing assistant waiting bubble appears immediately, and all replies use normal tail following.
 
-## Current recordings
+## Final acceptance recordings
 
-- [Desktop walkthrough](explicit-start/first-entry-desktop.gif): Start project → environment preparation → automatic workbench guide → project overview → Start learning → assistant waiting bubble → opening response with normal tail following. The preparation and workbench recordings are joined into one walkthrough, with a cut between them.
-- [Narrow-window walkthrough](explicit-start/first-entry-narrow.gif): automatic workbench guide → project overview in the narrower layout → Start learning → waiting feedback → opening response and tail following. Environment preparation is covered by the desktop recording.
+Both recordings show the local acceptance classroom for **Future Self, Lesson 3: Save Records**, from **Start project** on the project introduction page through the **completed opening reply** in the workbench:
 
-Both walkthroughs use the local acceptance classroom for Future Self, Lesson 3: Save Records. They show that the overview remains available for reading until Start learning is clicked, followed by the existing conversation behavior. These are UI walkthroughs; the automated regression checks are listed separately in the PR.
+1. Start project and environment preparation.
+2. A continuous preparation barrier handing off to all five onboarding steps.
+3. The populated project overview in the assistant spotlight during onboarding.
+4. The overview remaining available to read after onboarding, before Start learning.
+5. Start learning, immediate assistant waiting feedback, and the first reply with normal tail following.
 
-The GIFs in the repository root document the superseded scroll-hold candidate and are retained as historical evidence only. Earlier explicit-start recordings remain available in the branch history.
+- [Wide-screen walkthrough](explicit-start/first-entry-desktop.gif) — 35 seconds. Two consecutive recordings joined into one walkthrough; the long preparation wait is shortened.
+- [Narrow-window walkthrough](explicit-start/first-entry-narrow.gif) — 37 seconds. Includes environment preparation, all five guide steps, overview, start-button hover feedback, and the opening reply. The long preparation wait is shortened.
+
+No explanatory panels or annotations are added to either recording.
+
+These replace the earlier explicit-start recordings. The GIFs in the repository root document the superseded scroll-hold candidate and are historical evidence only.
