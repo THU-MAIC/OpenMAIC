@@ -32,7 +32,7 @@ export function useProjectEditor(
   const [tabs, setTabs] = useState(initial.tabs.length ? initial.tabs : ['PLAN.md']);
   const [buffers, setBuffers] = useState<Record<string, EditorBuffer>>(initial.buffers);
   const [loading, setLoading] = useState(false);
-  // Keep cached content visible, but do not accept edits until its fresh read settles.
+  // Keep cached content visible, but do not accept edits until its fresh read succeeds.
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -62,6 +62,7 @@ export function useProjectEditor(
     options,
     recoveryConflicts,
     refreshing,
+    readErrors,
   });
   current.current = {
     view,
@@ -73,6 +74,7 @@ export function useProjectEditor(
     options,
     recoveryConflicts,
     refreshing,
+    readErrors,
   };
   const updateBuffers = useCallback(
     (update: (previous: Record<string, EditorBuffer>) => Record<string, EditorBuffer>) => {
@@ -275,7 +277,8 @@ export function useProjectEditor(
     if (inFlight.current) return inFlight.current;
     const run = async () => {
       while (mounted.current && !failed.current) {
-        const { path: active, buffers, view, options, onSave, recoveryConflicts } = current.current;
+        const { path: active, buffers, view, options, onSave, recoveryConflicts, readErrors } =
+          current.current;
         if (!options.enabled) return;
         const retry = retrySave.current;
         if (
@@ -283,6 +286,7 @@ export function useProjectEditor(
           (retry.buffer.environment !== editorSource(view) ||
             !view.files.includes(retry.name) ||
             recoveryConflicts[retry.name] === editorSource(view) ||
+            readErrors[retry.name]?.source === editorSource(view) ||
             !options.canEdit(retry.name))
         )
           return;
@@ -295,6 +299,7 @@ export function useProjectEditor(
               b.text !== b.saved &&
               b.environment === editorSource(view) &&
               recoveryConflicts[p] !== editorSource(view) &&
+              readErrors[p]?.source !== editorSource(view) &&
               view.files.includes(p) &&
               options.canEdit(p)
             );
@@ -377,6 +382,7 @@ export function useProjectEditor(
     return () => clearTimeout(timer);
   }, [
     buffers,
+    readErrors,
     options.enabled,
     view.environmentId,
     view.completedFilesAvailable,
@@ -444,7 +450,7 @@ export function useProjectEditor(
       return pump();
     },
     edit: (text: string) => {
-      const { path, view, options, recoveryConflicts } = current.current;
+      const { path, view, options, recoveryConflicts, readErrors } = current.current;
       const b = current.current.buffers[path];
       if (
         current.current.refreshing ||
@@ -453,6 +459,7 @@ export function useProjectEditor(
         !b ||
         b.environment !== editorSource(view) ||
         recoveryConflicts[path] === editorSource(view) ||
+        readErrors[path]?.source === editorSource(view) ||
         b.text === text
       )
         return;
