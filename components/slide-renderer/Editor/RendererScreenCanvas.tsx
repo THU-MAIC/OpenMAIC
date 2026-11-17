@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { useAnimate } from 'motion/react';
 import { SlideCanvas, type SlideEffects } from '@openmaic/renderer';
 import type { PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
@@ -303,7 +304,9 @@ export function RendererScreenCanvas() {
   const slide = useSceneSelector<SlideContent, SlideContent['canvas']>((content) => content.canvas);
   const resolved = useResolvedSlideMedia(slide);
 
-  const canvasPercentage = useCanvasStore.use.canvasPercentage();
+  const storedCanvasPercentage = useCanvasStore.use.canvasPercentage();
+  const mobile = useMobileLayout();
+  const canvasPercentage = mobile ? 100 : storedCanvasPercentage;
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
 
   const highlightedElementIds = useCanvasStore.use.highlightedElementIds();

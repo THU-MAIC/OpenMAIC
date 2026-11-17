@@ -1,0 +1,34 @@
+{
+  "01-lesson-390.png": {
+    "sha256": "bdae9ac6da8ada83e15e02bd4325cdfca3733af7343d411c1e59a5e175222695",
+    "bytes": 104638
+  },
+  "02-lesson-844.png": {
+    "sha256": "35500ae03cdf8d2fc1fadea26c32f848023ae3b41421f435c3171d192d4d5b52",
+    "bytes": 97141
+  },
+  "03-quiz-390.png": {
+    "sha256": "409fc189ea89495a0aa684890b21d4ea7e114d844b5c884c21df8d51ed4e66be",
+    "bytes": 71137
+  },
+  "04-quiz-844.png": {
+    "sha256": "9436f74de0789537536a87bc9274639ce9ee15a7270ed618899d61093038b2cb",
+    "bytes": 39909
+  },
+  "05-interactive-390.png": {
+    "sha256": "e5c079de692b03a96fe8a70fe611c9d5e94b4cffd014e06cbdfc1de3a59d9fe6",
+    "bytes": 97025
+  },
+  "06-interactive-844.png": {
+    "sha256": "cf8b21da9b3efab24db1a2b990efde6b4c7e0e44de5db41428e7d962f810b734",
+    "bytes": 62866
+  },
+  "07-course-end-390.png": {
+    "sha256": "c89a6589f9280b97efdf21453cd9a23a064ee62231f5d2620262680d419470cf",
+    "bytes": 136402
+  },
+  "08-course-end-844.png": {
+    "sha256": "92712c902d300376ac4c035ec34785f88aee4fce54db67f4e24db27da7de6c7b",
+    "bytes": 88911
+  }
+}

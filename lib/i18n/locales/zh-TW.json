@@ -3424,5 +3424,21 @@
       },
       "close": "關閉指引"
     }
+  },
+  "mobileClassroom": {
+    "materials": "課堂資料",
+    "directory": "目錄",
+    "lecture": "講稿",
+    "volume": "音量",
+    "mute": "靜音",
+    "roundtable": "圓桌成員",
+    "captions": "字幕",
+    "controls": "播放控制",
+    "send": "傳送",
+    "join": "加入",
+    "skip": "略過",
+    "play": "播放",
+    "pause": "暫停",
+    "pblDesktop": "請前往電腦端完成 PBL 專案。你可以透過目錄繼續學習其他頁面。"
   }
 }

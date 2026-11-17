@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Play } from 'lucide-react';
+import { ArrowLeft, Captions, Maximize2, Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SceneRenderer } from '@/components/stage/scene-renderer';
 import { SceneProvider } from '@/lib/contexts/scene-context';
@@ -18,6 +18,9 @@ import type { WhiteboardElementReference } from '@/lib/types/chat';
 import { SlideElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
+  readonly mobileCourseName?: string;
+  readonly onMobileBack?: () => void;
+  readonly mobileSpeech?: string | null;
   readonly currentScene: Scene | null;
   readonly mode: StageMode;
   readonly hideToolbar?: boolean;
@@ -35,6 +38,10 @@ interface CanvasAreaProps extends CanvasToolbarProps {
 }
 
 export function CanvasArea({
+  mobile = false,
+  mobileCourseName,
+  onMobileBack,
+  mobileSpeech,
   currentScene,
   currentSceneIndex,
   scenesCount,
@@ -71,6 +78,27 @@ export function CanvasArea({
 }: CanvasAreaProps) {
   const { t } = useI18n();
   const inWorkbenchPanel = useInWorkbenchPanel();
+  const [mobileControls, setMobileControls] = useState(true);
+  const [captions, setCaptions] = useState(false);
+  const mobileHideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (!mobile) return;
+    clearTimeout(mobileHideTimer.current);
+    if (currentScene?.type === 'quiz') {
+      // The quiz owns its header and submit button; player chrome must not cover it.
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- switch presentation chrome with the scene
+      setMobileControls(false);
+      return;
+    }
+    // A playback change leaves controls available for two seconds.
+    setMobileControls(true);
+    mobileHideTimer.current = setTimeout(() => setMobileControls(false), 2000);
+    return () => clearTimeout(mobileHideTimer.current);
+  }, [mobile, engineState, currentScene?.id, currentScene?.type]);
+  const toggleMobileControls = useCallback(() => {
+    clearTimeout(mobileHideTimer.current);
+    setMobileControls((visible) => !visible);
+  }, []);
   const showControls = mode === 'playback' && !whiteboardOpen;
   const showPlayHint =
     showControls &&
@@ -81,7 +109,7 @@ export function CanvasArea({
 
   const handleSlideClick = useCallback(
     (e: React.MouseEvent) => {
-      if (!showControls || isLiveSession || currentScene?.type !== 'slide') return;
+      if (!showControls || (!mobile && isLiveSession) || currentScene?.type !== 'slide') return;
       // Don't trigger page play/pause when clicking inside a video element's visual area.
       // Video elements may be visually covered by other slide elements (e.g. text),
       // so we check click coordinates against all video element bounding rects.
@@ -98,13 +126,17 @@ export function CanvasArea({
           return;
         }
       }
-      onPlayPause();
+      if (mobile) toggleMobileControls();
+      else onPlayPause();
     },
-    [showControls, isLiveSession, onPlayPause, currentScene?.type],
+    [showControls, isLiveSession, onPlayPause, currentScene?.type, mobile, toggleMobileControls],
   );
 
   return (
-    <div className="w-full h-full flex flex-col bg-gray-50 dark:bg-gray-900 group/canvas">
+    <div
+      data-mobile-canvas={mobile || undefined}
+      className="w-full h-full flex flex-col bg-gray-50 dark:bg-gray-900 group/canvas"
+    >
       {/* Slide area — takes remaining space */}
       <div
         className={cn(
@@ -232,14 +264,17 @@ export function CanvasArea({
 
           {/* Scene Number Badge */}
           {currentScene && (
-            <div className="absolute top-4 right-4 text-gray-200 dark:text-gray-700 font-black text-4xl opacity-50 pointer-events-none select-none mix-blend-multiply dark:mix-blend-screen">
+            <div
+              data-canvas-page-number
+              className="absolute top-4 right-4 text-gray-200 dark:text-gray-700 font-black text-4xl opacity-50 pointer-events-none select-none mix-blend-multiply dark:mix-blend-screen"
+            >
               {(currentSceneIndex + 1).toString().padStart(2, '0')}
             </div>
           )}
 
           {/* Play hint — breathing button when idle or paused (slides only) */}
           <AnimatePresence>
-            {showPlayHint && (
+            {showPlayHint && !mobile && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -278,6 +313,63 @@ export function CanvasArea({
             )}
           </AnimatePresence>
         </StageViewport>
+        {mobile && (
+          <>
+            <div
+              className="mobile-canvas-chrome"
+              data-visible={mobileControls}
+              inert={!mobileControls}
+            >
+              <div className="mobile-canvas-header">
+                <button type="button" onClick={onMobileBack} aria-label={t('common.back')}>
+                  <ArrowLeft size={20} />
+                </button>
+                <span>{mobileCourseName}</span>
+                <button
+                  type="button"
+                  aria-label={t('mobileClassroom.captions')}
+                  aria-pressed={captions}
+                  onClick={() => setCaptions((value) => !value)}
+                >
+                  <Captions size={22} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t('stage.fullscreen')}
+                  onClick={onTogglePresentation}
+                >
+                  <Maximize2 size={20} />
+                </button>
+              </div>
+              {showControls && currentScene?.type === 'slide' && !isLiveSession && (
+                <button
+                  type="button"
+                  className="mobile-canvas-play"
+                  aria-label={t(
+                    engineState === 'playing' ? 'mobileClassroom.pause' : 'mobileClassroom.play',
+                  )}
+                  onClick={onPlayPause}
+                >
+                  {engineState === 'playing' ? <Pause size={24} /> : <Play size={24} />}
+                </button>
+              )}
+            </div>
+            {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
+              <div className="mobile-canvas-caption">{mobileSpeech}</div>
+            )}
+            {currentScene?.type === 'interactive' && !mobileControls && (
+              <button
+                type="button"
+                className="mobile-canvas-menu"
+                onClick={toggleMobileControls}
+                aria-label={t('mobileClassroom.controls')}
+                aria-expanded={mobileControls}
+              >
+                <Captions size={20} />
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* ── Canvas Toolbar — in document flow, only when not merged into roundtable ── */}

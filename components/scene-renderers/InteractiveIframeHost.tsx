@@ -145,11 +145,13 @@ export function handleInteractivePickerMessage(
  * zero-reload return.
  */
 export function InteractiveIframeHost({
+  portalContainer,
   onMediaPlay,
   playbackPicker,
   onPlaybackPick,
   onPlaybackCancel,
 }: {
+  readonly portalContainer?: HTMLElement | null;
   readonly onMediaPlay?: () => void;
   readonly playbackPicker?: PlaybackInteractivePickerState | null;
   readonly onPlaybackPick?: (pick: PlaybackInteractiveComponentPick) => void;
@@ -162,14 +164,17 @@ export function InteractiveIframeHost({
 
   // Portal into the fullscreen element when one is active (presentation mode
   // fullscreens the stage, and a body-portaled iframe would not be part of that
-  // subtree, so it would vanish). Falls back to body otherwise.
+  // subtree, so it would vanish). Stage supplies a stable local container so
+  // responsive layers and this host share a stacking context. Standalone hosts
+  // without a container retain the body fallback.
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
   useEffect(() => {
-    const sync = () => setPortalTarget(document.fullscreenElement ?? document.body);
+    const sync = () =>
+      setPortalTarget(document.fullscreenElement ?? portalContainer ?? document.body);
     sync();
     document.addEventListener('fullscreenchange', sync);
     return () => document.removeEventListener('fullscreenchange', sync);
-  }, []);
+  }, [portalContainer]);
 
   // Keep the messaging store's active scene in lock-step (its legacy fallback
   // path resolves the current widget by active scene when no id is passed).

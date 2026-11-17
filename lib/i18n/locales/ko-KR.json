@@ -3424,5 +3424,21 @@
       },
       "close": "안내 닫기"
     }
+  },
+  "mobileClassroom": {
+    "materials": "수업 자료",
+    "directory": "목차",
+    "lecture": "강의 원고",
+    "volume": "음량",
+    "mute": "음소거",
+    "roundtable": "참여자",
+    "captions": "자막",
+    "controls": "재생 컨트롤",
+    "send": "보내기",
+    "join": "참여",
+    "skip": "건너뛰기",
+    "play": "재생",
+    "pause": "일시정지",
+    "pblDesktop": "이 프로젝트는 컴퓨터에서 완료해 주세요. 목차에서 다른 페이지를 계속 학습할 수 있습니다."
   }
 }

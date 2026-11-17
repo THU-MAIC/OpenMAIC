@@ -3424,5 +3424,21 @@
       },
       "close": "ガイドを閉じる"
     }
+  },
+  "mobileClassroom": {
+    "materials": "授業資料",
+    "directory": "目次",
+    "lecture": "講義原稿",
+    "volume": "音量",
+    "mute": "ミュート",
+    "roundtable": "参加者",
+    "captions": "字幕",
+    "controls": "再生操作",
+    "send": "送信",
+    "join": "参加",
+    "skip": "スキップ",
+    "play": "再生",
+    "pause": "一時停止",
+    "pblDesktop": "このプロジェクトはパソコンで完了してください。目次から他のページに進めます。"
   }
 }

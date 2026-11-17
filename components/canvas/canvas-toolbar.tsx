@@ -19,6 +19,7 @@ import {
   Quote,
   FoldVertical,
   UnfoldVertical,
+  Settings2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
@@ -27,6 +28,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useSoftCloseCountdown } from '@/components/chat/use-soft-close-countdown';
 
 export interface CanvasToolbarProps {
+  readonly onMobileBack?: () => void;
+  readonly mobile?: boolean;
   readonly currentSceneIndex: number;
   readonly scenesCount: number;
   readonly engineState: 'idle' | 'playing' | 'paused';
@@ -98,6 +101,8 @@ function VolumeIcon({
 }
 
 export function CanvasToolbar({
+  onMobileBack,
+  mobile = false,
   currentSceneIndex,
   scenesCount,
   engineState,
@@ -150,6 +155,15 @@ export function CanvasToolbar({
   const [volumeHover, setVolumeHover] = useState(false);
   const volumeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const volumeContainerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!mobile || !volumeHover) return;
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !volumeContainerRef.current?.contains(event.target))
+        setVolumeHover(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, [mobile, volumeHover]);
 
   const handleVolumeEnter = useCallback(() => {
     clearTimeout(volumeTimerRef.current);
@@ -168,7 +182,10 @@ export function CanvasToolbar({
   const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div
+      data-mobile-toolbar={mobile || undefined}
+      className={cn('flex items-center gap-2', className)}
+    >
       {/* ── Left: sidebar toggle + page indicator ── */}
       <div className="flex items-center gap-1 shrink-0 pl-1">
         {onToggleSidebar && (
@@ -212,11 +229,11 @@ export function CanvasToolbar({
             <div
               ref={volumeContainerRef}
               className="relative flex items-center"
-              onMouseEnter={handleVolumeEnter}
-              onMouseLeave={handleVolumeLeave}
+              onMouseEnter={mobile ? undefined : handleVolumeEnter}
+              onMouseLeave={mobile ? undefined : handleVolumeLeave}
             >
               <button
-                onClick={onToggleMute}
+                onClick={mobile ? () => setVolumeHover((open) => !open) : onToggleMute}
                 disabled={!ttsEnabled}
                 className={cn(
                   ctrlBtn,
@@ -227,13 +244,15 @@ export function CanvasToolbar({
                       ? 'text-red-500 dark:text-red-400'
                       : 'text-gray-500 dark:text-gray-400',
                 )}
-                aria-label={ttsMuted ? 'Unmute' : 'Mute'}
+                aria-label={mobile ? t('mobileClassroom.volume') : ttsMuted ? 'Unmute' : 'Mute'}
+                aria-expanded={mobile ? volumeHover : undefined}
               >
                 <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={!ttsEnabled} />
               </button>
 
               {/* Vertical volume slider (pops up above) */}
               <div
+                inert={!volumeHover || !ttsEnabled}
                 className={cn(
                   'absolute bottom-full left-1/2 -translate-x-1/2 mb-2 flex flex-col items-center',
                   'transition-all duration-200 ease-out pointer-events-none opacity-0',
@@ -246,6 +265,7 @@ export function CanvasToolbar({
                   </span>
                   <input
                     type="range"
+                    aria-label={t('mobileClassroom.volume')}
                     min={0}
                     max={1}
                     step={0.05}
@@ -267,6 +287,11 @@ export function CanvasToolbar({
                       '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-500 [&::-moz-range-thumb]:border-0',
                     )}
                   />
+                  {mobile && (
+                    <button type="button" onClick={onToggleMute} aria-pressed={ttsMuted}>
+                      {t('mobileClassroom.mute')}
+                    </button>
+                  )}
                 </div>
                 {/* Arrow pointing down */}
                 <div className="w-2 h-2 bg-white dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 rotate-45 -mt-[5px]" />
@@ -394,7 +419,7 @@ export function CanvasToolbar({
           <CtrlDivider />
 
           {/* Auto-play */}
-          {onToggleAutoPlay && (
+          {!mobile && onToggleAutoPlay && (
             <TooltipProvider delayDuration={0}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -433,6 +458,7 @@ export function CanvasToolbar({
                 : 'text-gray-500 dark:text-gray-400',
             )}
             title={whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
+            aria-label={whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
           >
             <PencilLine className="w-3.5 h-3.5" />
             {!whiteboardOpen && whiteboardElementCount > 0 && (
@@ -440,7 +466,7 @@ export function CanvasToolbar({
             )}
           </button>
 
-          {showElementReference && (
+          {!mobile && showElementReference && (
             <button
               type="button"
               onClick={(event) => {
@@ -466,6 +492,39 @@ export function CanvasToolbar({
               <Quote className="h-3.5 w-3.5" />
             </button>
           )}
+          {mobile && (
+            <details className="mobile-toolbar-settings">
+              <summary aria-label={t('mobileClassroom.controls')}>
+                <Settings2 size={19} />
+              </summary>
+              <div className="mobile-toolbar-settings-panel">
+                {onMobileBack && (
+                  <button type="button" onClick={onMobileBack}>
+                    {t('common.back')}
+                  </button>
+                )}
+                {onTogglePresentation && (
+                  <button type="button" onClick={onTogglePresentation}>
+                    {presentationLabel}
+                  </button>
+                )}
+                <label>
+                  <span>{t('roundtable.autoPlay')}</span>
+                  <input type="checkbox" checked={!!autoPlayLecture} onChange={onToggleAutoPlay} />
+                </label>
+                {showElementReference && (
+                  <button
+                    type="button"
+                    disabled={!canPickSlideElement}
+                    aria-pressed={elementPickActive}
+                    onClick={onToggleElementPick}
+                  >
+                    {t('chat.elementReference.button')}
+                  </button>
+                )}
+              </div>
+            </details>
+          )}
         </div>
       </div>
 
@@ -489,7 +548,7 @@ export function CanvasToolbar({
             )}
           </button>
         )}
-        {onTogglePresentation && (
+        {!mobile && onTogglePresentation && (
           <button
             onClick={onTogglePresentation}
             className={cn(

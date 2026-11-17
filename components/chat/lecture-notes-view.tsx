@@ -55,6 +55,7 @@ const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string 
 };
 
 interface LectureNotesViewProps {
+  mobile?: boolean;
   notes: LectureNoteEntry[];
   currentSceneId?: string | null;
   currentActionIndex?: number | null;
@@ -63,6 +64,7 @@ interface LectureNotesViewProps {
 }
 
 export function LectureNotesView({
+  mobile = false,
   notes,
   currentSceneId,
   currentActionIndex,
@@ -101,6 +103,7 @@ export function LectureNotesView({
   return (
     <div
       ref={containerRef}
+      data-mobile-notes={mobile || undefined}
       className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 scrollbar-hide"
     >
       {notes.map((note, index) => {
@@ -253,6 +256,7 @@ export function LectureNotesView({
                       <button
                         key={row.actionId}
                         type="button"
+                        data-active={isActiveSpeech || undefined}
                         disabled={!canJump}
                         title={jumpTitle}
                         onClick={() => onJumpToAction?.(note.sceneId, row.actionIndex)}

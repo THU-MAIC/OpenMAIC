@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Features
+
+- Classroom: phone portrait and landscape layouts reuse the existing playback, roundtable, conversation and course-completion components. Touch controls, a transcript/chat panel, quiz focus and a compact landscape dock preserve playback and interactive-page state across panel and orientation changes. PBL projects direct phone learners to a computer.
+
 ### Bug Fixes
 
 - Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099)

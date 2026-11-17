@@ -2139,6 +2139,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
       {panes.courseId ? (
         <WorkspaceClassroomPane
+          onMobileExit={goHome}
           browser={classroomBrowser}
           hidden={!classroomOpen || previewShowing}
           readOnly={readOnlyCourse}

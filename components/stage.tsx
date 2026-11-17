@@ -1,5 +1,7 @@
 'use client';
 
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
@@ -426,8 +428,17 @@ export function Stage({
     </AnimatePresence>
   );
 
+  const mobile = useMobileLayout();
+  const [classroomHost, setClassroomHost] = useState<HTMLDivElement | null>(null);
   return (
-    <div className="relative flex flex-1 overflow-hidden">
+    <div
+      ref={setClassroomHost}
+      data-classroom-stage
+      data-mobile={
+        mobile && (!workbenchPanel.hosted || workbenchPanel.visible) && chromeMode !== 'edit'
+      }
+      className="relative flex flex-1 overflow-hidden"
+    >
       {/* The edit-mode guard has been removed (#1961 decision change 2026-08-23): a
           new agent version directly replaces the canvas, except a scene with an
           edit not yet saved, which the freshness sync leaves alone until it is
@@ -438,6 +449,7 @@ export function Stage({
           the mode-swap subtree, so its iframes survive Pro mode toggles and
           scene switches instead of reloading on every remount. */}
       <InteractiveIframeHost
+        portalContainer={classroomHost}
         onMediaPlay={handleInteractiveMediaPlay}
         playbackPicker={playbackInteractivePicker}
         onPlaybackPick={handlePlaybackInteractivePick}

@@ -3424,5 +3424,21 @@
       },
       "close": "Cerrar guía"
     }
+  },
+  "mobileClassroom": {
+    "materials": "Material del curso",
+    "directory": "Índice",
+    "lecture": "Transcripción",
+    "volume": "Volumen",
+    "mute": "Silenciar",
+    "roundtable": "Participantes",
+    "captions": "Subtítulos",
+    "controls": "Controles de reproducción",
+    "send": "Enviar",
+    "join": "Unirse",
+    "skip": "Omitir",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "pblDesktop": "Completa este proyecto en una computadora. Usa el índice para seguir con otras páginas."
   }
 }

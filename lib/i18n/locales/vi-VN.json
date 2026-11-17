@@ -3424,5 +3424,21 @@
       },
       "close": "Đóng hướng dẫn"
     }
+  },
+  "mobileClassroom": {
+    "materials": "Tài liệu lớp học",
+    "directory": "Mục lục",
+    "lecture": "Bản giảng",
+    "volume": "Âm lượng",
+    "mute": "Tắt tiếng",
+    "roundtable": "Người tham gia",
+    "captions": "Phụ đề",
+    "controls": "Điều khiển phát",
+    "send": "Gửi",
+    "join": "Tham gia",
+    "skip": "Bỏ qua",
+    "play": "Phát",
+    "pause": "Tạm dừng",
+    "pblDesktop": "Vui lòng hoàn thành dự án trên máy tính. Dùng mục lục để tiếp tục các trang khác."
   }
 }

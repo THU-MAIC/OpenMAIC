@@ -3424,5 +3424,21 @@
       },
       "close": "Fechar guia"
     }
+  },
+  "mobileClassroom": {
+    "materials": "Material do curso",
+    "directory": "Conteúdo",
+    "lecture": "Transcrição",
+    "volume": "Volume",
+    "mute": "Silenciar",
+    "roundtable": "Participantes",
+    "captions": "Legendas",
+    "controls": "Controles de reprodução",
+    "send": "Enviar",
+    "join": "Participar",
+    "skip": "Pular",
+    "play": "Reproduzir",
+    "pause": "Pausar",
+    "pblDesktop": "Conclua este projeto em um computador. Use o conteúdo para acessar outras páginas."
   }
 }

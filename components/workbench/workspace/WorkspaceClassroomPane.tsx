@@ -26,6 +26,7 @@
 import { CircleHelp, Eye, Maximize, MessagesSquare, Minimize2 } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import {
   readClassroomMode,
   writeClassroomMode,
@@ -62,6 +63,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   fullscreen,
   hidden,
   onCollapse,
+  onMobileExit,
   onTalkAboutCourse,
 }: {
   /**
@@ -113,6 +115,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
    * for why it is not a grip on the seam any more.
    */
   readonly onCollapse?: () => void;
+  readonly onMobileExit?: () => void;
   /**
    * The course was browsed, so no conversation is beside it: the header offers
    * one about it ("Edit with AI"). Absent otherwise.
@@ -121,6 +124,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
 }) {
   const courseId = browser.activeCourseId;
   const { t } = useI18n();
+  const mobile = useMobileLayout();
   const scenes = useStageStore((s) => s.scenes);
   const currentSceneId = useStageStore((s) => s.currentSceneId);
   const courseGenerating = useStageStore((s) => s.courseGenerating);
@@ -140,6 +144,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     );
   }, [courseId]);
   const editingAllowed =
+    !mobile &&
     loadedCourseId === courseId &&
     isOwner &&
     !stageReadOnly &&
@@ -386,7 +391,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           gates override remembered editing without overwriting the course's
           preference. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} learning={learning} historySlot={historySlot}>
+        <WorkbenchPanelProvider
+          visible={!hidden}
+          learning={learning}
+          historySlot={historySlot}
+          onMobileExit={onMobileExit}
+        >
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

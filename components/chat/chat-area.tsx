@@ -29,6 +29,9 @@ import { SessionList } from './session-list';
 import { LectureNotesView } from './lecture-notes-view';
 
 interface ChatAreaProps {
+  mobile?: boolean;
+  mobileComposerRef?: (node: HTMLDivElement | null) => void;
+  onTabChange?: (tab: 'lecture' | 'chat') => void;
   className?: string;
   width?: number;
   onWidthChange?: (width: number) => void;
@@ -87,6 +90,9 @@ const MAX_WIDTH = 560;
 export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   (
     {
+      mobile = false,
+      mobileComposerRef,
+      onTabChange,
       className,
       width = DEFAULT_WIDTH,
       onWidthChange,
@@ -204,9 +210,13 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       return softClosing ? continueSoftClosingSession(softClosing.id) : false;
     }, [chatSessions, continueSoftClosingSession]);
 
-    const switchToTab = useCallback((tab: 'lecture' | 'chat') => {
-      setActiveTab(tab);
-    }, []);
+    const switchToTab = useCallback(
+      (tab: 'lecture' | 'chat') => {
+        setActiveTab(tab);
+        onTabChange?.(tab);
+      },
+      [onTabChange],
+    );
 
     useImperativeHandle(ref, () => ({
       createSession,
@@ -267,7 +277,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     return (
       <div
         style={{
-          width: displayWidth,
+          width: mobile ? '100%' : displayWidth,
           transition: isDragging ? 'none' : 'width 0.3s ease',
         }}
         className={cn(
@@ -276,7 +286,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         )}
       >
         {/* Drag handle */}
-        {!collapsed && (
+        {!mobile && !collapsed && (
           <div
             onMouseDown={handleDragStart}
             className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-50 group hover:bg-purple-400/30 dark:hover:bg-purple-600/30 active:bg-purple-500/40 dark:active:bg-purple-500/40 transition-colors"
@@ -288,7 +298,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         <div className={cn('flex flex-col w-full h-full overflow-hidden', collapsed && 'hidden')}>
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as 'lecture' | 'chat')}
+            onValueChange={(v) => switchToTab(v as 'lecture' | 'chat')}
             className="flex flex-col h-full gap-0"
           >
             {/* Tab header row */}
@@ -296,7 +306,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               <TabsList variant="line" className="h-full flex-1 w-0">
                 <TabsTrigger value="lecture" className="text-xs gap-1 flex-1">
                   <BookOpen className="w-3.5 h-3.5" />
-                  {t('chat.tabs.lecture')}
+                  {t(mobile ? 'mobileClassroom.lecture' : 'chat.tabs.lecture')}
                 </TabsTrigger>
                 <TabsTrigger value="chat" className="text-xs gap-1 flex-1 relative">
                   <MessageSquare className="w-3.5 h-3.5" />
@@ -324,6 +334,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
             {/* Notes Tab */}
             <TabsContent value="lecture" className="flex-1 overflow-hidden flex flex-col">
               <LectureNotesView
+                mobile={mobile}
                 notes={lectureNotes}
                 currentSceneId={currentSceneId}
                 currentActionIndex={currentActionIndex}
@@ -364,6 +375,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               </div>
             </TabsContent>
           </Tabs>
+          {mobile && <div ref={mobileComposerRef} className="mobile-chat-composer" />}
         </div>
       </div>
     );

@@ -3424,5 +3424,21 @@
       },
       "close": "Close guide"
     }
+  },
+  "mobileClassroom": {
+    "materials": "Materials",
+    "directory": "Contents",
+    "lecture": "Transcript",
+    "volume": "Volume",
+    "mute": "Mute",
+    "roundtable": "Participants",
+    "captions": "Captions",
+    "controls": "Playback controls",
+    "send": "Send",
+    "join": "Join",
+    "skip": "Skip",
+    "play": "Play",
+    "pause": "Pause",
+    "pblDesktop": "Open this project on a computer to complete it. Use Contents to continue with other pages."
   }
 }

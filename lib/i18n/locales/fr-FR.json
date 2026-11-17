@@ -3424,5 +3424,21 @@
       },
       "close": "Fermer le guide"
     }
+  },
+  "mobileClassroom": {
+    "materials": "Supports de cours",
+    "directory": "Sommaire",
+    "lecture": "Transcription",
+    "volume": "Volume",
+    "mute": "Muet",
+    "roundtable": "Participants",
+    "captions": "Sous-titres",
+    "controls": "Commandes de lecture",
+    "send": "Envoyer",
+    "join": "Rejoindre",
+    "skip": "Passer",
+    "play": "Lire",
+    "pause": "Pause",
+    "pblDesktop": "Terminez ce projet sur un ordinateur. Le sommaire permet de consulter les autres pages."
   }
 }

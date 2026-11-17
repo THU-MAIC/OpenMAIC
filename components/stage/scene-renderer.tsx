@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { SlideEditor as SlideRenderer } from '../slide-renderer/Editor';
 import { QuizView } from '../scene-renderers/quiz-view';
@@ -18,6 +20,8 @@ interface SceneRendererProps {
  * path, so it does not branch on `mode === 'edit'`.
  */
 export function SceneRenderer({ scene, mode }: SceneRendererProps) {
+  const mobile = useMobileLayout();
+  const { t } = useI18n();
   const renderer = useMemo(() => {
     switch (scene.type) {
       case 'slide':
@@ -38,11 +42,20 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
         return <InteractiveRenderer content={scene.content} sceneId={scene.id} />;
       case 'pbl':
         if (scene.content.type !== 'pbl') return <div>Invalid PBL content</div>;
+        if (mobile)
+          return (
+            <div
+              role="note"
+              className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+            >
+              {t('mobileClassroom.pblDesktop')}
+            </div>
+          );
         return <PBLRenderer content={scene.content} mode={mode} sceneId={scene.id} />;
       default:
         return <div>Unknown scene type</div>;
     }
-  }, [scene, mode]);
+  }, [scene, mode, mobile, t]);
 
   return <div className="w-full h-full">{renderer}</div>;
 }

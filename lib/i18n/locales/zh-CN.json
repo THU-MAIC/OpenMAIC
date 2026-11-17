@@ -3424,5 +3424,21 @@
       },
       "close": "关闭指引"
     }
+  },
+  "mobileClassroom": {
+    "materials": "课堂资料",
+    "directory": "目录",
+    "lecture": "讲稿",
+    "volume": "音量",
+    "mute": "静音",
+    "roundtable": "圆桌成员",
+    "captions": "字幕",
+    "controls": "播放控件",
+    "send": "发送",
+    "join": "加入",
+    "skip": "跳过",
+    "play": "播放",
+    "pause": "暂停",
+    "pblDesktop": "请前往电脑端完成 PBL 项目。你可以通过目录继续学习其他页面。"
   }
 }

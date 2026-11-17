@@ -3424,5 +3424,21 @@
       },
       "close": "Anleitung schließen"
     }
+  },
+  "mobileClassroom": {
+    "materials": "Kursmaterial",
+    "directory": "Inhalt",
+    "lecture": "Transkript",
+    "volume": "Lautstärke",
+    "mute": "Stumm",
+    "roundtable": "Teilnehmer",
+    "captions": "Untertitel",
+    "controls": "Wiedergabesteuerung",
+    "send": "Senden",
+    "join": "Teilnehmen",
+    "skip": "Überspringen",
+    "play": "Abspielen",
+    "pause": "Pause",
+    "pblDesktop": "Schließe dieses Projekt am Computer ab. Über Inhalt kannst du andere Seiten aufrufen."
   }
 }
