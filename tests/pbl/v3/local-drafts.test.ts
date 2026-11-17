@@ -857,6 +857,9 @@ it('retains a dirty file after a failed read without blocking saves of another f
   await act(async () => vi.advanceTimersByTimeAsync(750));
   expect(save).toHaveBeenCalledTimes(1);
   expect(save.mock.calls[0][0]).toBe('main.py');
+  expect(editor.dirty('main.py')).toBe(false);
+  expect(editor.saving).toBe(false);
+  expect(editor.hasReadBlockedDraft).toBe(true);
   await act(async () => editor.select('PLAN.md'));
   expect(editor.readError).toBe('PLAN unavailable');
   expect(editor.buffer?.text).toBe('Retained plan draft');
@@ -864,6 +867,8 @@ it('retains a dirty file after a failed read without blocking saves of another f
   await act(async () => editor.save());
   expect(editor.buffer?.text).toBe('Retained plan draft');
   expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => editor.reload());
+  expect(editor.hasReadBlockedDraft).toBe(false);
 });
 
 it('does not replay an uncertain save while that file has an unresolved read error', async () => {
@@ -880,4 +885,45 @@ it('does not replay an uncertain save while that file has an unresolved read err
   expect(save).toHaveBeenCalledTimes(1);
   expect(editor.buffer?.text).toBe('Submitted draft');
   expect(editor.readError).toBe('Read unavailable');
+});
+
+it('blocks a dirty failed file when another save completes in the same React batch', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-batched-read-save') }));
+  await act(async () => editor.edit('Unsaved plan'));
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Unsaved code'));
+  let acknowledge!: (value: { hash: string }) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  await act(async () => {
+    void editor.save();
+  });
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toBe('main.py');
+  await act(async () => editor.select('PLAN.md'));
+  let rejectRead!: (error: Error) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectRead = reject;
+      }),
+  );
+  await act(async () => {
+    void editor.reload();
+  });
+  await act(async () => {
+    rejectRead(new Error('Plan read failed'));
+    // The read failure has been handled, but React has not rendered the batch.
+    await Promise.resolve();
+    acknowledge({ hash: 'c'.repeat(64) });
+  });
+  expect(editor.readError).toBe('Plan read failed');
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(editor.buffer?.text).toBe('Unsaved plan');
+  expect(editor.dirty('PLAN.md')).toBe(true);
 });

@@ -429,7 +429,7 @@ export function LearningWorkbenchPanel({
                       </button>
                     </>
                   ) : dirty &&
-                    (disabled || !editable || stale || editor.readError) &&
+                    (disabled || !editable || stale || editor.hasReadBlockedDraft) &&
                     !editor.saving ? (
                     <span>{t('pblV3.ide.draftRetained')}</span>
                   ) : dirty || editor.saving ? (

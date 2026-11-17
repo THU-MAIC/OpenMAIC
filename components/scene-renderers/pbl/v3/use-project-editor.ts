@@ -84,6 +84,15 @@ export function useProjectEditor(
     },
     [],
   );
+  const updateReadErrors = useCallback(
+    (update: (previous: typeof readErrors) => typeof readErrors) => {
+      // A save receipt can drain the next draft before React renders the failed read.
+      const next = update(current.current.readErrors);
+      current.current.readErrors = next;
+      setReadErrors(next);
+    },
+    [],
+  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -128,7 +137,7 @@ export function useProjectEditor(
         // acknowledged base wins over that read, even if typing is now clean.
         if (background && current.current.buffers[path]?.hash !== baseHash) return;
         verifiedReads.current.delete(path);
-        setReadErrors((previous) => {
+        updateReadErrors((previous) => {
           if (previous[path]?.source !== source) return previous;
           const next = { ...previous };
           delete next[path];
@@ -214,7 +223,7 @@ export function useProjectEditor(
       } catch (error) {
         if (isCurrent()) {
           verifiedReads.current.delete(path);
-          setReadErrors((previous) => ({
+          updateReadErrors((previous) => ({
             ...previous,
             [path]: { source, message: (error as Error).message },
           }));
@@ -226,7 +235,7 @@ export function useProjectEditor(
         }
       }
     },
-    [updateBuffers],
+    [updateBuffers, updateReadErrors],
   );
   useEffect(() => {
     const { buffers } = current.current;
@@ -277,8 +286,15 @@ export function useProjectEditor(
     if (inFlight.current) return inFlight.current;
     const run = async () => {
       while (mounted.current && !failed.current) {
-        const { path: active, buffers, view, options, onSave, recoveryConflicts, readErrors } =
-          current.current;
+        const {
+          path: active,
+          buffers,
+          view,
+          options,
+          onSave,
+          recoveryConflicts,
+          readErrors,
+        } = current.current;
         if (!options.enabled) return;
         const retry = retrySave.current;
         if (
@@ -436,6 +452,12 @@ export function useProjectEditor(
     recoveryConflict: recoveryConflicts[path] === editorSource(view),
     dirty,
     anyDirty: Object.values(buffers).some((b) => b.text !== b.saved),
+    hasReadBlockedDraft: Object.entries(buffers).some(
+      ([name, buffer]) =>
+        buffer.text !== buffer.saved &&
+        buffer.environment === selectedSource &&
+        readErrors[name]?.source === selectedSource,
+    ),
     stale:
       !!buffers[path] &&
       (buffers[path].environment !== editorSource(view) ||
