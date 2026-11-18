@@ -12,10 +12,28 @@ export function projectReportSummary(
   const completed = project.milestones.filter(
     (m) => state.milestones.find((p) => p.milestoneId === m.id)?.status === 'completed',
   );
+  // A later edit can invalidate approval of the current artifact without erasing
+  // the learner's completed review. Workflow describes practice, not approval.
+  const completedReview = (id: string, writes: 'plan' | 'code') => {
+    const progress = state.milestones.find((p) => p.milestoneId === id);
+    return (
+      project.milestones
+        .find((m) => m.id === id)
+        ?.stages.some(
+          (stage, index) =>
+            stage.kind === 'produce' &&
+            stage.writes === writes &&
+            stage.reviewRequired &&
+            progress?.completedStageIndexes.includes(index),
+        ) === true
+    );
+  };
   const criteria = {
     decisions: (id: string) => !!state.collected[id]?.decisions.length,
-    planReview: (id: string) => state.collected[id]?.planReviewCompleted === true,
-    codeReview: (id: string) => state.collected[id]?.codeReviewCompleted === true,
+    planReview: (id: string) =>
+      state.collected[id]?.planReviewCompleted === true || completedReview(id, 'plan'),
+    codeReview: (id: string) =>
+      state.collected[id]?.codeReviewCompleted === true || completedReview(id, 'code'),
     verification: (id: string) => state.collected[id]?.tests?.status === 'passed',
     reflection: (id: string) => state.collected[id]?.recapCompleted === true,
   };

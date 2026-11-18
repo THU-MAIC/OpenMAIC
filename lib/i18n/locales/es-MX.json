@@ -3068,7 +3068,10 @@
         "environment": "Espera a que el entorno de aprendizaje esté listo antes de comenzar. Si la preparación falló, vuelve a intentarlo arriba.",
         "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de comenzar.",
         "preparing": "Preparando el espacio de trabajo. Espera antes de comenzar."
-      }
+      },
+      "singleFlow": "Proceso del proyecto",
+      "concepts": "Conceptos de ingeniería",
+      "deliverables": "Resultados funcionales"
     },
     "journey": {
       "currentMilestone": "Etapa actual",

@@ -3068,7 +3068,10 @@
         "environment": "Chờ môi trường học tập sẵn sàng trước khi bắt đầu. Nếu chuẩn bị thất bại, hãy thử lại ở phía trên.",
         "unsaved": "Các tệp dự án có thay đổi chưa lưu. Lưu hoặc bỏ các thay đổi trước khi bắt đầu.",
         "preparing": "Đang chuẩn bị không gian làm việc. Vui lòng chờ trước khi bắt đầu."
-      }
+      },
+      "singleFlow": "Quy trình thực hiện dự án",
+      "concepts": "Khái niệm kỹ thuật",
+      "deliverables": "Chức năng đạt được"
     },
     "journey": {
       "currentMilestone": "Giai đoạn hiện tại",

@@ -1372,6 +1372,8 @@ export async function learningView(
       title: m.title,
       goal: m.goal ?? m.teaching?.targetOutcome,
       outcome: m.shareResult?.description,
+      concepts: m.teaching?.concepts,
+      deliverables: m.deliverables,
       optional: !!m.optional,
       stages: m.stages.map(stageStep),
     })),

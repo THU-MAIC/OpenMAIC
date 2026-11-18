@@ -3068,7 +3068,10 @@
         "environment": "學習環境尚未就緒，請等待就緒後再開始學習；若準備失敗，請在上方重試。",
         "unsaved": "專案檔案有未儲存的變更，請先儲存或捨棄變更，再開始學習。",
         "preparing": "工作台正在準備中，請稍候再開始學習。"
-      }
+      },
+      "singleFlow": "專案實施流程",
+      "concepts": "工程知識",
+      "deliverables": "功能成果"
     },
     "journey": {
       "currentMilestone": "目前階段",
