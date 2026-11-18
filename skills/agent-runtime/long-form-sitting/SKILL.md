@@ -55,7 +55,9 @@ name it by what the learner can do when it closes:
 Apportion the minutes by weight — `mechanism` and `application` are heavy,
 `hook` is light (about 5-10 minutes) — and keep every module between about 5
 and 45 minutes. A module cannot be satisfied by listing facts: if its brief
-reads like a table of contents, it is a topic, not a function. Within one stage a module is an arc (as `lecture-style` defines arcs); in a series several modules may share a stage, so keep the module-to-stage grouping explicit in the confirmation.
+reads like a table of contents, it is a topic, not a function. Within one stage a long module may contain several `lecture-style` arcs (it is
+not limited to one 3-5-page arc); in a series several modules may share a
+stage, so keep the module-to-stage grouping explicit in the confirmation.
 
 ## 3. Page count comes from the sitting
 
@@ -92,11 +94,13 @@ into a learner-facing prerequisite ("the learner already knows what duration
 means, including how yield moves it"). Never put the raw ledger label in
 `brief`: it is a page-content field and its wording can become learner-visible
 slide text. When you write page N's brief, reread the plan rather than your
-memory of page N-1. Long sittings get their transcript compacted, so the
-conversation copy is not a durable ledger: persist the remaining ledger in the
-stage document (a stage-level note via `patch_stage` is enough) and re-read
-that artifact before each page, so a compacted transcript cannot drop a
-dependency. In a series this is
+memory of page N-1. Long sittings get their transcript compacted, and the runtime has no supported
+stage-level note tool: do not assume the early plan survives verbatim. Before
+each page, re-read the settled plan from the user-facing confirmation and
+reconstruct the dependency from pages already built (`read_stage`), not from a
+remembered line. For 120-240 minute sittings prefer the `curriculum-planner`
+series shape, so each stage carries its own self-contained ledger and
+compaction between stages cannot drop a cross-stage premise. In a series this is
 `curriculum-planner`'s rule at stage granularity: use `read_stage_outline` on
 the earlier stage to locate the relevant pages, then `read_stage` to inspect
 their actual content before building on it — continuity against what was
