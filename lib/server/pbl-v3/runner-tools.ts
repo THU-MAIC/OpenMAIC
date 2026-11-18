@@ -64,7 +64,12 @@ import {
 } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
-import { LEARNER_HANDOFF_EVENT, reviewResponse, supportTurnSequences } from './review-question';
+import {
+  deliveredReviewResponse,
+  LEARNER_HANDOFF_EVENT,
+  reviewResponse,
+  supportTurnSequences,
+} from './review-question';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -131,6 +136,9 @@ export async function teachingRunnerConfig(input: {
         bound.completion?.userMessageSeq === latest?.seq));
   let observedStudy = row;
   let observedApplication: ApplicationObservation | null = null;
+  let deliveredReview:
+    | { response: string; section: string; sourceUserSeq: number; deliveredAt: number }
+    | undefined;
   const observedFiles = new Set<string>();
   const observedText = new Map<string, string>();
   const reviewBases = new Map<string, string>();
@@ -219,6 +227,7 @@ export async function teachingRunnerConfig(input: {
       transition?: EngineTransition;
       evidence?: Record<string, unknown>;
       responseLanguage?: ResponseLanguage;
+      recoveredReview?: { section: string; sourceUserSeq: number; deliveredAt: number };
     }>,
   ) {
     return {
@@ -274,6 +283,32 @@ export async function teachingRunnerConfig(input: {
                       db,
                     );
                     assertActive(signal);
+                    if (result.recoveredReview) {
+                      const anchor = (
+                        await db.query<{
+                          stage_key: string;
+                          section: string;
+                          source_seq: number;
+                          reset_at: string | null;
+                        }>(
+                          `SELECT r.stage_key,r.guided->>'activeFile' AS section,
+                           s.environment_recovery->>'progressResetAt' AS reset_at,
+                           (SELECT max(seq) FROM agent_session_events WHERE session_id=$1 AND type='user_message') AS source_seq
+                         FROM pbl_v3_roles r JOIN pbl_v3_studies s ON s.id=r.study_id WHERE r.session_id=$1`,
+                          [input.sessionId],
+                        )
+                      ).rows[0];
+                      const resetAt = Date.parse(anchor?.reset_at ?? '');
+                      if (
+                        anchor?.stage_key !== bound.stage_key ||
+                        anchor.section !== result.recoveredReview.section ||
+                        Number(anchor.source_seq) !== result.recoveredReview.sourceUserSeq ||
+                        (Number.isFinite(resetAt) && result.recoveredReview.deliveredAt <= resetAt)
+                      )
+                        throw sandboxConflict(
+                          'The displayed review no longer belongs to the current teaching input and section.',
+                        );
+                    }
                     if (result.responseLanguage)
                       await recordLearningEvidence(db, current, bound.role, 'response-language', {
                         ...result.responseLanguage,
@@ -741,7 +776,7 @@ export async function teachingRunnerConfig(input: {
           response: Type.String({
             minLength: 1,
             description:
-              'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
+              'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Preserve all explanation, formatting, code and the existing question exactly, but exclude an accidentally appended transport-control suffix from response. Protocol markup that belongs to an intended explanation or code example remains unchanged. Do not also emit it in ordinary prose.',
           }),
           approval: Type.Optional(Type.Boolean()),
         }),
@@ -750,7 +785,9 @@ export async function teachingRunnerConfig(input: {
             throw sandboxInvalid(
               'Use response for the complete reply including its one closing question; do not send separate explanation/question fields.',
             );
-          const { response, question } = reviewResponse(p.response);
+          const recoveredReview =
+            deliveredReview?.section === review.state.activeFile ? deliveredReview : undefined;
+          const { response, question } = reviewResponse(recoveredReview?.response ?? p.response);
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
           const approval =
@@ -758,6 +795,7 @@ export async function teachingRunnerConfig(input: {
             (p.approval === true || review.state.activeFile === protocol.final);
           review.checkpoint(question, hash, approval, response);
           return {
+            ...(recoveredReview ? { recoveredReview } : {}),
             value: {
               question,
               response,
@@ -972,6 +1010,20 @@ export async function teachingRunnerConfig(input: {
     initialContext,
     studentTurns: bound.feedback_seq,
     automaticEntry: latest?.pblOpening === true,
+    onDeliveredReply: (reply, sourceUserSeq, deliveredAt) => {
+      const response = deliveredReviewResponse(reply);
+      const resetAt = Date.parse(row.environment_recovery?.progressResetAt ?? '');
+      deliveredReview =
+        response &&
+        review.state.activeFile &&
+        latest &&
+        latest.seq === sourceUserSeq &&
+        Number.isFinite(deliveredAt) &&
+        deliveredAt > 0 &&
+        !(Number.isFinite(resetAt) && deliveredAt <= resetAt)
+          ? { response, section: review.state.activeFile, sourceUserSeq: latest.seq, deliveredAt }
+          : undefined;
+    },
     ...(stage.kind === 'produce' && stage.writes === 'plan' && planText !== undefined
       ? {
           initialPlan: {
@@ -1156,10 +1208,15 @@ export function withTeachingTurnBoundary(
  * user message or deleting the durable reply. Only the next request view loses
  * the terminal prose suffix, which Pi cannot continue from.
  */
-export function prepareTeachingContinuation(agent: Agent, window: TeachingHistoryWindow): boolean {
+export function prepareTeachingContinuation(
+  agent: Agent,
+  window: TeachingHistoryWindow,
+  sourceUserSeq: number | null = null,
+): boolean {
   const messages = [...agent.state.messages];
   const delivered: string[] = [];
   let removed = false;
+  let deliveredAt = Infinity;
   while (messages.at(-1)?.role === 'assistant') {
     const last = messages.at(-1)!;
     if (
@@ -1174,6 +1231,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
         .map((part) => part.text)
         .join('\n'),
     );
+    if (delivered[0]!.trim()) deliveredAt = Math.min(deliveredAt, last.timestamp);
     messages.pop();
     removed = true;
   }
@@ -1181,9 +1239,10 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   const reply = delivered.join('\n\n');
   if (!reply.trim()) return false;
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
+  window.onDeliveredReply?.(reply, sourceUserSeq, deliveredAt);
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Preserve all explanation, formatting, code and the existing question exactly, but exclude an accidentally appended transport-control suffix from response. Protocol markup that belongs to an intended explanation or code example remains unchanged. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
   window.continuationInstruction = instruction;
   return true;
 }

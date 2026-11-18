@@ -158,6 +158,60 @@ describe('createPartMapper — reasoning/thinking channel', () => {
 });
 
 describe('toModelMessages', () => {
+  it.each([false, true])(
+    'omits only unsendable assistant frames without changing user/tool pairing (reasoning: %s)',
+    (includeReasoning) => {
+      const user: PiMessage = { role: 'user', content: 'Actual learner input.', timestamp: 0 };
+      const thinking: PiMessage = {
+        ...emptyPartial(),
+        content: [{ type: 'thinking', thinking: 'Preserved thought.' }],
+      };
+      const call: PiMessage = {
+        ...emptyPartial(),
+        content: [
+          { type: 'toolCall', id: 'kept-call', name: 'read_file', arguments: { path: 'main.py' } },
+        ],
+      };
+      const result: PiMessage = {
+        role: 'toolResult',
+        toolCallId: 'kept-call',
+        toolName: 'read_file',
+        content: [{ type: 'text', text: 'Actual tool observation.' }],
+        isError: false,
+        timestamp: 1,
+      };
+      const converted = toModelMessages([user, thinking, call, result], {
+        includeReasoning,
+        omitEmptyAssistantMessages: true,
+      });
+      expect(converted.map((message) => message.role)).toEqual(
+        includeReasoning
+          ? ['user', 'assistant', 'assistant', 'tool']
+          : ['user', 'assistant', 'tool'],
+      );
+      expect(converted[0]).toEqual({ role: 'user', content: 'Actual learner input.' });
+      expect(converted.at(-2)).toMatchObject({
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'kept-call',
+            toolName: 'read_file',
+            input: { path: 'main.py' },
+          },
+        ],
+      });
+      expect(converted.at(-1)).toMatchObject({
+        role: 'tool',
+        content: [{ type: 'tool-result', toolCallId: 'kept-call', toolName: 'read_file' }],
+      });
+      if (includeReasoning)
+        expect(converted[1]).toMatchObject({
+          content: [{ type: 'reasoning', text: 'Preserved thought.' }],
+        });
+      else expect(toModelMessages([thinking])).toEqual([{ role: 'assistant', content: [] }]);
+    },
+  );
   it('preserves assistant thinking as an AI SDK reasoning part', () => {
     const messages: PiMessage[] = [
       {

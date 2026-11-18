@@ -222,3 +222,9 @@ session/input with that response; it does not compare paraphrases or alter the
 persisted model record. Expandable thinking and tool parts remain. Legacy receipts,
 failed/uncommitted calls, other inputs and other role sessions keep their content.
 The same identity rule applies after history pages merge.
+The model request view also omits superseded prose once a matching successful
+tool result commits a canonical response for that input. Real learner messages,
+thinking, tool calls and results remain. This projection runs before history
+hashing and compaction; earlier-stage memory retains the committed full response.
+The durable transcript is unchanged, and failed or legacy results do not replace
+prose.

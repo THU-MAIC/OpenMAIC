@@ -74,8 +74,6 @@ export interface LearningView {
     failure: import('./conversation').LearningRunFailure | null;
     failureCode?: import('@/lib/agent/runtime/request-failure').ExecutionFailureCode | null;
     canRetry: boolean;
-    /** Current-turn admission only; historical failures remain visible after a progress reset. */
-    requiresReceiptRetry?: boolean;
   } | null;
   decisions: {
     id: string;

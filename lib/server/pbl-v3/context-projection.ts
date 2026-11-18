@@ -2,7 +2,11 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 import type { SessionTreeEntry, StreamFn } from '@earendil-works/pi-agent-core';
 import type { Context, Message, Model, Api, AssistantMessage } from '@earendil-works/pi-ai';
-import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
+import {
+  currentTeachingContext,
+  projectCanonicalTeachingReplies,
+  type TeachingHistoryWindow,
+} from './teaching-context';
 import { withPlanToolContext } from './plan-tool-context';
 import {
   contextBytes as size,
@@ -167,6 +171,8 @@ export function createTeachingContextProjection(
     ): Promise<Context> {
       signal?.throwIfAborted();
       if (disposed) throw new Error('Teaching context projection is closed.');
+      // Normalize before hashing, stage memory and summary generation share this request view.
+      context = projectCanonicalTeachingReplies(context);
       const budget = teachingModelBudget(model);
       const summarySpace = Math.min(24_000, Math.floor(budget.inputTokens / 4));
       // Everything since the latest real input is the active tool execution.

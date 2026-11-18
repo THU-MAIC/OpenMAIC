@@ -149,6 +149,8 @@ export interface CallLlmStreamFnOptions {
   supportsToolImages?: boolean;
   /** Opt-in user image transport; existing authoring callers remain text-only. */
   includeUserImages?: boolean;
+  /** Teaching projections may leave reasoning-only frames the selected provider cannot replay. */
+  omitEmptyAssistantMessages?: boolean;
   maxOutputTokens?: number;
   /**
    * When true, never send a max output tokens cap on the wire, even when pi
@@ -453,6 +455,7 @@ async function pump(
             includeReasoning: preservesReasoningForModel(opts.languageModel),
             includeToolImages: opts.supportsToolImages,
             includeUserImages: opts.includeUserImages,
+            omitEmptyAssistantMessages: opts.omitEmptyAssistantMessages,
           }),
           ...(requestStateTail(context) ? [hostStateTailMessage(requestStateTail(context))] : []),
         ],
@@ -546,6 +549,7 @@ export function toModelMessages(
     includeReasoning?: boolean;
     includeToolImages?: boolean;
     includeUserImages?: boolean;
+    omitEmptyAssistantMessages?: boolean;
   } = {},
 ): ModelMessage[] {
   const out: ModelMessage[] = [];
@@ -602,7 +606,10 @@ export function toModelMessages(
           parts.push(part);
         }
       }
-      out.push({ role: 'assistant', content: parts } as unknown as ModelMessage);
+      // Request projections can leave reasoning-only frames; omit them when this provider
+      // cannot replay reasoning, while preserving every actual tool-call frame.
+      if (parts.length || !options.omitEmptyAssistantMessages)
+        out.push({ role: 'assistant', content: parts } as unknown as ModelMessage);
     } else if (m.role === 'toolResult') {
       const text = m.content.map((c) => (c.type === 'text' ? c.text : '')).join('');
       for (const c of m.content) {

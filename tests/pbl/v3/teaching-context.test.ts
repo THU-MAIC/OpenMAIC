@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { AssistantMessage, Context, Message } from '@earendil-works/pi-ai';
-import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
+import {
+  currentTeachingContext,
+  projectCanonicalTeachingReplies,
+} from '@/lib/server/pbl-v3/teaching-context';
 import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 
 function assistant(content: AssistantMessage['content']): AssistantMessage {
@@ -119,4 +122,105 @@ describe('teaching stage handoff', () => {
       expect(context.systemPrompt).toBe('Current teaching policy');
     },
   );
+});
+
+describe('canonical teaching request history', () => {
+  const draft = 'Earlier draft question. </｜｜DSML｜｜ calls>';
+  const response = 'The explanation, table and code remain complete.\n\nWhich value is returned?';
+  const user: Message = { role: 'user', content: 'Please explain.', timestamp: 1 };
+  const call = assistant([
+    { type: 'text', text: 'An earlier inline explanation.' },
+    { type: 'toolCall', id: 'review-call', name: 'request_skill_review', arguments: { response } },
+  ]);
+  const result = (overrides: Partial<Extract<Message, { role: 'toolResult' }>> = {}): Message => ({
+    role: 'toolResult',
+    toolCallId: 'review-call',
+    toolName: 'request_skill_review',
+    content: [{ type: 'text', text: JSON.stringify({ canonical: true, response }) }],
+    isError: false,
+    timestamp: 2,
+    ...overrides,
+  });
+
+  it('suppresses only earlier prose and preserves reasoning, tool pairs and real user evidence', () => {
+    const thinking = { type: 'thinking' as const, thinking: 'Retain real reasoning.' };
+    const after = assistant([{ type: 'text', text: 'Later prose is not superseded.' }]);
+    const receipt = result();
+    const context: Context = {
+      messages: [
+        user,
+        assistant([{ type: 'text', text: draft }]),
+        assistant([thinking, { type: 'text', text: draft }]),
+        call,
+        receipt,
+        after,
+        { ...user },
+        assistant([{ type: 'text', text: 'Another real input has no receipt.' }]),
+      ],
+    };
+    const original = structuredClone(context);
+    const projected = projectCanonicalTeachingReplies(context);
+    expect(JSON.stringify(projected)).not.toContain(draft);
+    expect(projected.messages[0]).toBe(user);
+    expect(projected.messages[1]).toMatchObject({ role: 'assistant', content: [thinking] });
+    expect(projected.messages[2]).toMatchObject({ role: 'assistant', content: [call.content[1]] });
+    expect(projected.messages[3]).toBe(receipt);
+    expect(projected.messages[4]).toBe(after);
+    expect(projected.messages.filter((message) => message.role === 'user')).toHaveLength(2);
+    expect(context).toEqual(original);
+    const memory = currentTeachingContext(context, window);
+    expect(memory.systemPrompt).not.toContain(draft);
+    expect(memory.systemPrompt).toContain(JSON.stringify(response));
+    expect(memory.messages).toEqual(context.messages.slice(-2));
+  });
+
+  it.each([
+    { name: 'failed', overrides: { isError: true } },
+    { name: 'wrong call id', overrides: { toolCallId: 'different-call' } },
+    { name: 'wrong tool', overrides: { toolName: 'read_next_skill' } },
+    { name: 'legacy', overrides: { content: [{ type: 'text' as const, text: response }] } },
+    {
+      name: 'noncanonical',
+      overrides: { content: [{ type: 'text' as const, text: JSON.stringify({ response }) }] },
+    },
+    {
+      name: 'empty response',
+      overrides: {
+        content: [
+          { type: 'text' as const, text: JSON.stringify({ canonical: true, response: '  ' }) },
+        ],
+      },
+    },
+  ])('keeps the draft for $name results', ({ overrides }) => {
+    const context: Context = {
+      messages: [user, assistant([{ type: 'text', text: draft }]), call, result(overrides)],
+    };
+    expect(projectCanonicalTeachingReplies(context)).toBe(context);
+  });
+
+  it('does not match across identical real user turns or an unanchored transcript prefix', () => {
+    for (const messages of [
+      [user, assistant([{ type: 'text', text: draft }]), call, { ...user }, result()],
+      [assistant([{ type: 'text', text: draft }]), call, result()],
+    ]) {
+      const context: Context = { messages };
+      expect(projectCanonicalTeachingReplies(context)).toBe(context);
+    }
+  });
+
+  it('accepts a committed support reply but never interprets learner-file JSON as a handoff', () => {
+    for (const toolName of ['respond_to_learner', 'read_file']) {
+      const message = assistant([
+        { type: 'toolCall', id: 'review-call', name: toolName, arguments: { response } },
+      ]);
+      const context: Context = {
+        messages: [user, assistant([{ type: 'text', text: draft }]), message, result({ toolName })],
+      };
+      const projected = projectCanonicalTeachingReplies(context);
+      if (toolName === 'respond_to_learner') {
+        expect(JSON.stringify(projected)).not.toContain(draft);
+        expect(projected.messages).toContain(message);
+      } else expect(projected).toBe(context);
+    }
+  });
 });

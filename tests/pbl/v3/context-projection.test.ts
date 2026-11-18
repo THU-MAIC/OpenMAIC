@@ -17,7 +17,10 @@ import {
   type TeachingContextCheckpoint,
 } from '@/lib/server/pbl-v3/context-projection';
 import { teachingModelBudget, estimatedRequestTokens } from '@/lib/server/pbl-v3/context-budget';
-import { currentTeachingContext } from '@/lib/server/pbl-v3/teaching-context';
+import {
+  currentTeachingContext,
+  projectCanonicalTeachingReplies,
+} from '@/lib/server/pbl-v3/teaching-context';
 import { readProjectFileExcerpt } from '@/lib/server/pbl-v3/file-read';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { stageSkill } from '@/lib/server/pbl-v3/skills';
@@ -81,6 +84,101 @@ const longContext = (): Context => ({
   ],
 });
 describe('model-aware teaching context projection', () => {
+  it.each([false, true])(
+    'uses committed replies before old-stage memory, hashing and compaction (compact: %s)',
+    async (compact) => {
+      const draft = 'SUPERSEDED_DRAFT </｜｜DSML｜｜ calls>';
+      const response = 'COMPLETE_COMMITTED_EXPLANATION\n\nORIGINAL_CLOSING_QUESTION?';
+      const earlier: Context['messages'] = [
+        { role: 'user', content: 'An actual earlier question.', timestamp: 0 },
+        assistant(draft),
+        {
+          ...assistant(''),
+          content: [
+            {
+              type: 'toolCall',
+              id: 'committed-review',
+              name: 'request_skill_review',
+              arguments: { response },
+            },
+          ],
+        },
+        {
+          role: 'toolResult',
+          toolCallId: 'committed-review',
+          toolName: 'request_skill_review',
+          content: [{ type: 'text', text: JSON.stringify({ canonical: true, response }) }],
+          isError: false,
+          timestamp: 1,
+        },
+      ];
+      const source: Context = {
+        systemPrompt: 'Current authoritative policy',
+        messages: [
+          ...earlier,
+          ...(compact
+            ? longContext().messages
+            : [{ role: 'user' as const, content: 'A new stage question.', timestamp: 2 }]),
+        ],
+      };
+      const original = structuredClone(source);
+      const oldCheckpoint: TeachingContextCheckpoint = {
+        version: 1,
+        coveredMessages: earlier.length,
+        prefixHash: createHash('sha256')
+          .update(
+            JSON.stringify(
+              earlier.map((message) => ({
+                role: message.role,
+                content: message.content,
+                ...(message.role === 'toolResult'
+                  ? {
+                      toolCallId: message.toolCallId,
+                      toolName: message.toolName,
+                      isError: message.isError,
+                    }
+                  : {}),
+              })),
+            ),
+          )
+          .digest('hex'),
+        summary: 'OLD_SUMMARY_WITH_SUPERSEDED_DRAFT',
+      };
+      const stream = summarizer(
+        'The committed explanation and actual learner choices remain historical facts.',
+      );
+      const saved = vi.fn(async (_checkpoint: TeachingContextCheckpoint) => {});
+      const runtime = createTeachingContextProjection(stream, {
+        checkpoint: oldCheckpoint,
+        saveCheckpoint: saved,
+      });
+      try {
+        const projected = await runtime.prepare(source, window, model);
+        expect(source).toEqual(original);
+        expect(JSON.stringify(projected)).not.toContain('SUPERSEDED_DRAFT');
+        if (compact) {
+          expect(stream).toHaveBeenCalled();
+          const summarized = JSON.stringify(stream.mock.calls.map((call) => call[1]));
+          expect(summarized).not.toContain('SUPERSEDED_DRAFT');
+          expect(summarized).toContain('COMPLETE_COMMITTED_EXPLANATION');
+          expect(summarized).toContain('ORIGINAL_CLOSING_QUESTION?');
+          expect(saved).toHaveBeenCalled();
+          const count = stream.mock.calls.length;
+          await runtime.prepare(source, window, model);
+          expect(stream).toHaveBeenCalledTimes(count);
+        } else {
+          expect(stream).not.toHaveBeenCalled();
+          expect(projected.systemPrompt).toContain(JSON.stringify(response));
+          expect(projected.messages).toEqual(source.messages.slice(-1));
+        }
+        expect(
+          serializeTeachingHistory(projectCanonicalTeachingReplies(source).messages),
+        ).not.toContain(draft);
+      } finally {
+        runtime.dispose();
+      }
+    },
+  );
   it.each([true, false])(
     'rechecks the exact PLAN source after first compaction (receipt retained: %s)',
     async (retained) => {

@@ -33,7 +33,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
-import { requiresTeachingReceiptRetry } from '@/lib/pbl/v3/conversation';
 import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import { LearningWorkbenchPanel } from './workbench-panel';
 import type { FileSaveReceipt } from './use-project-editor';
@@ -364,9 +363,6 @@ function PBLV3WorkspaceContent({
               ? 'opening'
               : null;
   const disabled = blockedReason !== null;
-  const chatBlockedReason =
-    blockedReason ?? (requiresTeachingReceiptRetry(view?.roleRun) ? 'receipt' : null);
-  const chatDisabled = chatBlockedReason !== null;
   const onboardingBlocked =
     !!error ||
     preparationFailed ||
@@ -1247,13 +1243,13 @@ function PBLV3WorkspaceContent({
                     className="shrink-0 border-t bg-background p-3"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      if (!chatDisabled && text.trim()) void command('chat', { text });
+                      if (!disabled && text.trim()) void command('chat', { text });
                     }}
                   >
-                    {chatBlockedReason &&
-                      chatBlockedReason !== 'busy' &&
-                      chatBlockedReason !== 'unsaved' &&
-                      chatBlockedReason !== 'pending' && (
+                    {blockedReason &&
+                      blockedReason !== 'busy' &&
+                      blockedReason !== 'unsaved' &&
+                      blockedReason !== 'pending' && (
                         <div
                           id={blockedId}
                           role="status"
@@ -1261,11 +1257,7 @@ function PBLV3WorkspaceContent({
                           className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
                         >
                           <p className="min-w-0 flex-1">
-                            {t(
-                              chatBlockedReason === 'receipt'
-                                ? 'pblV3.run.incomplete'
-                                : `pblV3.inputBlocked.${chatBlockedReason}`,
-                            )}
+                            {t(`pblV3.inputBlocked.${blockedReason}`)}
                           </p>
                           {blockedReason === 'opening' && (
                             <button
@@ -1294,12 +1286,12 @@ function PBLV3WorkspaceContent({
                         className="h-20 w-full resize-none bg-transparent p-1 text-sm outline-none"
                         placeholder={t('pblV3.ide.messagePlaceholder')}
                         value={text}
-                        aria-describedby={chatBlockedReason ? blockedId : undefined}
+                        aria-describedby={blockedReason ? blockedId : undefined}
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();
-                            if (!chatDisabled && text.trim()) void command('chat', { text });
+                            if (!disabled && text.trim()) void command('chat', { text });
                           }
                         }}
                       />
@@ -1322,17 +1314,11 @@ function PBLV3WorkspaceContent({
                             className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-40"
                             aria-label={t('pblV3.send')}
                             aria-busy={pendingAction === 'chat'}
-                            disabled={chatDisabled || !text.trim()}
+                            disabled={disabled || !text.trim()}
                             title={
-                              chatBlockedReason
-                                ? t(
-                                    chatBlockedReason === 'receipt'
-                                      ? 'pblV3.run.incomplete'
-                                      : `pblV3.inputBlocked.${chatBlockedReason}`,
-                                  )
-                                : undefined
+                              blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
                             }
-                            aria-describedby={chatBlockedReason ? blockedId : undefined}
+                            aria-describedby={blockedReason ? blockedId : undefined}
                           >
                             {pendingAction === 'chat' ? (
                               <LoaderCircle size={16} className="animate-spin" />

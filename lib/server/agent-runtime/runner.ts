@@ -1622,6 +1622,7 @@ async function executeSession(
       : requestDriver.wireMaxOutputTokens;
     const streamFn = createCallLlmStreamFn({
       languageModel: driver.connection.model,
+      omitEmptyAssistantMessages: !!teaching,
       supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
       maxOutputTokens: wireOutputTokens,
       omitMaxOutputTokens: wireOutputTokens === undefined,
@@ -1987,6 +1988,7 @@ async function executeSession(
               responseIdleTimeoutMs: LLM_FETCH_TIMEOUT_MS,
               onProgress: progress,
               source: 'pbl-context-compaction',
+              omitEmptyAssistantMessages: true,
               abortSignal: abort.signal,
             }),
             {
@@ -2286,7 +2288,15 @@ async function executeSession(
       )
         return false;
       const { prepareTeachingContinuation } = await import('@/lib/server/pbl-v3/runner-tools');
-      if (!prepareTeachingContinuation(agent, teaching.historyWindow)) return false;
+      const source = agent.state.messages.findLast((message) => message.role === 'user');
+      if (
+        !prepareTeachingContinuation(
+          agent,
+          teaching.historyWindow,
+          source ? durableUserMessageSeq(source) : null,
+        )
+      )
+        return false;
       // This repairs an already-ended, malformed handoff once. It does not
       // count normal model requests/tools or limit a healthy execution loop.
       repairedTeachingStop = true;

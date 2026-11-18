@@ -3,6 +3,38 @@ import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
 
+/** Recognize only an isolated malformed transport suffix, never an executable call. */
+export function deliveredReviewResponse(reply: string): string | null {
+  const text = reply.trimEnd();
+  const suffix =
+    /(?:\r?\n)?<\/｜｜DSML｜｜ parameter>\r?\n<\/｜｜DSML｜｜ invoke>\r?\n<\/｜｜DSML｜｜ calls>$/.exec(
+      text,
+    );
+  if (!suffix) return null;
+  const response = text.slice(0, suffix.index).trim();
+  // Another protocol fragment or several failed drafts makes the source ambiguous.
+  if (response.includes('｜DSML｜') || response.includes('｜｜DSML｜｜')) return null;
+  let fence: { marker: string; length: number } | undefined;
+  for (const line of response.split('\n')) {
+    const match = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!match) continue;
+    if (!fence) fence = { marker: match[1]![0]!, length: match[1]!.length };
+    else if (match[1]![0] === fence.marker && match[1]!.length >= fence.length && !match[2]!.trim())
+      fence = undefined;
+  }
+  if (fence) return null;
+  const paragraphs = response.split(/\r?\n[ \t]*\r?\n/);
+  let question = paragraphs.at(-1)!.trim();
+  if (question.includes('**')) {
+    if (!question.startsWith('**') || !question.endsWith('**')) return null;
+    question = question.slice(2, -2);
+    if (question.includes('**')) return null;
+  }
+  if (paragraphs.length < 2 || !/[?？]/.test(question) || !/[?？.!。！]$/.test(question))
+    return null;
+  return response;
+}
+
 /** One authored message supplies both display text and the question recorded for feedback. */
 export function reviewResponse(response: string): { response: string; question: string } {
   const text = response.trim();

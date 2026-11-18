@@ -1,11 +1,16 @@
 import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { completedProjectFiles } from './completed-files';
 import { recordLearningEvidence } from './evidence';
-import { projectConversation, boundConversation, latestMessagePartIds } from './conversation';
+import {
+  projectConversation,
+  learningRunFailure,
+  boundConversation,
+  latestMessagePartIds,
+} from './conversation';
+import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
 import {
   readConversationHistory,
   readConversationSources,
-  readCurrentTeachingDelivery,
   CONVERSATION_BYTES,
 } from './conversation-history';
 import 'server-only';
@@ -13,11 +18,7 @@ import { isTeachingLocale } from './communication';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
-import {
-  handoffEchoes,
-  deduplicateHandoffs,
-  requiresTeachingReceiptRetry,
-} from '@/lib/pbl/v3/conversation';
+import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
 import { canonicalReview, reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
@@ -60,7 +61,6 @@ import {
   canViewProjectReport,
   hasStageCompletion,
   succeededWithoutTeachingReceipt,
-  teachingRunState,
 } from './stage-progress';
 import {
   learningWorkspaceId,
@@ -644,23 +644,6 @@ export async function commandStudy(
       await assertWorkspaceModelsAuthorized(principal.ownerId, ['agent']);
       return store.transaction(async (db) => {
         await fenceOwnerWrite(db, row.owner_id);
-        if (command.type === 'chat') {
-          const binding = (await store.roles(id, db)).find(
-            (binding) => binding.role === roleFor(row) && binding.stage_key === stageKey(row),
-          );
-          if (binding) {
-            const sessionStore = store.agentStore(db);
-            const meta = await sessionStore.getSession(binding.session_id);
-            const delivery = await readCurrentTeachingDelivery(db, binding.session_id, {
-              checkDeliveredText: meta?.status === 'failed' || meta?.status === 'cancelled',
-              progressResetAt: row.environment_recovery?.progressResetAt,
-            });
-            if (requiresTeachingReceiptRetry(teachingRunState(row, stage, binding, meta, delivery)))
-              throw sandboxConflict(
-                'Retry the unfinished teaching response before sending a new answer.',
-              );
-          }
-        }
         await db.query(
           'INSERT INTO pbl_v3_commands(study_id,id,hash,result,stage_key) VALUES($1,$2,$3,NULL,$4) ON CONFLICT DO NOTHING',
           [id, command.id, hash, stageKey(row)],
@@ -1088,12 +1071,31 @@ export async function learningView(
   if (binding) {
     const agents = await getAgentSessionStore();
     const meta = await agents.getSession(binding.session_id);
-    const delivery = await readCurrentTeachingDelivery(store.pool, binding.session_id, {
-      checkDeliveredText: meta?.status === 'failed' || meta?.status === 'cancelled',
-      progressResetAt: row.environment_recovery?.progressResetAt,
-    });
-    latestUserSeq = delivery.latestUserSeq;
-    roleRun = teachingRunState(row, stage, binding, meta, delivery);
+    latestUserSeq =
+      (
+        await store.pool.query<{ seq: number | null }>(
+          "SELECT max(seq) AS seq FROM agent_session_events WHERE session_id=$1 AND type='user_message'",
+          [binding.session_id],
+        )
+      ).rows[0]?.seq ?? undefined;
+    const unclosed = succeededWithoutTeachingReceipt(
+      row,
+      stage,
+      binding,
+      meta?.status,
+      latestUserSeq,
+    );
+    roleRun = {
+      status: unclosed ? 'failed' : (meta?.status ?? 'missing'),
+      canRetry: !!meta && (unclosed || ['failed', 'cancelled'].includes(meta.status)),
+      failureCode: meta?.status === 'failed' ? executionFailureCode(meta.error) : null,
+      // Never expose raw provider errors, URLs, or credentials to the browser.
+      failure: unclosed
+        ? 'incomplete'
+        : meta?.status === 'failed'
+          ? learningRunFailure(meta.error)
+          : null,
+    };
     // Bounded transcript projection; durable role history remains in the runner's entry tree.
     const last = historyThrough.get(binding.session_id) ?? 0;
     activitySequence = last;

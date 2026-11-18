@@ -79,12 +79,15 @@ afterEach(async () => {
   window.sessionStorage.clear();
 });
 
-it.each(['recovered', 'reset', 'timeout'] as const)(
-  'keeps the draft and allows sending after receipt recovery or progress reset: %s',
-  async (result) => {
-    const id = `receipt-recovery-${sequence++}`;
-    let view = {
-      id,
+it.each(
+  ['incomplete', 'timeout'].flatMap((failure) =>
+    ['button', 'enter', 'form'].map((method) => ({ failure, method })),
+  ),
+)(
+  'allows a new message after $failure through $method without requiring retry',
+  async ({ failure, method }) => {
+    const view = {
+      id: `continue-after-failure-${sequence++}`,
       revision: 1,
       state: {
         status: 'active',
@@ -94,69 +97,44 @@ it.each(['recovered', 'reset', 'timeout'] as const)(
       environment: { ready: true },
       stage: { kind: 'mentor_say', agent: 'discussion' },
       role: 'discussion',
-      roleRun:
-        result === 'timeout'
-          ? { status: 'failed', failure: 'timeout', canRetry: true, requiresReceiptRetry: true }
-          : { status: 'failed', failure: 'incomplete', canRetry: true },
+      roleRun: { status: 'failed', failure, canRetry: true },
       actions: ['chat'],
       decisions: [],
       questions: [],
       messages: [],
     } as unknown as LearningView;
     const requests: Record<string, unknown>[] = [];
-    const response = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) => {
-        if (!init?.body) return response(view);
+        if (!init?.body) return Response.json(view);
         const body = JSON.parse(String(init.body));
-        if (body.action === 'open') return response(view);
-        requests.push(body.command);
-        if (body.command.type === 'retry')
-          view = {
-            ...view,
-            roleRun:
-              result === 'reset'
-                ? {
-                    status: 'failed',
-                    failure: 'incomplete',
-                    canRetry: true,
-                    requiresReceiptRetry: false,
-                  }
-                : {
-                    status: 'succeeded',
-                    failure: null,
-                    canRetry: false,
-                    requiresReceiptRetry: false,
-                  },
-          };
-        return response({ view });
+        if (body.action === 'open') return Response.json(view);
+        if (body.command) requests.push(body.command);
+        return Response.json({ view });
       }),
     );
     await mount();
-    await type(0, 'My answer to the displayed question.');
+    await type(0, 'Please continue with the current section.');
     const textarea = container.querySelector('textarea')!;
-    const send = () => container.querySelector<HTMLButtonElement>('[aria-label="pblV3.send"]')!;
-    expect(send().disabled).toBe(true);
+    const send = container.querySelector<HTMLButtonElement>('[aria-label="pblV3.send"]')!;
+    expect(send.disabled).toBe(false);
     expect(textarea.disabled).toBe(false);
-    expect(container.querySelector('[data-testid="pbl-input-blocked"]')?.textContent).toContain(
-      'pblV3.run.incomplete',
-    );
     await act(async () => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-      textarea
-        .closest('form')!
-        .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      if (method === 'button') send.click();
+      else if (method === 'enter')
+        textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      else
+        textarea
+          .closest('form')!
+          .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     });
-    expect(requests).toEqual([]);
-    expect(textarea.value).toBe('My answer to the displayed question.');
-    await click('pblV3.retryResponse');
-    expect(requests.map((request) => request.type)).toEqual(['retry']);
-    expect(textarea.value).toBe('My answer to the displayed question.');
-    expect(send().disabled).toBe(false);
-    await act(async () => send().click());
-    expect(requests.map((request) => request.type)).toEqual(['retry', 'chat']);
-    expect(requests[1]?.text).toBe('My answer to the displayed question.');
+    expect(requests).toEqual([
+      expect.objectContaining({
+        type: 'chat',
+        text: 'Please continue with the current section.',
+      }),
+    ]);
   },
 );
 

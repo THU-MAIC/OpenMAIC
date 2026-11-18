@@ -3,10 +3,6 @@ import {
   type ProjectDefinition,
 } from '@/lib/pbl/v3/domain/project/project-schema';
 import type { Study, RoleBinding } from './store';
-import type { LearningView } from '@/lib/pbl/v3/types';
-import { executionFailureCode } from '@/lib/agent/runtime/request-failure';
-import { learningRunFailure } from './conversation';
-import type { TeachingTurnDelivery } from './conversation-history';
 
 export function requiresArtifactApproval(stage: StageDefinition): boolean {
   return stage.kind === 'produce' && stage.reviewRequired;
@@ -52,18 +48,10 @@ export function succeededWithoutTeachingReceipt(
   status: string | undefined,
   latestUserSeq: number | undefined,
 ): boolean {
-  return status === 'succeeded' && missingTeachingReceipt(row, stage, binding, latestUserSeq);
-}
-
-function missingTeachingReceipt(
-  row: Pick<Study, 'state'> & Partial<Pick<Study, 'environment_recovery'>>,
-  stage: StageDefinition,
-  binding: RoleBinding | undefined,
-  latestUserSeq: number | undefined,
-): boolean {
   const key = `${row.state.position.milestoneId}:${row.state.position.stageIndex}`;
   const resetAt = row.environment_recovery?.progressResetAt;
   return (
+    status === 'succeeded' &&
     !!latestUserSeq &&
     binding?.stage_key === key &&
     !(resetAt && binding.turn_started_at.getTime() <= Date.parse(resetAt)) &&
@@ -72,37 +60,6 @@ function missingTeachingReceipt(
     binding.guided?.pending?.runId !== `${key}:${latestUserSeq}` &&
     binding.guided?.handoff?.runId !== `${key}:${latestUserSeq}`
   );
-}
-
-/** Command admission and the browser must agree on the current turn's recovery state. */
-export function teachingRunState(
-  row: Pick<Study, 'state'> & Partial<Pick<Study, 'environment_recovery'>>,
-  stage: StageDefinition,
-  binding: RoleBinding,
-  meta: {
-    status: NonNullable<LearningView['roleRun']>['status'];
-    error?: unknown;
-  } | null,
-  delivery: TeachingTurnDelivery,
-): NonNullable<LearningView['roleRun']> {
-  const missingReceipt = missingTeachingReceipt(row, stage, binding, delivery.latestUserSeq);
-  const unclosed = meta?.status === 'succeeded' && missingReceipt;
-  const failure = unclosed
-    ? 'incomplete'
-    : meta?.status === 'failed'
-      ? learningRunFailure(meta.error)
-      : null;
-  return {
-    status: unclosed ? 'failed' : (meta?.status ?? 'missing'),
-    canRetry: !!meta && (unclosed || ['failed', 'cancelled'].includes(meta.status)),
-    failureCode: meta?.status === 'failed' ? executionFailureCode(meta.error) : null,
-    failure,
-    requiresReceiptRetry:
-      missingReceipt &&
-      (unclosed ||
-        (meta?.status === 'failed' && failure === 'incomplete') ||
-        (delivery.hasDeliveredText && (meta?.status === 'failed' || meta?.status === 'cancelled'))),
-  };
 }
 
 /** Shared by tool completion and the teaching handoff; future release boundaries stay open. */
