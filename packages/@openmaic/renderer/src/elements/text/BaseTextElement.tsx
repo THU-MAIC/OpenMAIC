@@ -6,7 +6,6 @@ import { useElementShadow } from '../shared/useElementShadow';
 import { ElementOutline } from '../shared/ElementOutline';
 import { preservesPlainTextLineBreaks } from '../../utils/richText';
 import { useInlineMath, useInnerHtml } from '../../utils/inlineMath';
-import { useOptionalSlideContext } from '../../context';
 import { hasTextInsets } from '../shared/hasTextInsets';
 
 export interface BaseTextElementProps {
@@ -31,8 +30,7 @@ export function BaseTextElement({
   // Adding the editor's default inset again shifts the label and reduces line width.
   const contentHasTextInsets = hasTextInsets(elementInfo.content);
 
-  const classroomSizing = useOptionalSlideContext()?.classroomSizing;
-  const vAlign = classroomSizing && !fillHeight ? 'top' : (elementInfo.vAlign ?? 'top');
+  const vAlign = elementInfo.vAlign ?? 'top';
   const justifyContent =
     vAlign === 'middle' ? 'center' : vAlign === 'bottom' ? 'flex-end' : 'flex-start';
   const defaultContent = (
@@ -79,7 +77,7 @@ export function BaseTextElement({
           style={{
             position: 'relative',
             boxSizing: 'border-box',
-            padding: contentHasTextInsets && (!classroomSizing || fillHeight) ? 0 : '10px',
+            padding: contentHasTextInsets ? 0 : '10px',
             overflowWrap: 'break-word',
             width: elementInfo.vertical ? 'auto' : '100%',
             height: elementInfo.vertical || fillHeight ? '100%' : 'auto',

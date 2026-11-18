@@ -50,11 +50,13 @@ test.describe('Slide editor double-click text insertion (#1310)', () => {
     await page.waitForTimeout(1000); // Wait for slide editor to fully render
 
     // Wait for canvas to be available
-    const canvas = page.locator('[data-marquee-surface]').first();
+    const canvas = page
+      .locator('[data-testid="canvas-viewport"], .canvas-viewport, [class*="canvas"]')
+      .first();
     await expect(canvas).toBeVisible({ timeout: 10_000 });
 
     // Get initial count of editable elements
-    const initialElementCount = await page.locator('[id^="editable-element-"]').count();
+    const initialElementCount = await page.locator('.editable-element').count();
 
     // Double-click on blank canvas area (center, avoiding existing elements)
     const boundingBox = await canvas.boundingBox();
@@ -67,7 +69,7 @@ test.describe('Slide editor double-click text insertion (#1310)', () => {
     await page.waitForTimeout(500); // Wait for text element creation
 
     // Verify a new text element was created
-    const newElementCount = await page.locator('[id^="editable-element-"]').count();
+    const newElementCount = await page.locator('.editable-element').count();
     expect(newElementCount).toBeGreaterThan(initialElementCount);
   });
 });

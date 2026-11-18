@@ -178,8 +178,6 @@ const inlineSpacer: NodeSpec = {
 };
 
 const textContainer: NodeSpec = {
-  defining: true,
-  isolating: true,
   group: 'block',
   content: 'block+',
   attrs: {

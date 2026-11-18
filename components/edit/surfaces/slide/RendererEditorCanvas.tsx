@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useMemo } from 'react';
-import { SlideRendererProvider } from '@openmaic/renderer';
 import type { Selection } from '@openmaic/editor/react';
 import {
   EditableSlideCanvasWithUI,
@@ -29,7 +28,6 @@ export function RendererEditorCanvas() {
   const pickTarget = useCanvasStore.use.pickTarget();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
-  const canvasPercentage = useCanvasStore.use.canvasPercentage();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
   const sceneId = useSlideEditSession.getState().sceneId;
 
@@ -81,21 +79,18 @@ export function RendererEditorCanvas() {
   );
 
   return (
-    <SlideRendererProvider slide={slide} classroomSizing>
-      <EditableSlideCanvasWithUI
-        slide={slide}
-        documentSlide={content.canvas}
-        host={host}
-        selection={selection}
-        onSelectionChange={handleSelectionChange}
-        onTransaction={applyTransaction}
-        canvasPercentage={canvasPercentage}
-        onScaleChange={setCanvasScale}
-        elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
-        hiddenElementIds={hiddenElementIds}
-        insertToolbarPlacement="top"
-        snapping
-      />
-    </SlideRendererProvider>
+    <EditableSlideCanvasWithUI
+      slide={slide}
+      documentSlide={content.canvas}
+      host={host}
+      selection={selection}
+      onSelectionChange={handleSelectionChange}
+      onTransaction={applyTransaction}
+      onScaleChange={setCanvasScale}
+      elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
+      hiddenElementIds={hiddenElementIds}
+      insertToolbarPlacement="top"
+      snapping
+    />
   );
 }

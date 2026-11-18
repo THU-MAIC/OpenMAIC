@@ -87,8 +87,6 @@ export interface EditableSlideCanvasProps {
   /** Controlled document — the host owns it (and undo). */
   slide: Slide;
   scale?: number;
-  /** Percentage of the viewport used by the slide during auto-fit. */
-  canvasPercentage?: number;
   /** Reports the auto-fit scale so host-owned overlay tools share renderer coordinates. */
   onScaleChange?: (scale: number) => void;
 

@@ -262,7 +262,6 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // when `scale` is omitted and both sides auto-fit.
   const overlayRef = useRef<HTMLDivElement>(null);
   const { viewportStyles, fitScale } = useViewportSize(overlayRef, {
-    canvasPercentage: props.canvasPercentage,
     viewportSize: slide.viewportSize,
     viewportRatio: slide.viewportRatio,
   });
@@ -614,7 +613,6 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
         <SlideCanvas
           slide={renderedSlide}
           scale={props.scale}
-          canvasPercentage={props.canvasPercentage}
           onScaleChange={onScaleChange}
           renderImage={renderImage}
           renderVideo={renderVideo}
@@ -653,20 +651,6 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
           {Boolean(onSelectionChange) && (
             <div
               data-marquee-surface=""
-              onDoubleClick={(event) => {
-                if (!onTextCreate || canvasScale <= 0) return;
-                const bounds = event.currentTarget.getBoundingClientRect();
-                const left = (event.clientX - bounds.left - viewportStyles.left) / canvasScale;
-                const top = (event.clientY - bounds.top - viewportStyles.top) / canvasScale;
-                if (
-                  left < 0 ||
-                  top < 0 ||
-                  left >= viewportStyles.width ||
-                  top >= viewportStyles.height
-                )
-                  return;
-                onTextCreate({ left, top, width: 300, height: 60 });
-              }}
               onPointerDown={onCanvasPointerDown}
               style={{
                 position: 'absolute',

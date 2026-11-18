@@ -95,17 +95,17 @@ test.describe('Edits made just before a page unload', () => {
   test('a slide edit followed at once by a reload is kept', async ({ page }) => {
     const stageId = await openSeededEditor(page);
 
-    const shape = page.locator(`[data-select-element-id="${SHAPE_ID}"]`);
+    const shape = page.locator(`#editable-element-${SHAPE_ID} .editable-element-shape`);
     await expect(shape).toBeVisible({ timeout: 20_000 });
     const box = await shape.boundingBox();
     if (!box) throw new Error('Shape has no bounding box');
 
-    const x = box.x + box.width / 4;
-    const y = box.y + 1;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
     await page.mouse.click(x, y);
     await page.mouse.move(x, y);
     await page.mouse.down();
-    await page.mouse.move(x + 77, y + 41, { steps: 10 });
+    await page.mouse.move(x + 120, y + 60, { steps: 10 });
     await page.mouse.up();
     // The move is on screen, so the editor committed it to the course.
     await expect
@@ -113,7 +113,7 @@ test.describe('Edits made just before a page unload', () => {
         const moved = await shape.boundingBox();
         return moved && Math.round(moved.x - box.x);
       })
-      .toBe(77);
+      .toBe(120);
 
     // Reload well inside the autosave's 500 ms debounce.
     await page.reload({ waitUntil: 'load' });

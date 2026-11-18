@@ -136,21 +136,6 @@ describe('EditableSlideCanvas', () => {
     });
   });
 
-  it('creates text only inside the fitted slide on a blank-area double click', () => {
-    vi.mocked(useViewportSize).mockReturnValue({
-      viewportStyles: { left: 40, top: 20, width: 1000, height: 562 },
-      fitScale: 0.5,
-    });
-    const onTextCreate = vi.fn();
-    const { container } = render(
-      <EditableSlideCanvas slide={slide} onTextCreate={onTextCreate} onSelectionChange={vi.fn()} />,
-    );
-    const surface = container.querySelector('[data-marquee-surface]')!;
-    fireEvent.doubleClick(surface, { clientX: 0, clientY: 0 });
-    fireEvent.doubleClick(surface, { clientX: 90, clientY: 45 });
-    expect(onTextCreate.mock.calls).toEqual([[{ left: 100, top: 50, width: 300, height: 60 }]]);
-  });
-
   it('forwards a custom element id prefix to the rendered slide elements', () => {
     const { container } = render(
       <EditableSlideCanvas

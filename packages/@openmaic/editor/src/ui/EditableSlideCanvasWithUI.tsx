@@ -29,7 +29,6 @@ export function EditableSlideCanvasWithUI({
   insertItems,
   insertToolbarPlacement = 'top',
   scale,
-  canvasPercentage,
   onScaleChange,
   elementIdPrefix = 'slide-element-',
   hiddenElementIds,
@@ -153,7 +152,6 @@ export function EditableSlideCanvasWithUI({
         canvasProps={{
           slide,
           scale,
-          canvasPercentage,
           onScaleChange,
           selection,
           onSelectionChange,

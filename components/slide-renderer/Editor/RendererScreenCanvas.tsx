@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useAnimate } from 'motion/react';
-import { SlideCanvas, SlideRendererProvider, type SlideEffects } from '@openmaic/renderer';
+import { SlideCanvas, type SlideEffects } from '@openmaic/renderer';
 import type { PPTImageElement, PPTVideoElement } from '@openmaic/dsl';
 import { Film, ImageOff, Paintbrush, RotateCcw, ShieldAlert, VideoOff } from 'lucide-react';
 import { useCanvasStore } from '@/lib/store';
@@ -357,33 +357,31 @@ export function RendererScreenCanvas() {
   ]);
 
   return (
-    <SlideRendererProvider slide={resolved.slide} classroomSizing>
-      <SlideCanvas
-        slide={resolved.slide}
-        canvasPercentage={canvasPercentage}
-        onScaleChange={handleScaleChange}
-        effects={effects}
-        elementIdPrefix={SCREEN_ELEMENT_ID_PREFIX}
-        renderImage={(element, _src, defaultContent) => (
-          <PlaybackImageContent
-            element={element}
-            defaultContent={defaultContent}
-            media={resolved.byElementId[element.id]}
-            sceneId={sceneId}
-            slideId={slide.id}
-          />
-        )}
-        renderVideo={(element) => (
-          <PlaybackVideoContent
-            element={element}
-            media={resolved.byElementId[element.id]}
-            sceneId={sceneId}
-            slideId={slide.id}
-          />
-        )}
-        videoInteractive
-        chrome
-      />
-    </SlideRendererProvider>
+    <SlideCanvas
+      slide={resolved.slide}
+      canvasPercentage={canvasPercentage}
+      onScaleChange={handleScaleChange}
+      effects={effects}
+      elementIdPrefix={SCREEN_ELEMENT_ID_PREFIX}
+      renderImage={(element, _src, defaultContent) => (
+        <PlaybackImageContent
+          element={element}
+          defaultContent={defaultContent}
+          media={resolved.byElementId[element.id]}
+          sceneId={sceneId}
+          slideId={slide.id}
+        />
+      )}
+      renderVideo={(element) => (
+        <PlaybackVideoContent
+          element={element}
+          media={resolved.byElementId[element.id]}
+          sceneId={sceneId}
+          slideId={slide.id}
+        />
+      )}
+      videoInteractive
+      chrome
+    />
   );
 }

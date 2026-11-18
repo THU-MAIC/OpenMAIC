@@ -284,15 +284,15 @@ touched, ever.
 The same JSON is drawn by two different implementations, and knowing which is
 which explains most "it looks right in one place and wrong in another" reports.
 
-| | **Legacy playback renderer** | **Preview and default playback renderer** |
+| | **Playback renderer** | **Preview renderer** |
 | --- | --- | --- |
 | Code | the in-app element components (`components/slide-renderer/components/element/*`, mounted by `components/slide-renderer/Editor/ScreenElement.tsx`) | `@openmaic/renderer`'s `SlideCanvas` |
-| Where it runs | classroom playback when built with `NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=false` | page thumbnails (`components/slide-renderer/SlideThumbnail.tsx`), and classroom playback by default |
+| Where it runs | the classroom page the learner watches — **the default** | page thumbnails (`components/slide-renderer/SlideThumbnail.tsx`), and playback too when `NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED` is on (off by default) |
 | Stylesheet for rich text | **none** — only the global CSS reset, browser defaults, and your inline styles | ships its own `.slide-renderer-prose` rules with the canvas |
 
 They agree on every field that matters most (geometry, fills, precedence,
 `html`-over-`latex`). Where they differ, this manual says so, and the rule is
-always the same: **write for the intersection.** In the comparisons below, “playback” refers to legacy playback and “preview” to the package renderer. The known divergences are
+always the same: **write for the intersection.** The known divergences are
 
 - **list markers** — restored by the preview renderer's stylesheet, absent in
   playback (see [the HTML section](#the-rendering-truth-of-content-html));
@@ -305,8 +305,8 @@ always the same: **write for the intersection.** In the comparisons below, “pl
   newlines become line breaks; playback does not, so they collapse to spaces;
 - **`audio` elements** — drawn as a click-to-play button by the preview renderer,
   **not rendered at all** in playback;
-- **formula sizing** — thumbnails only shrink formulas to fit. Both classroom playback
-  renderers also enlarge a formula to fill its box.
+- **an oversized formula** — the preview renderer only ever shrinks a formula to
+  fit its box, playback also enlarges it to fill the box.
 
 ## Fields every element carries
 

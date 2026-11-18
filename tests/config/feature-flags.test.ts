@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   isAgentRuntimeConfigured,
   isAgentRuntimeEnabled,
@@ -167,23 +167,83 @@ describe('isWorkbenchEnabled', () => {
   });
 });
 
-describe.each([
-  ['NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED', isPlaybackRendererEnabled],
-  ['NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED', isEditorRendererEnabled],
-] as const)('%s', (flag, enabled) => {
-  afterEach(() => vi.unstubAllEnvs());
+describe('isPlaybackRendererEnabled', () => {
+  const flag = 'NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED';
+  let original: string | undefined;
 
-  it.each([
-    [undefined, true],
-    ['', true],
-    ['true', true],
-    ['1', true],
-    ['false', false],
-    ['0', false],
-    ['yes', false],
-  ] as const)('reads %s as %s', (value, expected) => {
-    vi.stubEnv(flag, value);
-    expect(enabled()).toBe(expected);
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env[flag];
+    } else {
+      process.env[flag] = original;
+    }
+  });
+
+  it('defaults on when unset or empty', () => {
+    delete process.env[flag];
+    expect(isPlaybackRendererEnabled()).toBe(true);
+    process.env[flag] = '';
+    expect(isPlaybackRendererEnabled()).toBe(true);
+  });
+
+  it("returns true for 'true' and '1'", () => {
+    process.env[flag] = 'true';
+    expect(isPlaybackRendererEnabled()).toBe(true);
+
+    process.env[flag] = '1';
+    expect(isPlaybackRendererEnabled()).toBe(true);
+  });
+
+  it('returns false for other values', () => {
+    process.env[flag] = 'false';
+    expect(isPlaybackRendererEnabled()).toBe(false);
+
+    process.env[flag] = 'yes';
+    expect(isPlaybackRendererEnabled()).toBe(false);
+  });
+});
+
+describe('isEditorRendererEnabled', () => {
+  const flag = 'NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED';
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env[flag];
+    } else {
+      process.env[flag] = original;
+    }
+  });
+
+  it('defaults on when unset or empty', () => {
+    delete process.env[flag];
+    expect(isEditorRendererEnabled()).toBe(true);
+    process.env[flag] = '';
+    expect(isEditorRendererEnabled()).toBe(true);
+  });
+
+  it("returns true for 'true' and '1'", () => {
+    process.env[flag] = 'true';
+    expect(isEditorRendererEnabled()).toBe(true);
+
+    process.env[flag] = '1';
+    expect(isEditorRendererEnabled()).toBe(true);
+  });
+
+  it('returns false for other values', () => {
+    process.env[flag] = 'false';
+    expect(isEditorRendererEnabled()).toBe(false);
+
+    process.env[flag] = 'yes';
+    expect(isEditorRendererEnabled()).toBe(false);
   });
 });
 

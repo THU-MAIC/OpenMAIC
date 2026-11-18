@@ -13,8 +13,6 @@ import type { SlideEffects } from './types/effects';
 export interface SlideContextValue {
   slide: Slide;
   scale?: number;
-  /** Preserve the text, formula, and image sizing used by existing classroom slides. */
-  classroomSizing?: boolean;
   background?: SlideBackground;
   effects?: SlideEffects;
   renderImage?: (
