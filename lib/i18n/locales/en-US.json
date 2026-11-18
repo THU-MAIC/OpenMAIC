@@ -3057,7 +3057,18 @@
       "eachStage": "In each stage",
       "yourRole": "You make decisions and review; AI helps write the plan and code.",
       "preview": "Try your application in the preview pane and check what you built.",
-      "advance": "The purple action above the input appears only when the current step is ready to advance. Click it to continue."
+      "advance": "The purple action above the input appears only when the current step is ready to advance. Click it to continue.",
+      "startBlocked": {
+        "guide": "Finish or close the workspace guide to start learning.",
+        "connecting": "Connecting live updates before learning can start…",
+        "retrying": "Reconnecting live updates. Wait for the connection before starting.",
+        "unavailable": "Live updates are unavailable. Refresh to reconnect before starting.",
+        "pending": "An action is in progress. Wait for it to finish before starting.",
+        "busy": "The assistant is still replying. Wait for it to finish before starting.",
+        "environment": "Wait for the learning environment to be ready before starting. If preparation failed, retry above.",
+        "unsaved": "Project files have unsaved changes. Save them or discard the changes before starting.",
+        "preparing": "Preparing the workspace. Please wait before starting."
+      }
     },
     "journey": {
       "currentMilestone": "Current milestone",

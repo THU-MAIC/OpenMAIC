@@ -441,19 +441,18 @@ function PBLV3WorkspaceContent({
     (blockedReason !== null && blockedReason !== 'opening') ||
     onboarding.active ||
     entryLoading;
-  const startBlockedReason = !startDisabled
+  const startBlockedReasonKey = !startDisabled
     ? null
-    : stream.status !== 'connected'
-      ? t(
-          stream.status === 'unavailable'
-            ? 'pblV3.updatesUnavailable'
-            : stream.status === 'retrying'
-              ? 'pblV3.reconnectingUpdates'
-              : 'pblV3.connectingUpdates',
-        )
-      : blockedReason && blockedReason !== 'opening'
-        ? t(`pblV3.inputBlocked.${blockedReason}`)
-        : t('pblV3.onboarding.waiting');
+    : onboarding.active
+      ? 'guide'
+      : stream.status !== 'connected'
+        ? stream.status
+        : blockedReason && blockedReason !== 'opening'
+          ? blockedReason
+          : 'preparing';
+  const startBlockedReason = startBlockedReasonKey
+    ? t(`pblV3.overview.startBlocked.${startBlockedReasonKey}`)
+    : null;
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
     'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
@@ -834,7 +833,7 @@ function PBLV3WorkspaceContent({
                 aria-label={t('pblV3.learning')}
                 data-testid="pbl-assistant"
                 data-pbl-tour="conversation"
-                className="flex h-full min-h-0 flex-col bg-muted/10"
+                className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none"
               >
                 <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
                   <MessageSquareText size={15} />

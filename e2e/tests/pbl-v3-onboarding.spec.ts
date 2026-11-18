@@ -453,6 +453,9 @@ for (const [width, guideCompleted] of [
     });
     if (!guideCompleted) {
       await expect(tour(page)).toBeVisible();
+      await expect(page.locator('#pbl-start-blocked-project')).toHaveText(
+        'Finish or close the workspace guide to start learning.',
+      );
       expect(fixture.commands).toEqual([]);
       await page.keyboard.press('Escape');
     }
@@ -468,6 +471,7 @@ for (const [width, guideCompleted] of [
     await expect(page.getByTestId('pbl-agent-turn')).toBeVisible();
     await expect(start).toHaveCount(0);
     await expect(page.getByTestId('pbl-assistant')).toBeFocused();
+    await expect(page.getByTestId('pbl-assistant')).toHaveCSS('outline-style', 'none');
     expect(fixture.commands).toEqual(['begin']);
     release();
     await expect.poll(() => fixture.view.needsOpening).toBe(false);
@@ -524,7 +528,9 @@ for (const width of [1365, 390]) {
     await expect(start).toBeDisabled();
     const reason = page.locator('#pbl-start-blocked-project');
     await expect(reason).toBeVisible();
-    await expect(reason).toContainText('Saving project files');
+    await expect(reason).toHaveText(
+      'Project files have unsaved changes. Save them or discard the changes before starting.',
+    );
     await expect(start).toHaveAttribute('aria-describedby', 'pbl-start-blocked-project');
     expect(fixture.commands).not.toContain('begin');
   });

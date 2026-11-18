@@ -3057,7 +3057,18 @@
       "eachStage": "Como seguir cada etapa",
       "yourRole": "Você decide e revisa; a IA ajuda a escrever o plano e o código.",
       "preview": "Use seu aplicativo na prévia e confira o que foi construído.",
-      "advance": "O botão roxo acima do campo de entrada só aparece quando a etapa atual permite avançar. Quando aparecer, clique nele para continuar."
+      "advance": "O botão roxo acima do campo de entrada só aparece quando a etapa atual permite avançar. Quando aparecer, clique nele para continuar.",
+      "startBlocked": {
+        "guide": "Conclua ou feche o guia do espaço de trabalho para começar a aprender.",
+        "connecting": "Conectando as atualizações ao vivo antes de começar…",
+        "retrying": "Reconectando as atualizações ao vivo. Aguarde a conexão ser restabelecida antes de começar.",
+        "unavailable": "As atualizações ao vivo estão indisponíveis. Atualize a página para reconectar antes de começar.",
+        "pending": "Uma ação está em andamento. Aguarde sua conclusão antes de começar.",
+        "busy": "O assistente ainda está respondendo. Aguarde a resposta terminar antes de começar.",
+        "environment": "Aguarde o ambiente de aprendizagem ficar pronto antes de começar. Se a preparação falhou, tente novamente acima.",
+        "unsaved": "Os arquivos do projeto têm alterações não salvas. Salve ou descarte as alterações antes de começar.",
+        "preparing": "Preparando o espaço de trabalho. Aguarde antes de começar."
+      }
     },
     "journey": {
       "currentMilestone": "Etapa atual",
