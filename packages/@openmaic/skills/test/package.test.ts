@@ -189,6 +189,39 @@ it('round-trips filenames at the component byte boundary', async () => {
   );
 });
 
+it('rejects case and normalization aliases in every directory prefix', async () => {
+  for (const pair of [
+    ['Assets/a.txt', 'assets/b.txt'],
+    ['assets/Café/a.txt', 'assets/Cafe\u0301/b.txt'],
+    ['assets/ẞ/a.txt', 'assets/ss/b.txt'],
+    ['assets/Σ/a.txt', 'assets/ς/b.txt'],
+  ]) {
+    for (const paths of [pair, [...pair].reverse()]) {
+      expect(
+        () => new SkillPackage([entry, ...paths.map((path) => ({ path, bytes: bytes('x') }))]),
+      ).toThrow('INVALID_PACKAGE');
+      const zip = new JSZip();
+      zip.file('lesson-plan/SKILL.md', entry.bytes, { createFolders: false });
+      for (const path of paths)
+        zip.file(`lesson-plan/${path}`, bytes('x'), { createFolders: false });
+      await expect(
+        importSkillPackage(await zip.generateAsync({ type: 'uint8array' })),
+      ).rejects.toThrow('INVALID_PACKAGE');
+    }
+  }
+});
+
+it('round-trips sibling resources sharing the exact directory spelling', async () => {
+  const skill = new SkillPackage([
+    entry,
+    { path: 'assets/shared/a.txt', bytes: bytes('first') },
+    { path: 'assets/shared/b.txt', bytes: bytes('second') },
+  ]);
+  expect((await importSkillPackage(await exportSkillPackage(skill))).manifest).toEqual(
+    skill.manifest,
+  );
+});
+
 it('rejects differing local and central filenames before JSZip can collapse entries', async () => {
   const zip = new JSZip();
   zip.file('lesson-plan/SKILL.md', entry.bytes);

@@ -84,8 +84,17 @@ export class SkillPackage {
     if (!input.length || input.length > SKILL_LIMITS.files) fail('LIMIT_EXCEEDED');
     let total = 0;
     const portablePaths = new Set<string>();
+    const portablePrefixes = new Map<string, string>();
     for (const file of input) {
       validateSkillPath(file.path);
+      const parts = file.path.split('/');
+      for (let length = 1; length <= parts.length; length++) {
+        const prefix = parts.slice(0, length).join('/');
+        const key = portablePathKey(prefix);
+        const spelling = portablePrefixes.get(key);
+        if (spelling !== undefined && spelling !== prefix) fail();
+        portablePrefixes.set(key, prefix);
+      }
       const portablePath = portablePathKey(file.path);
       if (portablePaths.has(portablePath)) fail();
       portablePaths.add(portablePath);
