@@ -81,7 +81,8 @@ export class SkillPackage {
   readonly manifest: SkillManifest;
   #files = new Map<string, Uint8Array>();
   constructor(input: readonly SkillFile[]) {
-    if (!input.length || input.length > SKILL_LIMITS.files) fail('LIMIT_EXCEEDED');
+    if (!input.length) fail();
+    if (input.length > SKILL_LIMITS.files) fail('LIMIT_EXCEEDED');
     let total = 0;
     const portablePaths = new Set<string>();
     const portablePrefixes = new Map<string, string>();
@@ -289,8 +290,8 @@ function validateZipDirectory(input: Uint8Array): void {
   }
   if (end < 0 || bytes.readUInt16LE(end + 4) || bytes.readUInt16LE(end + 6)) fail();
   const count = bytes.readUInt16LE(end + 10);
-  if (count !== bytes.readUInt16LE(end + 8) || count > SKILL_LIMITS.files * 8)
-    fail('LIMIT_EXCEEDED');
+  if (count !== bytes.readUInt16LE(end + 8)) fail();
+  if (count > SKILL_LIMITS.files * 8) fail('LIMIT_EXCEEDED');
   let offset = bytes.readUInt32LE(end + 16);
   const stop = offset + bytes.readUInt32LE(end + 12);
   if (stop !== end) fail();

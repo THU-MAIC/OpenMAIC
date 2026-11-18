@@ -419,3 +419,17 @@ it('rejects patches that introduce case aliases while allowing explicit renames'
   expect(renamed.read('references/GUIDE.md')).toEqual(guide.bytes);
   expect(skill.read(guide.path)).toEqual(guide.bytes);
 });
+
+it('classifies empty snapshots and empty ZIP packages as invalid rather than oversized', async () => {
+  expect(() => new SkillPackage([])).toThrow('INVALID_PACKAGE');
+  const archive = await new JSZip().generateAsync({ type: 'uint8array' });
+  await expect(importSkillPackage(archive)).rejects.toMatchObject({ code: 'INVALID_PACKAGE' });
+});
+
+it('classifies inconsistent ZIP entry counts as invalid rather than oversized', async () => {
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes, { createFolders: false });
+  const archive = Buffer.from(await zip.generateAsync({ type: 'uint8array' }));
+  archive.writeUInt16LE(0, archive.length - 22 + 8);
+  await expect(importSkillPackage(archive)).rejects.toMatchObject({ code: 'INVALID_PACKAGE' });
+});
