@@ -272,7 +272,11 @@ test.describe('Phone sound settings and quiz report', () => {
       .poll(async () => {
         const c = (await canvas.boundingBox())!;
         const h = (await header.boundingBox())!;
-        return Math.abs(h.y - c.y) < 30;
+        const navigation = (await page.getByTestId('mobile-quiz-navigation').boundingBox())!;
+        return (
+          Math.abs(navigation.y - c.y) <= 1 &&
+          Math.abs(h.y - (navigation.y + navigation.height)) < 30
+        );
       })
       .toBe(true);
     await expect(page.getByText(quiz.questions[0].question, { exact: true })).toBeInViewport();
@@ -372,4 +376,68 @@ test.describe('Phone classroom first paint and role strip', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: testInfo.outputPath('complete-teacher-avatar-390.png') });
   });
+});
+
+test.describe('Phone quiz exit navigation', () => {
+  test.use({ isMobile: true, hasTouch: true });
+  for (const hosted of [false, true]) {
+    for (const size of [
+      { width: 390, height: 844 },
+      { width: 844, height: 390 },
+    ]) {
+      test(`keeps Back reachable on the quiz cover, answers and report (${hosted ? 'workspace' : 'standalone'}, ${size.width})`, async ({
+        page,
+      }, testInfo) => {
+        test.skip(
+          hosted && process.env.MOBILE_WORKSPACE_E2E !== 'true',
+          'Requires workspace server',
+        );
+        test.setTimeout(60_000);
+        await page.setViewportSize(size);
+        const id = uniqueStageId('mobile-quiz-back');
+        await page.goto('/');
+        await seedServerDocument(page, {
+          ...guide,
+          stage: { ...guide.stage, id },
+          scenes: guide.scenes.map((scene) => ({ ...scene, stageId: id })),
+        });
+        await setCurrentScene(page, id, guide.scenes[6].id);
+        const url = hosted ? `/workspace?course=${id}` : `/classroom/${id}`;
+        await page.goto(url);
+        const navigation = page.getByTestId('mobile-quiz-navigation');
+        const back = navigation.getByRole('button', { name: 'Back', exact: true });
+        await expect(back).toBeInViewport();
+        await expect(navigation).toContainText(guide.stage.name);
+        await back.click();
+        await expect(page).toHaveURL(hosted ? /\/workspace\/?$/ : /\/$/);
+        await expect(page.getByTestId('mobile-classroom-nav')).not.toBeVisible();
+        await page.goto(url);
+        await page.getByRole('button', { name: 'Start Quiz', exact: true }).click();
+        await expect(back).toBeInViewport();
+        await expect(page.locator('.mobile-canvas-chrome')).toHaveAttribute(
+          'data-visible',
+          'false',
+        );
+        const quiz = guide.scenes[6].content;
+        if (quiz.type !== 'quiz' || !('questions' in quiz)) throw new Error('Missing quiz');
+        for (const question of quiz.questions) {
+          const option = question.options.find((option) => option.value === question.answer[0])!;
+          await page.getByText(option.label, { exact: true }).click();
+        }
+        await page.getByRole('button', { name: 'Submit Answers', exact: true }).click();
+        await expect(page.getByTestId('course-end')).toBeVisible();
+        await page.getByTestId('course-end-close').click();
+        await expect(page.getByTestId('course-end')).not.toBeVisible();
+        await expect(page.getByText('Quiz Report', { exact: true })).toBeVisible();
+        await expect(back).toBeInViewport();
+        const navBox = (await navigation.boundingBox())!;
+        const header = (await page.getByText('Quiz Report', { exact: true }).boundingBox())!;
+        expect(header.y).toBeGreaterThanOrEqual(navBox.y + navBox.height);
+        await page.screenshot({ path: testInfo.outputPath(`quiz-back-${size.width}.png`) });
+        await back.click();
+        await expect(page).toHaveURL(hosted ? /\/workspace\/?$/ : /\/$/);
+        await expect(page.getByTestId('mobile-classroom-nav')).not.toBeVisible();
+      });
+    }
+  }
 });

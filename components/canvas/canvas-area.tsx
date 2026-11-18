@@ -154,6 +154,22 @@ export function CanvasArea({
       data-mobile-canvas={mobile || undefined}
       className="w-full h-full flex flex-col bg-gray-50 dark:bg-gray-900 group/canvas"
     >
+      {mobile && currentScene?.type === 'quiz' && !whiteboardOpen && (
+        <div
+          data-testid="mobile-quiz-navigation"
+          className="flex h-11 shrink-0 items-center gap-1 bg-background px-1 text-foreground"
+        >
+          <button
+            type="button"
+            className="grid size-11 shrink-0 place-items-center rounded-lg active:bg-muted"
+            onClick={onMobileBack}
+            aria-label={t('common.back')}
+          >
+            <ArrowLeft size={20} aria-hidden="true" />
+          </button>
+          <span className="min-w-0 truncate pe-3 text-[13px] font-medium">{mobileCourseName}</span>
+        </div>
+      )}
       {/* Slide area — takes remaining space */}
       <div
         className={cn(
