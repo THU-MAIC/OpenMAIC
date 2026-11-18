@@ -71,44 +71,44 @@ stated in the plan.
 
 ## 4. Budget the narration
 
-A page's speech length is **planned, not discovered**: the page's spoken
-minutes × the language's speech rate ≈ the narration it must carry. Use about
-250-280 characters per spoken minute for Chinese and 140-160 words per minute
-for English as starting rates. Keep the number in the conversation
-plan as a budget to check against — never in `brief` or `materialFacts`:
-after a compaction, reconstruct the target instead of recalling it — the
-sitting's minutes (from the original request) divided by the planned page
-count (`read_stage_outline`) times the rate above gives the current page's
-target;
-those are page-content fields, and a directive there can surface as
-learner-visible slide text without governing the speech. After
-`generate_scene` succeeds but **before the first `generate_tts` call**,
-inspect the page's `/actions` speech text and patch it until the spoken length
-meets the budget. Patching `/actions` clears that line's audio, so inspecting
-first avoids synthesizing the wrong audio and then re-synthesizing every
-adjusted line. A page whose narration still undershoots is a defect: name it in
-the wrap-up, the same way a missing page is named.
+A page's speech length is **planned, not discovered**: spoken minutes × the
+language's speech rate ≈ the narration it must carry. Use about 250-280
+characters per spoken minute for Chinese and 140-160 words per minute for
+English as starting rates. State the per-page budget in the settled plan and
+check the page against it; never put a budget directive in `brief` or
+`materialFacts`, which are page-content fields whose wording can become
+learner-visible slide text. After `generate_scene` succeeds but **before the
+first `generate_tts` call**, inspect the page's `/actions` speech text and patch
+it until the spoken length meets the budget — patching `/actions` clears that
+line's audio. For workshops, activity and exercise minutes are learner time,
+not speech: budget narration only for teaching pages and give interactive pages
+a short instruction, as `workshop-style` describes. Long runs can compact the
+conversation, so a budget that is no longer visible is not a budget: if the
+settled plan is not in view, stop and re-confirm the remaining page budgets with
+the user rather than recomputing them from a partially built stage. A page whose
+narration still undershoots its confirmed budget is a defect: name it in the
+wrap-up, the same way a missing page is named.
 
 ## 5. The plan is the ledger
 
-Every `generate_scene` call sees only its own brief. So the settled plan must
-carry what earlier pages established: record the raw dependency in the plan —
+Every `generate_scene` call sees only its own brief, so the settled plan must
+carry what earlier pages established. Record the raw dependency in the plan —
 「承接第 4 页：久期的定义」 — and, when calling `generate_scene`, translate it
 into a learner-facing prerequisite ("the learner already knows what duration
 means, including how yield moves it"). Never put the raw ledger label in
-`brief`: it is a page-content field and its wording can become learner-visible
-slide text. When you write page N's brief, reread the plan rather than your
-memory of page N-1. Long sittings get their transcript compacted, and the runtime has no supported
-stage-level note tool: do not assume the early plan survives verbatim. Before
-each page, re-read the settled plan from the user-facing confirmation and
-reconstruct the dependency from pages already built (`read_stage`), not from a
-remembered line. For 120-240 minute sittings prefer the `curriculum-planner`
-series shape, so each stage carries its own self-contained ledger and
-compaction between stages cannot drop a cross-stage premise. In a series this is
-`curriculum-planner`'s rule at stage granularity: use `read_stage_outline` on
-the earlier stage to locate the relevant pages, then `read_stage` to inspect
-their actual content before building on it — continuity against what was
-actually produced, not just the planned titles.
+`brief`: its wording can become learner-visible slide text. When writing page
+N's brief, reread the settled plan rather than your memory of page N-1. The
+runtime has no supported stage-level note tool, and compaction can remove the
+plan from the model's view; if the remaining ledger is no longer visible,
+**stop and re-confirm it with the user** — an invisible plan is not a ledger.
+For 120-240 minute sittings prefer the `curriculum-planner` series shape so
+each stage carries its own self-contained ledger. In a series, use
+`read_stage_outline` on an earlier stage only to locate relevant pages, then
+`read_stage` to inspect their actual content before building on it — continuity
+against what was produced, not just planned titles. A long module may contain
+several `lecture-style` arcs (it is not limited to one 3-5-page arc); in a
+series several modules may share a stage, so keep the module-to-stage grouping
+explicit in the confirmation.
 
 ## 6. The four contracts
 
