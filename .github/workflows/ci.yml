@@ -445,6 +445,13 @@ jobs:
         env:
           INTERACTIVE_STATIC_BROWSER: '1'
 
+      # The display-state rules in the interactive page prompts, checked in
+      # Chromium against the prompt's own examples.
+      - name: Interactive display-state Chromium checks
+        run: pnpm exec vitest run tests/generation/interactive-display-state.browser.test.ts
+        env:
+          INTERACTIVE_DISPLAY_BROWSER: '1'
+
       # runner.* is only valid in step contexts (not job-level env).
       - name: Materialize Hyperframes lint samples
         run: pnpm exec vitest run tests/video-export/e2e-materialize.test.ts
