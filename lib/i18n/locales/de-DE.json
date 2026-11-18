@@ -3068,7 +3068,10 @@
         "environment": "Warte vor dem Start, bis die Lernumgebung bereit ist. Falls die Vorbereitung fehlgeschlagen ist, versuche es oben erneut.",
         "unsaved": "Die Projektdateien enthalten ungespeicherte Änderungen. Speichere oder verwirf sie, bevor du beginnst.",
         "preparing": "Der Arbeitsbereich wird vorbereitet. Bitte warte, bevor du beginnst."
-      }
+      },
+      "singleFlow": "Projektablauf",
+      "concepts": "Technische Konzepte",
+      "deliverables": "Funktionale Ergebnisse"
     },
     "journey": {
       "currentMilestone": "Aktueller Meilenstein",

@@ -3068,7 +3068,10 @@
         "environment": "Wait for the learning environment to be ready before starting. If preparation failed, retry above.",
         "unsaved": "Project files have unsaved changes. Save them or discard the changes before starting.",
         "preparing": "Preparing the workspace. Please wait before starting."
-      }
+      },
+      "singleFlow": "Project workflow",
+      "concepts": "Engineering concepts",
+      "deliverables": "Functional outcomes"
     },
     "journey": {
       "currentMilestone": "Current milestone",
