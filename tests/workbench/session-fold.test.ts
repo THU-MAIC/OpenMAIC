@@ -8,6 +8,9 @@
  * `Last-Event-ID`, browser also has it) never double-appends.
  */
 import { describe, expect, it } from 'vitest';
+import { ContextBudgetError } from '@/lib/agent/runtime/context-budget-error';
+import { createWorkbenchTranslator } from '@/lib/i18n/workbench';
+import { presentSystemNotice } from '@/components/workbench/chat/system-notice';
 
 import {
   compactReplayEvents,
@@ -69,6 +72,45 @@ const assistantMessage = (parts: { type: string; text?: string; thinking?: strin
 const contentOf = (state: WorkbenchFold) => state.chat.filter((n) => n.kind !== 'waiting');
 
 describe('lifecycle events', () => {
+  it.each([
+    'summary_failed',
+    'no_compaction_boundary',
+    'still_oversized',
+    'invalid_output_budget',
+  ] as const)('replays %s as localized copy without a retry hint or technical code', (reason) => {
+    const error = new ContextBudgetError(reason).message;
+    const events = [
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('message_end', {
+        message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: error },
+      }),
+      ev('session_end', { status: 'failed', error, errorCode: 'CONTEXT_BUDGET_EXCEEDED' }),
+    ];
+    const state = foldAll(events);
+    const node = state.chat.find((n) => n.kind === 'system')!;
+    const invalid = reason === 'invalid_output_budget';
+    for (const locale of ['en-US', 'zh-CN', 'unknown-locale']) {
+      const notice = presentSystemNotice(node, createWorkbenchTranslator(locale));
+      expect(notice.summary).toBe(
+        locale === 'zh-CN'
+          ? invalid
+            ? '当前模型的上下文预算配置异常，本轮已停止'
+            : '您已达到此会话的长度上限，可以开始新聊天以继续对话'
+          : invalid
+            ? "The current model's context budget is misconfigured. This turn has been stopped"
+            : "You've reached the maximum length for this conversation, but you can keep talking by starting a new chat",
+      );
+      expect(notice.hint).toBeUndefined();
+      expect(notice.detail).toBeUndefined();
+    }
+    expect(state.status).toBe('failed');
+    expect(state.generationOpen).toBe(false);
+    expect(state.chat).toContainEqual(
+      expect.objectContaining({ kind: 'user', text: 'keep my request' }),
+    );
+    expect(foldAll(events).chat).toEqual(state.chat);
+  });
+
   it('silently clears a deleted Skill binding without changing the conversation or course', () => {
     const initial = foldAll([
       ev('session_start', { prompt: 'Keep this conversation' }),

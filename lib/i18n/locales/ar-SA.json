@@ -3057,7 +3057,18 @@
       "eachStage": "خطوات كل مرحلة",
       "yourRole": "أنت تتخذ القرارات وتراجع؛ ويساعدك الذكاء الاصطناعي في كتابة الخطة والكود.",
       "preview": "جرّب تطبيقك في منطقة المعاينة وتحقق مما بنيته.",
-      "advance": "لا يظهر الزر البنفسجي فوق حقل الإدخال إلا عندما تصبح الخطوة الحالية جاهزة للتقدّم. عند ظهوره، اضغط عليه للمتابعة."
+      "advance": "لا يظهر الزر البنفسجي فوق حقل الإدخال إلا عندما تصبح الخطوة الحالية جاهزة للتقدّم. عند ظهوره، اضغط عليه للمتابعة.",
+      "startBlocked": {
+        "guide": "أكمل دليل مساحة العمل أو أغلقه لبدء التعلّم.",
+        "connecting": "جارٍ الاتصال بالتحديثات المباشرة قبل بدء التعلّم…",
+        "retrying": "جارٍ إعادة الاتصال بالتحديثات المباشرة. انتظر عودة الاتصال قبل البدء.",
+        "unavailable": "التحديثات المباشرة غير متاحة. حدّث الصفحة لإعادة الاتصال قبل البدء.",
+        "pending": "هناك إجراء قيد التنفيذ. انتظر اكتماله قبل البدء.",
+        "busy": "المساعد ما زال يرد. انتظر انتهاء الرد قبل البدء.",
+        "environment": "انتظر حتى تصبح بيئة التعلّم جاهزة قبل البدء. إذا فشل الإعداد، فأعد المحاولة من الأعلى.",
+        "unsaved": "توجد تغييرات غير محفوظة في ملفات المشروع. احفظها أو تجاهلها قبل البدء.",
+        "preparing": "جارٍ تجهيز مساحة العمل. يُرجى الانتظار قبل البدء."
+      }
     },
     "journey": {
       "currentMilestone": "المرحلة الحالية",
@@ -3194,13 +3205,14 @@
       "readOnly": "Read-only",
       "saved": "تم الحفظ",
       "saveFailed": "فشل الحفظ · إعادة المحاولة",
-      "draftRetained": "التغييرات محفوظة في هذا المتصفح"
+      "draftRetained": "التغييرات محفوظة في هذا المتصفح",
+      "retryRead": "إعادة محاولة القراءة"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "توجد تغييرات غير محفوظة في ملفات المشروع. احفظها أو تجاهلها قبل الإرسال؛ ستبقى رسالتك هنا.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",

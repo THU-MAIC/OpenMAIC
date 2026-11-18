@@ -137,6 +137,8 @@
     "steerQueued": "L'agent répondra après avoir terminé l'étape en cours",
     "runFailed": "Cette création a échoué",
     "retryHint": "Envoyez un autre message pour réessayer",
+    "contextLengthLimit": "Cette conversation a atteint sa longueur maximale. Démarrez une nouvelle discussion pour continuer.",
+    "contextBudgetInvalid": "Le budget de contexte du modèle actuel est mal configuré. Ce tour a été arrêté.",
     "stopped": "Cette création a été arrêtée",
     "workerInterrupted": "Interrompu par un redémarrage du worker. Cet appel n'a produit aucun résultat ; l'agent le relancera si nécessaire.",
     "userStopped": "Interrompu par un arrêt. Cet appel n'a produit aucun résultat."

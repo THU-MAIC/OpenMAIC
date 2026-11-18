@@ -9,6 +9,7 @@ import {
   SlotUnassignedError,
 } from '@/lib/server/model-config/runtime';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
+import { ContextBudgetError } from '@/lib/agent/runtime/context-budget-error';
 
 export const AGENT_DRIVER_STAGE = 'maic-agent-driver' as const;
 export const UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS = 8_192;
@@ -62,7 +63,7 @@ export function buildPiDriverModel(
 export async function resolveAgentDriverModel(workspaceId: string | null = null): Promise<{
   connection: ResolvedModel;
   piModel: Model<Api>;
-  /** Catalog-backed API limit; undefined means omit max_tokens on the wire. */
+  /** Catalog limit clamped to the context window; undefined omits max_tokens on the wire. */
   wireMaxOutputTokens?: number;
   /** Internal compaction output-space estimate; never used as a conversation API limit. */
   reservedOutputTokens: number;
@@ -88,12 +89,33 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
     );
   }
   const connection = await slotLanguageModel(resolution);
-  const wireMaxOutputTokens = connection.modelInfo?.outputWindow;
   const piModel = buildPiDriverModel(
     connection,
     resolution.api ?? DEFAULT_DRIVER_API,
     resolution.contextWindow,
   );
+  // Reconcile the output reservation with the effective context window so the
+  // conversation, its compaction summary and the context budget check agree.
+  // Only a reservation that consumes the entire window is repaired (to half
+  // the window, sent on the wire too); every other cap is kept as configured.
+  const outputCeiling = Math.floor(piModel.contextWindow / 2);
+  const requestedOutput =
+    connection.modelInfo?.outputWindow ?? UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS;
+  if (
+    !Number.isFinite(outputCeiling) ||
+    outputCeiling < 1 ||
+    !Number.isFinite(requestedOutput) ||
+    requestedOutput < 1
+  ) {
+    throw new ContextBudgetError('invalid_output_budget');
+  }
+  const needsOutputFallback = requestedOutput >= piModel.contextWindow;
+  const reservedOutputTokens = needsOutputFallback ? outputCeiling : requestedOutput;
+  const wireMaxOutputTokens =
+    connection.modelInfo?.outputWindow !== undefined || needsOutputFallback
+      ? reservedOutputTokens
+      : undefined;
+  piModel.maxTokens = reservedOutputTokens;
   const capacity = (value: number | undefined) =>
     value !== undefined && Number.isFinite(value) && value >= 1 ? Math.floor(value) : undefined;
   const fallback = resolution.fallbackRequirements?.some((check) => check.status === 'unmet')
@@ -132,7 +154,7 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
     connection,
     piModel,
     wireMaxOutputTokens,
-    reservedOutputTokens: wireMaxOutputTokens ?? UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS,
+    reservedOutputTokens,
     teaching,
   };
 }

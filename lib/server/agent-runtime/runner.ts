@@ -12,8 +12,14 @@ import {
 } from '@/lib/persistence/schema-boot-check';
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { createThinkingTimingTracker } from '@/lib/server/pbl-v3/thinking-timing';
-import { Session, type AgentEvent, type AgentMessage } from '@earendil-works/pi-agent-core';
+import {
+  convertToLlm,
+  Session,
+  type AgentEvent,
+  type AgentMessage,
+} from '@earendil-works/pi-agent-core';
 import {
   AgentSessionLeaseLostError,
   type AgentSessionClaimReason,
@@ -26,6 +32,10 @@ import { abortable } from './abortable';
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
 import { modelRequestFailureCode } from '@/lib/agent/runtime/request-failure';
+import {
+  CONTEXT_BUDGET_EXCEEDED,
+  contextBudgetReason,
+} from '@/lib/agent/runtime/context-budget-error';
 import { LLM_FETCH_TIMEOUT_MS } from '@/lib/ai/providers';
 import { HOST_AGENT_LIFECYCLE as LIFECYCLE } from '@/lib/agent-runtime/lifecycle';
 import { createLogger } from '@/lib/logger';
@@ -35,6 +45,7 @@ import type { Scene, SlideContent } from '@/lib/types/stage';
 
 import { resolveAgentDriverModel } from './agent-driver-model';
 import { buildAskUserTool } from './ask-user';
+import { createAgentCompactionRuntime, type AgentCompactionRuntime } from './compaction';
 import { agentRuntimeConfig as config } from './config';
 import { buildCreateSkillTool } from './create-skill';
 import {
@@ -88,6 +99,7 @@ import {
   appendInterruptedToolCallResults,
   repairOrphanedToolCalls,
   trackToolCallMessage,
+  withToolCallIntegrityRepair,
   type PendingToolCall,
 } from './tool-call-integrity';
 import { getAgentSessionStore, withAgentSessionClaim } from './store';
@@ -153,6 +165,64 @@ export async function writeRequiredSessionEntry(
     }
     throw error;
   }
+}
+
+interface DurableCompactionSessionOptions {
+  signal?: AbortSignal;
+  flush: () => Promise<void>;
+  getSession: () => Session | undefined;
+  isLeaseLost: () => boolean;
+  sessionId: string;
+  workerId: string;
+  attempt: number;
+}
+
+/**
+ * Read-time interrupted-call receipts are synthesized with the time of the
+ * repair, so two repairs of the same orphan differ only in that timestamp.
+ */
+function comparableModelMessage(message: AgentMessage | undefined): unknown {
+  if (message?.role !== 'toolResult') return message;
+  const details = (message as { details?: unknown }).details as { error?: unknown } | undefined;
+  return details?.error === 'interrupted' ? { ...message, timestamp: 0 } : message;
+}
+
+/** Flush and prove the durable tree covers the state pi is about to compact. */
+export async function acquireDurableCompactionSession(
+  messages: AgentMessage[],
+  options: DurableCompactionSessionOptions,
+): Promise<Session> {
+  if (options.signal?.aborted) throw new Error('compaction aborted before PG tree flush');
+  await options.flush();
+  if (options.isLeaseLost()) {
+    throw new AgentSessionLeaseLostError(options.sessionId, options.workerId, options.attempt);
+  }
+  const session = options.getSession();
+  if (!session) throw new Error('durable compaction session is unavailable after PG tree flush');
+  const committed = (await session.buildContext()).messages;
+  // Both sides pass through the same normalization. Compaction sees the
+  // repaired model view, while interrupted-call receipts remain read-time only
+  // and are deliberately absent from the append-only entry tree.
+  const committedRepaired = repairOrphanedToolCalls(committed).messages;
+  const hasCompactionBoundary = committedRepaired[0]?.role === 'compactionSummary';
+  const committedTail = hasCompactionBoundary ? committedRepaired.slice(1) : committedRepaired;
+  const tailOffset = messages.length - committedTail.length;
+  const coversMessages = hasCompactionBoundary
+    ? tailOffset >= 0 &&
+      (committedTail.length > 0 || messages.length === 0) &&
+      committedTail.every((message, index) =>
+        isDeepStrictEqual(
+          comparableModelMessage(message),
+          comparableModelMessage(messages[tailOffset + index]),
+        ),
+      )
+    : committedRepaired.length === messages.length;
+  if (!coversMessages) {
+    throw new Error(
+      `entry tree is incomplete at compaction boundary (${committedRepaired.length}/${messages.length} messages)`,
+    );
+  }
+  return session;
 }
 
 interface RunResultMessage {
@@ -1353,6 +1423,10 @@ async function executeSession(
   cleanup.add(() => clearInterval(cancelPoll));
   cleanup.add(unsubscribeWakeup);
 
+  // Created per model call (the system prompt can change between calls) and
+  // disposed on every exit path.
+  let compactionRuntime: AgentCompactionRuntime | undefined;
+
   try {
     const recovery = await loadEntryHistory();
     const historyMessages = recovery.messages;
@@ -1643,7 +1717,11 @@ async function executeSession(
         ? (plannedStart.durableMessageSeq ?? 0)
         : Math.max(deliveredThrough, consumedInTranscript);
     const currentSkills = () => skillsForMessage(skillMessageSeq);
-    let activeSkill = requestedSkill ?? skillReadFromTranscript(historyMessages, currentSkills());
+    // Activation is a fact of the raw append-only branch: compaction may have
+    // summarized the skill `read` away from the model view, but the session is
+    // still planned under that skill. Body coverage keeps using the view.
+    let activeSkill =
+      requestedSkill ?? skillReadFromTranscript(recovery.cursorMessages, currentSkills());
     let userFramesSeen = 0;
     let turnPinnedSkill: LoadedSkill | null = null;
     let pinValidThrough = -1;
@@ -1935,6 +2013,86 @@ async function executeSession(
           )
         : null;
     if (teachingProjection) cleanup.add(() => teachingProjection.dispose());
+    // Native pi compaction reads and appends to the same cross-run entry tree
+    // used for recovery. The acquire flush makes every preceding ordered append
+    // visible before pi chooses firstKeptEntryId. Even with compaction turned
+    // off, the runtime still blocks a request over the model's context budget.
+    // The summary rides the conversation's resolved connection, but unlike a
+    // conversation reply (left uncapped for a model without a catalog output
+    // window) it honors pi's per-call summary cap, which the chunk planner and
+    // the post-compaction budget check rely on.
+    const summaryStreamFn = createCallLlmStreamFn({
+      languageModel: driver.connection.model,
+      supportsToolImages: driver.connection.modelInfo?.capabilities?.vision,
+      maxOutputTokens: driver.wireMaxOutputTokens,
+      thinkingConfig: driver.connection.thinkingConfig,
+      source: 'agent-runtime',
+      abortSignal: abort.signal,
+    });
+    const prepareContext = async (
+      messages: AgentMessage[],
+      signal?: AbortSignal,
+    ): Promise<AgentMessage[]> => {
+      compactionRuntime?.dispose();
+      compactionRuntime = createAgentCompactionRuntime({
+        streamFn: summaryStreamFn,
+        contextWindow: driver.piModel.contextWindow,
+        reservedOutputTokens: driver.reservedOutputTokens,
+        modelRouteLabel: `agent slot model ${driver.connection.modelString}`,
+        settings: config.compaction,
+        systemPrompt: execution.systemPromptForTurn(),
+        tools: execution.tools,
+        // Count read-time protocol repairs and the summary preamble as sent.
+        budgetMessages: (view) => convertToLlm(repairOrphanedToolCalls(view).messages),
+        compactionSession: {
+          required: true,
+          acquire: (view, acquireSignal) =>
+            acquireDurableCompactionSession(view, {
+              signal: acquireSignal,
+              flush: flushAll,
+              getSession: () => entrySession,
+              isLeaseLost: () => leaseLost,
+              sessionId: id,
+              workerId: WORKER_ID,
+              attempt,
+            }),
+        },
+        onCompaction: (event) => {
+          emit(LIFECYCLE.trace, {
+            message:
+              `context compacted: ${event.tokensBefore} -> ${event.tokensAfter} tokens, ` +
+              `${event.messagesBefore} -> ${event.messagesAfter} messages, ` +
+              `${event.summaryCalls} summary call(s)`,
+          });
+        },
+      });
+      try {
+        // Durable compaction rebuilds its view from the raw tree, so repair
+        // once more right before pi's conversion boundary: a read-time
+        // interrupted-call receipt must stay provider-legal after a compact.
+        return await withToolCallIntegrityRepair(compactionRuntime.transformContext)(
+          messages,
+          signal,
+        );
+      } catch (error) {
+        const reason = contextBudgetReason(error instanceof Error ? error.message : undefined);
+        if (reason) {
+          const trace = compactionRuntime.getTrace();
+          // Budget metadata only: never history, summary, or provider bodies.
+          log.warn(`session ${id}: context admission blocked`, {
+            model: driver.connection.modelString,
+            reason,
+            contextWindow: trace.contextWindow,
+            targetTokens: trace.targetTokens,
+            reservedOutputTokens: trace.effectiveOutputTokens,
+            ...(reason === 'summary_failed' && trace.lastSummaryFailure
+              ? { summaryFailure: trace.lastSummaryFailure }
+              : {}),
+          });
+        }
+        throw error;
+      }
+    };
     const agent = buildAgent({
       // Pi snapshots the system prompt at run start. Rebuild discovery at the
       // provider boundary too, after a fresh steered user frame is consumed.
@@ -1952,7 +2110,8 @@ async function executeSession(
       systemPrompt: execution.systemPromptForTurn(),
       model: requestDriver.piModel,
       tools: execution.tools,
-      ...(teaching ? { toolTimeoutMs: 0 } : {}),
+      // Teaching runs keep their own context projection.
+      ...(teaching ? { toolTimeoutMs: 0 } : { transformContext: prepareContext, convertToLlm }),
       allowedToolNames: execution.allowedToolNames,
       ...(plan.kind === 'start' ? {} : { history: modelMessages }),
       afterToolCall: (toolContext) => {
@@ -2301,16 +2460,26 @@ async function executeSession(
       if (settledCancelled) abort.abort();
       const error = !settledCancelled && loopError ? loopError : undefined;
       const status = settledCancelled ? 'cancelled' : error ? 'failed' : 'succeeded';
+      // Over the context budget is deterministic for this transcript: settle
+      // once, without counting an unattended attempt or retrying it.
+      const contextBlocked = contextBudgetReason(error) !== undefined;
       emit(LIFECYCLE.sessionEnd, {
         status,
         toolCalls,
-        ...(error ? { error, errorCode: modelRequestFailureCode(error) ?? undefined } : {}),
+        ...(error
+          ? {
+              error,
+              errorCode: contextBlocked
+                ? CONTEXT_BUDGET_EXCEEDED
+                : (modelRequestFailureCode(error) ?? undefined),
+            }
+          : {}),
       });
       await flushAll();
       const settled = await store.finishSession(id, WORKER_ID, {
         status,
         ...(error ? { error } : {}),
-        resetAttempt: status !== 'failed',
+        resetAttempt: status !== 'failed' || contextBlocked,
         expectedAttempt: attempt,
         ...(settledCancelled && cancelRequestedAt !== null
           ? { consumeCancelRequestedAt: cancelRequestedAt }
@@ -2321,7 +2490,12 @@ async function executeSession(
         return;
       }
       if (!settledCancelled) {
-        await requeueIfUndelivered('settle');
+        // A context-blocked run requeues only messages posted after its claim
+        // (a user action); stranded ones are not retried unattended.
+        await requeueIfUndelivered(
+          contextBlocked ? 'context budget block' : 'settle',
+          contextBlocked,
+        );
       }
       log.info(`session ${id} -> ${status} (attempt ${attempt}, ${toolCalls} tool calls)`);
     } catch (error) {
@@ -2380,13 +2554,18 @@ async function executeSession(
       }
       if (!leaseLost) await store.releaseLease(id, WORKER_ID).catch(() => {});
     } else {
+      // An unusable context budget (e.g. a model output reservation that
+      // cannot fit its window) fails the same way on every retry.
+      const contextBlocked = contextBudgetReason(message) !== undefined;
       if (!terminalFrameEmitted) {
         emit(LIFECYCLE.sessionEnd, {
           status: 'failed',
           error: message,
           ...(error instanceof ModelAuthorizationError
             ? { errorCode: error.code, statusCode: error.httpStatus }
-            : {}),
+            : contextBlocked
+              ? { errorCode: CONTEXT_BUDGET_EXCEEDED }
+              : {}),
         });
       }
       await flushAll(false).catch(() => {});
@@ -2394,10 +2573,11 @@ async function executeSession(
         .finishSession(id, WORKER_ID, {
           status: 'failed',
           error: message,
+          ...(contextBlocked ? { resetAttempt: true } : {}),
           expectedAttempt: attempt,
         })
         .catch(() => false);
-      if (settled) await requeueIfUndelivered('setup failure');
+      if (settled) await requeueIfUndelivered('setup failure', contextBlocked);
     }
     log.error(`session ${id} failed during setup`, error);
   } finally {
@@ -2406,6 +2586,7 @@ async function executeSession(
     extractionWatcher?.stop();
     if (cleanup.delete(unsubscribeWakeup)) unsubscribeWakeup();
     drainOnWake = null;
+    compactionRuntime?.dispose();
     await flushAll(false);
   }
 }

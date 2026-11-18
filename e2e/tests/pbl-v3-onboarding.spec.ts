@@ -32,6 +32,7 @@ async function project(
     lagOpeningWorkbench = false,
     opening = false,
     initialDraft = '',
+    initialEditorDraft = false,
     staleWorkbench = false,
     priorProgress,
     openingText = '',
@@ -58,6 +59,7 @@ async function project(
     lagOpeningWorkbench?: boolean;
     opening?: boolean;
     initialDraft?: string;
+    initialEditorDraft?: boolean;
     staleWorkbench?: boolean;
     priorProgress?: 'stage' | 'reset' | 'discard';
     openingText?: string;
@@ -188,6 +190,24 @@ async function project(
       },
       { id: view.id, text: initialDraft },
     );
+  if (initialEditorDraft)
+    await page.addInitScript((id) => {
+      sessionStorage.setItem(
+        `maic:pbl-draft:v1:${id}:editor`,
+        JSON.stringify({
+          path: 'PLAN.md',
+          tabs: ['PLAN.md'],
+          buffers: {
+            'PLAN.md': {
+              text: 'A retained plan draft.',
+              saved: 'A saved plan.',
+              hash: 'a'.repeat(64),
+              environment: 'fixture-environment',
+            },
+          },
+        }),
+      );
+    }, view.id);
   await page.route('**/api/pbl/v3**', async (route) => {
     const url = new URL(route.request().url());
     const body = route.request().method() === 'POST' ? route.request().postDataJSON() : null;
@@ -433,6 +453,9 @@ for (const [width, guideCompleted] of [
     });
     if (!guideCompleted) {
       await expect(tour(page)).toBeVisible();
+      await expect(page.locator('#pbl-start-blocked-project')).toHaveText(
+        'Finish or close the workspace guide to start learning.',
+      );
       expect(fixture.commands).toEqual([]);
       await page.keyboard.press('Escape');
     }
@@ -447,6 +470,12 @@ for (const [width, guideCompleted] of [
     // Feedback must precede the HTTP acknowledgment, not wait for stream output.
     await expect(page.getByTestId('pbl-agent-turn')).toBeVisible();
     await expect(start).toHaveCount(0);
+    await expect(page.getByTestId('pbl-assistant')).toBeFocused();
+    await expect(page.getByTestId('pbl-assistant')).toHaveCSS('outline-style', 'none');
+    await expect(page.getByTestId('pbl-assistant').locator(':scope > header')).toHaveCSS(
+      'box-shadow',
+      'none',
+    );
     expect(fixture.commands).toEqual(['begin']);
     release();
     await expect.poll(() => fixture.view.needsOpening).toBe(false);
@@ -484,6 +513,66 @@ for (const [width, guideCompleted] of [
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await expect.poll(distance).toBeLessThanOrEqual(8);
     expect(fixture.commands).toEqual(['begin', 'chat']);
+  });
+}
+
+for (const width of [1365, 390]) {
+  test(`first start explains a retained editor draft at ${width}px`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const fixture = await project(page, learningEvents, {
+      application: false,
+      guideCompleted: true,
+      opening: true,
+      initialEditorDraft: true,
+    });
+    const start = page.getByRole('button', { name: 'Start learning', exact: true });
+    await expect(start).toBeDisabled();
+    const reason = page.locator('#pbl-start-blocked-project');
+    await expect(reason).toBeVisible();
+    await expect(reason).toHaveText(
+      'Project files have unsaved changes. Save them or discard the changes before starting.',
+    );
+    await expect(start).toHaveAttribute('aria-describedby', 'pbl-start-blocked-project');
+    expect(fixture.commands).not.toContain('begin');
+  });
+
+  test(`first start explains a reconnect and recovers at ${width}px`, async ({
+    page,
+    learningEvents,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const fixture = await project(page, learningEvents, {
+      application: false,
+      guideCompleted: true,
+      opening: true,
+    });
+    const start = page.getByRole('button', { name: 'Start learning', exact: true });
+    await expect(start).toBeEnabled();
+    const interrupt = (route: import('@playwright/test').Route) =>
+      route.fulfill({ status: 503, body: 'Unavailable' });
+    await page.route('**/api/pbl/v3/events?**', interrupt);
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect(start).toBeDisabled();
+    await expect(page.locator('#pbl-start-blocked-project')).toBeVisible();
+    await expect(page.locator('#pbl-start-blocked-project')).toContainText(/live updates/i);
+    await expect(page.locator('#pbl-start-blocked-project')).not.toHaveAttribute('role', 'status');
+    await expect(page.getByRole('status').filter({ hasText: /live updates/i })).toHaveCount(1);
+    expect(fixture.commands).not.toContain('begin');
+    await page.unroute('**/api/pbl/v3/events?**', interrupt);
+    await page.evaluate(() => window.dispatchEvent(new Event('online')));
+    await expect(start).toBeEnabled();
+    await expect(page.locator('#pbl-start-blocked-project')).toHaveCount(0);
+    await start.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('pbl-assistant')).toBeFocused();
+    await expect(page.getByTestId('pbl-assistant').locator(':scope > header')).not.toHaveCSS(
+      'box-shadow',
+      'none',
+    );
+    await expect.poll(() => fixture.commands).toEqual(['begin']);
   });
 }
 
@@ -558,14 +647,19 @@ test('failed first start can be retried without automatic opening', async ({
     beginFailures: 1,
   });
   const start = page.getByRole('button', { name: 'Start learning', exact: true });
-  await start.click();
+  await expect(start).toBeEnabled();
+  await start.focus();
+  await expect(start).toBeFocused();
+  await page.keyboard.press('Enter');
   await expect(page.getByText('Opening temporarily unavailable', { exact: true })).toBeVisible();
   await expect(start).toBeEnabled();
+  await expect(start).toBeFocused();
   await fixture.publish();
   expect(fixture.commands).toEqual(['begin']);
-  await start.click();
+  await page.keyboard.press('Enter');
   await expect(page.getByTestId('pbl-agent-turn')).toBeVisible();
   await expect(start).toHaveCount(0);
+  await expect(page.getByTestId('pbl-assistant')).toBeFocused();
   expect(fixture.commands).toEqual(['begin', 'begin']);
 });
 

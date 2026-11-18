@@ -3057,7 +3057,18 @@
       "eachStage": "Ablauf jeder Phase",
       "yourRole": "Sie entscheiden und prüfen; KI hilft beim Planen und Programmieren.",
       "preview": "Probieren Sie die Anwendung in der Vorschau aus und prüfen Sie das Ergebnis.",
-      "advance": "Die violette Schaltfläche über dem Eingabefeld erscheint erst, wenn der aktuelle Schritt zum Fortfahren bereit ist. Klicke dann darauf, um weiterzumachen."
+      "advance": "Die violette Schaltfläche über dem Eingabefeld erscheint erst, wenn der aktuelle Schritt zum Fortfahren bereit ist. Klicke dann darauf, um weiterzumachen.",
+      "startBlocked": {
+        "guide": "Gehe die Anleitung zum Arbeitsbereich bis zum Ende durch oder schließe sie, um mit dem Lernen zu beginnen.",
+        "connecting": "Live-Aktualisierungen werden verbunden, bevor du beginnen kannst…",
+        "retrying": "Live-Aktualisierungen werden erneut verbunden. Warte vor dem Start, bis die Verbindung wiederhergestellt ist.",
+        "unavailable": "Live-Aktualisierungen sind nicht verfügbar. Lade die Seite neu, um vor dem Start die Verbindung wiederherzustellen.",
+        "pending": "Eine Aktion wird ausgeführt. Warte, bis sie abgeschlossen ist, bevor du beginnst.",
+        "busy": "Der Assistent antwortet noch. Warte auf das Ende der Antwort, bevor du beginnst.",
+        "environment": "Warte vor dem Start, bis die Lernumgebung bereit ist. Falls die Vorbereitung fehlgeschlagen ist, versuche es oben erneut.",
+        "unsaved": "Die Projektdateien enthalten ungespeicherte Änderungen. Speichere oder verwirf sie, bevor du beginnst.",
+        "preparing": "Der Arbeitsbereich wird vorbereitet. Bitte warte, bevor du beginnst."
+      }
     },
     "journey": {
       "currentMilestone": "Aktueller Meilenstein",
@@ -3194,13 +3205,14 @@
       "readOnly": "Read-only",
       "saved": "Gespeichert",
       "saveFailed": "Speichern fehlgeschlagen · Erneut versuchen",
-      "draftRetained": "Änderungen in diesem Browser behalten"
+      "draftRetained": "Änderungen in diesem Browser behalten",
+      "retryRead": "Lesen erneut versuchen"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Die Projektdateien enthalten ungespeicherte Änderungen. Speichere oder verwirf sie vor dem Senden; deine Nachricht bleibt hier.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
