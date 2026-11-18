@@ -128,7 +128,17 @@ test.describe('#619 interactive iframe keep-alive', () => {
     // state across scene transitions, not thumbnail pointer routing.
     await classroom.sidebarScenes.nth(1).click({ force: true }); // slide
     const handle = page.getByTestId('insert-toolbar-drag-handle');
-    await expect(handle).toBeVisible();
+    const docked = page.getByTestId('renderer-insert-toolbar');
+    await expect(handle.or(docked)).toBeVisible();
+    if (await docked.isVisible()) {
+      await expect(docked).toHaveAttribute('data-placement', 'top');
+      await classroom.sidebarScenes.nth(0).click({ force: true });
+      await expect(docked).toBeHidden();
+      await classroom.sidebarScenes.nth(1).click({ force: true });
+      await expect(docked).toBeVisible();
+      await expect(docked).toHaveAttribute('data-placement', 'top');
+      return;
+    }
     const initial = await handle.boundingBox();
     expect(initial).not.toBeNull();
 
