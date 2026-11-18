@@ -9,6 +9,7 @@ export type BuiltInProviderId =
   | 'openai'
   | 'azure'
   | 'atlascloud'
+  | 'modelgo'
   | 'anthropic'
   | 'bedrock'
   | 'google'
