@@ -165,6 +165,16 @@ const InteractiveWhiteboardCanvas = forwardRef<
     [canvasWidth, canvasHeight, containerWidth, containerHeight, containerScale],
   );
 
+  const setCenteredZoom = useCallback(
+    (zoom: number) => {
+      const nextZoom = Math.min(5, Math.max(0.2, zoom));
+      setViewZoom(nextZoom);
+      setPanX((x) => clampPan(x, 0, nextZoom).x);
+      setPanY((y) => clampPan(0, y, nextZoom).y);
+    },
+    [clampPan],
+  );
+
   const resetView = useCallback((animate: boolean) => {
     setIsPanning(false);
     setIsResetting(animate);
@@ -191,12 +201,10 @@ const InteractiveWhiteboardCanvas = forwardRef<
     ref,
     () => ({
       resetView: () => resetView(true),
-      // Centre-anchored, so a button press keeps what is in the middle in place.
-      setZoom: (zoom: number) => {
-        setViewZoom(Math.min(5, Math.max(0.2, zoom)));
-      },
+      // Keep the centre anchored unless the existing pan boundary is reached.
+      setZoom: setCenteredZoom,
     }),
-    [resetView],
+    [resetView, setCenteredZoom],
   );
 
   // Notify parent when view modified state changes
@@ -250,7 +258,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
         const [a, b] = [...pointersRef.current.values()];
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
         if (pinch.distance > 0) {
-          setViewZoom(Math.min(5, Math.max(0.2, (pinch.zoom * distance) / pinch.distance)));
+          setCenteredZoom((pinch.zoom * distance) / pinch.distance);
         }
         return;
       }
@@ -270,7 +278,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
       setPanX(clamped.x);
       setPanY(clamped.y);
     },
-    [containerScale, viewZoom, isPanning, clampPan],
+    [containerScale, viewZoom, isPanning, clampPan, setCenteredZoom],
   );
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {

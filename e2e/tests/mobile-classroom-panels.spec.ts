@@ -498,6 +498,8 @@ test.describe('Phone classroom return contracts', () => {
           { exact: false },
         ),
       ).toBeVisible();
+      await expect(page.getByTestId('pbl-v3-entry')).toHaveCount(0);
+      await expect(page.getByTestId('pbl-workspace-frame')).toHaveCount(0);
       const chrome = page.locator('.mobile-canvas-chrome');
       await expect(chrome).toHaveAttribute('data-visible', 'false', { timeout: 4000 });
       const recovery = page.getByRole('button', { name: 'Playback controls', exact: true });

@@ -433,8 +433,8 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     expect(
       await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
     ).toBe(boot);
-    // On a phone each panel remains reachable without covering the conversation.
-    await page.setViewportSize({ width: 390, height: 844 });
+    // On a compact desktop each panel remains reachable without covering the conversation.
+    await page.setViewportSize({ width: 768, height: 844 });
     await expect.poll(() => panel.evaluate((el) => el.clientHeight)).toBeGreaterThan(300);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 900 });

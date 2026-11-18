@@ -5,6 +5,10 @@ import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningSnapshot } from '@/lib/pbl/v3/event-stream';
 import { ONBOARDING_STORAGE_KEY } from '@/lib/pbl/v3/onboarding';
 
+// Exercise workbench interactions at a supported desktop/tablet width.
+// Phone preview blocking is covered by mobile-classroom-panels.spec.ts.
+const COMPACT_WORKBENCH_WIDTH = 768;
+
 test.setTimeout(120000);
 
 async function project(
@@ -433,7 +437,7 @@ test('shows only the current milestone goal and outcome in the drawer from its f
 
 for (const [width, guideCompleted] of [
   [1365, false],
-  [390, false],
+  [COMPACT_WORKBENCH_WIDTH, false],
   [1365, true],
 ] as const) {
   test(`first entry waits for Start learning, then follows normally at ${width}px (tour completed: ${guideCompleted})`, async ({
@@ -516,7 +520,7 @@ for (const [width, guideCompleted] of [
   });
 }
 
-for (const width of [1365, 390]) {
+for (const width of [1365, COMPACT_WORKBENCH_WIDTH]) {
   test(`first start explains a retained editor draft at ${width}px`, async ({
     page,
     learningEvents,
@@ -1352,7 +1356,7 @@ test('narrow conversation jump control stays centered without widening either me
   page,
   learningEvents,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+  await page.setViewportSize({ width: COMPACT_WORKBENCH_WIDTH, height: 844 });
   const fixture = await project(page, learningEvents);
   await expect(tour(page)).toBeVisible();
   await tour(page).getByRole('button', { name: 'Close guide', exact: true }).click();
@@ -1400,10 +1404,10 @@ test('narrow conversation jump control stays centered without widening either me
 });
 
 for (const [width, height, locale, docked] of [
-  [320, 568, 'zh-CN', false],
-  [390, 844, 'zh-CN', true],
-  [320, 480, 'de-DE', false],
-  [320, 480, 'ar-SA', false],
+  [COMPACT_WORKBENCH_WIDTH, 568, 'zh-CN', false],
+  [COMPACT_WORKBENCH_WIDTH, 844, 'zh-CN', true],
+  [COMPACT_WORKBENCH_WIDTH, 480, 'de-DE', false],
+  [COMPACT_WORKBENCH_WIDTH, 480, 'ar-SA', false],
 ] as const) {
   test(`correct visible highlights and reachable controls at ${width}x${height} ${locale} docked=${docked}`, async ({
     page,
@@ -1552,11 +1556,11 @@ for (const success of [true, false]) {
   });
 }
 
-test('320x480 docked assistant spotlight stays within its scroll viewport while scrolling', async ({
+test('compact short desktop docked assistant spotlight stays within its scroll viewport while scrolling', async ({
   page,
   learningEvents,
 }) => {
-  await page.setViewportSize({ width: 320, height: 480 });
+  await page.setViewportSize({ width: COMPACT_WORKBENCH_WIDTH, height: 480 });
   await project(page, learningEvents);
   await expect(tour(page)).toBeVisible();
   await finish(page);
@@ -1716,8 +1720,8 @@ for (const priorProgress of ['stage', 'reset', 'discard', 'completed'] as const)
 }
 
 for (const [width, height] of [
-  [320, 568],
-  [390, 844],
+  [1365, 568],
+  [COMPACT_WORKBENCH_WIDTH, 844],
 ] as const) {
   test(`assistant page keeps its opening question visible without an empty jump lane at ${width}x${height}`, async ({
     page,
@@ -1740,14 +1744,19 @@ for (const [width, height] of [
     expect(text.y).toBeGreaterThanOrEqual(viewport.y);
     expect(text.y + text.height).toBeLessThanOrEqual(viewport.y + viewport.height + 1);
     const card = (await tour(page).boundingBox())!;
-    expect(card.y + card.height).toBeLessThanOrEqual(viewport.y);
+    expect(
+      card.x + card.width <= viewport.x + 1 ||
+        card.x >= viewport.x + viewport.width - 1 ||
+        card.y + card.height <= viewport.y + 1 ||
+        card.y >= viewport.y + viewport.height - 1,
+    ).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('assistant-visible.png') });
   });
 }
 
 for (const [width, height] of [
   [1365, 900],
-  [390, 844],
+  [COMPACT_WORKBENCH_WIDTH, 844],
 ] as const) {
   test(`Latest keeps following the same growing reply without resizing its viewport at ${width}x${height}`, async ({
     page,
@@ -1843,10 +1852,10 @@ for (const [width, height] of [
 }
 
 for (const [width, height, gesture] of [
-  [320, 480, 'touch'],
-  [320, 480, 'wheel'],
-  [320, 568, 'touch'],
-  [390, 844, 'wheel'],
+  [1365, 480, 'touch'],
+  [1365, 480, 'wheel'],
+  [1365, 568, 'touch'],
+  [COMPACT_WORKBENCH_WIDTH, 844, 'wheel'],
 ] as const) {
   test(`the guide allows reading a growing multi-paragraph welcome and its closing question at ${width}x${height} with ${gesture}`, async ({
     page,
@@ -1868,7 +1877,7 @@ for (const [width, height, gesture] of [
     await next(page).click();
     await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
     const viewport = page.locator('.pbl-conversation-scroll');
-    if (width === 320) {
+    if (height <= 568) {
       // The guide's own explanation needs visible space, as well as the welcome.
       await expect
         .poll(() =>
@@ -1949,7 +1958,10 @@ for (const [width, height, gesture] of [
             !!card &&
             question.y >= reading.y &&
             question.y + question.height <= reading.y + reading.height + 1 &&
-            card.y + card.height <= reading.y
+            (card.x + card.width <= reading.x + 1 ||
+              card.x >= reading.x + reading.width - 1 ||
+              card.y + card.height <= reading.y + 1 ||
+              card.y >= reading.y + reading.height - 1)
           );
         })
         .toBe(true);
@@ -1958,11 +1970,15 @@ for (const [width, height, gesture] of [
     if (height === 480) {
       // A smaller card must still let the learner read its full instructions.
       const instructions = tour(page).locator(':scope > div');
-      expect(await instructions.evaluate((element) => element.scrollHeight)).toBeGreaterThan(
-        await instructions.evaluate((element) => element.clientHeight),
+      const needsScroll = await instructions.evaluate(
+        (element) => element.scrollHeight > element.clientHeight,
       );
-      await instructions.hover();
-      await page.mouse.wheel(0, 6000);
+      if (needsScroll) {
+        await instructions.hover();
+        await page.mouse.wheel(0, 6000);
+      } else {
+        await expect(instructions).toBeInViewport({ ratio: 1 });
+      }
       await expect
         .poll(() =>
           instructions.evaluate(
@@ -2234,14 +2250,18 @@ test('a failure notice preserves paused reading after a small upward scroll and 
     .toBeCloseTo(reading, 0);
 });
 
-test.describe('native mobile touch reading', () => {
-  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+test.describe('compact touch reading', () => {
+  test.use({
+    viewport: { width: COMPACT_WORKBENCH_WIDTH, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
 
-  test('mobile touch reading survives task details and resumes after returning to the tail', async ({
+  test('touch reading survives task details and resumes after returning to the tail', async ({
     page,
     learningEvents,
   }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: COMPACT_WORKBENCH_WIDTH, height: 844 });
     const fixture = await project(page, learningEvents, {
       started: true,
       openingText: readingParagraphs(),
@@ -2270,7 +2290,7 @@ test.describe('native mobile touch reading', () => {
     const touch = await page.context().newCDPSession(page);
     const x = box.x + box.width / 2,
       y = box.y + 10;
-    // Keep the finger inside the short mobile conversation viewport. Dispatch
+    // Keep the finger inside the short conversation viewport. Dispatch
     // native touch events: Chromium's synthesized scroll gesture is a no-op on
     // the Linux CI runner even with a touch-enabled browser context.
     await touch.send('Input.dispatchTouchEvent', {
@@ -2482,7 +2502,7 @@ test('independent columns, narrow assistant and a single scrolling tab row', asy
   expect(narrow.assistant.width / width).toBeLessThan(0.23);
 });
 
-for (const width of [1365, 390]) {
+for (const width of [1365, COMPACT_WORKBENCH_WIDTH]) {
   test(`first-entry barrier hands off to a populated guide after a delayed snapshot at ${width}px`, async ({
     page,
     learningEvents,
@@ -2526,7 +2546,7 @@ for (const width of [1365, 390]) {
     await expect(page.locator('#pbl-project-overview')).toBeVisible();
     await expect(page.locator('#pbl-project-overview button').last()).toBeDisabled();
     await correctSpotlight(page, '[data-testid="pbl-assistant"]');
-    if (width === 390) {
+    if (width === COMPACT_WORKBENCH_WIDTH) {
       const reading = page.getByTestId('pbl-project-start');
       const bounds = (await reading.boundingBox())!;
       await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height - 25);
