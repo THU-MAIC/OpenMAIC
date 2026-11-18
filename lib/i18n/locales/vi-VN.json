@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "Bắt đầu sửa"
+    },
+    "mobile": {
+      "openMenu": "Mở điều hướng",
+      "closeMenu": "Đóng điều hướng"
     }
   },
   "profile": {

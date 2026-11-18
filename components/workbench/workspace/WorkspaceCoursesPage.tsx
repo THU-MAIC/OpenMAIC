@@ -115,6 +115,8 @@ import {
 } from './workspace-folder-seam';
 import { WorkspaceRowMenu } from './workspace-row-controls';
 import { InlineName, newFolderName, type CommitCause } from './inline-name';
+import { RenameNameDialog } from './RenameNameDialog';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { useTreeDrag, type DragKind } from './use-tree-drag';
 import {
   COURSE_ORDER_STORAGE_KEY,
@@ -188,6 +190,16 @@ export function WorkspaceCoursesPage({
    * → new folder" asked for the draft; it is filed there once it exists.
    */
   const [edit, setEdit] = useState<NameEdit | null>(null);
+  /*
+   * A phone renames in a dialog, not in place: a course card's name sits under
+   * its thumbnail, which covered the inline field and left nothing to type in.
+   * A NEW folder keeps the inline draft row — that one is drawn in the grid's
+   * own flow with no thumbnail above it.
+   */
+  const mobile = useMobileLayout();
+  const renameInDialog = mobile && edit !== null && edit.kind !== 'newFolder';
+  const inlineField = (current: NameEdit, testId: string, label: string) =>
+    renameInDialog ? null : nameField(current, testId, label);
   const editSeq = useRef(0);
   const startEdit = (
     kind: NameEdit['kind'],
@@ -603,7 +615,7 @@ export function WorkspaceCoursesPage({
           dropEdge={cardDropEdge(entry.id)}
           nameField={
             renaming
-              ? nameField(
+              ? inlineField(
                   edit,
                   `workspace-courses-folder-rename-${item.id}`,
                   t('classroom.folderNameLabel'),
@@ -648,7 +660,7 @@ export function WorkspaceCoursesPage({
         onCreateAndMove={() => startNewFolder(course.id)}
         nameField={
           edit?.kind === 'course' && edit.targetId === course.id
-            ? nameField(edit, `workspace-courses-rename-${course.id}`, t('classroom.rename'))
+            ? inlineField(edit, `workspace-courses-rename-${course.id}`, t('classroom.rename'))
             : null
         }
         // While its name is a field, or a folder is being drafted for
@@ -675,11 +687,16 @@ export function WorkspaceCoursesPage({
       aria-label={t('workspace.nav.myCourses')}
       className="ws-canvas ws-page relative flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
-      <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-10 lg:px-10">
+      <div className="mx-auto w-full max-w-[1120px] px-4 pb-16 pt-4 sm:px-6 md:pt-10 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="ws-page-title min-w-0">{t('workspace.nav.myCourses')}</h1>
-          <div className="flex items-center gap-2">
-            <label className="ws-page-search">
+          {/* A phone stacks the toolbar under the title: the actions on one row and
+              the search alone on the next, full width. From `md` it is one row. */}
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
+            <label
+              data-testid="workspace-courses-search-field"
+              className="ws-page-search order-last md:order-none"
+            >
               <Search className="size-4 shrink-0" aria-hidden="true" />
               <input
                 data-testid="workspace-courses-search"
@@ -877,6 +894,19 @@ export function WorkspaceCoursesPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {renameInDialog && edit ? (
+        <RenameNameDialog
+          open
+          title={t('classroom.rename')}
+          label={t(edit.kind === 'folder' ? 'classroom.folderNameLabel' : 'classroom.rename')}
+          initialName={edit.name}
+          maxLength={edit.kind === 'course' ? STAGE_NAME_MAX_LENGTH : 80}
+          busy={edit.busy}
+          error={edit.error}
+          onCommit={(name) => void commitEdit(edit, name, 'enter')}
+          onCancel={() => ownEdit(edit.id, () => null)}
+        />
+      ) : null}
     </main>
   );
 }

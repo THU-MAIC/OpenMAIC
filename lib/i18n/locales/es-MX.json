@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "Empezar a editar"
+    },
+    "mobile": {
+      "openMenu": "Abrir navegación",
+      "closeMenu": "Cerrar navegación"
     }
   },
   "profile": {

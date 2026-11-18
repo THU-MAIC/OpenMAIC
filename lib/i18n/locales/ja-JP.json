@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "編集を始める"
+    },
+    "mobile": {
+      "openMenu": "ナビゲーションを開く",
+      "closeMenu": "ナビゲーションを閉じる"
     }
   },
   "profile": {

@@ -688,6 +688,39 @@
   .ws-home-first {
     --ws-home-chrome: 48px;
   }
+
+  /* Keep the header, lockup and editor in one frame as Safari pans over the keyboard. */
+  .ws-root[data-home-keyboard]:has(.ws-home-composer:focus-within) {
+    position: fixed;
+    inset-inline: 0;
+    top: var(--ws-visible-top);
+    height: var(--ws-visible-height);
+    overscroll-behavior: none;
+
+    .ws-canvas {
+      overflow: clip;
+    }
+
+    .ws-canvas > div {
+      height: 100%;
+      padding-bottom: 0;
+    }
+
+    .ws-home-first {
+      height: 100%;
+      justify-content: flex-end;
+      padding-block: 0 12px;
+    }
+
+    .ws-home-composer {
+      animation: none;
+    }
+
+    .pro-skill-slash-popover > ul {
+      max-height: min(14rem, max(4rem, calc(var(--ws-visible-height) - 16rem)));
+      overscroll-behavior: contain;
+    }
+  }
 }
 
 /* ── Featured seam ───────────────────────────────────────────────────────
@@ -1607,8 +1640,12 @@
   transition: background-color 160ms var(--ws-ease);
 }
 
-.ws-home:hover {
-  background: var(--ws-tint);
+/* Pointer devices only: a tap leaves a sticky :hover behind on touch screens,
+   and the phone sheet opens with its logo right under the menu button's tap. */
+@media (hover: hover) {
+  .ws-home:hover {
+    background: var(--ws-tint);
+  }
 }
 
 .ws-home:focus-visible {
@@ -1828,6 +1865,29 @@
     radial-gradient(600px 400px at 6% 70%, rgba(59, 130, 246, 0.08), transparent 70%);
 }
 
+/* The phone's bar (`WorkspaceMobileBar`) is the top of the same canvas, not a
+   strip of chrome above it: it takes the canvas base so the page runs up to it. */
+.ws-root .ws-mobile-bar {
+  background-color: #f7f7fb;
+  background-image:
+    radial-gradient(900px 420px at 50% 18%, rgba(176, 160, 255, 0.16), transparent 70%),
+    radial-gradient(700px 500px at 92% 85%, rgba(214, 196, 255, 0.2), transparent 70%),
+    radial-gradient(600px 400px at 6% 70%, rgba(190, 215, 255, 0.16), transparent 70%);
+  background-repeat: no-repeat;
+  /* The canvas's own pools, laid out over the viewport, so the violet one behind
+     the hero carries on up through the bar instead of stopping under it. */
+  background-size: 100vw 100dvh;
+  background-position: top center;
+}
+
+.dark .ws-root .ws-mobile-bar {
+  background-color: #0b1020;
+  background-image:
+    radial-gradient(900px 420px at 50% 18%, rgba(139, 92, 246, 0.14), transparent 70%),
+    radial-gradient(700px 500px at 92% 85%, rgba(124, 58, 237, 0.1), transparent 70%),
+    radial-gradient(600px 400px at 6% 70%, rgba(59, 130, 246, 0.08), transparent 70%);
+}
+
 /* ── Rail ── */
 .ws-root .ws-rail {
   background-color: rgba(250, 250, 253, 0.94);
@@ -1878,6 +1938,37 @@
 .ws-nav-item:hover {
   background: rgba(124, 58, 237, 0.06);
   color: var(--ws-ink);
+}
+
+/* In the phone sheet "new chat" is an action, not a place: drawn as one of the
+   nav rows rather than as the raised button the desktop rail lifts above its
+   list, so the sheet has exactly one marked row — the page you are on. */
+.ws-rail[data-variant='drawer'] .ws-new {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.ws-rail[data-variant='drawer'] .ws-new:hover {
+  background: rgba(167, 139, 250, 0.08);
+  transform: none;
+  box-shadow: none;
+}
+
+.ws-rail[data-variant='drawer'] .ws-new svg {
+  color: var(--ws-ink-mute);
+}
+
+/* The current page, told apart by ink and weight rather than by a second filled
+   box of nearly the same shade as the one above it. */
+.ws-rail[data-variant='drawer'] .ws-nav-item[aria-current='page'] {
+  background: transparent;
+  color: var(--ws-accent);
+  font-weight: 600;
+}
+
+.ws-rail[data-variant='drawer'] .ws-nav-item[aria-current='page'] svg {
+  color: var(--ws-accent);
 }
 
 .ws-nav-item[aria-current='page'] {
@@ -2301,6 +2392,13 @@
   font-size: 13.5px;
   color: var(--ws-ink-mute);
   box-shadow: 0 1px 2px rgba(25, 25, 60, 0.04);
+}
+
+/* A phone gives the page's search its own row (see My courses' toolbar). */
+@media (max-width: 767px) {
+  .ws-page-search {
+    width: 100%;
+  }
 }
 
 .ws-page-search input {
