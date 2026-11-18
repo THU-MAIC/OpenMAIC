@@ -709,33 +709,41 @@ async function finish(page: Page) {
   }
 }
 async function correctSpotlight(page: Page, selector: string) {
-  // A hidden/off-screen region may have no spotlight, but never an unrelated one.
-  // Sample both sides in one frame; scrolling can move/clamp the region between
-  // separate boundingBox calls, or remove a previously visible spotlight.
   await expect
     .poll(() =>
       page.evaluate((selector) => {
-        const anchors = Array.from(document.querySelectorAll(selector), (el) =>
-          el.getBoundingClientRect(),
-        );
-        return Array.from(document.querySelectorAll('[data-pbl-onboarding="spotlight"]')).every(
-          (el) => {
-            const box = el.getBoundingClientRect();
-            return (
-              box.width > 0 &&
-              box.height > 0 &&
-              anchors.some(
-                (anchor) =>
-                  anchor.width > 0 &&
-                  anchor.height > 0 &&
-                  box.right > anchor.left &&
-                  box.left < anchor.right &&
-                  box.bottom > anchor.top &&
-                  box.top < anchor.bottom,
-              )
+        const anchors = document.querySelectorAll(selector);
+        const spotlight = '[data-pbl-onboarding="spotlight"]';
+        if (!anchors.length) return !document.querySelector(spotlight);
+
+        // The browser accounts for clipping by nested scroll containers.
+        return new Promise<boolean>((resolve) => {
+          const observer = new IntersectionObserver((entries) => {
+            observer.disconnect();
+            const boxes = Array.from(document.querySelectorAll(spotlight), (el) =>
+              el.getBoundingClientRect(),
             );
-          },
-        );
+            if (!boxes.length) {
+              resolve(
+                entries.every(
+                  ({ intersectionRect }) => !intersectionRect.width || !intersectionRect.height,
+                ),
+              );
+              return;
+            }
+            const bounds = Array.from(anchors, (anchor) => anchor.getBoundingClientRect());
+            resolve(
+              boxes.every((box) =>
+                bounds.some(
+                  (anchor) =>
+                    Math.min(box.right, anchor.right) > Math.max(box.left, anchor.left) &&
+                    Math.min(box.bottom, anchor.bottom) > Math.max(box.top, anchor.top),
+                ),
+              ),
+            );
+          });
+          anchors.forEach((anchor) => observer.observe(anchor));
+        });
       }, selector),
     )
     .toBe(true);
@@ -1475,30 +1483,29 @@ test('320x480 docked assistant spotlight stays within its scroll viewport while 
   await next(page).click();
   await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
   const split = page.getByTestId('pbl-workbench-split');
-  const check = () =>
-    expect
-      .poll(() =>
-        split.evaluate((element) => {
-          const viewport = element.getBoundingClientRect();
-          const spotlight = document.querySelector('[data-pbl-onboarding="spotlight"]');
-          if (!spotlight) return true;
-          const lit = spotlight.getBoundingClientRect();
-          return (
-            lit.left >= viewport.left - 1 &&
-            lit.top >= viewport.top - 1 &&
-            lit.right <= viewport.right + 1 &&
-            lit.bottom <= viewport.bottom + 1
-          );
-        }),
-      )
-      .toBe(true);
-  await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toBeVisible();
-  await check();
+  await expect
+    .poll(() =>
+      split.evaluate((element) => {
+        const viewport = element.getBoundingClientRect();
+        const lit = document
+          .querySelector('[data-pbl-onboarding="spotlight"]')
+          ?.getBoundingClientRect();
+        return (
+          !!lit &&
+          lit.width > 0 &&
+          lit.height > 0 &&
+          lit.left >= viewport.left - 1 &&
+          lit.top >= viewport.top - 1 &&
+          lit.right <= viewport.right + 1 &&
+          lit.bottom <= viewport.bottom + 1
+        );
+      }),
+    )
+    .toBe(true);
   await split.evaluate((element) => {
     element.scrollTop = 0;
   });
   await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toHaveCount(0);
-  await check();
 });
 
 test('focusing the composer before typing defers automatic entry through recovery', async ({
