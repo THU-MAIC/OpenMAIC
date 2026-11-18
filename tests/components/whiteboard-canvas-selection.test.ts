@@ -667,8 +667,8 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
     await act(async () => root.unmount());
   });
 
-  it.each(['buttons', 'pinch'] as const)(
-    'keeps the board within pan bounds after zooming in via %s',
+  it.each(['buttons', 'pinch', 'resize'] as const)(
+    'keeps the board within pan bounds after a %s change',
     async (method) => {
       const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(600);
       const height = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(400);
@@ -676,6 +676,13 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
       document.body.appendChild(container);
       const root = createRoot(container);
       const board = createRef<WhiteboardCanvasHandle>();
+      let resize: ResizeObserverCallback | undefined;
+      globalThis.ResizeObserver = class extends FakeResizeObserver {
+        constructor(callback: ResizeObserverCallback) {
+          super();
+          resize = callback;
+        }
+      } as unknown as typeof ResizeObserver;
       try {
         await act(async () =>
           root.render(createElement(WhiteboardCanvas, { ref: board, whiteboard })),
@@ -701,6 +708,13 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
         await pointer('pointerup', 1, 300, 240);
         if (method === 'buttons') {
           await act(async () => board.current!.setZoom(1));
+        } else if (method === 'resize') {
+          await act(async () =>
+            resize!(
+              [{ contentRect: { width: 900, height: 200 } } as ResizeObserverEntry],
+              {} as ResizeObserver,
+            ),
+          );
         } else {
           await pointer('pointerdown', 2, 0, 0);
           await pointer('pointerdown', 3, 100, 0);
@@ -712,9 +726,9 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
         )!;
         expect(transform).not.toBeNull();
         const [x, y, scale] = transform.slice(1).map(Number);
-        expect(scale).toBeCloseTo(0.6);
-        expect(x).toBeLessThanOrEqual(600.0001);
-        expect(y).toBeLessThanOrEqual(400.0001);
+        expect(scale).toBeCloseTo(method === 'resize' ? (200 / 562.5) * 0.2 : 0.6);
+        expect(x).toBeLessThanOrEqual(method === 'resize' ? 900.0001 : 600.0001);
+        expect(y).toBeLessThanOrEqual(method === 'resize' ? 200.0001 : 400.0001);
         expect(x + 1000 * scale).toBeGreaterThanOrEqual(0);
         expect(y + 562.5 * scale).toBeGreaterThanOrEqual(0);
       } finally {
@@ -722,6 +736,7 @@ describe('WhiteboardCanvas selection and interaction contract', () => {
         container.remove();
         width.mockRestore();
         height.mockRestore();
+        globalThis.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
       }
     },
   );

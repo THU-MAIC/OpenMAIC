@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   memo,
@@ -164,6 +165,13 @@ const InteractiveWhiteboardCanvas = forwardRef<
     },
     [canvasWidth, canvasHeight, containerWidth, containerHeight, containerScale],
   );
+
+  useLayoutEffect(() => {
+    // Reconcile persisted pan before paint when a resize changes the visible bounds.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pan is constrained by measured viewport geometry
+    setPanX((x) => clampPan(x, 0, viewZoom).x);
+    setPanY((y) => clampPan(0, y, viewZoom).y);
+  }, [clampPan, viewZoom]);
 
   const setCenteredZoom = useCallback(
     (zoom: number) => {
