@@ -110,8 +110,10 @@ test('legacy shape labels keep imported insets through editing and reload', asyn
 
   for (const label of labels) {
     const editor = page.locator(`#editable-element-${label.id} .ProseMirror`);
-    const originalText = (await editor.textContent())!;
-    await page.locator(`#editable-element-${label.id} .shape-path`).dblclick();
+    const originalText = (await page
+      .locator(`#editable-element-${label.id} .shape-text`)
+      .textContent())!;
+    await page.locator(`[data-select-element-id="${label.id}"]`).click();
     await expect(editor).toHaveAttribute('contenteditable', 'true');
     await editor.focus();
     // Place the native caret at the boundary without platform-specific Home shortcuts.

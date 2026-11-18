@@ -154,14 +154,14 @@ test('keeps wrapped table rows visible in the thumbnail and default classroom ca
   await page.goto(`/classroom/${stageId}`);
   await page.getByText('Loading classroom...').waitFor({ state: 'hidden', timeout: 15_000 });
 
-  const legacyTable = page
-    .locator('.screen-element .base-element-table')
+  const playbackTable = page
+    .locator('#screen-element-table-near-bottom .base-element-table')
     .filter({ hasText: FINAL_ROW_TEXT });
   const thumbnailTable = page
     .locator('.thumbnail-slide .base-element-table')
     .filter({ hasText: FINAL_ROW_TEXT });
   const surfaces = {
-    legacy: await readSurface(legacyTable),
+    playback: await readSurface(playbackTable),
     package: await readSurface(thumbnailTable),
   };
 
@@ -187,5 +187,5 @@ test('keeps wrapped table rows visible in the thumbnail and default classroom ca
     ).toBeLessThanOrEqual(0.01);
   }
 
-  expect(surfaces.package.rowCount).toBe(surfaces.legacy.rowCount);
+  expect(surfaces.package.rowCount).toBe(surfaces.playback.rowCount);
 });

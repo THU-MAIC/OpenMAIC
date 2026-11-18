@@ -319,6 +319,7 @@ export interface EditableSlideCanvasWithUIProps extends Pick<
   EditableSlideCanvasProps,
   | 'slide'
   | 'scale'
+  | 'canvasPercentage'
   | 'onScaleChange'
   | 'elementIdPrefix'
   | 'hiddenElementIds'
