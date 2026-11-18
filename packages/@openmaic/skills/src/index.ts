@@ -40,7 +40,17 @@ export function validateSkillPath(path: string): string {
     path.length > 512 ||
     path.includes('\\') ||
     /[\x00-\x1f\x7f]/.test(path) ||
-    path.split('/').some((p) => !p || p === '.' || p === '..' || p.includes(':'))
+    path
+      .split('/')
+      .some(
+        (p) =>
+          !p ||
+          p === '.' ||
+          p === '..' ||
+          /[<>:"|?*]/.test(p) ||
+          /[. ]$/.test(p) ||
+          /^(?:con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]|conin\$|conout\$)(?: *\.|$)/i.test(p),
+      )
   )
     fail();
   return path;
@@ -110,6 +120,7 @@ export class SkillPackage {
       !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(fields.name)
     )
       fail();
+    validateSkillPath(fields.name);
     if (
       typeof fields.description !== 'string' ||
       !fields.description.trim() ||
@@ -210,7 +221,8 @@ export async function importSkillPackage(bytes: Uint8Array): Promise<SkillPackag
       if (root && root !== directory) fail();
       root = directory;
       if (entry.dir) continue;
-      if (slash < 0 || files.length >= SKILL_LIMITS.files) fail();
+      if (slash < 0) fail();
+      if (files.length >= SKILL_LIMITS.files) fail('LIMIT_EXCEEDED');
       // Bound real decompression, not the archive's attacker-controlled size declaration.
       const data = (
         entry as unknown as {

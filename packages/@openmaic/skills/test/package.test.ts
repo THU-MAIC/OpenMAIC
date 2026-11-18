@@ -6,6 +6,7 @@ import {
   exportSkillPackage,
   importSkillPackage,
   patchSkillPackage,
+  SKILL_LIMITS,
 } from '../src/index';
 const bytes = (text: string) => new TextEncoder().encode(text);
 const entry = {
@@ -78,6 +79,86 @@ describe('directory packages', () => {
     await expect(
       importSkillPackage(await links.generateAsync({ type: 'uint8array', platform: 'UNIX' })),
     ).rejects.toThrow();
+  });
+});
+
+it.each([
+  'assets/config.',
+  'assets/config ',
+  'assets/dir./file.txt',
+  'assets/dir /file.txt',
+  'assets/con',
+  'assets/CON.txt',
+  'assets/CON .txt',
+  'assets/nul  .json',
+  'assets/COM1 .log',
+  'assets/lpt9 .csv',
+  'assets/prn.json',
+  'assets/aux.csv',
+  'assets/nul.bin',
+  'assets/com1',
+  'assets/COM9.log',
+  'assets/lpt1',
+  'assets/LPT9.txt',
+  'assets/COM¹.txt',
+  'assets/LPT².txt',
+  'assets/conin$',
+  'assets/conout$.txt',
+  'assets/a<b.txt',
+  'assets/a>b.txt',
+  'assets/a"b.txt',
+  'assets/a|b.txt',
+  'assets/a?b.txt',
+  'assets/a*b.txt',
+])('rejects non-portable Windows path %s in snapshots and archives', async (path) => {
+  expect(() => new SkillPackage([entry, { path, bytes: bytes('sample') }])).toThrow(
+    'INVALID_PACKAGE',
+  );
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes, { createFolders: false });
+  zip.file(`lesson-plan/${path}`, bytes('sample'), { createFolders: false });
+  await expect(importSkillPackage(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow(
+    'INVALID_PACKAGE',
+  );
+});
+
+it.each(['con', 'prn', 'aux', 'nul', 'com1', 'com9', 'lpt1', 'lpt9'])(
+  'rejects the reserved package root %s',
+  (name) => {
+    expect(
+      () =>
+        new SkillPackage([
+          { ...entry, bytes: bytes(`---\nname: ${name}\ndescription: Method\n---\nPrompt.`) },
+        ]),
+    ).toThrow('INVALID_PACKAGE');
+  },
+);
+
+it('keeps ordinary names that only resemble Windows device names portable', async () => {
+  const skill = new SkillPackage([
+    entry,
+    ...['assets/config.txt', 'assets/COM10.txt', 'assets/lpt0.txt', 'assets/con-method.txt'].map(
+      (path) => ({ path, bytes: bytes(path) }),
+    ),
+  ]);
+  expect((await importSkillPackage(await exportSkillPackage(skill))).manifest).toEqual(
+    skill.manifest,
+  );
+});
+
+it('reports the file-count resource limit consistently for ZIP imports', async () => {
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes, { createFolders: false });
+  for (let i = 1; i < SKILL_LIMITS.files; i++)
+    zip.file(`lesson-plan/assets/${i}.txt`, bytes('x'), { createFolders: false });
+  expect(
+    (await importSkillPackage(await zip.generateAsync({ type: 'uint8array' }))).entries(),
+  ).toHaveLength(SKILL_LIMITS.files);
+  zip.file('lesson-plan/assets/overflow.txt', bytes('x'), { createFolders: false });
+  await expect(
+    importSkillPackage(await zip.generateAsync({ type: 'uint8array' })),
+  ).rejects.toMatchObject({
+    code: 'LIMIT_EXCEEDED',
   });
 });
 
