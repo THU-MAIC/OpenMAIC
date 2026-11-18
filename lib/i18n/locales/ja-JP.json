@@ -805,7 +805,11 @@
     "restore": "復元",
     "noHistory": "履歴はまだありません",
     "restored": "ホワイトボードを復元しました",
-    "elementCount": "{{count}} 個の要素"
+    "elementCount": "{{count}} 個の要素",
+    "mobileEmpty": "まだ板書はありません",
+    "mobileEmptyHint": "先生が追加した導出・数式・図がここに表示されます",
+    "zoomIn": "拡大",
+    "zoomOut": "縮小"
   },
   "quiz": {
     "title": "クイズ",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "音声設定",
+    "playSound": "音声を再生",
     "materials": "授業資料",
     "directory": "目次",
-    "lecture": "講義原稿",
+    "lecture": "ノート",
     "volume": "音量",
     "mute": "ミュート",
     "roundtable": "参加者",
@@ -3439,6 +3445,11 @@
     "skip": "スキップ",
     "play": "再生",
     "pause": "一時停止",
-    "pblDesktop": "このプロジェクトはパソコンで完了してください。目次から他のページに進めます。"
+    "pblDesktop": "このプロジェクトはパソコンで完了してください。目次から他のページに進めます。",
+    "chat": "チャット",
+    "askTeacher": "先生に質問…",
+    "fullSpeech": "発言の全文",
+    "me": "自分",
+    "whiteboardTitle": "授業ホワイトボード"
   }
 }

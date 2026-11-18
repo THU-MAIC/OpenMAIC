@@ -805,7 +805,11 @@
     "restore": "Restore",
     "noHistory": "No history yet",
     "restored": "Whiteboard restored",
-    "elementCount": "{{count}} elements"
+    "elementCount": "{{count}} elements",
+    "mobileEmpty": "No board notes yet",
+    "mobileEmptyHint": "Derivations, formulas and diagrams the teacher adds will appear here",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out"
   },
   "quiz": {
     "title": "Quiz",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "Sound settings",
+    "playSound": "Play sound",
     "materials": "Materials",
     "directory": "Contents",
-    "lecture": "Transcript",
+    "lecture": "Notes",
     "volume": "Volume",
     "mute": "Mute",
     "roundtable": "Participants",
@@ -3439,6 +3445,11 @@
     "skip": "Skip",
     "play": "Play",
     "pause": "Pause",
-    "pblDesktop": "Open this project on a computer to complete it. Use Contents to continue with other pages."
+    "pblDesktop": "Open this project on a computer to complete it. Use Contents to continue with other pages.",
+    "chat": "Chat",
+    "askTeacher": "Ask the teacher…",
+    "fullSpeech": "Full message",
+    "me": "Me",
+    "whiteboardTitle": "Classroom whiteboard"
   }
 }

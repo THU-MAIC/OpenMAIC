@@ -1898,7 +1898,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const mobileLandscape = useMediaQuery('(orientation: landscape)');
     const visibleViewport = useVisualViewport();
     const router = useRouter();
-    const [mobilePanelChoice, setMobilePanel] = useState<ClassroomPanel | null>('lecture');
+    const [mobilePanelChoice, setMobilePanel] = useState<ClassroomPanel | null>(null);
     const [mobilePanelScene, setMobilePanelScene] = useState<string | null>(null);
     const [mobileComposerHost, setMobileComposerHost] = useState<HTMLDivElement | null>(null);
     // A user choice is scoped to this scene, not to global desktop dock preferences.
@@ -1911,12 +1911,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         ? mobileDockChoice.expanded
         : currentScene?.type !== 'quiz';
     const quizFocused = currentScene?.type === 'quiz' && !mobileDockExpanded;
-    const mobilePanel =
-      (mobileLandscape || quizFocused) && mobilePanelScene !== currentSceneId
-        ? null
-        : mobilePanelChoice;
-    const mobilePanelOpen =
-      mobilePanel === 'directory' || ((mobileLandscape || quizFocused) && mobilePanel !== null);
+    const mobilePanel = mobilePanelScene !== currentSceneId ? null : mobilePanelChoice;
+    const mobilePanelOpen = mobilePanel !== null;
     const chooseMobilePanel = (panel: ClassroomPanel) => {
       setMobilePanel(panel);
       setMobilePanelScene(currentSceneId);
@@ -1953,6 +1949,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         data-landscape={mobileLandscape}
         data-quiz-focused={quizFocused}
         data-whiteboard={whiteboardOpen}
+        data-materials-open={mobilePanelOpen}
         style={
           mobile && visibleViewport
             ? ({
@@ -1980,14 +1977,24 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           data-open={mobilePanel === 'directory'}
           inert={mobile && mobilePanel !== 'directory'}
         >
+          {mobile && mobilePanel === 'directory' && (
+            <button
+              type="button"
+              className="mobile-panel-close"
+              data-testid="mobile-panel-close"
+              aria-label={t('common.close')}
+              onClick={() => setMobilePanel(null)}
+            >
+              <X size={20} />
+            </button>
+          )}
           <SceneSidebar
             collapsed={mobile ? mobilePanel !== 'directory' : sidebarCollapsed}
             onCollapseChange={mobile ? () => setMobilePanel(null) : setSidebarCollapsed}
             onSceneSelect={(sceneId) => {
               gatedSceneSwitch(sceneId);
               if (mobile) {
-                chatAreaRef.current?.switchToTab('lecture');
-                setMobilePanel('lecture');
+                setMobilePanel(null);
                 setMobilePanelScene(null);
               }
             }}
@@ -2333,7 +2340,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           )}
           <ChatArea
             mobile={mobile}
-            mobileComposerRef={setMobileComposerHost}
             onTabChange={
               mobile
                 ? (panel) => {
@@ -2412,7 +2418,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             shouldHoldAfterReveal={discussionTTS.shouldHold}
           />
         </div>
-        {mobile && <MobileClassroomNav active={mobilePanel} onSelect={chooseMobilePanel} />}
+        {mobile && (
+          <>
+            <div className="mobile-classroom-composer" ref={setMobileComposerHost} />
+            <MobileClassroomNav
+              active={mobilePanel}
+              onSelect={(panel) =>
+                mobilePanel === panel ? setMobilePanel(null) : chooseMobilePanel(panel)
+              }
+            />
+          </>
+        )}
 
         {/* Scene switch confirmation dialog */}
         <AlertDialog

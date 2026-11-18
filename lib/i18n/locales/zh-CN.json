@@ -805,7 +805,11 @@
     "restore": "恢复",
     "noHistory": "暂无历史记录",
     "restored": "已恢复白板内容",
-    "elementCount": "{{count}} 个元素"
+    "elementCount": "{{count}} 个元素",
+    "mobileEmpty": "老师还没有添加板书",
+    "mobileEmptyHint": "老师补充的推导、公式和图示会显示在这里",
+    "zoomIn": "放大板书",
+    "zoomOut": "缩小板书"
   },
   "quiz": {
     "title": "随堂测验",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "声音设置",
+    "playSound": "播放声音",
     "materials": "课堂资料",
     "directory": "目录",
-    "lecture": "讲稿",
+    "lecture": "笔记",
     "volume": "音量",
     "mute": "静音",
     "roundtable": "圆桌成员",
@@ -3439,6 +3445,11 @@
     "skip": "跳过",
     "play": "播放",
     "pause": "暂停",
-    "pblDesktop": "请前往电脑端完成 PBL 项目。你可以通过目录继续学习其他页面。"
+    "pblDesktop": "请前往电脑端完成 PBL 项目。你可以通过目录继续学习其他页面。",
+    "chat": "聊天",
+    "askTeacher": "向老师提问…",
+    "fullSpeech": "完整发言",
+    "me": "我",
+    "whiteboardTitle": "课堂白板"
   }
 }

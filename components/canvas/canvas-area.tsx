@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Captions, Maximize2, Play, Pause } from 'lucide-react';
+import { ArrowLeft, ClosedCaption, Ellipsis, Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SceneRenderer } from '@/components/stage/scene-renderer';
 import { SceneProvider } from '@/lib/contexts/scene-context';
@@ -84,17 +84,18 @@ export function CanvasArea({
   useEffect(() => {
     if (!mobile) return;
     clearTimeout(mobileHideTimer.current);
-    if (currentScene?.type === 'quiz') {
-      // The quiz owns its header and submit button; player chrome must not cover it.
+    if (currentScene?.type === 'quiz' || whiteboardOpen) {
+      // The quiz owns its header and submit button, and the open whiteboard owns
+      // its own header; player chrome must not cover either.
       // eslint-disable-next-line react-hooks/set-state-in-effect -- switch presentation chrome with the scene
       setMobileControls(false);
       return;
     }
-    // A playback change leaves controls available for two seconds.
+    // A playback change, or closing the whiteboard, leaves controls available for two seconds.
     setMobileControls(true);
     mobileHideTimer.current = setTimeout(() => setMobileControls(false), 2000);
     return () => clearTimeout(mobileHideTimer.current);
-  }, [mobile, engineState, currentScene?.id, currentScene?.type]);
+  }, [mobile, engineState, currentScene?.id, currentScene?.type, whiteboardOpen]);
   const toggleMobileControls = useCallback(() => {
     clearTimeout(mobileHideTimer.current);
     setMobileControls((visible) => !visible);
@@ -132,6 +133,22 @@ export function CanvasArea({
     [showControls, isLiveSession, onPlayPause, currentScene?.type, mobile, toggleMobileControls],
   );
 
+  const whiteboardLayer = (
+    <div className={cn('absolute inset-0 pointer-events-none', mobile ? 'z-[120]' : 'z-[110]')}>
+      <SceneProvider>
+        <Whiteboard
+          isOpen={whiteboardOpen}
+          onClose={onWhiteboardClose}
+          mobile={mobile}
+          elementPickActive={elementPickActive && whiteboardOpen}
+          whiteboardElementReference={whiteboardElementReference}
+          onPickElement={onPickWhiteboardElement}
+          onCancelElementPick={onCancelElementPick}
+        />
+      </SceneProvider>
+    </div>
+  );
+
   return (
     <div
       data-mobile-canvas={mobile || undefined}
@@ -149,6 +166,7 @@ export function CanvasArea({
         <StageViewport
           workbench={inWorkbenchPanel}
           fillContainer={
+            (mobile && currentScene?.type === 'quiz') ||
             currentScene?.type === 'interactive' ||
             (currentScene?.content.type === 'pbl' && !!currentScene.content.projectV3)
           }
@@ -156,6 +174,7 @@ export function CanvasArea({
             // Only its colours ease, between scene types. Its size must not: a box
             // measured on mount would otherwise visibly shrink to 16:9 every time.
             'bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-[background-color,box-shadow] duration-700',
+            mobile && 'rounded-none shadow-none',
             showControls && !isLiveSession && currentScene?.type === 'slide' && 'cursor-pointer',
             currentScene?.type === 'interactive'
               ? 'shadow-blue-200/50 dark:shadow-blue-900/50 ring-1 ring-blue-900/5 dark:ring-blue-500/10'
@@ -163,19 +182,7 @@ export function CanvasArea({
           )}
           onClick={handleSlideClick}
         >
-          {/* Whiteboard Layer */}
-          <div className="absolute inset-0 z-[110] pointer-events-none">
-            <SceneProvider>
-              <Whiteboard
-                isOpen={whiteboardOpen}
-                onClose={onWhiteboardClose}
-                elementPickActive={elementPickActive && whiteboardOpen}
-                whiteboardElementReference={whiteboardElementReference}
-                onPickElement={onPickWhiteboardElement}
-                onCancelElementPick={onCancelElementPick}
-              />
-            </SceneProvider>
-          </div>
+          {!mobile && whiteboardLayer}
 
           {/* Scene Content */}
           {currentScene && !whiteboardOpen && (
@@ -313,6 +320,7 @@ export function CanvasArea({
             )}
           </AnimatePresence>
         </StageViewport>
+        {mobile && whiteboardLayer}
         {mobile && (
           <>
             <div
@@ -325,20 +333,35 @@ export function CanvasArea({
                   <ArrowLeft size={20} />
                 </button>
                 <span>{mobileCourseName}</span>
+              </div>
+              <div className="mobile-canvas-footer">
                 <button
                   type="button"
                   aria-label={t('mobileClassroom.captions')}
                   aria-pressed={captions}
                   onClick={() => setCaptions((value) => !value)}
                 >
-                  <Captions size={22} />
+                  <ClosedCaption size={22} />
                 </button>
                 <button
                   type="button"
                   aria-label={t('stage.fullscreen')}
                   onClick={onTogglePresentation}
                 >
-                  <Maximize2 size={20} />
+                  <svg
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <rect x="3" y="2" width="12" height="20" rx="2.5" />
+                    <path d="M19 8h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1" />
+                  </svg>
                 </button>
               </div>
               {showControls && currentScene?.type === 'slide' && !isLiveSession && (
@@ -357,7 +380,7 @@ export function CanvasArea({
             {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
               <div className="mobile-canvas-caption">{mobileSpeech}</div>
             )}
-            {currentScene?.type === 'interactive' && !mobileControls && (
+            {currentScene?.type === 'interactive' && !mobileControls && !whiteboardOpen && (
               <button
                 type="button"
                 className="mobile-canvas-menu"
@@ -365,7 +388,7 @@ export function CanvasArea({
                 aria-label={t('mobileClassroom.controls')}
                 aria-expanded={mobileControls}
               >
-                <Captions size={20} />
+                <Ellipsis size={20} />
               </button>
             )}
           </>

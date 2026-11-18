@@ -2,7 +2,7 @@
 
 import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, MicOff, Send, ChevronDown, ChevronUp } from 'lucide-react';
+import { Mic, MicOff, ArrowUp, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -75,8 +75,8 @@ export function MobileRoundtable({
         value={input}
         onFocus={onInputActivate}
         onChange={(event) => onInput(event.target.value)}
-        placeholder={t('roundtable.inputPlaceholder')}
-        aria-label={t('roundtable.inputPlaceholder')}
+        placeholder={t('mobileClassroom.askTeacher')}
+        aria-label={t('mobileClassroom.askTeacher')}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault();
@@ -84,21 +84,23 @@ export function MobileRoundtable({
           }
         }}
       />
-      <button
-        type="button"
-        disabled={!voiceAvailable || processing}
-        onClick={onVoice}
-        aria-pressed={recording}
-        aria-label={t(recording ? 'roundtable.stopRecording' : 'roundtable.voiceInput')}
-      >
-        {voiceAvailable ? <Mic size={19} /> : <MicOff size={19} />}
-      </button>
+      {(voiceAvailable || recording) && (
+        <button
+          type="button"
+          disabled={!voiceAvailable || processing}
+          onClick={onVoice}
+          aria-pressed={recording}
+          aria-label={t(recording ? 'roundtable.stopRecording' : 'roundtable.voiceInput')}
+        >
+          {recording ? <MicOff size={19} /> : <Mic size={19} />}
+        </button>
+      )}
       <button
         type="submit"
         disabled={sendDisabled || !input.trim()}
         aria-label={t('mobileClassroom.send')}
       >
-        <Send size={19} />
+        <ArrowUp size={21} />
       </button>
     </form>
   );
@@ -122,15 +124,28 @@ export function MobileRoundtable({
               type="button"
               className="mobile-roundtable-role"
               data-speaking={participant.id === speakerId}
+              data-active={participant.role !== 'user' && participant.name === speakerName}
+              data-role={participant.role}
               onClick={() =>
                 participant.role === 'user' ? onOpenChat?.() : setSelected(participant)
               }
               aria-label={participant.name}
             >
               <span className="mobile-roundtable-avatar">
-                <AvatarDisplay src={participant.avatar} alt={participant.name} />
+                {participant.role === 'user' ? (
+                  t('mobileClassroom.me')
+                ) : (
+                  <AvatarDisplay src={participant.avatar} alt={participant.name} />
+                )}
               </span>
-              <span>{participant.name}</span>
+              {participant.role !== 'user' && (
+                <span className="mobile-roundtable-role-info">
+                  <strong>{participant.name}</strong>
+                  <small className="mobile-roundtable-role-label">
+                    {t(`settings.agentRoles.${participant.role}`)}
+                  </small>
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -139,6 +154,10 @@ export function MobileRoundtable({
             <span className="mobile-roundtable-speaker">{speakerName}</span>
             <span className="mobile-roundtable-status">{status}</span>
             <span className="mobile-roundtable-text">{speech}</span>
+            <span className="mobile-roundtable-full-speech">
+              {t('mobileClassroom.fullSpeech')}
+              <ChevronRight size={12} />
+            </span>
           </button>
         )}
         {discussion}

@@ -22,7 +22,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await expect(root).toHaveAttribute('data-mobile', 'true');
     await expect(page.getByTestId('mobile-classroom-nav')).toBeVisible();
     await expect(page.getByTestId('mobile-roundtable')).toBeVisible();
-    await expect(page.getByTestId('mobile-classroom-lecture')).toBeVisible();
+    await expect(page.getByTestId('mobile-classroom-lecture')).not.toBeVisible();
     const slide = await page.getByTestId('classroom-canvas-region').boundingBox();
     expect(slide!.width).toBeGreaterThan(350);
     expect(slide!.height).toBeLessThan(250);
@@ -32,7 +32,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      for (const button of await page.locator('[data-mobile-toolbar] button:visible').all()) {
+      for (const button of await page.locator('[data-mobile-toolbar]').getByRole('button').all()) {
         const box = await button.boundingBox();
         expect(box!.width).toBeGreaterThanOrEqual(44);
         expect(box!.x + box!.width).toBeLessThanOrEqual(width);
@@ -42,10 +42,6 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await page
       .locator('.mobile-roundtable-input textarea')
       .fill('A question to keep across rotation');
-    await page.getByRole('button', { name: 'Participants', exact: true }).click();
-    await expect(page.getByTestId('mobile-roundtable')).toHaveAttribute('data-focused', 'true');
-    await page.getByRole('button', { name: 'Participants', exact: true }).click();
-    await expect(page.getByTestId('mobile-roundtable')).toHaveAttribute('data-focused', 'false');
     await page.screenshot({ path: testInfo.outputPath('lesson-390.png') });
     await page.setViewportSize({ width: 390, height: 400 });
     await expect(page.locator('.mobile-roundtable-input textarea')).toBeInViewport();
@@ -85,7 +81,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     // Mobile fullscreen includes the SAME keep-alive host and participant dialogs.
     await page.locator('.mobile-canvas-menu').click();
     await page
-      .locator('.mobile-canvas-header')
+      .locator('.mobile-canvas-footer')
       .getByRole('button', { name: 'Fullscreen', exact: true })
       .click();
     await expect
@@ -137,9 +133,88 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await expect(page.getByTestId('course-end-restart')).toBeVisible();
     await expect(page.getByTestId('course-end-doQuiz')).toHaveCount(0);
     await expect(page.getByTestId('course-end-result')).toContainText('2 / 3');
+    // The card fades in over its entrance sequence; capture it once settled.
+    await expect(page.getByTestId('course-end')).toHaveAttribute('data-skip', 'true');
+    await expect(page.getByTestId('course-end-card')).toBeInViewport({ ratio: 1 });
     await page.screenshot({ path: testInfo.outputPath('course-end-844.png') });
     await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId('course-end-card')).toBeInViewport({ ratio: 1 });
     await page.screenshot({ path: testInfo.outputPath('course-end-390.png') });
+  });
+
+  test('opens the whiteboard as a full-region viewer with zoom and an empty state', async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    const titleElement =
+      guide.scenes[0].content.type === 'slide'
+        ? guide.scenes[0].content.canvas.elements.find((element) => element.id === 'p1_title')
+        : undefined;
+    if (!titleElement) throw new Error('Guide title element missing');
+
+    for (const withBoard of [false, true]) {
+      const id = uniqueStageId(withBoard ? 'mobile-board' : 'mobile-board-empty');
+      await page.goto('/');
+      await seedServerDocument(page, {
+        ...guide,
+        stage: {
+          ...guide.stage,
+          id,
+          ...(withBoard
+            ? {
+                whiteboard: [
+                  {
+                    id: `${id}-wb`,
+                    viewportSize: 1000,
+                    viewportRatio: 0.5625,
+                    elements: [titleElement],
+                  },
+                ],
+              }
+            : {}),
+        },
+        scenes: guide.scenes.map((scene) => ({ ...scene, stageId: id })),
+      });
+      await setCurrentScene(page, id, guide.scenes[0].id);
+      await page.goto(`/classroom/${id}`);
+      await expect(page.locator('[data-playback-stage]')).toHaveAttribute('data-mobile', 'true');
+
+      await page.getByRole('button', { name: 'Open Whiteboard', exact: true }).click();
+      const board = page.getByTestId('mobile-whiteboard');
+      await expect(board).toBeVisible();
+      const region = await page.getByTestId('classroom-canvas-region').boundingBox();
+      const boardBox = await board.boundingBox();
+      // Fills the canvas region edge to edge rather than floating as an inset card.
+      expect(Math.abs(boardBox!.width - region!.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(boardBox!.height - region!.height)).toBeLessThanOrEqual(1);
+      // The player chrome must not sit over the board's own header.
+      await expect(page.locator('.mobile-canvas-chrome')).toHaveAttribute('data-visible', 'false');
+      // Authoring tools stay on desktop.
+      await expect(board.getByTitle('Clear Whiteboard', { exact: true })).toHaveCount(0);
+      await expect(board.getByTitle('History', { exact: true })).toHaveCount(0);
+
+      if (withBoard) {
+        await expect(page.getByTestId('mobile-whiteboard-empty')).toHaveCount(0);
+        const tools = page.getByTestId('mobile-whiteboard-view-tools');
+        await expect(tools.locator('output')).toHaveText('100%');
+        await tools.getByRole('button', { name: 'Zoom in', exact: true }).click();
+        await expect(tools.locator('output')).toHaveText('125%');
+        await tools.getByRole('button', { name: 'Reset View', exact: true }).click();
+        await expect(tools.locator('output')).toHaveText('100%');
+        for (const button of await tools.getByRole('button').all()) {
+          const box = await button.boundingBox();
+          expect(box!.width).toBeGreaterThanOrEqual(44);
+        }
+      } else {
+        await expect(page.getByTestId('mobile-whiteboard-empty')).toContainText(
+          'No board notes yet',
+        );
+        await expect(page.getByTestId('mobile-whiteboard-view-tools')).toHaveCount(0);
+      }
+
+      await board.getByRole('button', { name: 'Minimize Whiteboard', exact: true }).click();
+      await expect(board).toHaveCount(0);
+    }
   });
 
   test('keeps the hosted classroom draft on rotation and returns through workspace navigation', async ({

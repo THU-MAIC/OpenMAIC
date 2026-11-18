@@ -3238,3 +3238,92 @@
   color: #fff;
   opacity: 0.92;
 }
+
+/* Available with the workspace shell, before the playback bundle or document.
+   Keep a phone refresh in the same full-window classroom layout from first paint. */
+.classroom-pane-loading-mobile,
+.ws-classroom-loading-back {
+  display: none;
+}
+@media (max-width: 767px), (max-height: 500px) and (pointer: coarse) {
+  .ws-classroom-pane:not([aria-hidden='true']) {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    width: 100%;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    animation: none;
+    background: var(--background);
+  }
+  .ws-classroom-pane:not(:has([data-classroom-stage])) > .ws-classroom-loading-back {
+    position: absolute;
+    top: calc(env(safe-area-inset-top) + 4px);
+    inset-inline-start: calc(env(safe-area-inset-left) + 6px);
+    z-index: 5;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    color: var(--foreground);
+  }
+  .ws-classroom-pane > header,
+  .ws-classroom-pane > .ws-pane-hint {
+    display: none;
+  }
+  .ws-classroom-pane .classroom-pane-loading {
+    background: var(--background);
+    padding-top: env(safe-area-inset-top);
+  }
+  .ws-classroom-pane .classroom-pane-loading-canvas {
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    max-height: 38dvh;
+  }
+  .ws-classroom-pane .classroom-pane-loading-dock {
+    height: 210px;
+    padding: 48px 12px 10px;
+    border: 0;
+    background: var(--background);
+  }
+  .ws-classroom-pane .classroom-pane-loading-mobile {
+    display: block;
+  }
+  .classroom-pane-loading-roles {
+    display: flex;
+    gap: 44px;
+    padding: 8px 4px 14px;
+  }
+  .classroom-pane-loading-roles span {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: var(--muted);
+  }
+  .classroom-pane-loading-speech {
+    height: 78px;
+    border-radius: 16px;
+    background: var(--muted);
+  }
+}
+
+@media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
+  .ws-classroom-pane .classroom-pane-loading-canvas {
+    flex: 1 1 0;
+    aspect-ratio: auto;
+    max-height: none;
+  }
+  .ws-classroom-pane .classroom-pane-loading-dock {
+    height: 52px;
+    padding: 4px 12px;
+  }
+  .ws-classroom-pane .classroom-pane-loading-roles {
+    padding: 4px;
+    gap: 8px;
+  }
+  .ws-classroom-pane .classroom-pane-loading-speech {
+    display: none;
+  }
+}

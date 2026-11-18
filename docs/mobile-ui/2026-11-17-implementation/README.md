@@ -11,7 +11,7 @@ Screenshots are from the actual upstream React classroom rendering the built-in 
 
 ## Architecture
 
-`PlaybackChromeRoot` remains the owner of engines and callbacks. `Roundtable` renders touch controls using its existing speech, input, recording, suggested-reply and discussion state; its one mobile composer is portaled to a stable `ChatArea` footer. The same `SceneSidebar`, `ChatArea`, `CanvasArea`, pooled iframe host and `CourseEnd` remain in use. The iframe portal stays in the same Stage container on mobile fullscreen and rotation; no phone-specific engine, store, scoring or conversation backend is added.
+`PlaybackChromeRoot` remains the owner of engines and callbacks. `Roundtable` renders touch controls using its existing speech, input, recording, suggested-reply and discussion state; its one mobile composer is portaled to a stable classroom footer. The same `SceneSidebar`, `ChatArea`, `CanvasArea`, pooled iframe host and `CourseEnd` remain in use. The iframe portal stays in the same Stage container on mobile fullscreen and rotation; no phone-specific engine, store, scoring or conversation backend is added.
 
 The existing adaptive UA hint/media query and visible viewport hook are reused. Short viewports constrain the canvas and roundtable while keeping the composer and navigation reachable. This is geometry handling, not keyboard detection or proof of physical keyboard behavior. Desktop collapse and zoom preferences are not overwritten. PBL shows a desktop-only notice on phones; workspace courses stay in Learn mode without rewriting their saved desktop editing preference.
 
@@ -30,3 +30,11 @@ The existing adaptive UA hint/media query and visible viewport hook are reused. 
 Keep this change in Draft until iOS Safari, Android Chrome and WeChat physical-device validation is recorded, including keyboard/IME, browser toolbars, safe areas, touch scrolling, microphone/TTS and audio continuity. Native direction lock is best-effort and unsupported-browser behavior still needs device checks. Arbitrary generated GenUI content is not covered by this one course.
 
 `CourseEnd` is deliberately reused without overriding its actions. At the implementation baseline it has dynamic `doQuiz` / `reviewWrong` / `restart` actions but no feedback-card implementation; this change does not introduce a separate mobile feedback card.
+
+## Classroom layout follow-up
+
+Materials now start closed in both orientations. Roundtable still owns the shared conversation input, which is portaled into a stable classroom footer so drafts survive panel switches and rotation. The dock separates page navigation from speed, sound and whiteboard controls. The canvas mask keeps the course name beside Back, with captions and fullscreen at the bottom right; playback changes leave the mask visible for two seconds.
+
+On phones, the existing whiteboard fills the canvas region and exposes viewer zoom/reset controls, while desktop authoring tools remain unchanged. Quiz content and its answer report also fill the phone canvas rather than a centered 16:9 box. Sound settings open in a centered dialog with volume, sound and the existing auto-play preference; the dialog remains inside native fullscreen. An eager phone loading frame avoids flashing the desktop workspace header before hydration.
+
+Validation: 11 Chromium browser cases pass with workspace enabled, covering these changes plus shared completion, panel/draft continuity, iframe continuity, loading before hydration, avatar clipping, and portrait/landscape bounds. Workspace-only cases explicitly require `MOBILE_WORKSPACE_E2E=true`; they are skipped in the legacy configuration. TypeScript, formatting and ESLint checks pass (existing lint warnings remain). Physical-device acceptance remains open; this is not a claim of live audio or microphone validation.

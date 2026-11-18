@@ -805,7 +805,11 @@
     "restore": "Restaurer",
     "noHistory": "Aucun historique pour l’instant",
     "restored": "Tableau blanc restauré",
-    "elementCount": "{{count}} éléments"
+    "elementCount": "{{count}} éléments",
+    "mobileEmpty": "Pas encore de notes au tableau",
+    "mobileEmptyHint": "Les démonstrations, formules et schémas ajoutés par l’enseignant apparaîtront ici",
+    "zoomIn": "Zoom avant",
+    "zoomOut": "Zoom arrière"
   },
   "quiz": {
     "title": "Quiz",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "Paramètres audio",
+    "playSound": "Activer le son",
     "materials": "Supports de cours",
     "directory": "Sommaire",
-    "lecture": "Transcription",
+    "lecture": "Notes",
     "volume": "Volume",
     "mute": "Muet",
     "roundtable": "Participants",
@@ -3439,6 +3445,11 @@
     "skip": "Passer",
     "play": "Lire",
     "pause": "Pause",
-    "pblDesktop": "Terminez ce projet sur un ordinateur. Le sommaire permet de consulter les autres pages."
+    "pblDesktop": "Terminez ce projet sur un ordinateur. Le sommaire permet de consulter les autres pages.",
+    "chat": "Discussion",
+    "askTeacher": "Poser une question…",
+    "fullSpeech": "Message complet",
+    "me": "Moi",
+    "whiteboardTitle": "Tableau du cours"
   }
 }

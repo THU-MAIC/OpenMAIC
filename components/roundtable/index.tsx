@@ -1341,13 +1341,15 @@ export function Roundtable({
         status={
           isDiscussionPaused || engineMode === 'paused'
             ? t('stage.paused')
-            : thinkingState
-              ? t('roundtable.thinking')
-              : isRecording
-                ? t('roundtable.listening')
-                : isProcessing
-                  ? t('roundtable.processing')
-                  : ''
+            : engineMode === 'idle' && !isInLiveFlow
+              ? t('stage.paused')
+              : thinkingState
+                ? t('roundtable.thinking')
+                : isRecording
+                  ? t('roundtable.listening')
+                  : isProcessing
+                    ? t('roundtable.processing')
+                    : ''
         }
         input={inputValue}
         onInput={(value) => {

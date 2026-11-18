@@ -30,7 +30,6 @@ import { LectureNotesView } from './lecture-notes-view';
 
 interface ChatAreaProps {
   mobile?: boolean;
-  mobileComposerRef?: (node: HTMLDivElement | null) => void;
   onTabChange?: (tab: 'lecture' | 'chat') => void;
   className?: string;
   width?: number;
@@ -91,7 +90,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   (
     {
       mobile = false,
-      mobileComposerRef,
       onTabChange,
       className,
       width = DEFAULT_WIDTH,
@@ -310,7 +308,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                 </TabsTrigger>
                 <TabsTrigger value="chat" className="text-xs gap-1 flex-1 relative">
                   <MessageSquare className="w-3.5 h-3.5" />
-                  {t('chat.tabs.chat')}
+                  {t(mobile ? 'mobileClassroom.chat' : 'chat.tabs.chat')}
                   {/* Amber pulse dot when there's an active chat session and user is on Notes tab */}
                   {hasActiveChatSession && activeTab === 'lecture' && (
                     <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
@@ -375,7 +373,6 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               </div>
             </TabsContent>
           </Tabs>
-          {mobile && <div ref={mobileComposerRef} className="mobile-chat-composer" />}
         </div>
       </div>
     );

@@ -805,7 +805,11 @@
     "restore": "恢復",
     "noHistory": "暫無歷史紀錄",
     "restored": "已恢復白板內容",
-    "elementCount": "{{count}} 個元素"
+    "elementCount": "{{count}} 個元素",
+    "mobileEmpty": "老師還沒有新增板書",
+    "mobileEmptyHint": "老師補充的推導、公式和圖示會顯示在這裡",
+    "zoomIn": "放大板書",
+    "zoomOut": "縮小板書"
   },
   "quiz": {
     "title": "課堂小測",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "聲音設定",
+    "playSound": "播放聲音",
     "materials": "課堂資料",
     "directory": "目錄",
-    "lecture": "講稿",
+    "lecture": "筆記",
     "volume": "音量",
     "mute": "靜音",
     "roundtable": "圓桌成員",
@@ -3439,6 +3445,11 @@
     "skip": "略過",
     "play": "播放",
     "pause": "暫停",
-    "pblDesktop": "請前往電腦端完成 PBL 專案。你可以透過目錄繼續學習其他頁面。"
+    "pblDesktop": "請前往電腦端完成 PBL 專案。你可以透過目錄繼續學習其他頁面。",
+    "chat": "聊天",
+    "askTeacher": "向老師提問…",
+    "fullSpeech": "完整發言",
+    "me": "我",
+    "whiteboardTitle": "課堂白板"
   }
 }

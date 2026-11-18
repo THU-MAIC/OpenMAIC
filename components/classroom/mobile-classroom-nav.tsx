@@ -24,7 +24,7 @@ export function MobileClassroomNav({
         [
           ['directory', List, t('mobileClassroom.directory')],
           ['lecture', BookOpen, t('mobileClassroom.lecture')],
-          ['chat', MessageSquare, t('chat.tabs.chat')],
+          ['chat', MessageSquare, t('mobileClassroom.chat')],
         ] as const
       ).map(([panel, Icon, label]) => (
         <button

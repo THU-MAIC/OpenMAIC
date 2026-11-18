@@ -805,7 +805,11 @@
     "restore": "Wiederherstellen",
     "noHistory": "Noch kein Verlauf",
     "restored": "Whiteboard wiederhergestellt",
-    "elementCount": "Elemente: {{count}}"
+    "elementCount": "Elemente: {{count}}",
+    "mobileEmpty": "Noch kein Tafelanschrieb",
+    "mobileEmptyHint": "Herleitungen, Formeln und Skizzen der Lehrkraft erscheinen hier",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern"
   },
   "quiz": {
     "title": "Quiz",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "Toneinstellungen",
+    "playSound": "Ton wiedergeben",
     "materials": "Kursmaterial",
     "directory": "Inhalt",
-    "lecture": "Transkript",
+    "lecture": "Notizen",
     "volume": "Lautstärke",
     "mute": "Stumm",
     "roundtable": "Teilnehmer",
@@ -3439,6 +3445,11 @@
     "skip": "Überspringen",
     "play": "Abspielen",
     "pause": "Pause",
-    "pblDesktop": "Schließe dieses Projekt am Computer ab. Über Inhalt kannst du andere Seiten aufrufen."
+    "pblDesktop": "Schließe dieses Projekt am Computer ab. Über Inhalt kannst du andere Seiten aufrufen.",
+    "chat": "Chat",
+    "askTeacher": "Frage an die Lehrkraft…",
+    "fullSpeech": "Vollständige Nachricht",
+    "me": "Ich",
+    "whiteboardTitle": "Unterrichtstafel"
   }
 }

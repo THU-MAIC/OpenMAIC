@@ -805,7 +805,11 @@
     "restore": "Phục hồi",
     "noHistory": "Chưa có lịch sử",
     "restored": "Đã phục hồi bảng",
-    "elementCount": "{{count}} phần tử"
+    "elementCount": "{{count}} phần tử",
+    "mobileEmpty": "Chưa có nội dung trên bảng",
+    "mobileEmptyHint": "Các bước suy luận, công thức và sơ đồ giáo viên thêm sẽ hiển thị ở đây",
+    "zoomIn": "Phóng to",
+    "zoomOut": "Thu nhỏ"
   },
   "quiz": {
     "title": "Câu đố",
@@ -3426,9 +3430,11 @@
     }
   },
   "mobileClassroom": {
+    "soundSettings": "Cài đặt âm thanh",
+    "playSound": "Phát âm thanh",
     "materials": "Tài liệu lớp học",
     "directory": "Mục lục",
-    "lecture": "Bản giảng",
+    "lecture": "Ghi chú",
     "volume": "Âm lượng",
     "mute": "Tắt tiếng",
     "roundtable": "Người tham gia",
@@ -3439,6 +3445,11 @@
     "skip": "Bỏ qua",
     "play": "Phát",
     "pause": "Tạm dừng",
-    "pblDesktop": "Vui lòng hoàn thành dự án trên máy tính. Dùng mục lục để tiếp tục các trang khác."
+    "pblDesktop": "Vui lòng hoàn thành dự án trên máy tính. Dùng mục lục để tiếp tục các trang khác.",
+    "chat": "Trò chuyện",
+    "askTeacher": "Hỏi giáo viên…",
+    "fullSpeech": "Phát biểu đầy đủ",
+    "me": "Tôi",
+    "whiteboardTitle": "Bảng lớp học"
   }
 }

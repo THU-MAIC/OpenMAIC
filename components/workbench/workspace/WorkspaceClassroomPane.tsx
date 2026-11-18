@@ -23,7 +23,7 @@
  * course, at either size, is a perfectly legitimate thing to do with one.
  */
 
-import { CircleHelp, Eye, Maximize, MessagesSquare, Minimize2 } from 'lucide-react';
+import { ArrowLeft, CircleHelp, Eye, Maximize, MessagesSquare, Minimize2 } from 'lucide-react';
 import { memo, useEffect, useLayoutEffect, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
@@ -250,7 +250,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
       aria-label={t('workspace.classroomPaneAria')}
       aria-hidden={hidden || undefined}
       className={cn(
-        'ws-pane ws-pane-last relative h-full min-w-0 flex-1 flex-col',
+        'ws-classroom-pane ws-pane ws-pane-last relative h-full min-w-0 flex-1 flex-col',
         fullscreen && 'ws-classroom-fullscreen',
         // Opening the pane (a course handed over from the request preview, or
         // opened from the library) comes in from the right edge as the
@@ -259,6 +259,19 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
         hidden ? 'hidden' : 'flex',
       )}
     >
+      <a
+        href="/workspace"
+        className="ws-classroom-loading-back"
+        aria-label={t('common.back')}
+        onClick={(event) => {
+          if (onMobileExit) {
+            event.preventDefault();
+            onMobileExit();
+          }
+        }}
+      >
+        <ArrowLeft size={20} aria-hidden="true" />
+      </a>
       {!fullscreen ? (
         <header
           data-testid="workbench-editor-header"
