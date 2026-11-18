@@ -83,10 +83,13 @@ name it in the wrap-up, the same way a missing page is named.
 ## 5. The plan is the ledger
 
 Every `generate_scene` call sees only its own brief. So the settled plan must
-carry what earlier pages established: each page's brief names the pages it
-depends on and the one thing it may assume the learner already has —
-「承接第 4 页：久期的定义」. When you write page N's brief, reread the plan
-rather than your memory of page N-1. In a series this is
+carry what earlier pages established: record the raw dependency in the plan —
+「承接第 4 页：久期的定义」 — and, when calling `generate_scene`, translate it
+into a learner-facing prerequisite ("the learner already knows what duration
+means, including how yield moves it"). Never put the raw ledger label in
+`brief`: it is a page-content field and its wording can become learner-visible
+slide text. When you write page N's brief, reread the plan rather than your
+memory of page N-1. In a series this is
 `curriculum-planner`'s rule at stage granularity: `read_stage_outline` the
 earlier stage before building one that builds on it — continuity against what
 was actually built, not what was planned.
