@@ -472,7 +472,7 @@ for (const [width, guideCompleted] of [
     await expect(start).toHaveCount(0);
     await expect(page.getByTestId('pbl-assistant')).toBeFocused();
     await expect(page.getByTestId('pbl-assistant')).toHaveCSS('outline-style', 'none');
-    await expect(page.getByTestId('pbl-assistant').locator(':scope > header')).not.toHaveCSS(
+    await expect(page.getByTestId('pbl-assistant').locator(':scope > header')).toHaveCSS(
       'box-shadow',
       'none',
     );
@@ -568,6 +568,10 @@ for (const width of [1365, 390]) {
     await start.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('pbl-assistant')).toBeFocused();
+    await expect(page.getByTestId('pbl-assistant').locator(':scope > header')).not.toHaveCSS(
+      'box-shadow',
+      'none',
+    );
     await expect.poll(() => fixture.commands).toEqual(['begin']);
   });
 }
