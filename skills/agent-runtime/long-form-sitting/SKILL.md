@@ -29,11 +29,13 @@ overrule — 「默认按 60 分钟规划，要改直接说」. Then:
 - **Under 25 minutes** — not this skill; plan by the default rules.
 - **25-120 minutes** — one stage, one classroom. Modules are arcs inside it.
 - **Over 120 minutes** — decide between one continuous stage and a
-  `curriculum-planner` series whose modules become stages, each still
-  self-contained, and say at the confirmation which you chose. A 240-minute
-  deck is ~108 pages of `generate_scene` calls in one classroom; a series of
-  two or three stages is usually the better shape, and the user should see
-  that choice before it is built.
+  `curriculum-planner` series. In a series, **several modules share one stage**
+  (2-4 modules per stage is normal): a 4-12 module sitting becomes two or
+  three stages, each still self-contained. Say at the confirmation which you
+  chose and how the modules group into stages. A 240-minute deck is ~108
+  pages of `generate_scene` calls in one classroom; a series of two or three
+  stages is usually the better shape, and the user should see that choice
+  before it is built.
 
 ## 2. Modules carry a teaching function
 
@@ -53,9 +55,7 @@ name it by what the learner can do when it closes:
 Apportion the minutes by weight — `mechanism` and `application` are heavy,
 `hook` is light (about 5-10 minutes) — and keep every module between about 5
 and 45 minutes. A module cannot be satisfied by listing facts: if its brief
-reads like a table of contents, it is a topic, not a function. Within one
-stage a module is an arc (as `lecture-style` defines arcs); in a series it is
-a stage.
+reads like a table of contents, it is a topic, not a function. Within one stage a module is an arc (as `lecture-style` defines arcs); in a series several modules may share a stage, so keep the module-to-stage grouping explicit in the confirmation.
 
 ## 3. Page count comes from the sitting
 
