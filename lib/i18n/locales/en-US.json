@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "Start editing"
+    },
+    "mobile": {
+      "openMenu": "Open navigation",
+      "closeMenu": "Close navigation"
     }
   },
   "profile": {

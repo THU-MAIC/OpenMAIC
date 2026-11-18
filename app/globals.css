@@ -594,3 +594,24 @@ body[data-maic-editor='true'] .editable-element-text li,
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
 }
+
+/*
+ * iOS zooms the whole page when a field it focuses has text under 16px, and it
+ * never zooms back out on its own — the page is left scaled and the reader has
+ * to pinch it home. Every text field on a phone gets the 16px floor, whatever
+ * size the layout asks for on a desktop; a field that is deliberately 13px on a
+ * wide screen is still readable at 16px on a narrow one.
+ *
+ * `!important` on purpose: field sizes are set per component (13px, 13.5px, …)
+ * with utility classes and inline styles, and this has to win without an audit
+ * of every one of them. It is a floor only: a field already above 16px keeps
+ * its own size.
+ */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+  textarea,
+  .composer-input[contenteditable='true'],
+  select {
+    font-size: max(16px, 0.9em) !important;
+  }
+}

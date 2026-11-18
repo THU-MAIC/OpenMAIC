@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "ابدأ التحرير"
+    },
+    "mobile": {
+      "openMenu": "فتح التنقل",
+      "closeMenu": "إغلاق التنقل"
     }
   },
   "profile": {

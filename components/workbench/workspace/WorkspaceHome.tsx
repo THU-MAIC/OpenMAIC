@@ -75,11 +75,6 @@ export function WorkspaceHome({
       aria-label={t('workspace.homeAria')}
       className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
-      {/* Below `md` the sidebar is gone, so the brand needs a home. */}
-      <div className="flex h-12 shrink-0 items-center px-4 md:hidden">
-        <img src={brand.logoSrc} alt={brand.productName} className="h-5 w-auto" />
-      </div>
-
       {/* One column, not two. The discover feed used to run to 1180px under a
           720px composer — 230px of extra card on each side, which is what made
           the page bottom-heavy however the hero was sized. The outer column is
@@ -142,7 +137,7 @@ export function WorkspaceHome({
           {/* Beat two: the composer, the one object on this page with real
               craft spent on it. It gets the larger gap of the two, because the
               gap is what says which of them the page is actually about. */}
-          <div className="ws-enter ws-d2 mt-8">
+          <div className="ws-home-composer ws-enter ws-d2 mt-8">
             <ProLaunchPanel
               autoFocus
               focusSignal={composerReset}
