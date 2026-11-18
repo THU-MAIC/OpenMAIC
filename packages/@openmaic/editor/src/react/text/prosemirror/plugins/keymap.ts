@@ -1,4 +1,5 @@
 import { splitListItem, liftListItem, sinkListItem } from 'prosemirror-schema-list';
+import { selectAllText } from '../utils';
 import { toggleInlineMark } from '../commands/toggleInlineMark';
 import { splitListItemInInlineContainer } from '../commands/splitListItemInInlineContainer';
 import type { Schema } from 'prosemirror-model';
@@ -22,6 +23,7 @@ export const buildKeymap = (schema: Schema) => {
 
   bind('Alt-ArrowUp', joinUp);
   bind('Alt-ArrowDown', joinDown);
+  bind('Mod-a', selectAllText);
   bind('Mod-z', undo);
   bind('Mod-y', redo);
   bind('Backspace', undoInputRule);

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, useLayoutEffect } from 'react';
+import { useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { useOptionalSlideContext } from '../../context';
 import type { PPTLatexElement } from '@openmaic/dsl';
 
 export interface BaseLatexElementProps {
@@ -89,8 +90,8 @@ function KatexContent({
   height: number;
   align?: 'left' | 'center' | 'right';
 }) {
+  const classroomSizing = useOptionalSlideContext()?.classroomSizing;
   const innerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
 
   // Measure the formula's natural size and shrink-to-fit its box. Extracted so
   // it can run both synchronously on mount (useLayoutEffect) and again once the
@@ -108,12 +109,10 @@ function KatexContent({
     const naturalW = innerRef.current.scrollWidth;
     const naturalH = innerRef.current.scrollHeight;
     if (naturalW > 0 && naturalH > 0) {
-      // Cap at 1: only ever shrink the formula to fit its box, never enlarge.
-      // A short formula sitting in a large frame (e.g. slide 29 的右侧推理框)
-      // would otherwise get scaled up to fill the box and render huge.
-      setScale(Math.min(width / naturalW, height / naturalH, 1));
+      const fit = Math.min(width / naturalW, height / naturalH);
+      innerRef.current.style.transform = `scale(${classroomSizing ? fit : Math.min(fit, 1)})`;
     }
-  }, [width, height]);
+  }, [width, height, classroomSizing]);
 
   useLayoutEffect(() => {
     measure();
@@ -156,7 +155,7 @@ function KatexContent({
         className="slide-renderer-prose"
         style={{
           transformOrigin: origin,
-          transform: `scale(${scale})`,
+          transform: 'scale(1)',
           whiteSpace: 'nowrap',
         }}
         dangerouslySetInnerHTML={{ __html: html }}
