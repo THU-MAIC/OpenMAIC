@@ -472,6 +472,10 @@ for (const [width, guideCompleted] of [
     await expect(start).toHaveCount(0);
     await expect(page.getByTestId('pbl-assistant')).toBeFocused();
     await expect(page.getByTestId('pbl-assistant')).toHaveCSS('outline-style', 'none');
+    await expect(page.getByTestId('pbl-assistant').locator(':scope > header')).not.toHaveCSS(
+      'box-shadow',
+      'none',
+    );
     expect(fixture.commands).toEqual(['begin']);
     release();
     await expect.poll(() => fixture.view.needsOpening).toBe(false);

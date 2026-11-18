@@ -833,7 +833,7 @@ function PBLV3WorkspaceContent({
                 aria-label={t('pblV3.learning')}
                 data-testid="pbl-assistant"
                 data-pbl-tour="conversation"
-                className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none"
+                className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none focus-visible:[&>header]:ring-2 focus-visible:[&>header]:ring-inset focus-visible:[&>header]:ring-ring"
               >
                 <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
                   <MessageSquareText size={15} />
