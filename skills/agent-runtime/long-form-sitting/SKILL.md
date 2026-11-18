@@ -76,6 +76,10 @@ minutes × the language's speech rate ≈ the narration it must carry. Use about
 250-280 characters per spoken minute for Chinese and 140-160 words per minute
 for English as starting rates. Keep the number in the conversation
 plan as a budget to check against — never in `brief` or `materialFacts`:
+after a compaction, reconstruct the target instead of recalling it — the
+sitting's minutes (from the original request) divided by the planned page
+count (`read_stage_outline`) times the rate above gives the current page's
+target;
 those are page-content fields, and a directive there can surface as
 learner-visible slide text without governing the speech. After
 `generate_scene` succeeds but **before the first `generate_tts` call**,
