@@ -137,6 +137,8 @@
     "steerQueued": "Der Agent antwortet, sobald der aktuelle Schritt fertig ist",
     "runFailed": "Dieser Aufbau ist fehlgeschlagen",
     "retryHint": "Sende noch eine Nachricht, um es erneut zu versuchen",
+    "contextLengthLimit": "Diese Unterhaltung hat ihre maximale Länge erreicht. Starte einen neuen Chat, um weiterzumachen.",
+    "contextBudgetInvalid": "Das Kontextbudget des aktuellen Modells ist falsch konfiguriert. Dieser Durchlauf wurde gestoppt.",
     "stopped": "Dieser Aufbau wurde gestoppt",
     "workerInterrupted": "Durch einen Worker-Neustart unterbrochen. Dieser Aufruf hat kein Ergebnis geliefert; der Agent wiederholt ihn bei Bedarf.",
     "userStopped": "Durch Stoppen unterbrochen. Dieser Aufruf hat kein Ergebnis geliefert."

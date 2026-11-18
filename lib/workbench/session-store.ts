@@ -24,6 +24,7 @@
 import { create } from 'zustand';
 import i18n from 'i18next';
 import { supportedLocaleOf } from '@/lib/i18n/types';
+import { contextBudgetCopyKey } from '@/lib/agent/runtime/context-budget-error';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -1754,17 +1755,25 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         // sentence, which read as a log line and — because every auto-retry
         // appends its own marker — stacked N identical copies of it.
         const cause = data.error ? String(data.error).trim() : '';
+        // A context-budget block is final for this conversation: say so in
+        // plain words and point to a new chat, not to a retry that would hit
+        // the same limit.
+        const budgetCopyKey = contextBudgetCopyKey(cause);
         next.chat = [
           ...settled,
           {
             key,
             kind: 'system',
             tone: 'error',
-            text: defaultWorkbenchTranslator('workbench.system.runFailed'),
-            copyKey: 'workbench.system.runFailed',
-            hint: defaultWorkbenchTranslator('workbench.system.retryHint'),
-            hintCopyKey: 'workbench.system.retryHint',
-            ...(cause ? { detail: cause } : {}),
+            text: defaultWorkbenchTranslator(budgetCopyKey ?? 'workbench.system.runFailed'),
+            copyKey: budgetCopyKey ?? 'workbench.system.runFailed',
+            ...(!budgetCopyKey
+              ? {
+                  hint: defaultWorkbenchTranslator('workbench.system.retryHint'),
+                  hintCopyKey: 'workbench.system.retryHint',
+                  ...(cause ? { detail: cause } : {}),
+                }
+              : {}),
           },
         ];
         break;
