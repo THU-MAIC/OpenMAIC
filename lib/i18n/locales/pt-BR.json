@@ -3205,13 +3205,14 @@
       "readOnly": "Read-only",
       "saved": "Salvo",
       "saveFailed": "Falha ao salvar · Tentar novamente",
-      "draftRetained": "Alterações mantidas neste navegador"
+      "draftRetained": "Alterações mantidas neste navegador",
+      "retryRead": "Tentar ler novamente"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Os arquivos do projeto têm alterações não salvas. Salve ou descarte as alterações antes de enviar; sua mensagem permanece aqui.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",

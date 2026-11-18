@@ -145,7 +145,13 @@ export function LearningWorkbenchPanel({
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
   const editable = canEdit(path);
   const canSave =
-    !disabled && !editor.loading && !editor.refreshing && !stale && !!buffer && editable;
+    !disabled &&
+    !editor.loading &&
+    !editor.refreshing &&
+    !editor.readError &&
+    !stale &&
+    !!buffer &&
+    editable;
   const pendingReason =
     pendingAction === 'evaluate' || (pendingAction === 'collect' && view.stage.kind === 'check')
       ? 'testing'
@@ -169,9 +175,10 @@ export function LearningWorkbenchPanel({
               work?.editReason ??
               (work?.canEdit ? (work.planning ? 'planEditable' : 'codeEditable') : 'loading'));
   const editMessage =
-    editReason === 'environment'
+    editor.readError ||
+    (editReason === 'environment'
       ? t(environmentNoticeKeys[environmentNotice(view.environment, pendingAction === 'prepare')])
-      : t(`pblV3.editAccess.${editReason}`);
+      : t(`pblV3.editAccess.${editReason}`));
   const save = () => {
     if (canSave) void editor.save();
   };
@@ -273,12 +280,22 @@ export function LearningWorkbenchPanel({
       className="flex h-full min-h-0 min-w-0 flex-col bg-background"
     >
       {(error || editor.readError) && (
-        <p
+        <div
           role="alert"
-          className="shrink-0 border-b bg-destructive/10 p-2 text-xs text-destructive"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-destructive/10 p-2 text-xs text-destructive"
         >
-          {error || editor.readError}
-        </p>
+          <p className="min-w-0 flex-1">{error || editor.readError}</p>
+          {editor.readError && (
+            <button
+              className={button}
+              disabled={disabled || editor.loading || editor.refreshing || editor.saving}
+              onClick={() => void editor.retryRead()}
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+              {t('pblV3.ide.retryRead')}
+            </button>
+          )}
+        </div>
       )}
       {manage && work?.canManageFiles && (
         <fieldset className="flex shrink-0 flex-wrap items-center gap-1 border-b p-2">
@@ -421,9 +438,9 @@ export function LearningWorkbenchPanel({
                         {t('pblV3.ide.saveFailed')}
                       </button>
                     </>
-                  ) : dirty && (disabled || !editable || stale) && !editor.saving ? (
+                  ) : editor.dirty(path) && !canSave && !editor.saving ? (
                     <span>{t('pblV3.ide.draftRetained')}</span>
-                  ) : dirty || editor.saving ? (
+                  ) : editor.dirty(path) || editor.saving ? (
                     <>
                       <LoaderCircle size={12} className="animate-spin" />
                       {t('pblV3.ide.saving')}

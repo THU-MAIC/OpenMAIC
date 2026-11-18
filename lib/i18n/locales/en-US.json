@@ -3205,13 +3205,14 @@
       "readOnly": "Read-only",
       "saved": "Saved",
       "saveFailed": "Save failed · Retry",
-      "draftRetained": "Changes kept in this browser"
+      "draftRetained": "Changes kept in this browser",
+      "retryRead": "Retry read"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Project files have unsaved changes. Save them or discard the changes before sending; your message stays here.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
