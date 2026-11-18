@@ -45,6 +45,7 @@ export function validateSkillPath(path: string): string {
       .some(
         (p) =>
           !p ||
+          Buffer.byteLength(p, 'utf8') > 255 ||
           p === '.' ||
           p === '..' ||
           /[<>:"|?*]/.test(p) ||

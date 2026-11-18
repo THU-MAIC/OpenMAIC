@@ -162,6 +162,33 @@ it('reports the file-count resource limit consistently for ZIP imports', async (
   });
 });
 
+it('rejects individual path components beyond the filesystem byte limit', async () => {
+  for (const path of [
+    `assets/${'a'.repeat(256)}`,
+    `assets/${'é'.repeat(128)}`,
+    `assets/${'a'.repeat(256)}/file.txt`,
+  ]) {
+    expect(() => new SkillPackage([entry, { path, bytes: bytes('x') }])).toThrow('INVALID_PACKAGE');
+    const zip = new JSZip();
+    zip.file('lesson-plan/SKILL.md', entry.bytes, { createFolders: false });
+    zip.file(`lesson-plan/${path}`, bytes('x'), { createFolders: false });
+    await expect(
+      importSkillPackage(await zip.generateAsync({ type: 'uint8array' })),
+    ).rejects.toThrow('INVALID_PACKAGE');
+  }
+});
+
+it('round-trips filenames at the component byte boundary', async () => {
+  const skill = new SkillPackage([
+    entry,
+    { path: `assets/${'a'.repeat(255)}`, bytes: bytes('ASCII boundary') },
+    { path: `assets/${'é'.repeat(127)}`, bytes: bytes('Unicode boundary') },
+  ]);
+  expect((await importSkillPackage(await exportSkillPackage(skill))).manifest).toEqual(
+    skill.manifest,
+  );
+});
+
 it('rejects differing local and central filenames before JSZip can collapse entries', async () => {
   const zip = new JSZip();
   zip.file('lesson-plan/SKILL.md', entry.bytes);

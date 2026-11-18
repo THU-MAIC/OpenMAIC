@@ -9,6 +9,7 @@ metadata. Scripts are stored as data; this library never executes files.
 Imports bound actual decompression and reject unsafe paths and special files.
 Path components and the package root must also be portable to Windows: reserved
 device names, invalid filename characters, and trailing dots or spaces are rejected.
+Each component is limited to 255 UTF-8 bytes for common filesystem compatibility.
 Exceeding a resource limit, including the number of archived files, reports
 `LIMIT_EXCEEDED`.
 `patchSkillPackage` returns a new package; persistence adapters must additionally
