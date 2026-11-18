@@ -289,6 +289,21 @@
       "qa": "Q&A",
       "discussion": "讨论",
       "lecture": "授课"
+    },
+    "webEvidence": {
+      "label": "网页来源",
+      "reading": "正在读取网页…",
+      "searching": "正在搜索资料…",
+      "read": "已取得网页正文",
+      "searched": "搜索结果",
+      "cancelled": "已停止",
+      "failed": "网页读取失败",
+      "searchFailed": "搜索失败",
+      "range": "已读第 {{start}}–{{end}} 字符，共 {{total}} 字符",
+      "timeout": "读取超时，未核验原文。",
+      "unverified": "未核验原文，请粘贴正文或换一个来源。",
+      "excerpts": "以下仅为搜索摘要，尚未读取网页正文。",
+      "sourceCount": "查看 {{count}} 个搜索来源"
     }
   },
   "actions": {

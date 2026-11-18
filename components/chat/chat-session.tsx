@@ -11,6 +11,7 @@ import { CircleStop, MessageCircleMore } from 'lucide-react';
 import { InlineActionTag } from './inline-action-tag';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useSoftCloseCountdown } from './use-soft-close-countdown';
+import { WebEvidence } from './web-evidence';
 
 /** Extended message part type covering standard + custom action parts */
 interface MessagePart {
@@ -66,8 +67,10 @@ const MessageBubble = memo(function MessageBubble({
     (p: MessagePart) => (p.type === 'text' && p.text) || p.type?.startsWith('action-'),
   );
 
+  const webEvidence = message.metadata?.webEvidence ?? [];
+
   // Loading dots (between agent_start and first text_delta)
-  if (!hasContent && isActive && message.role === 'assistant') {
+  if (!hasContent && !webEvidence.length && isActive && message.role === 'assistant') {
     return (
       <div className="flex gap-1.5 items-center py-1.5 px-1">
         <span
@@ -100,7 +103,7 @@ const MessageBubble = memo(function MessageBubble({
     );
   }
 
-  if (!hasContent) return null;
+  if (!hasContent && !webEvidence.length) return null;
 
   const lastTextIdx = parts.reduce(
     (acc: number, p: MessagePart, i: number) => (p.type === 'text' && p.text ? i : acc),
@@ -152,6 +155,11 @@ const MessageBubble = memo(function MessageBubble({
           return null;
         })}
       </span>
+      {/* An interrupted message's reads have stopped, even while a resumed session streams. */}
+      <WebEvidence
+        items={webEvidence}
+        active={isActive && isLive && !message.metadata?.interrupted}
+      />
     </div>
   );
 });

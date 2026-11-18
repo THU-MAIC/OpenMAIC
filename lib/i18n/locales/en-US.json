@@ -289,6 +289,21 @@
       "qa": "Q&A",
       "discussion": "DISC",
       "lecture": "LEC"
+    },
+    "webEvidence": {
+      "label": "Web sources",
+      "reading": "Reading page…",
+      "searching": "Searching the web…",
+      "read": "Page text retrieved",
+      "searched": "Search results",
+      "cancelled": "Stopped",
+      "failed": "Page could not be read",
+      "searchFailed": "Search failed",
+      "range": "Read characters {{start}}–{{end}} of {{total}}",
+      "timeout": "Reading timed out. Original text was not verified.",
+      "unverified": "Original text was not verified. Paste the text or try another source.",
+      "excerpts": "Search excerpts only; page text has not been read.",
+      "sourceCount": "View {{count}} search sources"
     }
   },
   "actions": {

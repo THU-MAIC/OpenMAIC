@@ -1,4 +1,4 @@
-import type { DirectorState } from '@/lib/types/chat';
+import type { ClassroomWebEvidence, DirectorState } from '@/lib/types/chat';
 
 /**
  * StreamBuffer — unified presentation pacing layer.
@@ -83,6 +83,13 @@ export interface ErrorItem {
   message: string;
 }
 
+/** Classroom web tool status for a message (fetch_url / web_search source cards). */
+export interface WebEvidenceItem {
+  kind: 'web_evidence';
+  messageId: string;
+  evidence: ClassroomWebEvidence;
+}
+
 export type BufferItem =
   | AgentStartItem
   | AgentEndItem
@@ -91,13 +98,15 @@ export type BufferItem =
   | ThinkingItem
   | CueUserItem
   | DoneItem
-  | ErrorItem;
+  | ErrorItem
+  | WebEvidenceItem;
 
 // ─── Callbacks ───────────────────────────────────────────────────────
 
 export interface StreamBufferCallbacks {
   onAgentStart(data: AgentStartItem): void;
   onAgentEnd(data: AgentEndItem): void;
+  onWebEvidence?(data: WebEvidenceItem): void;
   /**
    * Fired each tick while a text item is being revealed.
    * @param messageId  — which message to update
@@ -273,6 +282,12 @@ export class StreamBuffer {
     this.items.push({ kind: 'thinking', ...data });
   }
 
+  pushWebEvidence(data: Omit<WebEvidenceItem, 'kind'>): void {
+    if (this._disposed) return;
+    this.sealLastText();
+    this.items.push({ kind: 'web_evidence', ...data });
+  }
+
   pushCueUser(data: { fromAgentId?: string; prompt?: string; options?: string[] }): void {
     if (this._disposed) return;
     this.items.push({ kind: 'cue_user', ...data });
@@ -406,6 +421,9 @@ export class StreamBuffer {
             break;
           case 'thinking':
             this.cb.onThinking(item);
+            break;
+          case 'web_evidence':
+            this.cb.onWebEvidence?.(item);
             break;
           case 'cue_user':
             if (item.options) this.cb.onCueUser(item.fromAgentId, item.prompt, item.options);
@@ -629,6 +647,13 @@ export class StreamBuffer {
         this.advanceNonText();
         break;
 
+      case 'web_evidence':
+        this.cb.onWebEvidence?.(item);
+        this.readIndex++;
+        this.charCursor = 0;
+        this.advanceNonText();
+        break;
+
       case 'cue_user':
         if (item.options) this.cb.onCueUser(item.fromAgentId, item.prompt, item.options);
         else this.cb.onCueUser(item.fromAgentId, item.prompt);
@@ -690,6 +715,9 @@ export class StreamBuffer {
           return;
         case 'thinking':
           this.cb.onThinking(next);
+          break;
+        case 'web_evidence':
+          this.cb.onWebEvidence?.(next);
           break;
         case 'cue_user':
           if (next.options) this.cb.onCueUser(next.fromAgentId, next.prompt, next.options);

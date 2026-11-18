@@ -22,6 +22,7 @@ import {
   type DirectorSceneEvidencePacket,
 } from './tools/read-scene';
 import type { NativeWebSearchConfig } from './tools/web-search';
+import type { ClassroomWebFetchContext } from './tools/web-fetch';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import type { ResolvedElementReference } from './element-reference';
 
@@ -49,6 +50,7 @@ export async function runPiDirectorLoop(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
+  nativeWebFetchContext?: ClassroomWebFetchContext;
   nativeWhiteboardService?: WhiteboardRuntimeService;
   nativeWhiteboardStageId?: string;
   nativeWhiteboardLearnerKey?: string;
@@ -184,6 +186,7 @@ export async function runPiDirectorLoop(opts: {
       childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
       enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
       nativeWebSearchConfig: opts.nativeWebSearchConfig,
+      nativeWebFetchContext: opts.nativeWebFetchContext,
       nativeWhiteboardService: opts.nativeWhiteboardService,
       nativeWhiteboardStageId: opts.nativeWhiteboardStageId,
       nativeWhiteboardLearnerKey: opts.nativeWhiteboardLearnerKey,
@@ -234,6 +237,9 @@ export async function runPiDirectorLoop(opts: {
       opts.agentConfigs,
       opts.childRuntimeMode === 'native',
       Boolean(opts.nativeWhiteboardService),
+      opts.childRuntimeMode === 'native' && opts.nativeWebFetchContext
+        ? { searchConfigured: Boolean(opts.nativeWebSearchConfig) }
+        : undefined,
     ),
     tools,
     allowedToolNames: new Set(tools.map((tool) => tool.name)),

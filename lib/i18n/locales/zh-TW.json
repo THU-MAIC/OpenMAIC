@@ -289,6 +289,21 @@
       "qa": "Q&A",
       "discussion": "討論",
       "lecture": "授課"
+    },
+    "webEvidence": {
+      "label": "網頁來源",
+      "reading": "正在讀取網頁…",
+      "searching": "正在搜尋資料…",
+      "read": "已取得網頁正文",
+      "searched": "搜尋結果",
+      "cancelled": "已停止",
+      "failed": "網頁讀取失敗",
+      "searchFailed": "搜尋失敗",
+      "range": "已讀第 {{start}}–{{end}} 字元，共 {{total}} 字元",
+      "timeout": "讀取逾時，未核驗原文。",
+      "unverified": "未核驗原文，請貼上正文或換一個來源。",
+      "excerpts": "以下僅為搜尋摘要，尚未讀取網頁正文。",
+      "sourceCount": "查看 {{count}} 個搜尋來源"
     }
   },
   "actions": {

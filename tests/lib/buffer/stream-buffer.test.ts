@@ -2,6 +2,57 @@ import { describe, expect, it } from 'vitest';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 
 describe('StreamBuffer Pi wrap-up ordering', () => {
+  it('shows web progress while awaiting text and delivers the final source before the answer', async () => {
+    const seen: string[] = [];
+    let reading!: () => void;
+    const progress = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    const buffer = new StreamBuffer(
+      {
+        onAgentStart() {
+          seen.push('start');
+        },
+        onAgentEnd() {},
+        onWebEvidence({ evidence }) {
+          seen.push(evidence.status);
+          if (evidence.status === 'running') reading();
+        },
+        onTextReveal() {
+          seen.push('text');
+        },
+        onActionReady() {},
+        onLiveSpeech() {},
+        onSpeechProgress() {},
+        onThinking() {},
+        onCueUser() {},
+        onDone() {},
+        onError() {},
+      },
+      { tickMs: 1, charsPerTick: 100 },
+    );
+    buffer.pushAgentStart({ messageId: 'm', agentId: 't', agentName: 'Teacher' });
+    const evidence = {
+      id: 'fetch',
+      kind: 'read' as const,
+      status: 'running' as const,
+      startedAt: 1,
+    };
+    buffer.pushWebEvidence({ messageId: 'm', evidence });
+    buffer.start();
+    await progress;
+    expect(seen).toEqual(['start', 'running']);
+    buffer.pushWebEvidence({
+      messageId: 'm',
+      evidence: { ...evidence, status: 'done', finishedAt: 2 },
+    });
+    buffer.pushText('m', 'Answer');
+    buffer.pushAgentEnd({ messageId: 'm', agentId: 't' });
+    buffer.pushDone({ totalAgents: 1, totalActions: 0 });
+    await buffer.waitUntilDrained();
+    expect(seen).toEqual(['start', 'running', 'done', 'text']);
+  });
+
   it.each(['drain', 'flush'] as const)(
     'propagates cue prompt/options after the last visible turn via %s',
     async (mode) => {

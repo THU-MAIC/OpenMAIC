@@ -5,11 +5,7 @@ import { isIP } from 'node:net';
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { AgentSessionMaterial } from '@openmaic/storage';
-import {
-  backgroundWorkspaceId,
-  SlotDisabledError,
-  SlotUnassignedError,
-} from '@/lib/server/model-config/runtime';
+import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { resolveMediaSlot, type MediaConnection } from '@/lib/server/model-config/media';
 import { resolveExtractionServices } from '@/lib/server/material-extraction/services';
 import { assertSafeIp, normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
@@ -281,14 +277,4 @@ export function hasConfiguredWebFetchCapability(
   return connection !== null && connection !== undefined && connection !== 'off';
 }
 
-/** Follow the media resolver's failure rules: disabled/unassigned omit the tool; stale references fail loudly. */
-export async function resolveWebFetchCapability(
-  workspaceId: string | null,
-): Promise<MediaConnection | null> {
-  try {
-    return await resolveMediaSlot('webFetch', { workspaceId });
-  } catch (error) {
-    if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return null;
-    throw error;
-  }
-}
+export { resolveWebFetchCapability } from '@/lib/server/web-fetch-config';

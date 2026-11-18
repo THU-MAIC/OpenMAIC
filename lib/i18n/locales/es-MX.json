@@ -289,6 +289,21 @@
       "qa": "Q&A",
       "discussion": "DEB",
       "lecture": "CLASE"
+    },
+    "webEvidence": {
+      "label": "Fuentes web",
+      "reading": "Leyendo la página…",
+      "searching": "Buscando en la web…",
+      "read": "Texto de la página obtenido",
+      "searched": "Resultados de búsqueda",
+      "cancelled": "Detenido",
+      "failed": "No se pudo leer la página",
+      "searchFailed": "La búsqueda falló",
+      "range": "Se leyeron los caracteres {{start}}–{{end}} de {{total}}",
+      "timeout": "Se agotó el tiempo de lectura. No se verificó el texto original.",
+      "unverified": "No se verificó el texto original. Pega el texto o prueba otra fuente.",
+      "excerpts": "Solo extractos de búsqueda; no se ha leído el texto de la página.",
+      "sourceCount": "Ver {{count}} fuentes de búsqueda"
     }
   },
   "actions": {

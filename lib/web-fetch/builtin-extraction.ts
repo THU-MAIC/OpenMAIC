@@ -75,6 +75,11 @@ type FetchImplementation = (input: string | URL, init?: UndiciRequestInit) => Pr
 export interface FetchUrlOptions {
   /** The document service a fetched PDF may use; the deployment's by default. */
   extractionServices?: ExtractionServices;
+  /**
+   * Resolves the document service only once a fetched page turns out to be a
+   * PDF, so an HTML or text read never depends on the document configuration.
+   */
+  loadExtractionServices?: () => Promise<ExtractionServices>;
   fetchImpl?: FetchImplementation;
   dispatcher?: Dispatcher;
   maxBytes?: number;
@@ -267,16 +272,19 @@ function pdfExtractionCandidates(services: ExtractionServices): Array<{
 async function extractPdfToMarkdown(
   bytes: Buffer,
   services: ExtractionServices,
+  signal?: AbortSignal,
 ): Promise<{ title: string; markdown: string; truncated: boolean }> {
   const failures: string[] = [];
   for (const { provider, config } of pdfExtractionCandidates(services)) {
+    // A caller that stopped waiting starts no further extractor.
+    signal?.throwIfAborted();
     try {
       const artifact = await provider.extract({
         buffer: bytes,
         fileName: 'fetched.pdf',
         fileSize: bytes.byteLength,
         mimeType: 'application/pdf',
-        config,
+        config: signal ? { ...config, signal } : config,
       });
       const chunks: string[] = [];
       let chars = 0;
@@ -304,6 +312,7 @@ async function extractPdfToMarkdown(
         truncated,
       };
     } catch (error) {
+      signal?.throwIfAborted();
       failures.push(`${provider.id}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -447,7 +456,9 @@ export async function fetchAndExtractUrl(
         const prepared = await truncatePdfPages(downloaded.bytes);
         extracted = await extractPdfToMarkdown(
           prepared.bytes,
-          options.extractionServices ?? (await resolveExtractionServices()),
+          options.extractionServices ??
+            (await (options.loadExtractionServices ?? resolveExtractionServices)()),
+          options.signal,
         );
         downloaded.truncated ||= prepared.truncated || extracted.truncated === true;
       } else {

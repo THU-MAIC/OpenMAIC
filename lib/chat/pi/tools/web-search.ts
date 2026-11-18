@@ -93,6 +93,8 @@ type NativeWebSearchOptions = {
   config?: NativeWebSearchConfig;
   search?: typeof searchWeb;
   now?: () => Date;
+  /** Request-local hook: normalized source URLs authorize classroom fetch_url origins. */
+  onUrlsObserved?: (urls: string[]) => void;
 };
 
 function abortReason(signal: AbortSignal): unknown {
@@ -169,6 +171,7 @@ async function executeNativeWebSearch(
       };
     }
 
+    opts.onUrlsObserved?.(sources.map((source) => source.url));
     const sourceLines = sources.map(
       (source, index) =>
         `${index + 1}. ${compactExternalText(source.title, 240)}\nURL: ${source.url}\nExcerpt: ${compactExternalText(source.content, 800)}`,

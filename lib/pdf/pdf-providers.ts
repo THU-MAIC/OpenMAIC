@@ -137,7 +137,7 @@
  * - Always include provider name in error messages
  */
 
-import { extractText, getDocumentProxy, extractImages } from 'unpdf';
+import { extractText, extractImages, getResolvedPDFJS, type getDocumentProxy } from 'unpdf';
 import sharp from 'sharp';
 import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
@@ -151,6 +151,7 @@ import { parseWithAliDocMindClient } from './alidocmind-client';
 import { parseWithDeepSeekOCR } from './deepseek-ocr';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import { MaterialSourceRefusedError } from '@/lib/server/material-extraction/errors';
+import { withAbort } from '@/lib/web-fetch/abort';
 
 const log = createLogger('PDFProviders');
 const DEFAULT_MINERU_BACKEND = 'pipeline';
@@ -333,7 +334,7 @@ export async function parsePDF(
 
   switch (config.providerId) {
     case 'unpdf':
-      result = await parseWithUnpdf(pdfBuffer, config.textOnly === true);
+      result = await parseWithUnpdf(pdfBuffer, config.textOnly === true, config.signal);
       break;
 
     case 'mineru':
@@ -371,23 +372,42 @@ export async function parsePDF(
 /**
  * Parse PDF using unpdf (existing implementation)
  */
-async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<ParsedPdfContent> {
-  const uint8Array = new Uint8Array(pdfBuffer);
-  const pdf = await getDocumentProxy(
-    uint8Array,
-    textOnly
-      ? {
-          // Refuse pathological raster dimensions in the untrusted text-only path.
-          maxImageSize: 16_000_000,
-        }
-      : {},
-  );
+async function parseWithUnpdf(
+  pdfBuffer: Buffer,
+  textOnly: boolean,
+  signal?: AbortSignal,
+): Promise<ParsedPdfContent> {
+  signal?.throwIfAborted();
+  const { getDocument } = await getResolvedPDFJS();
+  signal?.throwIfAborted();
+  // Keep the loading task so cancellation can stop PDF.js even before the document opens.
+  const task = getDocument({
+    data: new Uint8Array(pdfBuffer),
+    isEvalSupported: false,
+    useSystemFonts: true,
+    ...(textOnly ? { maxImageSize: 16_000_000 } : {}),
+  });
+  try {
+    const extraction = task.promise.then((pdf) => extractUnpdfContent(pdf, textOnly, signal));
+    return await (signal ? withAbort(extraction, signal) : extraction);
+  } finally {
+    await task.destroy();
+  }
+}
+
+async function extractUnpdfContent(
+  pdf: Awaited<ReturnType<typeof getDocumentProxy>>,
+  textOnly: boolean,
+  signal?: AbortSignal,
+): Promise<ParsedPdfContent> {
+  signal?.throwIfAborted();
   const numPages = pdf.numPages;
 
   // Extract text using the document proxy
   const { text: pdfText } = await extractText(pdf, {
     mergePages: true,
   });
+  signal?.throwIfAborted();
 
   // Extract images using the same document proxy
   const images: string[] = [];
@@ -403,6 +423,7 @@ async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<Pars
   for (let pageNum = 1; !textOnly && pageNum <= numPages; pageNum++) {
     try {
       const pageImages = await extractImages(pdf, pageNum);
+      signal?.throwIfAborted();
       for (let i = 0; i < pageImages.length; i++) {
         const imgData = pageImages[i];
         try {
@@ -416,6 +437,7 @@ async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<Pars
           })
             .png()
             .toBuffer();
+          signal?.throwIfAborted();
 
           // Convert to base64
           const base64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
@@ -430,10 +452,12 @@ async function parseWithUnpdf(pdfBuffer: Buffer, textOnly = false): Promise<Pars
             height: imgData.height,
           });
         } catch (sharpError) {
+          signal?.throwIfAborted();
           log.error(`Failed to convert image ${i + 1} from page ${pageNum}:`, sharpError);
         }
       }
     } catch (pageError) {
+      signal?.throwIfAborted();
       log.error(`Failed to extract images from page ${pageNum}:`, pageError);
     }
   }

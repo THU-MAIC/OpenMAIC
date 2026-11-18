@@ -28,6 +28,8 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
 import { buildNativeWebSearchTool, type NativeWebSearchConfig } from './web-search';
+import { buildNativeWebFetchTool, type ClassroomWebFetchContext } from './web-fetch';
+import { withClassroomWebEvidence } from './web-evidence';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
@@ -576,6 +578,8 @@ export function buildCallAgentTool(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
+  /** Request-scoped fetch_url state; absent when the webFetch slot is off. */
+  nativeWebFetchContext?: ClassroomWebFetchContext;
   nativeWhiteboardService?: WhiteboardRuntimeService;
   nativeWhiteboardStageId?: string;
   nativeWhiteboardLearnerKey?: string;
@@ -761,7 +765,23 @@ export function buildCallAgentTool(opts: {
                     opts.requestStartManualVisibilityRevision ?? 0,
                 })
               : []),
-            buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
+            ...(opts.nativeWebFetchContext
+              ? [
+                  withClassroomWebEvidence(
+                    buildNativeWebSearchTool({
+                      config: opts.nativeWebSearchConfig,
+                      onUrlsObserved: opts.nativeWebFetchContext.observeUrls,
+                    }),
+                    messageId,
+                    send,
+                  ),
+                  withClassroomWebEvidence(
+                    buildNativeWebFetchTool(opts.nativeWebFetchContext),
+                    messageId,
+                    send,
+                  ),
+                ]
+              : [buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig })]),
           ];
           const availableToolNames = nativeTools.map((tool) => tool.name);
           const sanitizeNativeDelta = createVisibleSpeechDeltaSanitizer();
