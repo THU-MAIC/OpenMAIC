@@ -18,3 +18,5 @@ compare the expected revision atomically when committing. Authorization and
 retention of referenced revisions belong to the consuming application.
 
 `skillPackageFromLegacyContent` adapts existing name/description/title/content records to a single-file package without requiring a storage migration. Multi-file persistence remains the responsibility of the consuming store.
+
+The 512-character resource path budget is package-relative; the enclosing ZIP root is validated separately and does not consume that budget.

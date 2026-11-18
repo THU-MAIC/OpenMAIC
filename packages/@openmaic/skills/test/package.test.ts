@@ -189,6 +189,33 @@ it('round-trips filenames at the component byte boundary', async () => {
   );
 });
 
+it.each([`${'a'.repeat(250)}/${'b'.repeat(250)}`, `${'a'.repeat(255)}/${'b'.repeat(254)}/x`])(
+  'round-trips a long resource path independently of its ZIP root: %s',
+  async (path) => {
+    const skill = new SkillPackage([entry, { path, bytes: bytes('boundary') }]);
+    expect((await importSkillPackage(await exportSkillPackage(skill))).manifest).toEqual(
+      skill.manifest,
+    );
+    const zip = new JSZip();
+    for (const file of skill.entries()) zip.file(`lesson-plan/${file.path}`, file.bytes);
+    expect(
+      (await importSkillPackage(await zip.generateAsync({ type: 'uint8array' }))).manifest,
+    ).toEqual(skill.manifest);
+  },
+);
+
+it('rejects a resource path beyond the relative budget even when components are valid', async () => {
+  const path = `${'a'.repeat(255)}/${'b'.repeat(255)}/x`;
+  expect(path).toHaveLength(513);
+  expect(() => new SkillPackage([entry, { path, bytes: bytes('x') }])).toThrow('INVALID_PACKAGE');
+  const zip = new JSZip();
+  zip.file('lesson-plan/SKILL.md', entry.bytes);
+  zip.file(`lesson-plan/${path}`, bytes('x'));
+  await expect(importSkillPackage(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow(
+    'INVALID_PACKAGE',
+  );
+});
+
 it('rejects case and normalization aliases in every directory prefix', async () => {
   for (const pair of [
     ['Assets/a.txt', 'assets/b.txt'],

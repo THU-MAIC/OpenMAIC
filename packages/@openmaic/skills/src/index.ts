@@ -220,7 +220,7 @@ export async function importSkillPackage(bytes: Uint8Array): Promise<SkillPackag
         (entry as JSZip.JSZipObject & { unsafeOriginalName?: string }).unsafeOriginalName ??
         entry.name;
       if (original !== entry.name) fail();
-      validateSkillPath(entry.dir ? original.replace(/\/$/, '') : original);
+      validateZipPath(entry.dir ? original.replace(/\/$/, '') : original);
       const mode =
         typeof entry.unixPermissions === 'number'
           ? entry.unixPermissions
@@ -261,6 +261,17 @@ export async function importSkillPackage(bytes: Uint8Array): Promise<SkillPackag
       return fail('LIMIT_EXCEEDED');
     return fail();
   }
+}
+
+// The archive root is not part of the package-relative resource path budget.
+function validateZipPath(path: string): void {
+  const slash = path.indexOf('/');
+  if (slash < 0) {
+    validateSkillPath(path);
+    return;
+  }
+  validateSkillPath(path.slice(0, slash));
+  validateSkillPath(path.slice(slash + 1));
 }
 
 /** Inspect names before JSZip can overwrite duplicate entries or normalize paths. */
@@ -308,7 +319,7 @@ function validateZipDirectory(input: Uint8Array): void {
       bytes.readUInt16LE(local + 8) !== bytes.readUInt16LE(offset + 10)
     )
       fail();
-    validateSkillPath(name.endsWith('/') ? name.slice(0, -1) : name);
+    validateZipPath(name.endsWith('/') ? name.slice(0, -1) : name);
     if (seen.has(name)) fail();
     seen.add(name);
     offset = next;
