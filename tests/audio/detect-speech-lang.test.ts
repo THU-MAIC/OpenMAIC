@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { detectSpeechLang, resolveBrowserVoice } from '@/lib/audio/browser-tts-preview';
+import { detectSpeechLang, resolveBrowserVoice } from '@/lib/audio/browser-speech-text';
 
 describe('detectSpeechLang', () => {
   it('detects Chinese by CJK ratio', () => {
