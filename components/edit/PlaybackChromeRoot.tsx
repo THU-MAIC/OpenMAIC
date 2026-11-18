@@ -2,6 +2,7 @@
 
 import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 import { useRouter } from 'next/navigation';
+import { exitClassroom } from '@/lib/workbench/classroom-exit';
 import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { useVisualViewport } from '@/lib/hooks/use-visual-viewport';
@@ -1938,7 +1939,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const exitMobileClassroom = () => {
       if (document.fullscreenElement) void document.exitFullscreen();
       if (hostPanel.onMobileExit) hostPanel.onMobileExit();
-      else router.push('/');
+      else exitClassroom(router, new URLSearchParams(window.location.search));
     };
 
     return (

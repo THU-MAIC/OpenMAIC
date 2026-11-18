@@ -396,17 +396,19 @@ export function CanvasArea({
             {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
               <div className="mobile-canvas-caption">{mobileSpeech}</div>
             )}
-            {currentScene?.type === 'interactive' && !mobileControls && !whiteboardOpen && (
-              <button
-                type="button"
-                className="mobile-canvas-menu"
-                onClick={toggleMobileControls}
-                aria-label={t('mobileClassroom.controls')}
-                aria-expanded={mobileControls}
-              >
-                <Ellipsis size={20} />
-              </button>
-            )}
+            {(currentScene?.type === 'interactive' || currentScene?.type === 'pbl') &&
+              !mobileControls &&
+              !whiteboardOpen && (
+                <button
+                  type="button"
+                  className="mobile-canvas-menu"
+                  onClick={toggleMobileControls}
+                  aria-label={t('mobileClassroom.controls')}
+                  aria-expanded={mobileControls}
+                >
+                  <Ellipsis size={20} />
+                </button>
+              )}
           </>
         )}
       </div>

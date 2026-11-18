@@ -441,3 +441,75 @@ test.describe('Phone quiz exit navigation', () => {
     }
   }
 });
+
+test.describe('Phone classroom return contracts', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  test('honors workspace and home return URLs for standalone quizzes', async ({ page }) => {
+    test.skip(process.env.MOBILE_WORKSPACE_E2E !== 'true', 'Requires workspace server');
+    const id = uniqueStageId('mobile-exit-contract');
+    await page.goto('/');
+    await seedServerDocument(page, {
+      ...guide,
+      stage: { ...guide.stage, id },
+      scenes: guide.scenes.map((scene) => ({ ...scene, stageId: id })),
+    });
+    await setCurrentScene(page, id, guide.scenes[6].id);
+    for (const query of ['from=workspace', 'returnTo=home', 'from=workspace&returnTo=home']) {
+      await page.goto(`/classroom/${id}?${query}`);
+      await page
+        .getByTestId('mobile-quiz-navigation')
+        .getByRole('button', { name: 'Back', exact: true })
+        .click();
+      await expect(page).toHaveURL(query.includes('from=workspace') ? /\/workspace\/?$/ : /\/$/);
+      await expect(page.getByTestId('mobile-classroom-nav')).not.toBeVisible();
+    }
+  });
+
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 844, height: 390 },
+  ]) {
+    test(`recovers hidden player controls on the desktop-only project notice (${size.width})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const id = uniqueStageId('mobile-project-exit');
+      await page.goto('/');
+      await seedServerDocument(page, {
+        ...guide,
+        stage: { ...guide.stage, id },
+        scenes: [
+          {
+            ...guide.scenes[0],
+            id: 'project',
+            stageId: id,
+            type: 'pbl',
+            title: 'Practice project',
+            content: { type: 'pbl', projectV3: { id: 'greeting-python-lab', version: '1.1.0' } },
+            actions: [],
+          },
+        ],
+      });
+      await setCurrentScene(page, id, 'project');
+      await page.goto(`/classroom/${id}`);
+      await expect(
+        page.getByText(
+          'Preview is not available on phones. Open this project on a computer to try it.',
+          { exact: false },
+        ),
+      ).toBeVisible();
+      const chrome = page.locator('.mobile-canvas-chrome');
+      await expect(chrome).toHaveAttribute('data-visible', 'false', { timeout: 4000 });
+      const recovery = page.getByRole('button', { name: 'Playback controls', exact: true });
+      await expect(recovery).toBeVisible();
+      await recovery.click();
+      await expect(chrome).toHaveAttribute('data-visible', 'true');
+      await page
+        .locator('.mobile-canvas-header')
+        .getByRole('button', { name: 'Back', exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.getByTestId('mobile-classroom-nav')).not.toBeVisible();
+    });
+  }
+});

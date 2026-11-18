@@ -3061,7 +3061,18 @@
       "eachStage": "Pasos de cada etapa",
       "yourRole": "Tú decides y revisas; la IA ayuda a escribir el plan y el código.",
       "preview": "Prueba tu aplicación en la vista previa y comprueba lo que construiste.",
-      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar."
+      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar.",
+      "startBlocked": {
+        "guide": "Termina o cierra la guía del espacio de trabajo para comenzar a aprender.",
+        "connecting": "Conectando las actualizaciones en vivo antes de comenzar…",
+        "retrying": "Reconectando las actualizaciones en vivo. Espera a que se restablezca la conexión antes de comenzar.",
+        "unavailable": "Las actualizaciones en vivo no están disponibles. Actualiza la página para reconectarte antes de comenzar.",
+        "pending": "Hay una acción en curso. Espera a que termine antes de comenzar.",
+        "busy": "El asistente aún está respondiendo. Espera a que termine antes de comenzar.",
+        "environment": "Espera a que el entorno de aprendizaje esté listo antes de comenzar. Si la preparación falló, vuelve a intentarlo arriba.",
+        "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de comenzar.",
+        "preparing": "Preparando el espacio de trabajo. Espera antes de comenzar."
+      }
     },
     "journey": {
       "currentMilestone": "Etapa actual",
@@ -3198,13 +3209,14 @@
       "readOnly": "Read-only",
       "saved": "Guardado",
       "saveFailed": "Error al guardar · Reintentar",
-      "draftRetained": "Cambios conservados en este navegador"
+      "draftRetained": "Cambios conservados en este navegador",
+      "retryRead": "Reintentar lectura"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de enviar; tu mensaje permanece aquí.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3445,7 +3457,7 @@
     "skip": "Omitir",
     "play": "Reproducir",
     "pause": "Pausar",
-    "pblDesktop": "Completa este proyecto en una computadora. Usa el índice para seguir con otras páginas.",
+    "pblDesktop": "La vista previa no está disponible en teléfonos. Abre este proyecto en una computadora para probarlo.",
     "chat": "Chat",
     "askTeacher": "Pregunta al docente…",
     "fullSpeech": "Mensaje completo",

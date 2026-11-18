@@ -84,6 +84,13 @@ function PBLV3WorkspaceContent({
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
   const [reportOpen, setReportOpen] = useState(false);
   const workspaceRoot = useRef<HTMLElement>(null);
+  const assistant = useRef<HTMLElement>(null);
+  const restoreStartFocus = useRef(false);
+  const startButtonRef = useCallback((button: HTMLButtonElement | null) => {
+    if (!button || !restoreStartFocus.current) return;
+    restoreStartFocus.current = false;
+    if (document.activeElement === assistant.current) button.focus({ preventScroll: true });
+  }, []);
   const [fileTarget, setFileTarget] = useState<
     (FileReference & { studyId: string; requestId: number }) | null
   >(null);
@@ -429,6 +436,23 @@ function PBLV3WorkspaceContent({
     onOnboardingChange?.(onboarding.active || entryLoading);
     return () => onOnboardingChange?.(false);
   }, [onboarding.active, entryLoading, onOnboardingChange]);
+  const startDisabled =
+    !onboardingReady ||
+    (blockedReason !== null && blockedReason !== 'opening') ||
+    onboarding.active ||
+    entryLoading;
+  const startBlockedReasonKey = !startDisabled
+    ? null
+    : onboarding.active
+      ? 'guide'
+      : stream.status !== 'connected'
+        ? stream.status
+        : blockedReason && blockedReason !== 'opening'
+          ? blockedReason
+          : 'preparing';
+  const startBlockedReason = startBlockedReasonKey
+    ? t(`pblV3.overview.startBlocked.${startBlockedReasonKey}`)
+    : null;
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
     'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
@@ -804,10 +828,12 @@ function PBLV3WorkspaceContent({
             }
             assistant={
               <section
+                ref={assistant}
+                tabIndex={-1}
                 aria-label={t('pblV3.learning')}
                 data-testid="pbl-assistant"
                 data-pbl-tour="conversation"
-                className="flex h-full min-h-0 flex-col bg-muted/10"
+                className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none focus-visible:[&>header]:ring-2 focus-visible:[&>header]:ring-inset focus-visible:[&>header]:ring-ring"
               >
                 <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
                   <MessageSquareText size={15} />
@@ -834,20 +860,36 @@ function PBLV3WorkspaceContent({
                         hero={projectHero}
                         startAction={
                           waitingToStart ? (
-                            <button
-                              type="button"
-                              className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground transition-colors enabled:hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={
-                                !onboardingReady ||
-                                (blockedReason !== null && blockedReason !== 'opening') ||
-                                onboarding.active ||
-                                entryLoading
-                              }
-                              onClick={() => void command('begin')}
-                            >
-                              <ArrowRight size={18} aria-hidden="true" />
-                              {t('pblV3.overview.startLearning')}
-                            </button>
+                            <div className="space-y-2">
+                              <button
+                                ref={startButtonRef}
+                                type="button"
+                                className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground transition-colors enabled:hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={startDisabled}
+                                aria-describedby={
+                                  startBlockedReason ? `pbl-start-blocked-${sceneId}` : undefined
+                                }
+                                onClick={() => {
+                                  // Keep focus in the assistant when this button is replaced.
+                                  restoreStartFocus.current = true;
+                                  assistant.current?.focus({ preventScroll: true });
+                                  void command('begin').then((ok) => {
+                                    if (ok) restoreStartFocus.current = false;
+                                  });
+                                }}
+                              >
+                                <ArrowRight size={18} aria-hidden="true" />
+                                {t('pblV3.overview.startLearning')}
+                              </button>
+                              {startBlockedReason && (
+                                <p
+                                  id={`pbl-start-blocked-${sceneId}`}
+                                  className="text-xs text-muted-foreground"
+                                >
+                                  {startBlockedReason}
+                                </p>
+                              )}
+                            </div>
                           ) : undefined
                         }
                       />

@@ -217,6 +217,26 @@ describe('agent driver model', () => {
     expect(mocks.streamLLM.mock.calls[0]?.[0]?.maxOutputTokens).toBeUndefined();
   });
 
+  it('sends the per-call summary cap for an unknown model when the stream is not uncapped', async () => {
+    // The runner's compaction summary stream: same connection, no catalog
+    // output window, but it must honor pi's explicit summary maxTokens.
+    mocks.streamLLM.mockReturnValue(finishedStream());
+    const { createCallLlmStreamFn } = await import('@/lib/agent/runtime/stream-fn');
+    const streamFn = createCallLlmStreamFn({
+      languageModel: {} as never,
+      maxOutputTokens: undefined,
+    });
+
+    const stream = await streamFn(
+      {} as never,
+      { systemPrompt: 'system', messages: [], tools: [] },
+      { maxTokens: 2_560 },
+    );
+    await drain(stream);
+
+    expect(mocks.streamLLM.mock.calls[0]?.[0]?.maxOutputTokens).toBe(2_560);
+  });
+
   it('keeps the catalog output limit on the wire for a known model', async () => {
     mocks.streamLLM.mockReturnValue(finishedStream());
     const { createCallLlmStreamFn } = await import('@/lib/agent/runtime/stream-fn');
@@ -237,6 +257,24 @@ describe('agent driver model', () => {
       await configure({ model: 'openai:gpt-5.6-luna', contextWindow: 32_000 })
     )();
     expect(resolved.piModel.contextWindow).toBe(32_000);
+  });
+
+  it('halves an output reservation that would consume the whole context window', async () => {
+    mocks.modelInfo = { contextWindow: 1_050_000, outputWindow: 128_000 };
+    const resolved = await (
+      await configure({ model: 'openai:gpt-5.6-luna', contextWindow: 32_000 })
+    )();
+    // Conversation, summary and the budget check all see the same reservation.
+    expect(resolved.reservedOutputTokens).toBe(16_000);
+    expect(resolved.wireMaxOutputTokens).toBe(16_000);
+    expect(resolved.piModel.maxTokens).toBe(16_000);
+  });
+
+  it('keeps an output reservation that fits inside the context window', async () => {
+    mocks.modelInfo = { contextWindow: 200_000, outputWindow: 128_000 };
+    const resolved = await (await configure({ model: 'openai:gpt-5.6-luna' }))();
+    expect(resolved.reservedOutputTokens).toBe(128_000);
+    expect(resolved.wireMaxOutputTokens).toBe(128_000);
   });
 
   it.each([

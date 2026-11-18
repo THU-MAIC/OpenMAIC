@@ -107,9 +107,10 @@ export interface AutoVoiceCacheRecord {
 }
 
 /**
- * A course's home-library thumbnail, derived from the course's first slide.
- * Keyed by the owner it was read as and the course; valid only for the
- * course version (`updatedAt`) it was derived from.
+ * A course's home-library thumbnail, derived from the course's cover (its
+ * first slide, or the static cover of its first interactive page). Keyed by
+ * the owner it was read as and the course; valid only for the course version
+ * (`updatedAt`) it was derived from.
  */
 export interface CourseThumbnailRecord {
   /** One-way digest of the owner the thumbnail was read as (never the owner id itself). */

@@ -3061,7 +3061,18 @@
       "eachStage": "In each stage",
       "yourRole": "You make decisions and review; AI helps write the plan and code.",
       "preview": "Try your application in the preview pane and check what you built.",
-      "advance": "The purple action above the input appears only when the current step is ready to advance. Click it to continue."
+      "advance": "The purple action above the input appears only when the current step is ready to advance. Click it to continue.",
+      "startBlocked": {
+        "guide": "Finish or close the workspace guide to start learning.",
+        "connecting": "Connecting live updates before learning can start…",
+        "retrying": "Reconnecting live updates. Wait for the connection before starting.",
+        "unavailable": "Live updates are unavailable. Refresh to reconnect before starting.",
+        "pending": "An action is in progress. Wait for it to finish before starting.",
+        "busy": "The assistant is still replying. Wait for it to finish before starting.",
+        "environment": "Wait for the learning environment to be ready before starting. If preparation failed, retry above.",
+        "unsaved": "Project files have unsaved changes. Save them or discard the changes before starting.",
+        "preparing": "Preparing the workspace. Please wait before starting."
+      }
     },
     "journey": {
       "currentMilestone": "Current milestone",
@@ -3198,13 +3209,14 @@
       "readOnly": "Read-only",
       "saved": "Saved",
       "saveFailed": "Save failed · Retry",
-      "draftRetained": "Changes kept in this browser"
+      "draftRetained": "Changes kept in this browser",
+      "retryRead": "Retry read"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Project files have unsaved changes. Save them or discard the changes before sending; your message stays here.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3445,7 +3457,7 @@
     "skip": "Skip",
     "play": "Play",
     "pause": "Pause",
-    "pblDesktop": "Open this project on a computer to complete it. Use Contents to continue with other pages.",
+    "pblDesktop": "Preview is not available on phones. Open this project on a computer to try it.",
     "chat": "Chat",
     "askTeacher": "Ask the teacher…",
     "fullSpeech": "Full message",

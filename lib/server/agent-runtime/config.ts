@@ -18,14 +18,15 @@ export const agentRuntimeConfig = {
   /** Maximum consecutive unattended starts or resumptions. */
   maxAttempts: numberFromEnv(process.env.OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS, 5),
   /**
-   * Native conversation compaction is opt-in at this layer: it runs only when
-   * OPENMAIC_AGENT_COMPACTION_ENABLED=true. This is a deliberate inversion of
-   * the reference runtime's opt-out default — the reusable compaction runtime
-   * lands in a later slice, and until then the runner runs without context
-   * transformation.
+   * Native conversation compaction is on by default; set
+   * OPENMAIC_AGENT_COMPACTION_ENABLED=false to turn it off. The context budget
+   * check runs either way: with compaction off, a request over the model's
+   * budget is blocked instead of being summarized. Reserve/keep are present
+   * only when explicitly set; otherwise the runtime scales them to the driver
+   * model's context window.
    */
   compaction: {
-    enabled: process.env.OPENMAIC_AGENT_COMPACTION_ENABLED === 'true',
+    enabled: process.env.OPENMAIC_AGENT_COMPACTION_ENABLED !== 'false',
     ...(process.env.OPENMAIC_AGENT_COMPACTION_RESERVE_TOKENS
       ? {
           reserveTokens: numberFromEnv(process.env.OPENMAIC_AGENT_COMPACTION_RESERVE_TOKENS, 0),
