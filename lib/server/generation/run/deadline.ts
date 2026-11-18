@@ -5,6 +5,20 @@
  */
 
 /** Per call, in milliseconds. */
+/**
+ * Optional millisecond override from the environment. When the variable is
+ * unset or not a positive finite integer, `fallback` is used so a
+ * misconfigured deployment keeps the documented default instead of NaN/0.
+ * Bracket access (process.env[key]) avoids Next.js build-time inlining so a
+ * container-supplied value still takes effect at runtime.
+ */
+function envMs(key: string, fallback: number): number {
+  const raw = process.env[key];
+  if (raw === undefined) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export const STEP_DEADLINES_MS = {
   /**
    * One material's extraction, once a worker runs it (1.1.x declared no
@@ -21,8 +35,8 @@ export const STEP_DEADLINES_MS = {
   /** Per attempt. */
   sceneActions: 60_000,
   /** Per clip attempt (POST /api/generate/tts). */
-  narrationClip: 30_000,
-} as const;
+  narrationClip: envMs('NARRATION_CLIP_DEADLINE_MS', 30_000),
+};
 
 /** A step ran out of its budget. A gateway timeout to the retries: retried. */
 export class StepTimeoutError extends Error {

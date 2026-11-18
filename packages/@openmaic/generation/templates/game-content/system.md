@@ -431,3 +431,7 @@ render(); // Render paths publish the current state, including before Start.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+---
+
+{{snippet:interactive-js-safety}}
