@@ -3193,13 +3193,14 @@
       "readOnly": "Read-only",
       "saved": "저장됨",
       "saveFailed": "저장 실패 · 재시도",
-      "draftRetained": "변경 사항이 브라우저에 보관됨"
+      "draftRetained": "변경 사항이 브라우저에 보관됨",
+      "retryRead": "읽기 다시 시도"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "프로젝트 파일에 저장하지 않은 변경 사항이 있습니다. 저장하거나 변경 사항을 버린 후 전송하세요. 입력한 메시지는 유지됩니다.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",

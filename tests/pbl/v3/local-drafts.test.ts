@@ -887,6 +887,89 @@ it('does not replay an uncertain save while that file has an unresolved read err
   expect(editor.readError).toBe('Read unavailable');
 });
 
+it('retries a failed read without discarding unsent edits and resumes autosave on the same base', async () => {
+  vi.useFakeTimers();
+  const value = view('retry-read-preserves-draft');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.edit('Unsent draft'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockRejectedValueOnce(new Error('Read still failed'));
+  await act(async () => editor.retryRead());
+  expect(editor.buffer?.text).toBe('Unsent draft');
+  expect(readEditorDraft(value.id).buffers['PLAN.md']?.text).toBe('Unsent draft');
+  expect(editor.readError).toBe('Read still failed');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  expect(editor.buffer?.text).toBe('Unsent draft');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledWith(
+    'PLAN.md',
+    'Unsent draft',
+    'a'.repeat(64),
+    expect.objectContaining({ id: expect.any(String) }),
+  );
+  expect(editor.anyDirty).toBe(false);
+});
+
+it('keeps a draft read-only when retry read discovers a changed server base', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('retry-read-conflict') }));
+  await act(async () => editor.edit('Unsent local edit'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockResolvedValueOnce({ text: 'Another writer changed this', hash: 'c'.repeat(64) });
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  expect(editor.recoveryConflict).toBe(true);
+  expect(editor.stale).toBe(true);
+  expect(editor.buffer?.text).toBe('Unsent local edit');
+  await act(async () => editor.save());
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('retains an uncertain write and its explicit retry requirement after retry read sees the old base', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('retry-read-uncertain-write') }));
+  save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+  await act(async () => editor.edit('Uncertain submission'));
+  await act(async () => editor.save());
+  const request = save.mock.calls[0]![3];
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  expect(editor.saveError).toBe('Acknowledgement lost');
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]![3]).toBe(request);
+});
+
+it('acknowledges an observed submission on retry read without losing newer local edits', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('retry-read-observed-write') }));
+  save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+  await act(async () => editor.edit('Submitted text'));
+  await act(async () => editor.save());
+  await act(async () => editor.edit('Newer local text'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockResolvedValueOnce({ text: 'Submitted text', hash: 'c'.repeat(64) });
+  await act(async () => editor.retryRead());
+  expect(editor.buffer?.text).toBe('Newer local text');
+  expect(editor.buffer?.saved).toBe('Submitted text');
+  expect(editor.saveError).toBe('');
+  expect(editor.recoveryConflict).toBe(false);
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]?.slice(0, 3)).toEqual(['PLAN.md', 'Newer local text', 'c'.repeat(64)]);
+});
+
 it('blocks a dirty failed file when another save completes in the same React batch', async () => {
   vi.useFakeTimers();
   await mount(createElement(Editor, { value: view('review-batched-read-save') }));

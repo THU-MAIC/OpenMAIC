@@ -3193,13 +3193,14 @@
       "readOnly": "Read-only",
       "saved": "Đã lưu",
       "saveFailed": "Lưu thất bại · Thử lại",
-      "draftRetained": "Thay đổi được giữ trong trình duyệt này"
+      "draftRetained": "Thay đổi được giữ trong trình duyệt này",
+      "retryRead": "Thử đọc lại"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Các tệp dự án có thay đổi chưa lưu. Lưu hoặc bỏ các thay đổi trước khi gửi; tin nhắn của bạn vẫn được giữ ở đây.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",

@@ -145,6 +145,7 @@ export function useProjectEditor(
         // A save can finish while a non-blocking read is in flight. Its newer
         // acknowledged base wins over that read, even if typing is now clean.
         if (background && current.current.buffers[path]?.hash !== baseHash) return;
+        const retryingRead = current.current.readErrors[path]?.source === source;
         verifiedReads.current.delete(path);
         updateReadErrors((previous) => {
           if (previous[path]?.source !== source) return previous;
@@ -174,7 +175,12 @@ export function useProjectEditor(
         if (!discard && existing && existing.text !== existing.saved) {
           const rejected = unavailableSave.current;
           const retry = retrySaves.current.get(path);
-          if (existing.environment === editorSource(view) && rejected?.name !== path) return;
+          if (
+            existing.environment === editorSource(view) &&
+            rejected?.name !== path &&
+            !retryingRead
+          )
+            return;
           const savedSubmission =
             result.text === existing.text ||
             (retry?.name === path &&
@@ -207,7 +213,9 @@ export function useProjectEditor(
                 }
               : previous;
           });
-          clearRecoveredFailure();
+          // A successful read of the old base does not acknowledge an uncertain write.
+          if (existing.environment !== source || rejected?.name === path || savedSubmission)
+            clearRecoveredFailure();
           return;
         }
         clearConflict();
@@ -468,6 +476,7 @@ export function useProjectEditor(
     select,
     close,
     reload: () => load(true),
+    retryRead: () => load(),
     save: () => {
       failed.current = null;
       setSaveError('');

@@ -3193,13 +3193,14 @@
       "readOnly": "Read-only",
       "saved": "保存済み",
       "saveFailed": "保存失敗 · 再試行",
-      "draftRetained": "変更をこのブラウザに保持"
+      "draftRetained": "変更をこのブラウザに保持",
+      "retryRead": "読み取りを再試行"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "プロジェクトファイルに未保存の変更があります。保存するか変更を破棄してから送信してください。入力したメッセージは保持されます。",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",

@@ -3193,13 +3193,14 @@
       "readOnly": "Read-only",
       "saved": "تم الحفظ",
       "saveFailed": "فشل الحفظ · إعادة المحاولة",
-      "draftRetained": "التغييرات محفوظة في هذا المتصفح"
+      "draftRetained": "التغييرات محفوظة في هذا المتصفح",
+      "retryRead": "إعادة محاولة القراءة"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "توجد تغييرات غير محفوظة في ملفات المشروع. احفظها أو تجاهلها قبل الإرسال؛ ستبقى رسالتك هنا.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",

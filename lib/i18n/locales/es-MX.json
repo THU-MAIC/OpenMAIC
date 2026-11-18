@@ -3193,13 +3193,14 @@
       "readOnly": "Read-only",
       "saved": "Guardado",
       "saveFailed": "Error al guardar · Reintentar",
-      "draftRetained": "Cambios conservados en este navegador"
+      "draftRetained": "Cambios conservados en este navegador",
+      "retryRead": "Reintentar lectura"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de enviar; tu mensaje permanece aquí.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
