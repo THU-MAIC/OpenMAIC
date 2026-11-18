@@ -113,4 +113,9 @@ check each page against the same four as it lands:
 `stage-design` (the build sequence), `curriculum-planner` (the series layer),
 `lecture-style` (a long sitting is usually a lecture; its arcs, density and
 narration register compose with this skill — when both apply, the sitting
-arithmetic here wins on minutes and the lecture register wins on sound).
+arithmetic here wins on minutes and the lecture register wins on sound. Its
+quiz ceiling still applies: keep at most three quizzes in one stage even when
+the plan runs to 27-29 pages, and cover the remaining checkpoints with
+application or interactive pages. If the sitting needs more graded
+checkpoints, split it into `curriculum-planner` stages so each stage stays
+under that ceiling.)
