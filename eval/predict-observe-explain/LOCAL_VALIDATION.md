@@ -12,7 +12,24 @@
 - The classroom was generated and its short answers were graded using `deepseek:deepseek-v4-flash`.
 - All learner responses below are constructed tester inputs, not observations of real students. The falling-balls activity uses a specified ideal model, not independent experimental measurements.
 
-## Completed code and integration checks
+## Rebase onto current `main` (2026-11-18)
+
+Draft PR #1496 was closed as stale. Its three commits were re-applied, without conflicts, onto upstream `main` at `9c7870a792bea4d07b57b26d0285f312676a8e6e`, with the skill still under `skills/agent-runtime/predict-observe-explain/`. Skill text, references, workbench titles and the discovery test are unchanged from the tested content above; only commit messages were reworded to Conventional Commits.
+
+Checks rerun on the new base:
+
+| Check | Result |
+| --- | --- |
+| `tests/agent-runtime/poe-skill-discovery.test.ts` (stable id, Chinese title, built-in source, references, explicit titles for all 12 locales) | 13 tests passed |
+| `tests/agent-runtime/` plus every other test file that touches skill discovery, `skillTitle` or workbench locale files (126 files) | 0 failures. Two existing files, `material-library-routes.test.ts` and `skill-edit-tools.test.ts`, had their worker process exit unexpectedly in this sandbox; the same exits occur on unmodified `main`, so they are environmental and not caused by this change |
+| `pnpm check:i18n-keys` | Passed (12 locale files) |
+| Prettier on all changed files | Passed |
+| ESLint on changed TypeScript files | Passed, no findings |
+| `npx tsc --noEmit` | Passed |
+
+**Not yet rerun on the new base:** the model-driven classroom workflow below. Since `98765db`, upstream changed the quiz runtime this lesson relies on (for example `components/scene-renderers/quiz-view.tsx`, `lib/quiz/runtime.ts` and `app/api/quiz-grade/route.ts`). The two checks the maintainer singled out, recovery of a prediction draft after refresh and an observation page that does not reveal the explanation early, must be repeated on this base before the PR is marked ready for review. Their results will be added here.
+
+## Completed code and integration checks (2026-09-14 base)
 
 | Check | Result |
 | --- | --- |
