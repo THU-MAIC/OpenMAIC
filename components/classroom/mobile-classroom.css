@@ -135,6 +135,35 @@ body:has([data-classroom-stage][data-mobile='true']) {
 [data-mobile-toolbar] [data-toolbar-control='discussion'] {
   grid-column: 1 / 5;
   grid-row: 1;
+  min-width: 0;
+  gap: 4px;
+}
+[data-mobile-toolbar] [data-toolbar-control='discussion'] button {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 4px;
+  justify-content: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.15;
+}
+[data-mobile-toolbar] [data-toolbar-control='discussion'] button > span {
+  flex-shrink: 0;
+}
+[data-mobile-toolbar] [data-toolbar-control='discussion'] button [data-discussion-label] {
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 1;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+[data-mobile-toolbar] [data-discussion-action='continue'] {
+  flex-direction: column;
+  gap: 0;
 }
 [data-mobile-toolbar] [data-toolbar-control='play'] svg {
   fill: currentColor;
@@ -613,6 +642,10 @@ body:has([data-classroom-stage][data-mobile='true']) {
   min-width: 0;
   padding-right: 0;
 }
+[data-mobile='true'][data-landscape='true']
+  .mobile-roundtable-toolbar:has([data-toolbar-control='discussion']) {
+  flex-basis: 360px;
+}
 [data-mobile='true'][data-landscape='true'] .mobile-roundtable-content {
   max-height: 48px;
   display: flex;
@@ -691,6 +724,27 @@ body:has([data-classroom-stage][data-mobile='true']) {
   padding-right: 44px;
 }
 @media (max-width: 700px) and (orientation: landscape) {
+  [data-mobile='true'] .mobile-roundtable:has([data-toolbar-control='discussion']) {
+    flex-wrap: wrap;
+  }
+  [data-mobile='true']
+    .mobile-roundtable:has([data-toolbar-control='discussion'])
+    .mobile-roundtable-toolbar {
+    flex: 1;
+    max-width: calc(100% - 44px);
+  }
+  [data-mobile='true']
+    .mobile-roundtable:has([data-toolbar-control='discussion'])
+    .mobile-roundtable-content {
+    flex-basis: 100%;
+    order: 2;
+  }
+  [data-mobile='true']
+    .mobile-roundtable:has([data-toolbar-control='discussion'])
+    .mobile-roundtable-fold {
+    order: 1;
+  }
+
   [data-mobile='true'] .mobile-roundtable-speech {
     display: none;
   }

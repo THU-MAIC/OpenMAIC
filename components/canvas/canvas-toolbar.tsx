@@ -146,6 +146,8 @@ export function CanvasToolbar({
   const canGoPrev = currentSceneIndex > 0;
   const canGoNext = currentSceneIndex < scenesCount - 1 || !!nextOpensEnd;
   const showPlayPause = !isLiveSession;
+  const showSceneNavigation =
+    (scenesCount > 1 || !!nextOpensEnd) && !(mobile && showStopDiscussion && onStopDiscussion);
 
   const whiteboardElementCount = useStageStore(
     (s) => s.stage?.whiteboard?.[0]?.elements?.length || 0,
@@ -387,7 +389,7 @@ export function CanvasToolbar({
           <CtrlDivider />
 
           {/* Prev scene */}
-          {(scenesCount > 1 || nextOpensEnd) && (
+          {showSceneNavigation && (
             <button
               data-toolbar-control="previous"
               onClick={onPrevSlide}
@@ -419,10 +421,11 @@ export function CanvasToolbar({
                 title={t('roundtable.stopDiscussion')}
               >
                 <span className="inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-                {t('roundtable.stopDiscussion')}
+                <span data-discussion-label>{t('roundtable.stopDiscussion')}</span>
               </button>
               {isSoftClosing && onContinueDiscussion && (
                 <button
+                  data-discussion-action="continue"
                   onClick={(e) => {
                     e.stopPropagation();
                     onContinueDiscussion();
@@ -430,7 +433,7 @@ export function CanvasToolbar({
                   className="flex items-center gap-1.5 h-6 px-2.5 rounded-md border border-purple-200 dark:border-purple-700 bg-white/70 dark:bg-gray-800/70 text-purple-600 dark:text-purple-300 text-[11px] font-semibold whitespace-nowrap hover:bg-purple-50 dark:hover:bg-purple-900/20 active:scale-95 transition-all cursor-pointer"
                   title={t('roundtable.softClosing')}
                 >
-                  {t('roundtable.softClosing')}
+                  <span data-discussion-label>{t('roundtable.softClosing')}</span>
                   {remainingSoftCloseSeconds !== undefined && (
                     <span className="text-[9px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
                       {remainingSoftCloseSeconds}s
@@ -461,7 +464,7 @@ export function CanvasToolbar({
           ) : null}
 
           {/* Next scene */}
-          {(scenesCount > 1 || nextOpensEnd) && (
+          {showSceneNavigation && (
             <button
               data-toolbar-control="next"
               onClick={onNextSlide}
