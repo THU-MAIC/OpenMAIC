@@ -396,7 +396,8 @@ export function CanvasArea({
             {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
               <div className="mobile-canvas-caption">{mobileSpeech}</div>
             )}
-            {(currentScene?.type === 'interactive' || currentScene?.type === 'pbl') &&
+            {currentScene?.type !== 'slide' &&
+              currentScene?.type !== 'quiz' &&
               !mobileControls &&
               !whiteboardOpen && (
                 <button

@@ -42,3 +42,5 @@ Validation: 11 Chromium browser cases pass with workspace enabled, covering thes
 Phone quizzes keep a separate Back button and course title above the quiz cover, answering surface and report, even while player chrome is hidden. The button uses the existing standalone or workspace exit callback. Five targeted browser cases pass for report positioning and quiz navigation in both orientations and entry points.
 
 The phone exit callback now uses the shared URL return contract, including `from=workspace` and explicit home returns. Desktop-only project notices keep a way to reveal the player controls after auto-hide. The project notice states that preview is unavailable on phones and asks the learner to open it on a computer. After updating the branch to the latest main, 18 browser cases and 79 focused unit tests passed; the final project-notice copy was also rechecked in both orientations.
+
+The control-recovery entry also covers missing/pending scenes, including generation failure or interruption. Three component regressions advance the auto-hide timer, recover the controls and invoke the existing Back callback. The expanded related unit run passes 82 tests.
