@@ -901,7 +901,14 @@ test('loading keeps its accessible modal and focus through native fullscreen cha
       await page.keyboard.press('Escape');
       await page.keyboard.type('Must not become a draft');
       await expect(dialog).toBeFocused();
-      await expect(page.locator('h1')).toHaveText('Workspace guide');
+      await expect(
+        page.getByRole('heading', {
+          name: 'Workspace guide',
+          exact: true,
+          level: 2,
+          includeHidden: true,
+        }),
+      ).toHaveText('Workspace guide');
       await expect(page.locator('[data-pbl-tour="composer"] textarea')).toHaveValue('');
       expect(fixture.commands).toEqual(['prepare']);
     }
@@ -1542,7 +1549,14 @@ for (const success of [true, false]) {
     await expect(tour(page)).toHaveCount(0);
     await expect(page.getByTestId('pbl-v3-workspace')).toBeFocused();
     await page.locator('[data-pbl-tour="composer"] textarea').fill('Keep typing while saving');
-    await expect(page.locator('h1')).toHaveText('Workspace guide');
+    await expect(
+      page.getByRole('heading', {
+        name: 'Workspace guide',
+        exact: true,
+        level: 2,
+        includeHidden: true,
+      }),
+    ).toHaveText('Workspace guide');
     const acknowledgement = page.waitForResponse((response) =>
       response.url().endsWith('/api/pbl/v3/onboarding'),
     );

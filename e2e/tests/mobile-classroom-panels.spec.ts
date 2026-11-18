@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/base';
 import { seedServerDocument, uniqueStageId, setCurrentScene } from '../fixtures/server-seed';
 import { DEFAULT_MODEL_SETTINGS } from '../fixtures/test-data/model-settings';
 import guide from '../../public/guide-course/zh.json';
+import { TINY_MP4_BASE64 } from '../fixtures/test-data/tiny-video';
 
 test.describe('Phone classroom materials panels', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
@@ -469,6 +470,62 @@ test.describe('Phone classroom return contracts', () => {
     { width: 390, height: 844 },
     { width: 844, height: 390 },
   ]) {
+    test(`recovers hidden player controls over a full-frame video (${size.width})`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(size);
+      const id = uniqueStageId('mobile-video-exit');
+      const scene = structuredClone(guide.scenes[0]);
+      if (scene.content.type !== 'slide' || !('canvas' in scene.content))
+        throw new Error('Missing slide');
+      await page.goto('/');
+      await seedServerDocument(page, {
+        ...guide,
+        stage: { ...guide.stage, id },
+        scenes: [
+          {
+            ...scene,
+            stageId: id,
+            actions: [],
+            content: {
+              ...scene.content,
+              canvas: {
+                ...scene.content.canvas,
+                elements: [
+                  {
+                    id: 'full-frame-video',
+                    type: 'video',
+                    src: `data:video/mp4;base64,${TINY_MP4_BASE64}`,
+                    left: 0,
+                    top: 0,
+                    width: 1000,
+                    height: 562.5,
+                    rotate: 0,
+                    autoplay: false,
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      });
+      await setCurrentScene(page, id, scene.id);
+      await page.goto(`/classroom/${id}`);
+      const video = page.locator('[data-video-element] video');
+      await expect(video).toBeVisible();
+      const chrome = page.locator('.mobile-canvas-chrome');
+      await expect(chrome).toHaveAttribute('data-visible', 'false', { timeout: 4000 });
+      await page.getByRole('button', { name: 'Playback controls', exact: true }).click();
+      await expect(chrome).toHaveAttribute('data-visible', 'true');
+      await expect(page.locator('.mobile-canvas-play')).toHaveAttribute('aria-label', 'Play');
+      await expect(page.getByRole('button', { name: 'Captions', exact: true })).toBeVisible();
+      await page
+        .locator('.mobile-canvas-header')
+        .getByRole('button', { name: 'Back', exact: true })
+        .click();
+      await expect(page).toHaveURL(/\/$/);
+    });
+
     test(`recovers hidden player controls on the desktop-only project notice (${size.width})`, async ({
       page,
     }) => {

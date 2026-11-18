@@ -108,6 +108,12 @@ export function CanvasArea({
     !isLiveSession &&
     !isPendingScene;
 
+  // Video controls consume canvas taps, so keep a separate way to reveal the chrome.
+  const needsControlRecovery =
+    currentScene?.type !== 'slide' ||
+    (currentScene.content.type === 'slide' &&
+      currentScene.content.canvas.elements.some((element) => element.type === 'video'));
+
   const handleSlideClick = useCallback(
     (e: React.MouseEvent) => {
       if (!showControls || (!mobile && isLiveSession) || currentScene?.type !== 'slide') return;
@@ -396,7 +402,7 @@ export function CanvasArea({
             {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
               <div className="mobile-canvas-caption">{mobileSpeech}</div>
             )}
-            {currentScene?.type !== 'slide' &&
+            {needsControlRecovery &&
               currentScene?.type !== 'quiz' &&
               !mobileControls &&
               !whiteboardOpen && (
