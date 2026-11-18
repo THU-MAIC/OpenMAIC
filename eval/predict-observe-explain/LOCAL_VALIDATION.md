@@ -27,7 +27,7 @@ Checks rerun on the new base:
 | ESLint on changed TypeScript files | Passed, no findings |
 | `npx tsc --noEmit` | Passed |
 
-**Not yet rerun on the new base:** the model-driven classroom workflow below. Since `98765db`, upstream changed the quiz runtime this lesson relies on (for example `components/scene-renderers/quiz-view.tsx`, `lib/quiz/runtime.ts` and `app/api/quiz-grade/route.ts`). The two checks the maintainer singled out, recovery of a prediction draft after refresh and an observation page that does not reveal the explanation early, must be repeated on this base before the PR is marked ready for review. Their results will be added here.
+**Classroom evidence comes from the 2026-09-14 base.** The model-driven classroom workflow below, including the two checks the maintainer singled out (a prediction draft recovered after refresh, and an observation page that does not reveal the explanation early), was run on `98765db` and was not repeated on `9c7870a`. This PR changes no runtime, UI, grading or persistence code. Since `98765db`, however, upstream has changed the quiz runtime this lesson relies on (for example `components/scene-renderers/quiz-view.tsx`, `lib/quiz/runtime.ts` and `app/api/quiz-grade/route.ts`), so those results describe the earlier runtime.
 
 ## Completed code and integration checks (2026-09-14 base)
 
