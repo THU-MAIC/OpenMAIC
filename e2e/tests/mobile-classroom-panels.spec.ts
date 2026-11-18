@@ -445,6 +445,33 @@ test.describe('Phone quiz exit navigation', () => {
 
 test.describe('Phone classroom return contracts', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  test('leaves standalone editing when the classroom becomes phone-sized', async ({ page }) => {
+    test.skip(process.env.MOBILE_WORKSPACE_E2E !== 'true', 'Requires workspace server');
+    await page.setViewportSize({ width: 1365, height: 900 });
+    const id = uniqueStageId('mobile-edit-exit');
+    await page.goto('/');
+    await seedServerDocument(page, {
+      ...guide,
+      stage: { ...guide.stage, id },
+      scenes: guide.scenes.map((scene) => ({ ...scene, stageId: id })),
+    });
+    await setCurrentScene(page, id, guide.scenes[0].id);
+    await page.goto(`/classroom/${id}`);
+    await page.getByTestId('workbench-mode-editing').click();
+    await expect(page.getByTestId('edit-undo')).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator('[data-classroom-stage]')).toHaveAttribute('data-mobile', 'true');
+    await expect(page.getByTestId('mobile-classroom-nav')).toBeVisible();
+    await expect(page.getByTestId('edit-undo')).toHaveCount(0);
+    await page.setViewportSize({ width: 1365, height: 900 });
+    await expect(page.getByTestId('workbench-mode-learning').last()).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await page.getByTestId('workbench-mode-editing').last().click();
+    await expect(page.getByTestId('edit-undo')).toBeVisible();
+  });
+
   test('honors workspace and home return URLs for standalone quizzes', async ({ page }) => {
     test.skip(process.env.MOBILE_WORKSPACE_E2E !== 'true', 'Requires workspace server');
     const id = uniqueStageId('mobile-exit-contract');

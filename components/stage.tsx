@@ -58,6 +58,7 @@ export function Stage({
 }) {
   const { mode, setMode, scenes, currentSceneId, generatingOutlines, stage } = useStageStore();
   const router = useRouter();
+  const mobile = useMobileLayout();
   const enteringWorkbench = useRef(false);
   const proWorkbenchFlag = isWorkbenchEnabled();
   const editorEnabled = isMaicEditorEnabled();
@@ -90,7 +91,7 @@ export function Stage({
   // completes (the server refuses its edits): the Pro switch shows, disabled,
   // as it does while the browser generates.
   const courseGenerating = useStageStore((s) => s.courseGenerating);
-  const canEditOwnedStage = isOwner && !readOnly;
+  const canEditOwnedStage = !mobile && isOwner && !readOnly;
 
   // Hosted by the Pro workspace's classroom pane. Ambient rather than a prop
   // because `Stage` is built by `ClassroomSurface`, which is mounted by both
@@ -234,7 +235,7 @@ export function Stage({
   // Resolve before paint so a restored edit preference cannot override a
   // generating course's fence or leak into a different course's chrome.
   const chromeMode = resolveStageChromeMode({
-    storedMode: mode,
+    storedMode: mobile && mode === 'edit' ? 'playback' : mode,
     hosted,
     workbenchShowingClassroom,
     workbenchLearning:
@@ -428,7 +429,6 @@ export function Stage({
     </AnimatePresence>
   );
 
-  const mobile = useMobileLayout();
   const [classroomHost, setClassroomHost] = useState<HTMLDivElement | null>(null);
   return (
     <div
