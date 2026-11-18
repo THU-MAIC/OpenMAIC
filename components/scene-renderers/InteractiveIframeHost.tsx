@@ -166,11 +166,15 @@ export function InteractiveIframeHost({
   // fullscreens the stage, and a body-portaled iframe would not be part of that
   // subtree, so it would vanish). Stage supplies a stable local container so
   // responsive layers and this host share a stacking context. Standalone hosts
-  // without a container retain the body fallback.
+  // without a container retain the body fallback. An explicit null means the
+  // local host is still mounting; wait rather than remounting a body portal.
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
   useEffect(() => {
     const sync = () =>
-      setPortalTarget(document.fullscreenElement ?? portalContainer ?? document.body);
+      setPortalTarget(
+        document.fullscreenElement ??
+          (portalContainer === undefined ? document.body : portalContainer),
+      );
     sync();
     document.addEventListener('fullscreenchange', sync);
     return () => document.removeEventListener('fullscreenchange', sync);
