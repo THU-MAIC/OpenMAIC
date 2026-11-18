@@ -1117,3 +1117,63 @@ it.each(['reload', 'close'] as const)(
     expect(editor.anyDirty).toBe(false);
   },
 );
+
+it('a retry-read conflict blocks the queue before another save receipt drains it', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-retry-conflict-batch') }));
+  await act(async () => editor.edit('Retained plan'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Healthy code'));
+  await act(async () => editor.select('PLAN.md'));
+  let finishRead!: (result: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+  );
+  await act(async () => {
+    void editor.retryRead();
+  });
+  let acknowledge!: (receipt: { hash: string }) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toBe('main.py');
+  await act(async () => {
+    finishRead({ text: 'Changed by another writer', hash: 'c'.repeat(64) });
+    await Promise.resolve();
+    acknowledge({ hash: 'b'.repeat(64) });
+  });
+  expect(editor.recoveryConflict).toBe(true);
+  expect(editor.stale).toBe(true);
+  expect(editor.buffer?.text).toBe('Retained plan');
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+it('a retry-read conflict must not block explicit saves of healthy files', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-conflict-healthy-save') }));
+  save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+  await act(async () => editor.edit('Uncertain plan'));
+  await act(async () => editor.save());
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockResolvedValueOnce({ text: 'Another writer changed this', hash: 'c'.repeat(64) });
+  await act(async () => editor.retryRead());
+  expect(editor.recoveryConflict).toBe(true);
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Healthy edit'));
+  await act(async () => editor.save());
+  expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+    ['PLAN.md', 'Uncertain plan'],
+    ['main.py', 'Healthy edit'],
+  ]);
+});

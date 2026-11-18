@@ -93,6 +93,15 @@ export function useProjectEditor(
     },
     [],
   );
+  const updateRecoveryConflicts = useCallback(
+    (update: (previous: typeof recoveryConflicts) => typeof recoveryConflicts) => {
+      // The queue must see a conflict before another file's receipt can drain it.
+      const next = update(current.current.recoveryConflicts);
+      current.current.recoveryConflicts = next;
+      setRecoveryConflicts(next);
+    },
+    [],
+  );
   const clearFileFailure = useCallback((name: string) => {
     retrySaves.current.delete(name);
     if (unavailableSave.current?.name === name) unavailableSave.current = null;
@@ -165,7 +174,7 @@ export function useProjectEditor(
           }
         };
         const clearConflict = () =>
-          setRecoveryConflicts((previous) => {
+          updateRecoveryConflicts((previous) => {
             if (!previous[path]) return previous;
             const next = { ...previous };
             delete next[path];
@@ -189,7 +198,7 @@ export function useProjectEditor(
           // A replacement environment is not permission to rebase over another writer.
           // Reattach only a verified base or a submission observed in the restored file.
           if (result.hash !== existing.hash && !savedSubmission) {
-            setRecoveryConflicts((previous) =>
+            updateRecoveryConflicts((previous) =>
               previous[path] === editorSource(view)
                 ? previous
                 : { ...previous, [path]: editorSource(view)! },
@@ -246,7 +255,7 @@ export function useProjectEditor(
         }
       }
     },
-    [updateBuffers, updateReadErrors, clearFileFailure],
+    [updateBuffers, updateReadErrors, updateRecoveryConflicts, clearFileFailure],
   );
   useEffect(() => {
     const { buffers } = current.current;
@@ -309,7 +318,9 @@ export function useProjectEditor(
         if (!options.enabled) return;
         // Keep each uncertain submission intact while another file can save.
         const retry = Array.from(retrySaves.current.values()).find(
-          (entry) => readErrors[entry.name]?.source !== editorSource(view),
+          (entry) =>
+            readErrors[entry.name]?.source !== editorSource(view) &&
+            recoveryConflicts[entry.name] !== editorSource(view),
         );
         if (
           retry &&
