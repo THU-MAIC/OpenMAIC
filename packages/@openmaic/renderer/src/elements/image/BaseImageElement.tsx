@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { PPTImageElement } from '@openmaic/dsl';
 import { useElementShadow } from '../shared/useElementShadow';
 import { useElementFlip } from '../shared/useElementFlip';
+import { useOptionalSlideContext } from '../../context';
 import { useClipImage } from './useClipImage';
 import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
@@ -30,6 +31,7 @@ export function BaseImageElement({ elementInfo, renderImage }: BaseImageElementP
   const { filter } = useFilter(elementInfo.filters);
 
   const src = elementInfo.src;
+  const classroomSizing = useOptionalSlideContext()?.classroomSizing;
 
   // Soft-edge feather (a:softEdge): fade the image alpha to transparent over
   // `softEdge` px at every edge. Two intersecting linear-gradient masks feather
@@ -70,7 +72,7 @@ export function BaseImageElement({ elementInfo, renderImage }: BaseImageElementP
           left: imgPosition.left,
           width: imgPosition.width,
           height: imgPosition.height,
-          maxWidth: 'none',
+          maxWidth: classroomSizing ? '100%' : 'none',
           maxHeight: 'none',
           filter,
           ...softEdgeMaskStyle,
