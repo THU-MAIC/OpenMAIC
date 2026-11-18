@@ -35,7 +35,10 @@ export function useProjectEditor(
   // Keep cached content visible, but do not accept edits until its fresh read succeeds.
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
+  const [saveFailures, setSaveFailures] = useState<{
+    pausedFile: string | null;
+    errors: Record<string, string>;
+  }>({ pausedFile: null, errors: {} });
   const [readErrors, setReadErrors] = useState<
     Record<string, { source: ReturnType<typeof editorSource>; message: string }>
   >({});
@@ -46,8 +49,7 @@ export function useProjectEditor(
   const [recoveryConflicts, setRecoveryConflicts] = useState<Record<string, string>>({});
   const sequence = useRef(0),
     mounted = useRef(true);
-  const inFlight = useRef<Promise<void> | null>(null),
-    failed = useRef<string | null>(null);
+  const inFlight = useRef<Promise<void> | null>(null);
   const retrySaves = useRef(
     new Map<string, { name: string; buffer: EditorBuffer; request: FileSaveRequest }>(),
   );
@@ -63,6 +65,7 @@ export function useProjectEditor(
     recoveryConflicts,
     refreshing,
     readErrors,
+    saveFailures,
   });
   current.current = {
     view,
@@ -75,6 +78,7 @@ export function useProjectEditor(
     recoveryConflicts,
     refreshing,
     readErrors,
+    saveFailures,
   };
   const updateBuffers = useCallback(
     (update: (previous: Record<string, EditorBuffer>) => Record<string, EditorBuffer>) => {
@@ -93,6 +97,27 @@ export function useProjectEditor(
     },
     [],
   );
+  const updateSaveFailures = useCallback(
+    (update: (previous: typeof saveFailures) => typeof saveFailures) => {
+      // Retrying one file never authorizes another file's failed submission.
+      const next = update(current.current.saveFailures);
+      current.current.saveFailures = next;
+      setSaveFailures(next);
+    },
+    [],
+  );
+  const clearSaveFailure = useCallback(
+    (name: string, resumeQueue = false) =>
+      updateSaveFailures((previous) => {
+        const hasError = Object.hasOwn(previous.errors, name);
+        const pausedFile = resumeQueue || previous.pausedFile === name ? null : previous.pausedFile;
+        if (!hasError && pausedFile === previous.pausedFile) return previous;
+        const errors = hasError ? { ...previous.errors } : previous.errors;
+        if (hasError) delete errors[name];
+        return { pausedFile, errors };
+      }),
+    [updateSaveFailures],
+  );
   const updateRecoveryConflicts = useCallback(
     (update: (previous: typeof recoveryConflicts) => typeof recoveryConflicts) => {
       // The queue must see a conflict before another file's receipt can drain it.
@@ -102,15 +127,15 @@ export function useProjectEditor(
     },
     [],
   );
-  const clearFileFailure = useCallback((name: string) => {
-    retrySaves.current.delete(name);
-    if (unavailableSave.current?.name === name) unavailableSave.current = null;
-    // Recovering one file must not authorize retrying another failed write.
-    if (failed.current === name) {
-      failed.current = null;
-      setSaveError('');
-    }
-  }, []);
+  const clearFileFailure = useCallback(
+    (name: string) => {
+      retrySaves.current.delete(name);
+      if (unavailableSave.current?.name === name) unavailableSave.current = null;
+      // Recovering one file must not authorize retrying another failed write.
+      clearSaveFailure(name);
+    },
+    [clearSaveFailure],
+  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -305,7 +330,7 @@ export function useProjectEditor(
   const pump = useCallback((): Promise<void> => {
     if (inFlight.current) return inFlight.current;
     const run = async () => {
-      while (mounted.current && !failed.current) {
+      while (mounted.current && !current.current.saveFailures.pausedFile) {
         const {
           path: active,
           buffers,
@@ -314,11 +339,13 @@ export function useProjectEditor(
           onSave,
           recoveryConflicts,
           readErrors,
+          saveFailures,
         } = current.current;
         if (!options.enabled) return;
         // Keep each uncertain submission intact while another file can save.
         const retry = Array.from(retrySaves.current.values()).find(
           (entry) =>
+            !Object.hasOwn(saveFailures.errors, entry.name) &&
             readErrors[entry.name]?.source !== editorSource(view) &&
             recoveryConflicts[entry.name] !== editorSource(view),
         );
@@ -337,6 +364,7 @@ export function useProjectEditor(
             return (
               b &&
               b.text !== b.saved &&
+              !Object.hasOwn(saveFailures.errors, p) &&
               b.environment === editorSource(view) &&
               recoveryConflicts[p] !== editorSource(view) &&
               readErrors[p]?.source !== editorSource(view) &&
@@ -403,8 +431,10 @@ export function useProjectEditor(
               unavailableSave.current = { name, environment: buffer.environment };
           }
           if (mounted.current) {
-            failed.current = name;
-            setSaveError((error as Error).message);
+            updateSaveFailures((previous) => ({
+              pausedFile: name,
+              errors: { ...previous.errors, [name]: (error as Error).message },
+            }));
           }
           return;
         }
@@ -415,14 +445,15 @@ export function useProjectEditor(
       if (mounted.current) setSaving(false);
     });
     return inFlight.current;
-  }, [updateBuffers]);
+  }, [updateBuffers, updateSaveFailures]);
   useEffect(() => {
-    if (!options.enabled || failed.current) return;
+    if (!options.enabled || current.current.saveFailures.pausedFile) return;
     const timer = setTimeout(() => void pump(), AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [
     buffers,
     readErrors,
+    saveFailures,
     options.enabled,
     view.environmentId,
     view.completedFilesAvailable,
@@ -437,7 +468,9 @@ export function useProjectEditor(
   };
   const close = (name: string) => {
     if (
-      (retrySaves.current.has(name) || unavailableSave.current?.name === name) &&
+      (retrySaves.current.has(name) ||
+        unavailableSave.current?.name === name ||
+        Object.hasOwn(current.current.saveFailures.errors, name)) &&
       !inFlight.current
     ) {
       clearFileFailure(name);
@@ -461,6 +494,8 @@ export function useProjectEditor(
     setTabs(next);
     if (path === name) setPath(next.at(-1)!);
   };
+  const saveErrorFor = (name: string) =>
+    Object.hasOwn(saveFailures.errors, name) ? saveFailures.errors[name] : undefined;
   return {
     path,
     tabs,
@@ -468,7 +503,11 @@ export function useProjectEditor(
     loading,
     refreshing,
     saving,
-    saveError,
+    // While the queue is paused, keep its Retry entry point visible on healthy tabs.
+    saveError:
+      saveErrorFor(path) ??
+      (saveFailures.pausedFile ? saveErrorFor(saveFailures.pausedFile) : '') ??
+      '',
     readError: readErrors[path]?.source === selectedSource ? readErrors[path].message : '',
     recoveryConflict: recoveryConflicts[path] === editorSource(view),
     dirty,
@@ -489,8 +528,7 @@ export function useProjectEditor(
     reload: () => load(true),
     retryRead: () => load(),
     save: () => {
-      failed.current = null;
-      setSaveError('');
+      clearSaveFailure(current.current.path, true);
       return pump();
     },
     edit: (text: string) => {

@@ -43,6 +43,7 @@ const onSave = vi.fn<Parameters<typeof LearningWorkbenchPanel>[0]['onSave']>(asy
   hash: 'b'.repeat(64),
 }));
 const onDirtyChange = vi.fn();
+let fixtureSequence = 0;
 afterEach(async () => {
   await act(async () => root?.unmount());
   host?.remove();
@@ -74,7 +75,7 @@ async function fixture() {
   );
   vi.spyOn(window, 'confirm').mockReturnValue(true);
   const view = {
-    id: 'read-retry-panel',
+    id: `read-retry-panel-${++fixtureSequence}`,
     environmentId: 'environment',
     environment: { ready: true },
     revision: 1,
@@ -172,4 +173,45 @@ it('shows saving for a healthy dirty file during the debounce while another file
   expect(onSave.mock.calls[0]?.[0]).toBe('main.py');
   expect(host.textContent).toContain('pblV3.ide.saved');
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+});
+
+it('a healthy tab retains a visible retry action while another file pauses the save queue', async () => {
+  await fixture();
+  onSave.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+  await edit('Uncertain plan');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(onSave).toHaveBeenCalledTimes(1);
+  await act(async () => button('main.py').click());
+  await edit('Healthy code');
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(onSave).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain('pblV3.ide.saveFailed');
+  expect(button('pblV3.ide.saveFailed').disabled).toBe(false);
+  await act(async () => button('pblV3.ide.saveFailed').click());
+  expect(onSave.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+    ['PLAN.md', 'Uncertain plan'],
+    ['main.py', 'Healthy code'],
+  ]);
+  await act(async () => button('PLAN.md ●').click());
+  expect(host.textContent).toContain('pblV3.ide.saveFailed');
+});
+
+it('clears the paused queue indicator on a clean healthy tab without authorizing another file', async () => {
+  await fixture();
+  onSave.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+  await edit('Uncertain plan');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  const request = onSave.mock.calls[0]![3];
+  await act(async () => button('main.py').click());
+  expect(host.textContent).toContain('pblV3.ide.saveFailed');
+  await act(async () => button('pblV3.ide.saveFailed').click());
+  expect(onSave).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain('pblV3.ide.saved');
+  expect(host.textContent).not.toContain('pblV3.ide.saveFailed');
+  await act(async () => button('PLAN.md ●').click());
+  expect(host.textContent).toContain('pblV3.ide.saveFailed');
+  await act(async () => button('pblV3.ide.saveFailed').click());
+  expect(onSave).toHaveBeenCalledTimes(2);
+  expect(onSave.mock.calls[1]![3]).toBe(request);
+  expect(host.textContent).not.toContain('pblV3.ide.saveFailed');
 });

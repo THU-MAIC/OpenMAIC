@@ -1053,7 +1053,7 @@ it.each(['reload', 'close'] as const)(
   },
 );
 
-it('retains multiple uncertain submissions while a read-blocked retry is skipped', async () => {
+it('retains multiple uncertain submissions until each file is explicitly retried', async () => {
   vi.useFakeTimers();
   await mount(
     createElement(Editor, {
@@ -1076,11 +1076,19 @@ it('retains multiple uncertain submissions while a read-blocked retry is skipped
   await act(async () => editor.edit('Other code'));
   await act(async () => editor.save());
   expect(save.mock.calls.slice(2).map((call) => call.slice(0, 3))).toEqual([
-    ['main.py', 'Submitted code', 'a'.repeat(64)],
     ['other.py', 'Other code', 'a'.repeat(64)],
+  ]);
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(save).toHaveBeenCalledTimes(3);
+  await act(async () => editor.select('main.py'));
+  expect(editor.saveError).toBe('Code acknowledgement lost');
+  await act(async () => editor.save());
+  expect(save.mock.calls.slice(2).map((call) => call.slice(0, 3))).toEqual([
+    ['other.py', 'Other code', 'a'.repeat(64)],
+    ['main.py', 'Submitted code', 'a'.repeat(64)],
     ['main.py', 'Newer code', 'b'.repeat(64)],
   ]);
-  expect(save.mock.calls[2]![3]).toBe(codeRequest);
+  expect(save.mock.calls[3]![3]).toBe(codeRequest);
   expect(save.mock.calls.filter((call) => call[0] === 'PLAN.md')).toHaveLength(1);
   await act(async () => editor.select('PLAN.md'));
   expect(editor.buffer?.text).toBe('Submitted plan');
@@ -1176,4 +1184,71 @@ it('a retry-read conflict must not block explicit saves of healthy files', async
     ['PLAN.md', 'Uncertain plan'],
     ['main.py', 'Healthy edit'],
   ]);
+});
+
+it('saving a healthy file does not authorize a blocked uncertain write after retry read', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-file-specific-retry') }));
+  save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+  await act(async () => editor.edit('Uncertain plan'));
+  await act(async () => editor.save());
+  const planRequest = save.mock.calls[0]![3];
+  read.mockRejectedValueOnce(new Error('Plan read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Healthy code'));
+  await act(async () => editor.save());
+  expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+    ['PLAN.md', 'Uncertain plan'],
+    ['main.py', 'Healthy code'],
+  ]);
+  await act(async () => editor.select('PLAN.md'));
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(editor.saveError).toBe('Plan acknowledgement lost');
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(3);
+  expect(save.mock.calls[2]![3]).toBe(planRequest);
+  expect(editor.saveError).toBe('');
+});
+
+it('does not treat an inherited property name as a file save failure', async () => {
+  await mount(
+    createElement(Editor, {
+      value: { ...view('save-error-file-name'), files: ['PLAN.md', 'constructor'] },
+    }),
+  );
+  await act(async () => editor.select('constructor'));
+  expect(editor.saveError).toBe('');
+  await act(async () => editor.edit('Edited source'));
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledWith(
+    'constructor',
+    'Edited source',
+    'a'.repeat(64),
+    expect.any(Object),
+  );
+  expect(editor.saveError).toBe('');
+});
+
+it('clears only the closed file failure after a confirmed write rejection', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('close-rejected-file') }));
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Rejected draft'));
+  save.mockRejectedValueOnce(
+    new SandboxRequestError('Progress changed', 409, 'PBL_ERROR', 'PROGRESS_CHANGED'),
+  );
+  await act(async () => editor.save());
+  expect(editor.saveError).toBe('Progress changed');
+  await act(async () => editor.close('main.py'));
+  expect(editor.saveError).toBe('');
+  await act(async () => editor.select('main.py'));
+  expect(editor.saveError).toBe('');
+  await act(async () => editor.edit('New draft'));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]?.slice(0, 3)).toEqual(['main.py', 'New draft', 'a'.repeat(64)]);
 });
