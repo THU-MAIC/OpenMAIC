@@ -202,6 +202,7 @@ export function LearningConversation({
   requesting = false,
   modalActive = false,
   pendingMessage = null,
+  waitingToStart = false,
   onOpenFile,
   onOpenReport,
   onOpenTask,
@@ -216,6 +217,7 @@ export function LearningConversation({
   requesting?: boolean;
   modalActive?: boolean;
   pendingMessage?: LearningConversationEntry | null;
+  waitingToStart?: boolean;
 }) {
   const { t } = useI18n();
   const entries: LearningConversationEntry[] =
@@ -249,19 +251,22 @@ export function LearningConversation({
     }
   };
   const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
+  if (waitingToStart) {
+    // An ordinary reading pane: no tail observer runs before the learner starts.
+    return (
+      <div
+        className="min-h-0 flex-1 overflow-y-auto p-4"
+        data-testid="pbl-project-start"
+        tabIndex={0}
+      >
+        {overview}
+      </div>
+    );
+  }
   return (
     <ConversationViewport
       key={view.id}
       header={overview}
-      startAtOverview={
-        view.state.position.milestoneIndex === 0 &&
-        view.state.position.stageIndex === 0 &&
-        view.state.status !== 'completed' &&
-        (!entries.length || view.needsOpening) &&
-        !pendingMessage &&
-        !entries.some((entry) => entry.speaker === 'user') &&
-        !view.conversationHistory?.length
-      }
       sent={sent}
       hidden={modalActive}
       generating={requesting || view.busy || entries.some((entry) => entry.status === 'running')}
@@ -292,7 +297,7 @@ export function LearningConversation({
           {t('pblV3.conversationLimited')}
         </p>
       )}
-      {!entries.length && !view.busy && (
+      {!entries.length && !view.busy && !requesting && (
         <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
       )}
       {entries.map((entry) => (

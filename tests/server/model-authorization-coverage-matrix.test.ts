@@ -662,6 +662,8 @@ describe('server model authorization coverage matrix', () => {
       );
     const api = join(process.cwd(), 'app/api');
     const calls = walk(api)
+      // `join` uses `\` on Windows; the matrix names routes with `/`.
+      .map((file) => file.replace(/\\/g, '/'))
       .filter((file) => file.endsWith('/route.ts') && pattern.test(readFileSync(file, 'utf8')))
       .map((file) => file.slice(api.length + 1, -'/route.ts'.length))
       .sort();

@@ -1,14 +1,22 @@
 'use client';
 
 import { ChevronDown, Compass, Map, Monitor, Route } from 'lucide-react';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
 export const PROJECT_OVERVIEW_ID = 'pbl-project-overview';
 
-export function ProjectOverview({ view, hero }: { view: LearningView; hero?: ProjectHeroDetails }) {
+export function ProjectOverview({
+  view,
+  hero,
+  startAction,
+}: {
+  view: LearningView;
+  hero?: ProjectHeroDetails;
+  startAction?: ReactNode;
+}) {
   const { t } = useI18n();
   const titleId = useId();
   const milestones = view.milestones ?? [];
@@ -150,6 +158,11 @@ export function ProjectOverview({ view, hero }: { view: LearningView; hero?: Pro
           </div>
         </details>
       </div>
+      {startAction && (
+        <div className="sticky bottom-0 rounded-b-2xl border-t bg-background p-3.5">
+          {startAction}
+        </div>
+      )}
     </section>
   );
 }

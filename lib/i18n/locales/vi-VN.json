@@ -3044,6 +3044,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Bắt đầu học",
       "title": "Tổng quan dự án",
       "expand": "Mở rộng",
       "collapse": "Thu gọn",
@@ -3056,7 +3057,18 @@
       "eachStage": "Quy trình mỗi giai đoạn",
       "yourRole": "Bạn quyết định và rà soát; AI hỗ trợ viết kế hoạch và mã.",
       "preview": "Dùng ứng dụng trong vùng xem trước để kiểm tra kết quả.",
-      "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp."
+      "advance": "Nút màu tím phía trên ô nhập chỉ xuất hiện khi bước hiện tại đủ điều kiện để tiếp tục. Khi nút xuất hiện, hãy nhấn để đi tiếp.",
+      "startBlocked": {
+        "guide": "Hoàn tất hoặc đóng hướng dẫn không gian làm việc để bắt đầu học.",
+        "connecting": "Đang kết nối cập nhật trực tiếp trước khi bắt đầu học…",
+        "retrying": "Đang kết nối lại cập nhật trực tiếp. Chờ kết nối được khôi phục trước khi bắt đầu.",
+        "unavailable": "Cập nhật trực tiếp không khả dụng. Tải lại trang để kết nối lại trước khi bắt đầu.",
+        "pending": "Một thao tác đang được xử lý. Chờ thao tác hoàn tất trước khi bắt đầu.",
+        "busy": "Trợ lý vẫn đang trả lời. Chờ câu trả lời kết thúc trước khi bắt đầu.",
+        "environment": "Chờ môi trường học tập sẵn sàng trước khi bắt đầu. Nếu chuẩn bị thất bại, hãy thử lại ở phía trên.",
+        "unsaved": "Các tệp dự án có thay đổi chưa lưu. Lưu hoặc bỏ các thay đổi trước khi bắt đầu.",
+        "preparing": "Đang chuẩn bị không gian làm việc. Vui lòng chờ trước khi bắt đầu."
+      }
     },
     "journey": {
       "currentMilestone": "Giai đoạn hiện tại",
@@ -3398,6 +3410,8 @@
       "waiting": "Hướng dẫn sẽ có khi môi trường học tập sẵn sàng.",
       "loading": "Đang tải không gian làm việc",
       "loadingDetail": "Đang kết nối môi trường học tập và chuẩn bị tệp dự án. Vui lòng chờ.",
+      "loadingSlowDetail": "Việc chuẩn bị đang lâu hơn dự kiến. Bạn có thể quay lại phần giới thiệu dự án; quá trình chuẩn bị môi trường đã bắt đầu sẽ tiếp tục chạy trong nền.",
+      "loadingReturn": "Quay lại phần giới thiệu dự án",
       "steps": {
         "progress": {
           "title": "Xem tiến độ và nhiệm vụ hiện tại",

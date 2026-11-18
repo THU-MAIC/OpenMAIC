@@ -65,6 +65,9 @@ const STORAGE_SHIM = `<script data-iframe-storage-shim>
  * also buffered, and the shim re-emits the whole buffer when the parent sends a
  * `{ __maicErrorReplayRequest: true }` message once its listener is ready. The
  * parent dedups, so the live + replayed copies collapse to one.
+ *
+ * Known-benign browser notices (the ResizeObserver loop notice) are dropped, so
+ * a working widget does not get the "failed to run" banner.
  */
 const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 (function () {
@@ -77,8 +80,12 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
       );
     } catch (e) {}
   }
+  // Chromium's ResizeObserver loop notice: delivered through window.onerror,
+  // but nothing threw and the page keeps working, so it is not a runtime error.
+  var BENIGN = /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/;
   function post(errorKind, message) {
     message = String(message).slice(0, 1200);
+    if (BENIGN.test(message)) return;
     if (buffer.length < 50) buffer.push([errorKind, message]);
     emit(errorKind, message);
   }

@@ -109,6 +109,37 @@ describe('patchHtmlForIframe', () => {
     expect(String(posts[3][0].message)).toContain('console boom');
   });
 
+  it('the error shim ignores the benign ResizeObserver loop notice', () => {
+    const out = patchHtmlForIframe('<html><head></head><body></body></html>');
+    const shim = out.match(/<script data-iframe-error-shim>([\s\S]*?)<\/script>/)?.[1];
+    const posts: Array<[Record<string, unknown>, string]> = [];
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const win = {
+      parent: { postMessage: (m: Record<string, unknown>, o: string) => posts.push([m, o]) },
+      addEventListener: (t: string, cb: (e: unknown) => void) => {
+        handlers[t] = cb;
+      },
+      console: { error: (..._args: unknown[]) => {} },
+    };
+    new Function('window', shim as string)(win);
+
+    handlers.error({
+      message: 'ResizeObserver loop completed with undelivered notifications.',
+      filename: 'about:srcdoc',
+    });
+    handlers.error({ message: 'ResizeObserver loop limit exceeded' });
+    expect(posts).toHaveLength(0);
+
+    // Not buffered either, so a replay request has nothing to re-emit.
+    handlers.message({ data: { __maicErrorReplayRequest: true } });
+    expect(posts).toHaveLength(0);
+
+    // Real errors still get through.
+    handlers.error({ message: 'ReferenceError: x is not defined' });
+    expect(posts).toHaveLength(1);
+    expect(String(posts[0][0].message)).toContain('x is not defined');
+  });
+
   it('the error shim buffers errors and re-emits them on a parent replay request', () => {
     // Guards the subscribe-after-insert race: a page that throws synchronously
     // while srcDoc parses may post before the parent subscribes. The shim must

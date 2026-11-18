@@ -49,7 +49,10 @@ describe('inspectInstanceSecret', () => {
     expect(inspectInstanceSecret({}, dataDir)).toMatchObject({ fileExists: true, kid });
   });
 
-  it.skipIf(process.getuid?.() === 0)('sees a data directory that cannot be written', () => {
+  // Root ignores the mode, and on Windows `chmod` does not make a directory
+  // read-only, so neither can set up the case.
+  const modeIsNotEnforced = process.getuid?.() === 0 || process.platform === 'win32';
+  it.skipIf(modeIsNotEnforced)('sees a data directory that cannot be written', () => {
     const root = tempDir();
     fs.chmodSync(root, 0o500);
     expect(inspectInstanceSecret({}, path.join(root, 'data')).dataDirWritable).toBe(false);
