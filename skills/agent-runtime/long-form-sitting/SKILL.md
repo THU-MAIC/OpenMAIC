@@ -72,11 +72,13 @@ stated in the plan.
 A page's speech length is **planned, not discovered**: the page's spoken
 minutes × the language's speech rate ≈ the narration it must carry. Use about
 250-280 characters per spoken minute for Chinese and 140-160 words per minute
-for English as starting rates, and pass the number in each page's
-`generate_scene` `brief` or `materialFacts` as a directive —
-「本页旁白约 900 字，约 3.5 分钟」. A page whose narration undershoots its
-budget is a defect: name it in the wrap-up, the same way a missing page is
-named.
+for English as starting rates. Keep the number in the conversation
+plan as a budget to check against — never in `brief` or `materialFacts`:
+those are page-content fields, and a directive there can surface as
+learner-visible slide text without governing the speech. After a page is
+generated, inspect its `/actions` speech text and patch it until the spoken
+length meets the budget. A page whose narration still undershoots is a defect:
+name it in the wrap-up, the same way a missing page is named.
 
 ## 5. The plan is the ledger
 
