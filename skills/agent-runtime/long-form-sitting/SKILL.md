@@ -90,9 +90,10 @@ means, including how yield moves it"). Never put the raw ledger label in
 `brief`: it is a page-content field and its wording can become learner-visible
 slide text. When you write page N's brief, reread the plan rather than your
 memory of page N-1. In a series this is
-`curriculum-planner`'s rule at stage granularity: `read_stage_outline` the
-earlier stage before building one that builds on it — continuity against what
-was actually built, not what was planned.
+`curriculum-planner`'s rule at stage granularity: use `read_stage_outline` on
+the earlier stage to locate the relevant pages, then `read_stage` to inspect
+their actual content before building on it — continuity against what was
+actually produced, not just the planned titles.
 
 ## 6. The four contracts
 
