@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Generated interactive pages: the page-writing prompts now require an element marked `hidden` to stay hidden under an author `display` rule and to be shown by removing the attribute, a canvas to sit out of the layout flow of the container it is sized from and to draw in CSS pixels on high-density screens, and reset to rerender every readout through the same render path as startup. The simulation, game and reveal examples follow these rules. This prevents a false "canvas unavailable" message, a canvas that grows until it is blank, and readouts left from the previous run. Scenes generated before this change keep their HTML. [#2019](https://github.com/THU-MAIC/OpenMAIC/issues/2019)
+
 ## [1.5.0-rc.3] - 2026-11-17
 
 1.5.0-rc.3 is the third release candidate for 1.5.0. It adds DeepSeek speech recognition, speech synthesis and document OCR (one DeepSeek key now covers them), MiniCPM-OCR as a document parser, and chunked parsing of long PDFs on self-hosted MinerU, which the Pro agent can then read by chapter. In the workbench, an agent question with a recommended answer confirms itself after a short countdown. It also fixes the first-run tour, folder pins, the split-view export menu, PPTX import in the standalone image, editor fonts in the classroom, and several PBL v3 interactions. No upgrade conditions over 1.5.0-rc.2: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.
