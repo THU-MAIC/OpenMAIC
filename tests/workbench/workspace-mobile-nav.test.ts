@@ -13,6 +13,9 @@
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Search } from 'lucide-react';
+import { RenameNameDialog } from '@/components/workbench/workspace/RenameNameDialog';
+import { WorkbenchShellExtensionsProvider } from '@/lib/workbench/shell-extensions';
 
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
@@ -137,6 +140,34 @@ describe('WorkspaceRail as the phone sheet', () => {
     expect(props.onOpenView).toHaveBeenCalledWith('courses');
   });
 
+  it.each(['drawer', 'rail'] as const)('selects a host action in the %s', async (variant) => {
+    const { container, root } = mount();
+    const calls: string[] = [];
+    const onCloseDrawer = () => calls.push('close');
+    await act(async () =>
+      root.render(
+        createElement(
+          WorkbenchShellExtensionsProvider,
+          {
+            value: {
+              navItems: [
+                {
+                  id: 'host-action',
+                  label: 'Host action',
+                  icon: Search,
+                  onSelect: () => calls.push('select'),
+                },
+              ],
+            },
+          },
+          createElement(WorkspaceRail, { ...railProps(), variant, onCloseDrawer }),
+        ),
+      ),
+    );
+    await act(async () => q(container, 'pro-nav-host-host-action')!.click());
+    expect(calls).toEqual(variant === 'drawer' ? ['close', 'select'] : ['select']);
+  });
+
   it('leaves the desktop rail as it was', async () => {
     const { container, root } = mount();
     await act(async () => root.render(createElement(WorkspaceRail, railProps())));
@@ -185,6 +216,7 @@ describe('WorkspaceMobileDrawer', () => {
     expect(drawer).not.toBeNull();
     expect(container.contains(drawer)).toBe(true);
     expect(q(drawer!, 'sheet-body')).not.toBeNull();
+    expect(document.activeElement).toBe(drawer);
   });
 
   it('closes on Escape', async () => {
@@ -207,4 +239,24 @@ describe('WorkspaceMobileDrawer', () => {
     expect(q(document, 'pro-mobile-drawer')).toBeNull();
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+});
+
+it('keeps the course rename dialog in the workspace and focuses its input', async () => {
+  const { container, root } = mount();
+  await act(async () =>
+    root.render(
+      createElement(RenameNameDialog, {
+        open: true,
+        title: 'Rename',
+        label: 'Course name',
+        initialName: 'Photosynthesis',
+        busy: false,
+        error: null,
+        onCommit: vi.fn(),
+        onCancel: vi.fn(),
+      }),
+    ),
+  );
+  expect(q(container, 'workspace-courses-rename-dialog')).not.toBeNull();
+  expect(document.activeElement).toBe(q(container, 'workspace-courses-rename-dialog-input'));
 });

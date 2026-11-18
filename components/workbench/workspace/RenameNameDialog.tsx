@@ -11,7 +11,7 @@
  * owned by the page (it holds the edit and answers it).
  */
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -47,6 +47,10 @@ export function RenameNameDialog({
 }) {
   const { t } = useI18n();
   const [value, setValue] = useState(initialName);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  const findWorkspace = useCallback((node: HTMLSpanElement | null) => {
+    setContainer(node?.closest<HTMLElement>('.ws-root') ?? null);
+  }, []);
   const field = useRef<HTMLInputElement>(null);
   const errorId = 'rename-name-dialog-error';
 
@@ -58,8 +62,6 @@ export function RenameNameDialog({
     field.current?.setSelectionRange(0, field.current.value.length);
   };
 
-  useLayoutEffect(focusField, []);
-
   const submit = () => {
     if (busy || !value.trim()) return;
     onCommit(value);
@@ -67,19 +69,19 @@ export function RenameNameDialog({
 
   return (
     <Dialog
-      open={open}
+      open={open && container !== null}
       onOpenChange={(next) => {
         if (!next && !busy) onCancel();
       }}
     >
+      <span hidden ref={findWorkspace} />
       <DialogContent
+        container={container}
         data-testid="workspace-courses-rename-dialog"
         // A phone keyboard takes half the screen; keep the field near the top of
         // what is left rather than behind the keyboard.
         className="top-[12%] translate-y-0 sm:top-1/2 sm:-translate-y-1/2"
         onOpenAutoFocus={(event) => {
-          // The effect above focuses the field and selects it; Radix's own
-          // autofocus would land before that and undo the selection.
           event.preventDefault();
           focusField();
         }}

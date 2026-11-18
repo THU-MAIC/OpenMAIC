@@ -235,8 +235,13 @@ export function WorkspaceRail({
       active: activeView === WORKSPACE_LIBRARY_VIEW,
       onSelect: () => onOpenView(WORKSPACE_LIBRARY_VIEW),
     },
-    ...(extensions.navItems ?? []).map(
-      (item): RailDestination => ({
+    ...(extensions.navItems ?? []).map((item): RailDestination => {
+      const select = item.onSelect;
+      const selectDrawerAction = () => {
+        onCloseDrawer?.();
+        select?.();
+      };
+      return {
         id: item.id,
         testId: `pro-nav-host-${item.id}`,
         label: item.label,
@@ -245,9 +250,13 @@ export function WorkspaceRail({
         active: activeView === item.id,
         href: item.render ? undefined : item.href,
         external: item.external,
-        onSelect: item.render ? () => onOpenView(item.id) : item.onSelect,
-      }),
-    ),
+        onSelect: item.render
+          ? () => onOpenView(item.id)
+          : drawer && select
+            ? selectDrawerAction
+            : select,
+      };
+    }),
   ];
 
   // How many extra pages the list has revealed (see `workspace-paging`);
