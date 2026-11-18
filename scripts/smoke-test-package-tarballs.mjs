@@ -156,10 +156,19 @@ import { RUNTIME_DSL_VERSION, validateRuntimeSession } from '@openmaic/dsl';
 import { PROMPT_IDS, buildPrompt } from '@openmaic/generation';
 import { DOCUMENT_PG_SCHEMA } from '@openmaic/storage';
 import { SlideCanvas } from '@openmaic/renderer';
+import { SkillPackage, exportSkillPackage, importSkillPackage } from '@openmaic/skills';
 import { createEditorTransaction as createEditorTransactionFromRoot } from '@openmaic/editor';
 import { createEditorTransaction } from '@openmaic/editor/core';
 import { EMPTY_SELECTION } from '@openmaic/editor/react';
 import { EditableSlideCanvasWithUI } from '@openmaic/editor/ui';
+
+const skill = new SkillPackage([{
+  path: 'SKILL.md',
+  bytes: new TextEncoder().encode('---\\nname: smoke-skill\\ndescription: Package smoke test\\n---\\nRead the instructions.'),
+}]);
+const restoredSkill = await importSkillPackage(await exportSkillPackage(skill));
+assert.equal(restoredSkill.manifest.revision, skill.manifest.revision);
+assert.deepEqual(restoredSkill.read('SKILL.md'), skill.read('SKILL.md'));
 
 assert.equal(typeof RUNTIME_DSL_VERSION, 'string');
 assert.equal(typeof validateRuntimeSession, 'function');

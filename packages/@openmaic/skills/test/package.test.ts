@@ -189,3 +189,65 @@ it('decodes legacy CP437 ZIP resource names with and without Unicode extras', as
     bytes('Legacy encoding'),
   );
 });
+
+it('protects snapshot state from JavaScript property access and replacement', async () => {
+  const skill = new SkillPackage([entry, guide]);
+  const manifest = skill.manifest;
+  expect(Reflect.get(skill, 'files')).toBeUndefined();
+  expect(Reflect.set(skill, 'files', new Map())).toBe(false);
+  expect(Reflect.set(skill, 'manifest', { revision: 'forged' })).toBe(false);
+  expect(Reflect.deleteProperty(skill, 'manifest')).toBe(false);
+  expect(() => Object.defineProperty(skill, 'manifest', { value: {} })).toThrow();
+  expect(Reflect.set(manifest, 'revision', 'forged')).toBe(false);
+  expect(Reflect.set(manifest.files[0], 'hash', 'forged')).toBe(false);
+  skill.entries()[0].bytes.fill(0);
+  expect(skill.manifest).toBe(manifest);
+  expect(skill.read('SKILL.md')).toEqual(entry.bytes);
+  expect((await importSkillPackage(await exportSkillPackage(skill))).manifest).toEqual(manifest);
+  expect(patchSkillPackage(skill, manifest.revision, []).manifest).toEqual(manifest);
+});
+
+it.each([
+  ['SKILL.md', 'skill.md'],
+  ['assets/Example.txt', 'assets/example.txt'],
+  ['Assets', 'assets/example.txt'],
+  ['assets/É.txt', 'assets/é.txt'],
+  ['assets/Σ.txt', 'assets/ς.txt'],
+  ['assets/ß.txt', 'assets/ss.txt'],
+  ['assets/ẞ.txt', 'assets/ß.txt'],
+  ['assets/ẞ.txt', 'assets/ss.txt'],
+  ['ẞ', 'ss/file.txt'],
+  ['Σ', 'ς/file.txt'],
+  ['ß', 'ss/file.txt'],
+])('rejects portable path collisions between %s and %s', async (first, second) => {
+  const files = [
+    entry,
+    { path: first, bytes: bytes('first') },
+    { path: second, bytes: bytes('second') },
+  ];
+  const input = first === 'SKILL.md' ? files.slice(1) : files;
+  if (first === 'SKILL.md') input[0] = entry;
+  expect(() => new SkillPackage(input)).toThrow('INVALID_PACKAGE');
+  expect(() => new SkillPackage([...input].reverse())).toThrow('INVALID_PACKAGE');
+  const zip = new JSZip();
+  for (const file of input)
+    zip.file(`lesson-plan/${file.path}`, file.bytes, { createFolders: false });
+  await expect(importSkillPackage(await zip.generateAsync({ type: 'uint8array' }))).rejects.toThrow(
+    'INVALID_PACKAGE',
+  );
+});
+
+it('rejects patches that introduce case aliases while allowing explicit renames', () => {
+  const skill = new SkillPackage([entry, guide]);
+  expect(() =>
+    patchSkillPackage(skill, skill.manifest.revision, [
+      { path: 'references/GUIDE.md', bytes: bytes('alias') },
+    ]),
+  ).toThrow('INVALID_PACKAGE');
+  const renamed = patchSkillPackage(skill, skill.manifest.revision, [
+    { path: guide.path, bytes: null },
+    { path: 'references/GUIDE.md', bytes: guide.bytes },
+  ]);
+  expect(renamed.read('references/GUIDE.md')).toEqual(guide.bytes);
+  expect(skill.read(guide.path)).toEqual(guide.bytes);
+});

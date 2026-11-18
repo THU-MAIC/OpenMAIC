@@ -53,30 +53,45 @@ const decode = (bytes: Uint8Array): string => {
   }
 };
 
+// Close uppercase expansion and lowercase mapping to a stable key (including
+// capital sharp-s, sharp-s/ss and final sigma). This locale-independent key is
+// conservative: portability checks may reject additional case variants.
+function portablePathKey(path: string): string {
+  let key = path.normalize('NFC');
+  for (;;) {
+    const folded = key.toUpperCase().toLowerCase().normalize('NFC');
+    if (folded === key) return key;
+    key = folded;
+  }
+}
+
 /** An owned byte snapshot; callers never receive the mutable internal buffers. */
 export class SkillPackage {
   readonly manifest: SkillManifest;
-  private readonly files = new Map<string, Uint8Array>();
+  #files = new Map<string, Uint8Array>();
   constructor(input: readonly SkillFile[]) {
     if (!input.length || input.length > SKILL_LIMITS.files) fail('LIMIT_EXCEEDED');
     let total = 0;
+    const portablePaths = new Set<string>();
     for (const file of input) {
       validateSkillPath(file.path);
-      if (this.files.has(file.path)) fail();
+      const portablePath = portablePathKey(file.path);
+      if (portablePaths.has(portablePath)) fail();
+      portablePaths.add(portablePath);
       total += file.bytes.byteLength;
       if (file.bytes.byteLength > SKILL_LIMITS.fileBytes || total > SKILL_LIMITS.totalBytes)
         fail('LIMIT_EXCEEDED');
-      this.files.set(file.path, Uint8Array.from(file.bytes));
+      this.#files.set(file.path, Uint8Array.from(file.bytes));
     }
-    const paths = [...this.files.keys()].sort();
+    const paths = [...this.#files.keys()].sort();
     for (const path of paths) {
       const parts = path.split('/');
       while (parts.length > 1) {
         parts.pop();
-        if (this.files.has(parts.join('/'))) fail();
+        if (portablePaths.has(portablePathKey(parts.join('/')))) fail();
       }
     }
-    const entry = this.files.get('SKILL.md');
+    const entry = this.#files.get('SKILL.md');
     if (!entry) fail();
     const markdown = decode(entry).replace(/\r\n?/g, '\n');
     const match = /^---\n([\s\S]*?)\n---(?:\n|$)([\s\S]*)$/.exec(markdown);
@@ -114,8 +129,8 @@ export class SkillPackage {
     const files = paths.map((path) =>
       Object.freeze({
         path,
-        hash: hash(this.files.get(path)!),
-        bytes: this.files.get(path)!.byteLength,
+        hash: hash(this.#files.get(path)!),
+        bytes: this.#files.get(path)!.byteLength,
       }),
     );
     const identity = { format: 1 as const, files };
@@ -127,10 +142,11 @@ export class SkillPackage {
       ...(title ? { title } : {}),
       revision: hash(JSON.stringify(identity)),
     });
+    Object.freeze(this);
   }
   read(path: string): Uint8Array {
     validateSkillPath(path);
-    const bytes = this.files.get(path);
+    const bytes = this.#files.get(path);
     if (!bytes) fail('FILE_NOT_FOUND');
     return Uint8Array.from(bytes);
   }
