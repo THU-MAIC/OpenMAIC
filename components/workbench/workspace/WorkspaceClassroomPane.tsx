@@ -160,7 +160,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   // are needed the moment the document lands. Fetch them alongside the document
   // rather than after it, which would hold the blank editor shell for the extra
   // round trips.
-  const opensInEditor = preferences[courseId] === 'editing';
+  const opensInEditor = !mobile && preferences[courseId] === 'editing';
   useEffect(() => {
     if (opensInEditor && !hidden) warmEditor();
   }, [opensInEditor, hidden]);
