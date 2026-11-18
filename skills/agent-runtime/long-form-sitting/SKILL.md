@@ -75,10 +75,13 @@ minutes × the language's speech rate ≈ the narration it must carry. Use about
 for English as starting rates. Keep the number in the conversation
 plan as a budget to check against — never in `brief` or `materialFacts`:
 those are page-content fields, and a directive there can surface as
-learner-visible slide text without governing the speech. After a page is
-generated, inspect its `/actions` speech text and patch it until the spoken
-length meets the budget. A page whose narration still undershoots is a defect:
-name it in the wrap-up, the same way a missing page is named.
+learner-visible slide text without governing the speech. After
+`generate_scene` succeeds but **before the first `generate_tts` call**,
+inspect the page's `/actions` speech text and patch it until the spoken length
+meets the budget. Patching `/actions` clears that line's audio, so inspecting
+first avoids synthesizing the wrong audio and then re-synthesizing every
+adjusted line. A page whose narration still undershoots is a defect: name it in
+the wrap-up, the same way a missing page is named.
 
 ## 5. The plan is the ledger
 
