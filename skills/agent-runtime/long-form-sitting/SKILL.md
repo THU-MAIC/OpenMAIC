@@ -92,7 +92,11 @@ into a learner-facing prerequisite ("the learner already knows what duration
 means, including how yield moves it"). Never put the raw ledger label in
 `brief`: it is a page-content field and its wording can become learner-visible
 slide text. When you write page N's brief, reread the plan rather than your
-memory of page N-1. In a series this is
+memory of page N-1. Long sittings get their transcript compacted, so the
+conversation copy is not a durable ledger: persist the remaining ledger in the
+stage document (a stage-level note via `patch_stage` is enough) and re-read
+that artifact before each page, so a compacted transcript cannot drop a
+dependency. In a series this is
 `curriculum-planner`'s rule at stage granularity: use `read_stage_outline` on
 the earlier stage to locate the relevant pages, then `read_stage` to inspect
 their actual content before building on it — continuity against what was
