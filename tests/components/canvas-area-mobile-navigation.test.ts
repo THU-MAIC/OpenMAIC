@@ -23,7 +23,7 @@ import type { Scene } from '@/lib/types/stage';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 
 describe('Phone control recovery', () => {
-  it.each(['waiting', 'failed', 'interrupted', 'video'] as const)(
+  it.each(['waiting', 'failed', 'interrupted', 'video', 'code'] as const)(
     'recovers Back after controls auto-hide in the %s state',
     (phase) => {
       vi.useFakeTimers();
@@ -69,18 +69,34 @@ describe('Phone control recovery', () => {
           },
         },
       };
+      if (phase === 'code') {
+        videoScene.content.canvas.elements = [
+          {
+            id: 'code',
+            type: 'code',
+            left: 0,
+            top: 0,
+            width: 1000,
+            height: 562.5,
+            rotate: 0,
+            language: 'typescript',
+            lines: [{ id: 'line', content: 'const value = 1;' }],
+          },
+        ];
+      }
+      const hasScene = phase === 'video' || phase === 'code';
       try {
         act(() => {
           root.render(
             createElement(CanvasArea, {
               mobile: true,
-              currentScene: phase === 'video' ? videoScene : null,
+              currentScene: hasScene ? videoScene : null,
               currentSceneIndex: 0,
               scenesCount: 0,
               mode: 'playback',
               engineState: 'idle',
               whiteboardOpen: false,
-              isPendingScene: phase !== 'video',
+              isPendingScene: !hasScene,
               isGenerationFailed: phase === 'failed',
               isGenerationInterrupted: phase === 'interrupted',
               mobileCourseName: 'A course being built',
