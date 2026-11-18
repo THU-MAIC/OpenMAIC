@@ -1252,3 +1252,46 @@ it('clears only the closed file failure after a confirmed write rejection', asyn
   expect(save).toHaveBeenCalledTimes(2);
   expect(save.mock.calls[1]?.slice(0, 3)).toEqual(['main.py', 'New draft', 'a'.repeat(64)]);
 });
+
+it.each(['ENVIRONMENT_UNAVAILABLE', 'ENVIRONMENT_CHANGED'] as const)(
+  'preserves another file recovery-read marker after a healthy save (%s)',
+  async (reason) => {
+    vi.useFakeTimers();
+    await mount(createElement(Editor, { value: view(`unavailable-read-marker-${reason}`) }));
+    await act(async () => editor.edit('Retained plan draft'));
+    save.mockRejectedValueOnce(
+      new SandboxRequestError('Environment temporarily unavailable', 409, 'PBL_ERROR', reason),
+    );
+    await act(async () => editor.save());
+    let finishPlanRead!: (value: { text: string; hash: string }) => void;
+    const pendingPlanRead = new Promise<{ text: string; hash: string }>((resolve) => {
+      finishPlanRead = resolve;
+    });
+    const originalRead = read.getMockImplementation()!;
+    read.mockImplementation((path) =>
+      path === 'PLAN.md'
+        ? pendingPlanRead
+        : Promise.resolve({ text: 'Saved source', hash: 'a'.repeat(64) }),
+    );
+    try {
+      await act(async () => editor.select('main.py'));
+      await act(async () => editor.edit('Healthy code'));
+      await act(async () => editor.save());
+      expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+        ['PLAN.md', 'Retained plan draft'],
+        ['main.py', 'Healthy code'],
+      ]);
+      await act(async () =>
+        finishPlanRead({ text: 'Changed while unavailable', hash: 'c'.repeat(64) }),
+      );
+      await act(async () => editor.select('PLAN.md'));
+      expect(editor.buffer?.text).toBe('Retained plan draft');
+      expect(editor.recoveryConflict).toBe(true);
+      expect(editor.stale).toBe(true);
+      await act(async () => editor.save());
+      expect(save).toHaveBeenCalledTimes(2);
+    } finally {
+      read.mockImplementation(originalRead);
+    }
+  },
+);
