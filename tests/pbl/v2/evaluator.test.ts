@@ -170,6 +170,36 @@ describe('Evaluator agent — error paths (no LLM needed)', () => {
 });
 
 describe('Evaluator agent — task JSON-only output', () => {
+  it('ends on a model error without committing partial feedback', async () => {
+    const project = mkProject();
+    addSubmission(project, {
+      microtaskId: 't1',
+      milestoneId: 'ms1',
+      kind: 'text',
+      content: 'Example solution',
+    });
+    const parts = textStep('Partial feedback');
+    parts.splice(-1, 0, { type: 'error', error: new Error('Model disconnected') });
+    const model = new MockLanguageModelV3({
+      doStream: async () => ({ stream: convertArrayToReadableStream(parts) }),
+    });
+
+    const events = await collectEvents(
+      runTaskEvaluation({
+        project,
+        milestoneId: 'ms1',
+        microtaskId: 't1',
+        languageModel: model,
+      }),
+    );
+
+    expect(events).toEqual([
+      { type: 'error', code: 'LLM_ERROR', message: 'Model disconnected' },
+      { type: 'done' },
+    ]);
+    expect(project.evaluations).toHaveLength(0);
+  });
+
   it('persists task feedback from JSON and does not stream raw JSON tokens', async () => {
     const project = mkProject();
     addSubmission(project, {

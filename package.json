@@ -69,7 +69,6 @@
     "@fontsource/source-sans-3": "^5.2.9",
     "@fontsource/source-serif-4": "^5.2.9",
     "@joplin/turndown-plugin-gfm": "^1.0.67",
-    "@langchain/core": "^1.1.16",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@mozilla/readability": "^0.6.0",
     "@napi-rs/canvas": "^0.1.88",
