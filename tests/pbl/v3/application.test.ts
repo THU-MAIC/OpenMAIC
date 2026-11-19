@@ -149,6 +149,10 @@ import {
   recordLearningPreviewActivity,
 } from '@/lib/server/pbl-v3/application';
 
+// Some tests below run the sandbox's own shell and Python scripts, which target
+// the Linux sandbox. Windows has no `/bin/sh` or `python3` to run them with.
+const onWindows = process.platform === 'win32';
+
 const study = '12345678-1234-4234-8234-123456789012',
   env = '12345678-1234-4234-8234-123456789013';
 const request = (action = 'open', id = '12345678-1234-4234-8234-123456789014') => ({
@@ -533,7 +537,8 @@ describe('declared project applications', () => {
     );
     expect(mock.activity).toHaveBeenCalledTimes(1);
   });
-  it('uses a bounded loopback-only GET and compares the exact saved-source fingerprint', () => {
+  it('uses a bounded loopback-only GET and compares the exact saved-source fingerprint', (ctx) => {
+    if (onWindows) return ctx.skip();
     const dir = mkdtempSync(join(tmpdir(), 'pbl-app-probe-'));
     try {
       const files = { 'app.py': 'print("hello")\n', 'notes.txt': 'Hello 世界\n' };
