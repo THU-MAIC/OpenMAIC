@@ -93,7 +93,7 @@ export function RendererEditorCanvas() {
         onScaleChange={setCanvasScale}
         elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
         hiddenElementIds={hiddenElementIds}
-        insertToolbarPlacement="top"
+        insertToolbarPlacement="left"
         snapping
       />
     </SlideRendererProvider>

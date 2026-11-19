@@ -167,7 +167,7 @@ describe('slide editor renderer feature flag', () => {
     expect(state.lastRendererProps).toMatchObject({
       slide: content.canvas,
       selection: { elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' },
-      insertToolbarPlacement: 'top',
+      insertToolbarPlacement: 'left',
       snapping: true,
     });
     expect(state.lastRendererProps?.host).toMatchObject({
