@@ -45,8 +45,8 @@ export const MARKERS = {
 };
 const DAY = 24 * 60 * 60 * 1000;
 export const NEEDS_INFO_CLOSE_MS = 14 * DAY;
-export const ASSIGNED_STALE_MS = 30 * DAY;
-export const ASSIGNED_CLOSE_MS = 14 * DAY;
+export const ASSIGNED_STALE_MS = 14 * DAY;
+export const ASSIGNED_CLOSE_MS = 7 * DAY;
 export const HELP_WANTED_CLOSE_MS = 90 * DAY;
 export const MAX_WRITES_PER_RUN = 20;
 export const LABELS = {

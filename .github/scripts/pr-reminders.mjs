@@ -247,8 +247,12 @@ export function decide(pr, { now, branchRuns, runsBySha, owners, base }) {
       body: conflictBody(pr, resolvedBase, { close: !blocked }),
     };
   }
+  // Any run on the head waiting for approval, stale or not, rules out the CI
+  // decision: the remaining checks have not run yet, so the author cannot be
+  // asked to fix CI or be closed for it.
   const appSince = approvalSince(pr, runsBySha);
-  if (isStale(appSince, now)) {
+  if (appSince !== null) {
+    if (!isStale(appSince, now)) return null;
     return {
       kind: 'approval',
       since: appSince,

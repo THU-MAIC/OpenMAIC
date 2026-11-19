@@ -48,7 +48,7 @@ Issue lifecycle rules:
 
 - **Needs info, author replied**: the issue author commented after `status:needs-info` was added. The label is removed and nothing else changes.
 - **Needs info, no reply**: 14 days after the label was added (or after the issue was reopened) with no comment from the issue author, the bot comments that the issue can be reopened once the information is added, and closes it as not planned.
-- **Assigned, stale**: no activity for 30 days. One comment asks the assignees whether it is still planned; otherwise unassign and mark `help wanted`, or close. With no activity for another 14 days after that comment, the bot closes the issue as not planned; it can be reopened. The bot never unassigns. Activity after the reminder starts a new period: another reminder comes only after another 30 quiet days.
+- **Assigned, stale**: no activity for 14 days. One comment asks the assignees whether it is still planned; otherwise unassign and mark `help wanted`, or close. With no activity for another 7 days after that comment, the bot closes the issue as not planned; it can be reopened. The bot never unassigns. Activity after the reminder starts a new period: another reminder comes only after another 14 quiet days.
 - **Help wanted, stale**: unassigned, labelled `help wanted`, no activity for 90 days. The bot comments, suggesting Discussions → Ideas, and closes it as not planned.
 
 "Activity" is the latest of: the issue being opened or reopened, a comment by a human (bot comments never count), a label or assignee change, and an update to a linked PR.

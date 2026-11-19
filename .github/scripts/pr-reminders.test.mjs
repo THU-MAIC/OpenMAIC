@@ -696,6 +696,18 @@ test('decide prefers conflict over approval over failing CI', () => {
     decide(approvalAndCi, decideCtx({ runsBySha: pending(approvalAndCi) })).kind,
     'approval',
   );
+  // A run waiting for approval for less than a day: no reminder yet, and the
+  // stale CI failure is not reported either.
+  const freshApproval = makePr(415, failing);
+  assert.equal(
+    decide(
+      freshApproval,
+      decideCtx({
+        runsBySha: groupRunsBySha([pendingRun(freshApproval.headRefOid, 'CI', ago(DAY / 2))]),
+      }),
+    ),
+    null,
+  );
   const ci = decide(makePr(412, failing), decideCtx());
   assert.equal(ci.kind, 'ci');
   assert.equal(ci.since, ago(3 * DAY));

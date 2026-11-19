@@ -156,7 +156,7 @@ test('needs-info issues are never treated as stale assigned or help wanted issue
   assert.equal(decide(issue, { now: NOW, repo }), null);
 });
 
-test('an assigned issue is reminded strictly after 30 days without activity', () => {
+test('an assigned issue is reminded strictly after 14 days without activity', () => {
   const due = decide(assigned(10, ASSIGNED_STALE_MS + 1), { now: NOW, repo });
   assert.equal(due.kind, 'assignedStale');
   assert.equal(due.since, ago(ASSIGNED_STALE_MS + 1));
@@ -283,10 +283,10 @@ test('message bodies start with their marker and say what happens next', () => {
 
   const reminder = assignedStaleBody(makeIssue(27, { assignees: ['a', 'b'] }));
   assert.ok(reminder.startsWith(MARKERS.assignedStale));
-  assert.match(reminder, /^Hi @a @b, this issue has had no activity for 30 days/m);
+  assert.match(reminder, /^Hi @a @b, this issue has had no activity for 14 days/m);
   assert.match(
     reminder,
-    /within 14 days after this reminder, the issue will be closed as not planned/,
+    /within 7 days after this reminder, the issue will be closed as not planned/,
   );
   assert.deepEqual(reminder.match(/@[\w-]+/g), ['@a', '@b']);
 
@@ -442,7 +442,7 @@ test('writes per run are capped and a close is deferred rather than split', asyn
   );
 });
 
-test('an assigned issue closes as not planned 14 days after a reminder that announced it', async () => {
+test('an assigned issue closes as not planned 7 days after a reminder that announced it', async () => {
   const due = assigned(50, 70 * DAY);
   const early = assigned(51, 70 * DAY);
   const edited = assigned(52, 70 * DAY);
@@ -500,10 +500,10 @@ test('a reminder with older wording is updated first and does not close', async 
 });
 
 test('activity after the reminder starts a new period instead of closing', async () => {
-  // A human comment 20 days ago, after a reminder 40 days ago: still idle for
-  // less than 30 days, so nothing happens.
+  // A human comment 10 days ago, after a reminder 40 days ago: still idle for
+  // less than 14 days, so nothing happens.
   const recent = assigned(54, 70 * DAY, {
-    events: [event('AssignedEvent', ago(70 * DAY)), comment('owner1', ago(20 * DAY))],
+    events: [event('AssignedEvent', ago(70 * DAY)), comment('owner1', ago(10 * DAY))],
   });
   // A label change 35 days ago, after a reminder 50 days ago: the old reminder
   // belongs to the earlier period, so a new one is posted and nothing closes.

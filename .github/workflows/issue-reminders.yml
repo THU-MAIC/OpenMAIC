@@ -3,8 +3,8 @@ name: Issue Lifecycle Reminders
 # Once a day, apply the issue lifecycle rules in MAINTAINING.md:
 # - remove `status:needs-info` when the issue author has replied;
 # - close as not planned when the author has not replied within 14 days;
-# - remind the assignees of an issue with no activity for 30 days, and close
-#   it as not planned when there is still no activity 14 days later;
+# - remind the assignees of an issue with no activity for 14 days, and close
+#   it as not planned when there is still no activity 7 days later;
 # - close as not planned an unassigned `help wanted` issue with no activity
 #   for 90 days.
 # Exempt: status:blocked, type:epic, type:rfc, priority:P0, priority:P1,
