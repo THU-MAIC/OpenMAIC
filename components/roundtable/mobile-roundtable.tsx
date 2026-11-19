@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Mic, MicOff, ArrowUp, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
+import type { ChatAreaRef, SpeechSource } from '@/components/chat/chat-area';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { Participant } from '@/lib/types/roundtable';
@@ -11,15 +12,20 @@ import type { Participant } from '@/lib/types/roundtable';
 /** Touch presentation of Roundtable's existing state and callbacks, with no engine. */
 export function MobileRoundtable({
   toolbar,
+  nav,
+  userAvatar,
   participants,
   speakerId,
   speakerName,
   speech,
+  speechSource,
+  onRevealSpeech,
   status,
   input,
   onInput,
   onInputActivate,
   onSend,
+  onQuestionFocus,
   onVoice,
   voiceAvailable,
   recording,
@@ -38,15 +44,21 @@ export function MobileRoundtable({
   readonly composerHost?: HTMLElement | null;
   readonly dialogContainer?: HTMLElement | null;
   readonly toolbar: ReactNode;
+  /** Classroom / directory / notes / chat tabs. */
+  readonly nav?: ReactNode;
+  readonly userAvatar?: string;
   readonly participants: Participant[];
   readonly speakerId?: string | null;
   readonly speakerName: string;
   readonly speech: string;
+  readonly speechSource: SpeechSource;
+  readonly onRevealSpeech?: ChatAreaRef['revealSpeech'];
   readonly status: string;
   readonly input: string;
   readonly onInput: (value: string) => void;
   readonly onInputActivate?: () => void;
   readonly onSend: () => void;
+  readonly onQuestionFocus?: () => void;
   readonly onVoice: () => void;
   readonly voiceAvailable: boolean;
   readonly recording: boolean;
@@ -62,6 +74,37 @@ export function MobileRoundtable({
 }) {
   const { t } = useI18n();
   const [selected, setSelected] = useState<Participant | null>(null);
+  const [fullSpeech, setFullSpeech] = useState<{ speaker: string; text: string } | null>(null);
+  const rolesRef = useRef<HTMLDivElement>(null);
+  const speechRef = useRef<HTMLButtonElement>(null);
+  const activeId =
+    speakerId ?? participants.find((p) => p.role !== 'user' && p.name === speakerName)?.id ?? null;
+  const hasSpeech = Boolean(speech || status);
+  // Point the speech bubble at the speaker's card, keeping that card in view.
+  // Written straight to the bubble so scrolling the roster never re-renders.
+  useLayoutEffect(() => {
+    const roles = rolesRef.current;
+    const bubble = speechRef.current;
+    if (!roles || !bubble) return;
+    const card = activeId
+      ? roles.querySelector<HTMLElement>(`[data-participant-id="${CSS.escape(activeId)}"]`)
+      : null;
+    if (!card) {
+      bubble.dataset.hasTip = 'false';
+      return;
+    }
+    const update = () => {
+      bubble.style.setProperty(
+        '--tip-x',
+        `${card.offsetLeft - roles.offsetLeft - roles.scrollLeft + card.offsetWidth / 2}px`,
+      );
+      bubble.dataset.hasTip = 'true';
+    };
+    if (speakerId) card.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    update();
+    roles.addEventListener('scroll', update, { passive: true });
+    return () => roles.removeEventListener('scroll', update);
+  }, [activeId, speakerId, participants, hasSpeech]);
   const composer = (
     <form
       className="mobile-roundtable-input"
@@ -73,7 +116,10 @@ export function MobileRoundtable({
       <textarea
         rows={1}
         value={input}
-        onFocus={onInputActivate}
+        onFocus={() => {
+          onQuestionFocus?.();
+          onInputActivate?.();
+        }}
         onChange={(event) => onInput(event.target.value)}
         placeholder={t('mobileClassroom.askTeacher')}
         aria-label={t('mobileClassroom.askTeacher')}
@@ -107,6 +153,7 @@ export function MobileRoundtable({
   return (
     <section className="mobile-roundtable" data-testid="mobile-roundtable" data-focused={focused}>
       <div className="mobile-roundtable-toolbar">{toolbar}</div>
+      {nav}
       <button
         className="mobile-roundtable-fold"
         type="button"
@@ -117,47 +164,69 @@ export function MobileRoundtable({
         {focused ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
       </button>
       <div className="mobile-roundtable-content" hidden={focused}>
-        <div className="mobile-roundtable-roles">
-          {participants.map((participant) => (
-            <button
-              key={participant.id}
-              type="button"
-              className="mobile-roundtable-role"
-              data-speaking={participant.id === speakerId}
-              data-active={participant.role !== 'user' && participant.name === speakerName}
-              data-role={participant.role}
-              onClick={() =>
-                participant.role === 'user' ? onOpenChat?.() : setSelected(participant)
-              }
-              aria-label={participant.name}
-            >
-              <span className="mobile-roundtable-avatar">
-                {participant.role === 'user' ? (
-                  t('mobileClassroom.me')
-                ) : (
-                  <AvatarDisplay src={participant.avatar} alt={participant.name} />
-                )}
-              </span>
-              {participant.role !== 'user' && (
-                <span className="mobile-roundtable-role-info">
-                  <strong>{participant.name}</strong>
-                  <small className="mobile-roundtable-role-label">
-                    {t(`settings.agentRoles.${participant.role}`)}
-                  </small>
+        <div className="mobile-roundtable-roles" ref={rolesRef}>
+          {participants.map((participant) => {
+            const isUser = participant.role === 'user';
+            const speaking = participant.id === speakerId;
+            return (
+              <button
+                key={participant.id}
+                type="button"
+                className="mobile-roundtable-role"
+                data-participant-id={participant.id}
+                data-speaking={speaking}
+                data-active={participant.id === activeId}
+                data-role={participant.role}
+                onClick={() => (isUser ? onOpenChat?.() : setSelected(participant))}
+                aria-label={isUser ? t('mobileClassroom.me') : participant.name}
+              >
+                <span className="mobile-roundtable-avatar">
+                  <AvatarDisplay
+                    src={isUser ? userAvatar || participant.avatar : participant.avatar}
+                    alt={isUser ? t('mobileClassroom.me') : participant.name}
+                  />
                 </span>
-              )}
-            </button>
-          ))}
+                <strong>{isUser ? t('mobileClassroom.me') : participant.name}</strong>
+                <small className="mobile-roundtable-role-label">
+                  {speaking && (
+                    <i className="mobile-roundtable-wave" aria-hidden>
+                      <b />
+                      <b />
+                      <b />
+                    </i>
+                  )}
+                  {isUser
+                    ? t('mobileClassroom.listening')
+                    : t(`settings.agentRoles.${participant.role}`)}
+                </small>
+              </button>
+            );
+          })}
         </div>
-        {(speech || status) && (
-          <button className="mobile-roundtable-speech" type="button" onClick={onOpenChat}>
+        {hasSpeech && (
+          <button
+            ref={speechRef}
+            className="mobile-roundtable-speech"
+            type="button"
+            disabled={!speech}
+            onClick={() => {
+              if (!onRevealSpeech?.(speechSource, speech))
+                setFullSpeech({ speaker: speakerName, text: speech });
+            }}
+          >
             <span className="mobile-roundtable-speaker">{speakerName}</span>
             <span className="mobile-roundtable-status">{status}</span>
             <span className="mobile-roundtable-text">{speech}</span>
-            <span className="mobile-roundtable-full-speech">
-              {t('mobileClassroom.fullSpeech')}
-              <ChevronRight size={12} />
-            </span>
+            {speech && (
+              <span className="mobile-roundtable-full-speech">
+                {t(
+                  speechSource === 'lecture'
+                    ? 'mobileClassroom.viewInNotes'
+                    : 'mobileClassroom.viewInChat',
+                )}
+                <ChevronRight size={12} />
+              </span>
+            )}
           </button>
         )}
         {discussion}
@@ -165,6 +234,21 @@ export function MobileRoundtable({
         {referencePill}
         {composerHost ? createPortal(composer, composerHost) : composer}
       </div>
+      <Dialog
+        open={!!fullSpeech}
+        onOpenChange={(open) => {
+          if (!open) setFullSpeech(null);
+        }}
+      >
+        <DialogContent container={dialogContainer} className="z-[400]" overlayClassName="z-[399]">
+          <DialogTitle>
+            {fullSpeech?.speaker} · {t('mobileClassroom.fullSpeech')}
+          </DialogTitle>
+          <p className="max-h-[55dvh] overflow-y-auto whitespace-pre-wrap break-words">
+            {fullSpeech?.text}
+          </p>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={!!selected}
         onOpenChange={(open) => {

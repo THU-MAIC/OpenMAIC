@@ -60,7 +60,10 @@ interface ChatAreaProps {
   onJumpToAction?: (sceneId: string, actionIndex: number) => void;
 }
 
+export type SpeechSource = 'lecture' | 'reply' | 'question';
+
 export interface ChatAreaRef {
+  revealSpeech: (source: SpeechSource, text: string) => boolean;
   createSession: (type: SessionType, title: string) => Promise<string>;
   endSession: (sessionId: string, options?: EndSessionOptions) => Promise<void>;
   endActiveSession: (options?: EndSessionOptions) => Promise<void>;
@@ -153,15 +156,35 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     });
 
     const [activeTab, setActiveTab] = useState<'lecture' | 'chat'>('lecture');
+    const [noteTarget, setNoteTarget] = useState<{ sceneId: string; actionIndex: number } | null>(
+      null,
+    );
+    const [messageTarget, setMessageTarget] = useState<string | null>(null);
     const isDraggingRef = useRef(false);
     const [isDragging, setIsDragging] = useState(false);
-    const bottomRef = useRef<HTMLDivElement>(null);
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+    const followReplies = useRef(true);
+    const lastFollowPosition = useRef(0);
+    const touchingChat = useRef(false);
 
     // Derive lecture notes directly from scenes — updates reactively as scenes stream in.
     const lectureNotes = useMemo(() => buildLectureNotes(scenes), [scenes]);
 
     // Filter out lecture sessions for the Chat tab
     const chatSessions = useMemo(() => sessions.filter((s) => s.type !== 'lecture'), [sessions]);
+
+    // On phones the panel owns scrolling across sessions. Stream updates may
+    // follow its bottom, but must not move it while someone reads older replies.
+    useEffect(() => {
+      const panel = chatScrollRef.current;
+      if (!mobile || activeTab !== 'chat' || messageTarget || !panel || !panel.clientHeight) return;
+      // A stream render can land before the browser delivers the scroll event.
+      if (panel.scrollTop < lastFollowPosition.current - 2) followReplies.current = false;
+      if (followReplies.current && !touchingChat.current) {
+        panel.scrollTop = panel.scrollHeight;
+        lastFollowPosition.current = panel.scrollTop;
+      }
+    }, [mobile, activeTab, chatSessions, messageTarget]);
 
     // Whether there's an active discussion/QA session (for amber dot on Chat tab)
     const hasActiveChatSession = useMemo(
@@ -210,6 +233,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
     const switchToTab = useCallback(
       (tab: 'lecture' | 'chat') => {
+        setNoteTarget(null);
+        setMessageTarget(null);
         setActiveTab(tab);
         onTabChange?.(tab);
       },
@@ -236,6 +261,37 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       pauseActiveLiveBuffer,
       resumeActiveLiveBuffer,
       switchToTab,
+      revealSpeech(source, text) {
+        if (source === 'lecture') {
+          const note = lectureNotes.find((entry) => entry.sceneId === currentSceneId);
+          const matches = note?.items.filter(
+            (item) => item.kind === 'speech' && item.text === text,
+          );
+          const line =
+            matches?.filter((item) => item.actionIndex <= (currentActionIndex ?? -1)).pop() ??
+            matches?.[0];
+          if (!note || !line) return false;
+          switchToTab('lecture');
+          setNoteTarget({ sceneId: note.sceneId, actionIndex: line.actionIndex });
+          return true;
+        }
+        for (const session of [...chatSessions].reverse()) {
+          const matches = [...session.messages]
+            .reverse()
+            .filter(
+              (message) =>
+                (message.role === 'user') === (source === 'question') &&
+                message.parts.some((part) => part.type === 'text' && part.text.includes(text)),
+            );
+          const message = matches.find((item) => item.id === activeBubbleId) ?? matches[0];
+          if (!message) continue;
+          if (!expandedSessionIds.has(session.id)) toggleSessionExpand(session.id);
+          switchToTab('chat');
+          setMessageTarget(message.id);
+          return true;
+        }
+        return false;
+      },
     }));
 
     // Drag-to-resize
@@ -334,6 +390,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               <LectureNotesView
                 mobile={mobile}
                 notes={lectureNotes}
+                target={noteTarget}
                 currentSceneId={currentSceneId}
                 currentActionIndex={currentActionIndex}
                 canJumpToAction={canJumpToAction}
@@ -343,7 +400,26 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
             {/* Chat Tab */}
             <TabsContent value="chat" className="flex-1 overflow-hidden flex flex-col">
-              <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-hide">
+              <div
+                ref={chatScrollRef}
+                onScroll={({ currentTarget: el }) => {
+                  followReplies.current = el.scrollHeight - el.clientHeight - el.scrollTop <= 3;
+                  lastFollowPosition.current = el.scrollTop;
+                }}
+                onTouchStart={() => {
+                  touchingChat.current = true;
+                }}
+                onTouchEnd={() => {
+                  touchingChat.current = false;
+                }}
+                onTouchCancel={() => {
+                  touchingChat.current = false;
+                }}
+                className={cn(
+                  'flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-hide',
+                  mobile && 'overscroll-contain [overflow-anchor:none]',
+                )}
+              >
                 {chatSessions.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-50">
                     <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3 text-gray-300 dark:text-gray-600">
@@ -359,15 +435,16 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                 ) : (
                   <>
                     <SessionList
+                      mobile={mobile}
+                      revealMessageId={messageTarget}
                       sessions={chatSessions}
                       expandedSessionIds={expandedSessionIds}
                       isStreaming={isStreaming}
-                      activeBubbleId={activeBubbleId}
+                      activeBubbleId={messageTarget ?? activeBubbleId}
                       onToggleExpand={toggleSessionExpand}
                       onEndSession={handleEndSession}
                       onContinueSession={continueSoftClosingSession}
                     />
-                    <div ref={bottomRef} />
                   </>
                 )}
               </div>

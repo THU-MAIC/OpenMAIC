@@ -51,6 +51,8 @@ export interface LearningView {
     title: string;
     goal?: string;
     outcome?: string;
+    concepts?: string[];
+    deliverables?: string[];
     optional: boolean;
     stages: string[];
   }[];

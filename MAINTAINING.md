@@ -40,7 +40,7 @@ Useful extra views: [assigned, least recently updated](https://github.com/THU-MA
 | [Issue Triage](.github/workflows/issue-triage.yml) | New issue | Comments with an assessment, adds type/area labels and, for a missing detail, `status:needs-info`. Feature requests are pointed to Discussions → Ideas, questions to Q&A | `ISSUE_TRIAGE_MODE` (see [.github/triage/README.md](.github/triage/README.md)) |
 | [Issue Lifecycle Reminders](.github/workflows/issue-reminders.yml) | Daily | The needs-info and staleness rules below | `ISSUE_REMINDERS_MODE=apply` |
 | [Maintainer Sweep Digest](.github/workflows/maintainer-digest.yml) | Mondays | Updates the "Maintainer sweep" issue | `MAINTAINER_DIGEST_MODE=apply` |
-| [Stuck PR Reminders](.github/workflows/pr-reminders.yml) | Daily | Conflicts, pending workflow approval, unresolved Codex threads | `PR_REMINDERS_MODE=apply` |
+| [Stuck PR Reminders](.github/workflows/pr-reminders.yml) | Daily | Conflicts, pending workflow approval, failing CI, unresolved Codex threads; closes PRs that stay not ready (see below) | `PR_REMINDERS_MODE=apply` |
 
 Each switch is a repository variable. Without it, scheduled runs are dry runs that only write the job summary; manual runs are dry runs unless `dry_run` is unchecked. The reminders write at most 20 times per run.
 
@@ -48,12 +48,18 @@ Issue lifecycle rules:
 
 - **Needs info, author replied**: the issue author commented after `status:needs-info` was added. The label is removed and nothing else changes.
 - **Needs info, no reply**: 14 days after the label was added (or after the issue was reopened) with no comment from the issue author, the bot comments that the issue can be reopened once the information is added, and closes it as not planned.
-- **Assigned, stale**: no activity for 60 days. One comment asks the assignees whether it is still planned; otherwise unassign and mark `help wanted`, or close. The bot never unassigns or closes these itself. Another reminder comes only after new activity and another 60 quiet days.
+- **Assigned, stale**: no activity for 14 days. One comment asks the assignees whether it is still planned; otherwise unassign and mark `help wanted`, or close. With no activity for another 7 days after that comment, the bot closes the issue as not planned; it can be reopened. The bot never unassigns. Activity after the reminder starts a new period: another reminder comes only after another 14 quiet days.
 - **Help wanted, stale**: unassigned, labelled `help wanted`, no activity for 90 days. The bot comments, suggesting Discussions → Ideas, and closes it as not planned.
 
 "Activity" is the latest of: the issue being opened or reopened, a comment by a human (bot comments never count), a label or assignee change, and an update to a linked PR.
 
 Exempt from the closes and reminders (but not from the needs-info label removal): `status:blocked`, `type:epic`, `type:rfc`, `priority:P0`, `priority:P1`, pinned issues, and issues with a linked open PR. Pull requests that close an issue, PRs linked in the Development sidebar and same-repository PRs that mention the issue all count as linked.
+
+Pull request rules (open, non-draft PRs by human authors):
+
+- **Reminders**: after a day stuck, one comment per reason, updated in place: merge conflicts with the base branch (CI cannot run), workflow runs waiting for maintainer approval, failing CI on the latest commit, or unresolved Codex review threads.
+- **Close**: conflicts, failing CI and unresolved Codex threads mean the PR is not ready for review. With no push, comment, review or thread reply from the author for 7 days after the reminder, the bot closes the PR with one comment listing the reasons; it can be reopened once they are addressed. Waiting for workflow approval never closes a PR.
+- Converting a PR to a draft pauses the reminders and the close. PRs labelled `status:blocked` are never closed.
 
 ## Releases
 

@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "Bearbeiten"
+    },
+    "mobile": {
+      "openMenu": "Navigation öffnen",
+      "closeMenu": "Navigation schließen"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "Warte vor dem Start, bis die Lernumgebung bereit ist. Falls die Vorbereitung fehlgeschlagen ist, versuche es oben erneut.",
         "unsaved": "Die Projektdateien enthalten ungespeicherte Änderungen. Speichere oder verwirf sie, bevor du beginnst.",
         "preparing": "Der Arbeitsbereich wird vorbereitet. Bitte warte, bevor du beginnst."
-      }
+      },
+      "singleFlow": "Projektablauf",
+      "concepts": "Technische Konzepte",
+      "deliverables": "Funktionale Ergebnisse"
     },
     "journey": {
       "currentMilestone": "Aktueller Meilenstein",
@@ -3445,6 +3452,7 @@
     "soundSettings": "Toneinstellungen",
     "playSound": "Ton wiedergeben",
     "materials": "Kursmaterial",
+    "classroom": "Unterricht",
     "directory": "Inhalt",
     "lecture": "Notizen",
     "volume": "Lautstärke",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "Die Vorschau ist auf Smartphones nicht verfügbar. Öffne das Projekt auf einem Computer, um es auszuprobieren.",
     "chat": "Chat",
     "askTeacher": "Frage an die Lehrkraft…",
+    "viewInNotes": "In den Notizen ansehen",
+    "viewInChat": "Im Chat ansehen",
     "fullSpeech": "Vollständige Nachricht",
     "me": "Ich",
+    "listening": "Hört zu",
     "whiteboardTitle": "Unterrichtstafel"
   }
 }

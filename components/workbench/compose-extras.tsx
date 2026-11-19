@@ -217,8 +217,14 @@ export function SkillSlashMenu({
                           aria-selected={index === highlightedIndex}
                           data-highlighted={index === highlightedIndex ? 'true' : undefined}
                           data-testid={`workbench-skill-option-${skill.id}`}
+                          onPointerDown={(event) => {
+                            // Keep the editor selection and soft keyboard until the tap commits.
+                            if (event.button === 0) event.preventDefault();
+                          }}
                           onClick={() => onPick(skill)}
-                          onMouseEnter={() => setHighlightedIndex(index)}
+                          onPointerEnter={(event) => {
+                            if (event.pointerType === 'mouse') setHighlightedIndex(index);
+                          }}
                           className={cn(
                             'flex w-full flex-col gap-0.5 px-3 py-2 text-left transition-colors hover:bg-muted',
                             index === highlightedIndex && 'bg-muted',
@@ -821,6 +827,9 @@ export function SkillButton({
           data-testid={testId}
           disabled={disabled}
           aria-label={label}
+          onPointerDown={(event) => {
+            if (event.button === 0) event.preventDefault();
+          }}
           onClick={onClick}
           className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
         >

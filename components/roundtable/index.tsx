@@ -2,7 +2,14 @@
 
 import { DockResizeHandle, useDockBox } from '@/components/classroom/dock-box';
 import { dockBubbleVars } from '@/lib/edit/dock-height';
-import { useState, useRef, useCallback, useEffect, type CSSProperties } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Mic,
@@ -23,6 +30,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { AudioIndicatorState } from './audio-indicator';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
+import type { ChatAreaRef } from '@/components/chat/chat-area';
 import { MobileRoundtable } from './mobile-roundtable';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -50,6 +58,10 @@ interface RoundtableProps {
   readonly onMobileBack?: () => void;
   readonly mobile?: boolean;
   readonly mobileComposerHost?: HTMLElement | null;
+  /** Mobile classroom tabs, rendered between the playback toolbar and the roundtable. */
+  readonly onRevealSpeech?: ChatAreaRef['revealSpeech'];
+  readonly onQuestionFocus?: () => void;
+  readonly mobileNav?: ReactNode;
   readonly mobileFocused?: boolean;
   readonly onToggleMobileFocus?: () => void;
   readonly mode?: 'playback' | 'autonomous';
@@ -170,6 +182,9 @@ export function Roundtable({
   onMobileBack,
   mobile = false,
   mobileComposerHost,
+  mobileNav,
+  onQuestionFocus,
+  onRevealSpeech,
   mobileFocused = false,
   onToggleMobileFocus,
   mode: _mode = 'autonomous',
@@ -246,6 +261,8 @@ export function Roundtable({
   // The workspace's tts and asr slots decide whether narration and speech
   // input are available.
   const ttsEnabled = !!useModelCapabilities().tts;
+  // Phone sound settings also control recorded course audio without a TTS provider.
+  const soundControlsEnabled = mobile || ttsEnabled;
   const asrEnabled = useASRAvailable();
   const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
@@ -754,13 +771,14 @@ export function Roundtable({
       onWhiteboardClose={onWhiteboardClose ?? (() => {})}
       isPresenting={isPresenting}
       onTogglePresentation={onTogglePresentation}
+      sessionType={sessionType}
       showStopDiscussion={showStopButton}
       onStopDiscussion={onStopDiscussion}
       onContinueDiscussion={handleContinueSoftClosing}
-      ttsEnabled={ttsEnabled}
+      ttsEnabled={soundControlsEnabled}
       ttsMuted={ttsMuted}
       ttsVolume={ttsVolume}
-      onToggleMute={() => ttsEnabled && setTTSMuted(!ttsMuted)}
+      onToggleMute={() => soundControlsEnabled && setTTSMuted(!ttsMuted)}
       onVolumeChange={(v) => setTTSVolume(v)}
       autoPlayLecture={autoPlayLecture}
       onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
@@ -1328,6 +1346,9 @@ export function Roundtable({
     return (
       <MobileRoundtable
         toolbar={toolbar}
+        nav={mobileNav}
+        onQuestionFocus={onQuestionFocus}
+        userAvatar={userAvatar}
         participants={initialParticipants}
         composerHost={mobileComposerHost}
         dialogContainer={fullscreenContainerRef?.current}
@@ -1338,6 +1359,8 @@ export function Roundtable({
         }
         speakerName={bubbleName || teacherName}
         speech={sourceText}
+        speechSource={userMessage ? 'question' : currentSpeech ? 'reply' : 'lecture'}
+        onRevealSpeech={onRevealSpeech}
         status={
           isDiscussionPaused || engineMode === 'paused'
             ? t('stage.paused')

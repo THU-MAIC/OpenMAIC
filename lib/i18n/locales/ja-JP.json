@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "編集を始める"
+    },
+    "mobile": {
+      "openMenu": "ナビゲーションを開く",
+      "closeMenu": "ナビゲーションを閉じる"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "学習環境の準備が整ってから始めてください。準備に失敗した場合は上の操作で再試行してください。",
         "unsaved": "プロジェクトファイルに未保存の変更があります。保存するか変更を破棄してから学習を始めてください。",
         "preparing": "ワークスペースを準備しています。少し待ってから学習を始めてください。"
-      }
+      },
+      "singleFlow": "プロジェクトの進め方",
+      "concepts": "エンジニアリングの概念",
+      "deliverables": "実装した機能"
     },
     "journey": {
       "currentMilestone": "現在の段階",
@@ -3445,6 +3452,7 @@
     "soundSettings": "音声設定",
     "playSound": "音声を再生",
     "materials": "授業資料",
+    "classroom": "教室",
     "directory": "目次",
     "lecture": "ノート",
     "volume": "音量",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "スマートフォンではプレビューできません。パソコンで開いてお試しください。",
     "chat": "チャット",
     "askTeacher": "先生に質問…",
+    "viewInNotes": "ノートで見る",
+    "viewInChat": "チャットで見る",
     "fullSpeech": "発言の全文",
     "me": "自分",
+    "listening": "聴講中",
     "whiteboardTitle": "授業ホワイトボード"
   }
 }

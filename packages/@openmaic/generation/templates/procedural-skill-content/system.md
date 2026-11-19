@@ -281,7 +281,7 @@ For `SET_WIDGET_STATE`, support a minimal state object such as:
 
 For `HIGHLIGHT_ELEMENT`, apply a temporary visible outline to the target element.
 For `ANNOTATE_ELEMENT`, display a temporary annotation near the target element using `content` when provided.
-For `REVEAL_ELEMENT`, make a hidden target element visible.
+For `REVEAL_ELEMENT`, make a hidden target element visible: remove its `hidden` attribute (`removeAttribute('hidden')`) and any class that hides it. Do not rely on `style.display`, which cannot override the `[hidden]` rule.
 
 ## Common Failure Modes
 
@@ -359,3 +359,5 @@ Follow the requested language directive exactly when provided.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+{{snippet:interactive-display-state}}

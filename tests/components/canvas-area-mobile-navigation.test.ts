@@ -33,6 +33,7 @@ describe('Phone control recovery', () => {
       const root = createRoot(host);
       const back = vi.fn();
       const playPause = vi.fn();
+      const revealControlsRef = { current: null as (() => void) | null };
       const videoScene: Scene = {
         id: 'video',
         stageId: 'course',
@@ -90,6 +91,7 @@ describe('Phone control recovery', () => {
           root.render(
             createElement(CanvasArea, {
               mobile: true,
+              revealControlsRef,
               currentScene: hasScene ? videoScene : null,
               currentSceneIndex: 0,
               scenesCount: 0,
@@ -111,11 +113,8 @@ describe('Phone control recovery', () => {
         act(() => vi.advanceTimersByTime(2100));
         const chrome = host.querySelector('.mobile-canvas-chrome')!;
         expect(chrome.getAttribute('data-visible')).toBe('false');
-        const recovery = host.querySelector<HTMLButtonElement>(
-          'button[aria-label="mobileClassroom.controls"]',
-        );
-        expect(recovery).not.toBeNull();
-        act(() => recovery!.click());
+        expect(host.querySelector('.mobile-canvas-menu')).toBeNull();
+        act(() => revealControlsRef.current!());
         expect(chrome.getAttribute('data-visible')).toBe('true');
         expect(playPause).not.toHaveBeenCalled();
         act(() => host.querySelector<HTMLButtonElement>('.mobile-canvas-header button')!.click());

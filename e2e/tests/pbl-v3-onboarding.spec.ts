@@ -807,33 +807,43 @@ async function finish(page: Page) {
   }
 }
 async function correctSpotlight(page: Page, selector: string) {
-  const spotlights = page.locator('[data-pbl-onboarding="spotlight"]');
-  // A hidden/off-screen region may have no spotlight, but never an unrelated one.
-  if (!(await spotlights.count())) return;
   await expect
-    .poll(async () => {
-      const anchors = await Promise.all(
-        (await page.locator(selector).all()).map((anchor) => anchor.boundingBox()),
-      );
-      const boxes = await Promise.all(
-        (await spotlights.all()).map((spotlight) => spotlight.boundingBox()),
-      );
-      return (
-        boxes.length > 0 &&
-        boxes.every(
-          (box) =>
-            box &&
-            anchors.some(
-              (anchor) =>
-                anchor &&
-                box.x + box.width > anchor.x &&
-                box.x < anchor.x + anchor.width &&
-                box.y + box.height > anchor.y &&
-                box.y < anchor.y + anchor.height,
-            ),
-        )
-      );
-    })
+    .poll(() =>
+      page.evaluate((selector) => {
+        const anchors = document.querySelectorAll(selector);
+        const spotlight = '[data-pbl-onboarding="spotlight"]';
+        if (!anchors.length) return !document.querySelector(spotlight);
+
+        // The browser accounts for clipping by nested scroll containers.
+        return new Promise<boolean>((resolve) => {
+          const observer = new IntersectionObserver((entries) => {
+            observer.disconnect();
+            const boxes = Array.from(document.querySelectorAll(spotlight), (el) =>
+              el.getBoundingClientRect(),
+            );
+            if (!boxes.length) {
+              resolve(
+                entries.every(
+                  ({ intersectionRect }) => !intersectionRect.width || !intersectionRect.height,
+                ),
+              );
+              return;
+            }
+            const bounds = Array.from(anchors, (anchor) => anchor.getBoundingClientRect());
+            resolve(
+              boxes.every((box) =>
+                bounds.some(
+                  (anchor) =>
+                    Math.min(box.right, anchor.right) > Math.max(box.left, anchor.left) &&
+                    Math.min(box.bottom, anchor.bottom) > Math.max(box.top, anchor.top),
+                ),
+              ),
+            );
+          });
+          anchors.forEach((anchor) => observer.observe(anchor));
+        });
+      }, selector),
+    )
     .toBe(true);
 }
 
@@ -1436,7 +1446,9 @@ for (const [width, height, locale, docked] of [
       '[data-testid="pbl-application-panel"], [data-testid="pbl-application-open"]',
       '[data-pbl-tour="replay"]',
     ];
+    const steps = ['progress', 'discussion', 'code', 'application', 'replay'];
     for (let i = 0; i < 5; i++) {
+      await expect(tour(page)).toHaveAttribute('data-step', steps[i]);
       await correctSpotlight(page, selectors[i]);
       const box = (await tour(page).boundingBox())!;
       expect(box.x).toBeGreaterThanOrEqual(0);
@@ -1583,24 +1595,29 @@ test('compact short desktop docked assistant spotlight stays within its scroll v
   await next(page).click();
   await expect(tour(page)).toHaveAttribute('data-step', 'discussion');
   const split = page.getByTestId('pbl-workbench-split');
-  const check = async () => {
-    const viewport = (await split.boundingBox())!;
-    const spotlight = page.locator('[data-pbl-onboarding="spotlight"]').first();
-    const lit = (await spotlight.count()) ? await spotlight.boundingBox() : null;
-    if (lit) {
-      expect(lit.x).toBeGreaterThanOrEqual(viewport.x - 1);
-      expect(lit.y).toBeGreaterThanOrEqual(viewport.y - 1);
-      expect(lit.x + lit.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
-      expect(lit.y + lit.height).toBeLessThanOrEqual(viewport.y + viewport.height + 1);
-    }
-  };
-  await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toBeVisible();
-  await check();
+  await expect
+    .poll(() =>
+      split.evaluate((element) => {
+        const viewport = element.getBoundingClientRect();
+        const lit = document
+          .querySelector('[data-pbl-onboarding="spotlight"]')
+          ?.getBoundingClientRect();
+        return (
+          !!lit &&
+          lit.width > 0 &&
+          lit.height > 0 &&
+          lit.left >= viewport.left - 1 &&
+          lit.top >= viewport.top - 1 &&
+          lit.right <= viewport.right + 1 &&
+          lit.bottom <= viewport.bottom + 1
+        );
+      }),
+    )
+    .toBe(true);
   await split.evaluate((element) => {
     element.scrollTop = 0;
   });
   await expect(page.locator('[data-pbl-onboarding="spotlight"]')).toHaveCount(0);
-  await check();
 });
 
 test('focusing the composer before typing defers automatic entry through recovery', async ({

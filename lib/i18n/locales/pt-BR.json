@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "Começar a editar"
+    },
+    "mobile": {
+      "openMenu": "Abrir navegação",
+      "closeMenu": "Fechar navegação"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "Aguarde o ambiente de aprendizagem ficar pronto antes de começar. Se a preparação falhou, tente novamente acima.",
         "unsaved": "Os arquivos do projeto têm alterações não salvas. Salve ou descarte as alterações antes de começar.",
         "preparing": "Preparando o espaço de trabalho. Aguarde antes de começar."
-      }
+      },
+      "singleFlow": "Etapas do projeto",
+      "concepts": "Conceitos de engenharia",
+      "deliverables": "Resultados funcionais"
     },
     "journey": {
       "currentMilestone": "Etapa atual",
@@ -3445,6 +3452,7 @@
     "soundSettings": "Configurações de som",
     "playSound": "Reproduzir som",
     "materials": "Material do curso",
+    "classroom": "Aula",
     "directory": "Conteúdo",
     "lecture": "Notas",
     "volume": "Volume",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "A prévia não está disponível em celulares. Abra este projeto em um computador para experimentar.",
     "chat": "Conversa",
     "askTeacher": "Pergunte ao professor…",
+    "viewInNotes": "Ver nas anotações",
+    "viewInChat": "Ver no chat",
     "fullSpeech": "Mensagem completa",
     "me": "Eu",
+    "listening": "Ouvindo",
     "whiteboardTitle": "Quadro da aula"
   }
 }

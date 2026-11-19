@@ -293,6 +293,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
     const sceneSwitchRequestRef = useRef(0);
     const sceneSwitchConfirmingRef = useRef(false);
+    const [landscapeRequested, setLandscapeRequested] = useState(false);
     const [isPresenting, setIsPresenting] = useState(false);
     const [controlsVisible, setControlsVisible] = useState(true);
     const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -717,6 +718,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         setIsPresenting(active);
 
         if (!active) {
+          setLandscapeRequested(false);
           // Ensure keyboard unlock on any fullscreen exit
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (navigator as any).keyboard?.unlock?.();
@@ -1897,10 +1899,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       : null;
 
     const mobileLandscape = useMediaQuery('(orientation: landscape)');
+    const rotateClassroom = mobile && landscapeRequested && !mobileLandscape;
     const visibleViewport = useVisualViewport();
     const router = useRouter();
-    const [mobilePanelChoice, setMobilePanel] = useState<ClassroomPanel | null>(null);
-    const [mobilePanelScene, setMobilePanelScene] = useState<string | null>(null);
+    // `null` is the classroom (roundtable) tab. The choice persists across scenes,
+    // so notes and chat keep following playback.
+    const [mobilePanel, setMobilePanel] = useState<ClassroomPanel | null>(null);
+    // Entering a quiz returns to the classroom tab, so the quiz has the room it needs.
+    const [mobilePanelSceneId, setMobilePanelSceneId] = useState(currentSceneId);
+    if (mobilePanelSceneId !== currentSceneId) {
+      setMobilePanelSceneId(currentSceneId);
+      if (currentScene?.type === 'quiz') setMobilePanel(null);
+    }
     const [mobileComposerHost, setMobileComposerHost] = useState<HTMLDivElement | null>(null);
     // A user choice is scoped to this scene, not to global desktop dock preferences.
     const [mobileDockChoice, setMobileDockChoice] = useState<{
@@ -1912,28 +1922,40 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         ? mobileDockChoice.expanded
         : currentScene?.type !== 'quiz';
     const quizFocused = currentScene?.type === 'quiz' && !mobileDockExpanded;
-    const mobilePanel = mobilePanelScene !== currentSceneId ? null : mobilePanelChoice;
     const mobilePanelOpen = mobilePanel !== null;
-    const chooseMobilePanel = (panel: ClassroomPanel) => {
+    const revealMobileControls = useRef<(() => void) | null>(null);
+    const chooseMobilePanel = (panel: ClassroomPanel | null) => {
+      if (panel === null && mobilePanel === null) revealMobileControls.current?.();
       setMobilePanel(panel);
-      setMobilePanelScene(currentSceneId);
-      if (panel !== 'directory') chatAreaRef.current?.switchToTab(panel);
+      if (panel === 'lecture' || panel === 'chat') chatAreaRef.current?.switchToTab(panel);
     };
+    const mobileNav = mobile ? (
+      <MobileClassroomNav
+        active={mobilePanel}
+        live={engineMode === 'playing' || chatIsStreaming}
+        onSelect={chooseMobilePanel}
+      />
+    ) : null;
     const mobileToggleChat = () => chooseMobilePanel('chat');
     const mobileToggleDirectory = () =>
       setMobilePanel((panel) => (panel === 'directory' ? null : 'directory'));
     const mobilePresentation = async () => {
+      if (landscapeRequested || isPresenting) {
+        setLandscapeRequested(false);
+        if (document.fullscreenElement) await togglePresentation();
+        return;
+      }
+      setLandscapeRequested(true);
       await togglePresentation();
-      // iOS/embedded browsers may support neither API. Layout still follows the
-      // real viewport; a failed lock never rotates or rebuilds the classroom.
-      const orientation = window.screen.orientation as ScreenOrientation & {
-        lock?: (value: string) => Promise<void>;
-      };
-      try {
-        if (document.fullscreenElement) await orientation?.lock?.('landscape');
-        else orientation?.unlock?.();
-      } catch {
-        /* Native rotation remains available. */
+      if (document.fullscreenElement) {
+        const orientation = window.screen.orientation as ScreenOrientation & {
+          lock?: (value: string) => Promise<void>;
+        };
+        try {
+          await orientation?.lock?.('landscape');
+        } catch {
+          // Keep the in-page rotation while the physical viewport is portrait.
+        }
       }
     };
     const exitMobileClassroom = () => {
@@ -1947,16 +1969,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         ref={stageRef}
         data-playback-stage=""
         data-mobile={mobile}
-        data-landscape={mobileLandscape}
+        data-landscape={mobileLandscape || rotateClassroom}
+        data-rotate-classroom={rotateClassroom || undefined}
         data-quiz-focused={quizFocused}
         data-whiteboard={whiteboardOpen}
         data-materials-open={mobilePanelOpen}
+        data-mobile-panel={mobile ? (mobilePanel ?? 'classroom') : undefined}
         style={
           mobile && visibleViewport
             ? ({
-                height: visibleViewport.height,
-                top: visibleViewport.offsetTop,
-                '--classroom-visible-height': `${visibleViewport.height}px`,
+                height: rotateClassroom ? visibleViewport.width : visibleViewport.height,
+                '--classroom-visible-top': `${rotateClassroom ? 0 : Math.max(0, visibleViewport.offsetTop)}px`,
+                '--classroom-visible-height': `${rotateClassroom ? visibleViewport.width : visibleViewport.height}px`,
               } as CSSProperties)
             : undefined
         }
@@ -1994,10 +2018,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             onCollapseChange={mobile ? () => setMobilePanel(null) : setSidebarCollapsed}
             onSceneSelect={(sceneId) => {
               gatedSceneSwitch(sceneId);
-              if (mobile) {
-                setMobilePanel(null);
-                setMobilePanelScene(null);
-              }
+              if (mobile) setMobilePanel(null);
             }}
             onRetryOutline={onRetryOutline}
           />
@@ -2035,6 +2056,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           >
             <CanvasArea
               mobile={mobile}
+              revealControlsRef={revealMobileControls}
               mobileCourseName={stage?.name}
               mobileSpeech={liveSpeech || lectureSpeech || firstSpeechText}
               onMobileBack={exitMobileClassroom}
@@ -2061,7 +2083,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               onNextSlide={handleNextScene}
               onPlayPause={handlePlayPause}
               onWhiteboardClose={handleWhiteboardToggle}
-              isPresenting={isPresenting}
+              isPresenting={isPresenting || (mobile && landscapeRequested)}
               onTogglePresentation={mobile ? mobilePresentation : togglePresentation}
               showStopDiscussion={
                 engineMode === 'live' ||
@@ -2131,6 +2153,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 onMobileBack={exitMobileClassroom}
                 mobileFocused={!mobileDockExpanded}
                 mobileComposerHost={mobileComposerHost}
+                mobileNav={mobileNav}
+                onQuestionFocus={() => {
+                  setLandscapeRequested(false);
+                  const stage = stageRef.current?.closest('[data-classroom-stage]');
+                  if (stage && document.fullscreenElement === stage) void togglePresentation();
+                }}
+                onRevealSpeech={(source, text) =>
+                  chatAreaRef.current?.revealSpeech(source, text) ?? false
+                }
                 onToggleMobileFocus={() =>
                   setMobileDockChoice({ sceneId: currentSceneId, expanded: !mobileDockExpanded })
                 }
@@ -2341,14 +2372,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           )}
           <ChatArea
             mobile={mobile}
-            onTabChange={
-              mobile
-                ? (panel) => {
-                    setMobilePanel(panel);
-                    setMobilePanelScene(currentSceneId);
-                  }
-                : undefined
-            }
+            onTabChange={mobile ? (panel) => setMobilePanel(panel) : undefined}
             ref={chatAreaRef}
             width={chatAreaWidth}
             onWidthChange={setChatAreaWidth}
@@ -2422,12 +2446,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         {mobile && (
           <>
             <div className="mobile-classroom-composer" ref={setMobileComposerHost} />
-            <MobileClassroomNav
-              active={mobilePanel}
-              onSelect={(panel) =>
-                mobilePanel === panel ? setMobilePanel(null) : chooseMobilePanel(panel)
-              }
-            />
           </>
         )}
 

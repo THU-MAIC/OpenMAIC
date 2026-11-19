@@ -130,6 +130,9 @@ export function WorkspaceSearchPalette({
   const { t, setLocale } = useI18n();
   const { setTheme } = useTheme();
   const extensions = useWorkbenchShellExtensions();
+  // A phone has no keyboard: the chord is a claim it cannot keep, so the row
+  // shows no hint below `md` (the element is hidden by CSS, which also keeps
+  // the hint out of a screen reader's announcement there).
   const newChatHint = shortcutLabel('newChat', useIsMac()).label;
   const [query, setQuery] = useState('');
   const trimmed = query.trim();
@@ -330,7 +333,10 @@ export function WorkspaceSearchPalette({
               <Icon aria-hidden />
               <span className="min-w-0 flex-1 truncate">{action.label}</span>
               {action.hint ? (
-                <CommandShortcut data-testid={`workspace-search-action-${action.id}-shortcut`}>
+                <CommandShortcut
+                  data-testid={`workspace-search-action-${action.id}-shortcut`}
+                  className="hidden md:inline-flex"
+                >
                   {action.hint}
                 </CommandShortcut>
               ) : null}
@@ -346,7 +352,9 @@ export function WorkspaceSearchPalette({
       onOpenChange={onOpenChange}
       title={t('workspace.nav.search')}
       description={t('workspace.search.placeholder')}
-      className="sm:max-w-[560px]"
+      // A phone centres the palette too low over its tall viewport; lift it so
+      // the list has room above the on-screen keyboard.
+      className="top-[12vh]! translate-y-0! sm:top-1/3! sm:max-w-[560px]"
     >
       {/* Filtering is ours (by name, folder included); cmdk keeps the keyboard. */}
       <Command

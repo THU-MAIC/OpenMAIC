@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Ref,
+  type ReactNode,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, ClosedCaption, Ellipsis, Play, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -18,6 +26,7 @@ import type { WhiteboardElementReference } from '@/lib/types/chat';
 import { SlideElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
+  readonly revealControlsRef?: Ref<() => void>;
   readonly mobileCourseName?: string;
   readonly onMobileBack?: () => void;
   readonly mobileSpeech?: string | null;
@@ -39,6 +48,7 @@ interface CanvasAreaProps extends CanvasToolbarProps {
 
 export function CanvasArea({
   mobile = false,
+  revealControlsRef,
   mobileCourseName,
   onMobileBack,
   mobileSpeech,
@@ -81,25 +91,42 @@ export function CanvasArea({
   const [mobileControls, setMobileControls] = useState(true);
   const [captions, setCaptions] = useState(false);
   const mobileHideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => {
+  const revealMobileControls = useCallback((autoHide: boolean) => {
+    clearTimeout(mobileHideTimer.current);
+    setMobileControls(true);
+    if (autoHide) mobileHideTimer.current = setTimeout(() => setMobileControls(false), 2000);
+  }, []);
+  useLayoutEffect(() => {
     if (!mobile) return;
     clearTimeout(mobileHideTimer.current);
-    if (currentScene?.type === 'quiz' || whiteboardOpen) {
-      // The quiz owns its header and submit button, and the open whiteboard owns
-      // its own header; player chrome must not cover either.
+    if (engineState === 'playing' || currentScene?.type === 'quiz' || whiteboardOpen) {
+      // Keep the playing canvas, quiz and open whiteboard clear of the player overlay.
       // eslint-disable-next-line react-hooks/set-state-in-effect -- switch presentation chrome with the scene
       setMobileControls(false);
-      return;
+    } else {
+      revealMobileControls(true);
     }
-    // A playback change, or closing the whiteboard, leaves controls available for two seconds.
-    setMobileControls(true);
-    mobileHideTimer.current = setTimeout(() => setMobileControls(false), 2000);
     return () => clearTimeout(mobileHideTimer.current);
-  }, [mobile, engineState, currentScene?.id, currentScene?.type, whiteboardOpen]);
+  }, [
+    mobile,
+    engineState,
+    currentScene?.id,
+    currentScene?.type,
+    whiteboardOpen,
+    revealMobileControls,
+  ]);
   const toggleMobileControls = useCallback(() => {
     clearTimeout(mobileHideTimer.current);
     setMobileControls((visible) => !visible);
   }, []);
+  useImperativeHandle(
+    revealControlsRef,
+    () => () => {
+      if (!mobile || whiteboardOpen || currentScene?.type === 'quiz') return;
+      revealMobileControls(currentScene?.type === 'interactive');
+    },
+    [mobile, whiteboardOpen, currentScene?.type, revealMobileControls],
+  );
   const showControls = mode === 'playback' && !whiteboardOpen;
   const showPlayHint =
     showControls &&
@@ -361,7 +388,8 @@ export function CanvasArea({
                 </button>
                 <button
                   type="button"
-                  aria-label={t('stage.fullscreen')}
+                  aria-label={t(isPresenting ? 'stage.exitFullscreen' : 'stage.fullscreen')}
+                  aria-pressed={isPresenting}
                   onClick={onTogglePresentation}
                 >
                   <svg
@@ -387,25 +415,31 @@ export function CanvasArea({
                   aria-label={t(
                     engineState === 'playing' ? 'mobileClassroom.pause' : 'mobileClassroom.play',
                   )}
-                  onClick={onPlayPause}
+                  onClick={() => {
+                    if (engineState !== 'playing') {
+                      clearTimeout(mobileHideTimer.current);
+                      setMobileControls(false);
+                    }
+                    onPlayPause();
+                  }}
                 >
                   {engineState === 'playing' ? <Pause size={24} /> : <Play size={24} />}
                 </button>
               )}
             </div>
-            {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
-              <div className="mobile-canvas-caption">{mobileSpeech}</div>
-            )}
-            {currentScene?.type !== 'quiz' && !mobileControls && !whiteboardOpen && (
+            {currentScene?.type === 'interactive' && !mobileControls && !whiteboardOpen && (
               <button
                 type="button"
-                className="mobile-canvas-menu"
-                onClick={toggleMobileControls}
+                className="mobile-canvas-menu absolute top-0 right-0 z-[116] grid size-11 place-items-center text-violet-600"
+                onClick={() => revealMobileControls(true)}
                 aria-label={t('mobileClassroom.controls')}
-                aria-expanded={mobileControls}
+                aria-expanded={false}
               >
                 <Ellipsis size={20} />
               </button>
+            )}
+            {captions && mobileSpeech && !whiteboardOpen && currentScene?.type !== 'quiz' && (
+              <div className="mobile-canvas-caption">{mobileSpeech}</div>
             )}
           </>
         )}

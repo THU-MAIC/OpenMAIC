@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
+  CircleStop,
   ChevronLeft,
   ChevronRight,
   Play,
@@ -29,6 +30,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useSoftCloseCountdown } from '@/components/chat/use-soft-close-countdown';
 
 export interface CanvasToolbarProps {
+  readonly sessionType?: 'qa' | 'discussion';
   readonly onMobileBack?: () => void;
   readonly mobile?: boolean;
   readonly currentSceneIndex: number;
@@ -119,6 +121,7 @@ export function CanvasToolbar({
   onPlayPause,
   onWhiteboardClose,
   showStopDiscussion,
+  sessionType,
   onStopDiscussion,
   onContinueDiscussion,
   isPresenting,
@@ -172,6 +175,7 @@ export function CanvasToolbar({
 
   // Effective volume for display
   const effectiveVolume = ttsMuted ? 0 : ttsVolume;
+  const endLabel = t(mobile && sessionType === 'qa' ? 'chat.endQA' : 'roundtable.stopDiscussion');
   const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
 
   return (
@@ -418,10 +422,15 @@ export function CanvasToolbar({
                   'text-[11px] font-semibold whitespace-nowrap',
                   'hover:bg-red-500/20 dark:hover:bg-red-400/20 active:scale-95 transition-all cursor-pointer',
                 )}
-                title={t('roundtable.stopDiscussion')}
+                title={endLabel}
+                data-discussion-action="end"
               >
-                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-                <span data-discussion-label>{t('roundtable.stopDiscussion')}</span>
+                {mobile ? (
+                  <CircleStop aria-hidden />
+                ) : (
+                  <span className="inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                )}
+                <span data-discussion-label>{endLabel}</span>
               </button>
               {isSoftClosing && onContinueDiscussion && (
                 <button

@@ -192,6 +192,8 @@ window.addEventListener('message', function(event) {
       // Reveal a hidden element (e.g. the solution or a hint panel)
       const revealEl = document.querySelector(target);
       if (revealEl) {
+        revealEl.removeAttribute('hidden'); // Works for HTML and SVG elements
+        revealEl.classList.remove('hidden');
         revealEl.style.display = '';
         revealEl.style.opacity = '1';
       }
@@ -236,3 +238,5 @@ Return ONLY the HTML document, no markdown fences or explanations.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+{{snippet:interactive-display-state}}

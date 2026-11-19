@@ -155,13 +155,17 @@ Learning: Player EXPERIENCES F=ma by adjusting thrust and seeing result
 When calculating positions for game objects (lander, player, targets), account for UI overlays:
 
 ```javascript
+// Positions are in CSS pixels: use the canvas's CSS size, not canvas.height,
+// which is in device pixels once the bitmap is scaled by devicePixelRatio.
+const height = canvas.clientHeight;
+
 // BAD: Object overlaps with controls/HUD
-const objectY = groundY - (altitude / maxHeight) * canvas.height;
+const objectY = groundY - (altitude / maxHeight) * height;
 
 // GOOD: Reserve space for UI elements
 const TOP_MARGIN = 100;    // Space for HUD/stats at top
 const BOTTOM_MARGIN = 250; // Space for controls at bottom
-const playableHeight = canvas.height - TOP_MARGIN - BOTTOM_MARGIN;
+const playableHeight = height - TOP_MARGIN - BOTTOM_MARGIN;
 const objectY = groundY - BOTTOM_MARGIN - (altitude / maxHeight) * playableHeight;
 ```
 
@@ -232,6 +236,8 @@ window.addEventListener('message', function(event) {
     case 'REVEAL_ELEMENT':
       const revealEl = document.querySelector(target);
       if (revealEl) {
+        revealEl.removeAttribute('hidden'); // Works for HTML and SVG elements
+        revealEl.classList.remove('hidden');
         revealEl.style.display = '';
         revealEl.style.opacity = '1';
       }
@@ -431,3 +437,5 @@ render(); // Render paths publish the current state, including before Start.
 {{snippet:interactive-math}}
 
 {{snippet:interactive-observation}}
+
+{{snippet:interactive-display-state}}

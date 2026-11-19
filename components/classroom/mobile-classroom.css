@@ -3,16 +3,36 @@
   display: flex;
   flex-shrink: 0;
 }
+html:has([data-classroom-stage][data-mobile='true']),
 body:has([data-classroom-stage][data-mobile='true']) {
   overflow: hidden;
+  overscroll-behavior: none;
 }
 [data-classroom-stage][data-mobile='true'] {
   position: fixed;
   inset: 0;
   z-index: 40;
+  transform-origin: top left;
+}
+[data-classroom-stage][data-mobile='true'] > .interactive-iframe-viewport {
+  position: absolute;
+}
+/* Native orientation changes have their own animation. Ease the in-page turn
+   in both directions while the device viewport itself stays in portrait. */
+@media (orientation: portrait) and (prefers-reduced-motion: no-preference) {
+  [data-classroom-stage][data-mobile='true'] {
+    transition: transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+}
+/* Rotate the classroom and its local portals together on a portrait screen. */
+[data-classroom-stage][data-mobile='true']:has([data-rotate-classroom='true']) {
+  inset: 0 auto auto 0;
+  width: 100dvh;
+  height: 100dvw;
+  transform: translateX(100dvw) rotate(90deg);
 }
 .classroom-playback[data-mobile='true'] {
-  --mobile-nav-height: calc(52px + env(safe-area-inset-bottom));
+  --mobile-nav-height: 0px;
   --mobile-composer-height: 64px;
   position: absolute;
   inset: 0;
@@ -23,6 +43,11 @@ body:has([data-classroom-stage][data-mobile='true']) {
   padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
   background: var(--background);
   color: var(--foreground);
+}
+/* Safari can report a transient visual viewport offset during a swipe.
+   Follow that offset only when the keyboard is editing the question. */
+.classroom-playback[data-mobile='true']:has(.mobile-roundtable-input textarea:focus) {
+  top: var(--classroom-visible-top, 0px);
 }
 [data-mobile='true'] > .classroom-main {
   display: contents;
@@ -161,6 +186,43 @@ body:has([data-classroom-stage][data-mobile='true']) {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
+[data-mobile-toolbar] [data-toolbar-control='discussion'] {
+  justify-content: flex-start;
+}
+[data-mobile-toolbar] [data-toolbar-control='discussion'] button[data-discussion-action='end'] {
+  padding-inline: 4px;
+  gap: 6px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+[data-mobile-toolbar]
+  [data-toolbar-control='discussion']
+  button[data-discussion-action='end']:only-child {
+  flex: 0 1 auto;
+  padding-inline: 10px;
+}
+[data-mobile-toolbar] [data-discussion-action='end']:active {
+  background: var(--muted);
+}
+[data-mobile='true']:has([data-mobile-toolbar] [data-discussion-action='end']) [data-session-end] {
+  display: none;
+}
+[data-chat-session] > button {
+  min-height: 44px;
+  gap: 8px;
+}
+[data-chat-session] [data-chat-bubble] {
+  padding: 7px 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  box-shadow: none;
+}
+[data-chat-session] [data-chat-bubble='user'] {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
 [data-mobile-toolbar] [data-discussion-action='continue'] {
   flex-direction: column;
   gap: 0;
@@ -191,7 +253,7 @@ body:has([data-classroom-stage][data-mobile='true']) {
 
 .mobile-roundtable-content {
   padding: 0 12px 10px;
-  max-height: min(220px, calc(var(--classroom-visible-height, 100dvh) * 0.29));
+  max-height: min(260px, calc(var(--classroom-visible-height, 100dvh) * 0.34));
   overflow-y: auto;
 }
 .mobile-roundtable-content[hidden] {
@@ -199,67 +261,137 @@ body:has([data-classroom-stage][data-mobile='true']) {
 }
 .mobile-roundtable-roles {
   display: flex;
-  gap: 16px;
+  gap: 8px;
   overflow-x: auto;
-  padding: 10px 6px;
+  padding: 12px 2px 4px;
   scrollbar-width: none;
+}
+.mobile-roundtable-roles::-webkit-scrollbar {
+  display: none;
 }
 .mobile-roundtable-role {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-shrink: 0;
+  width: 76px;
   min-height: 44px;
-  min-width: 44px;
-  font-size: 12px;
+  padding: 9px 0 8px;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  background: #f6f5f9;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
 }
-.mobile-roundtable-role-info {
-  display: grid;
-  gap: 2px;
-  text-align: start;
+.dark .mobile-roundtable-role {
+  background: #17161f;
 }
-.mobile-roundtable-role-info strong {
+.mobile-roundtable-role strong {
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   font-weight: 600;
 }
 .mobile-roundtable-role-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 10px;
   color: #858398;
 }
-.mobile-roundtable-role[data-role='teacher'] .mobile-roundtable-role-label {
+.mobile-roundtable-role[data-role='teacher'] .mobile-roundtable-role-label,
+.mobile-roundtable-role[data-active='true'] .mobile-roundtable-role-label {
   color: #7c3aed;
 }
-.mobile-roundtable-role[data-role='user'] {
-  margin-inline-start: auto;
+.dark .mobile-roundtable-role[data-active='true'] .mobile-roundtable-role-label {
+  color: #c4b5fd;
 }
-.mobile-roundtable-role[data-role='user'] .mobile-roundtable-avatar {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  color: #7c3aed;
-  font-size: 12px;
+.mobile-roundtable-role[data-active='true'] {
+  border-color: rgb(139 92 246 / 0.45);
+  background: #f2edfc;
+}
+.dark .mobile-roundtable-role[data-active='true'] {
+  background: #241b3b;
 }
 .mobile-roundtable-avatar {
   display: block;
+  position: relative;
   flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  overflow: hidden;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: #efe9fc;
 }
-.mobile-roundtable-role[data-active='true'] .mobile-roundtable-avatar {
-  outline: 2px solid #c4b5fd;
-  outline-offset: 2px;
+.mobile-roundtable-avatar > * {
+  border-radius: 50%;
+  overflow: hidden;
 }
-[data-speaking='true'] .mobile-roundtable-avatar {
-  outline: 2px solid #8b5cf6;
-  outline-offset: 2px;
+.mobile-roundtable-avatar::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border: 2px solid #8b5cf6;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.mobile-roundtable-role[data-active='true'] .mobile-roundtable-avatar::after {
+  opacity: 0.6;
+}
+[data-speaking='true'] .mobile-roundtable-avatar::after {
+  animation: mobile-roundtable-pulse 1.6s ease-out infinite;
+}
+@keyframes mobile-roundtable-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 0;
+  }
+}
+.mobile-roundtable-wave,
+.mobile-classroom-nav-live {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 10px;
+}
+.mobile-roundtable-wave b,
+.mobile-classroom-nav-live b {
+  width: 2px;
+  height: 3px;
+  border-radius: 1px;
+  background: #8b5cf6;
+  animation: mobile-roundtable-wave 0.9s ease-in-out infinite;
+}
+.mobile-roundtable-wave b:nth-child(2),
+.mobile-classroom-nav-live b:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.mobile-roundtable-wave b:nth-child(3),
+.mobile-classroom-nav-live b:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes mobile-roundtable-wave {
+  0%,
+  100% {
+    height: 3px;
+  }
+  50% {
+    height: 10px;
+  }
 }
 .mobile-roundtable-speech {
   display: block;
+  position: relative;
   width: 100%;
+  margin-top: 8px;
   text-align: start;
   padding: 10px 12px;
   border-radius: 16px;
@@ -267,6 +399,18 @@ body:has([data-classroom-stage][data-mobile='true']) {
 }
 .dark .mobile-roundtable-speech {
   background: #241b3b;
+}
+.mobile-roundtable-speech[data-has-tip='true']::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: calc(var(--tip-x) - 6px);
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: inherit;
+  transform: rotate(45deg);
+  transition: left 0.25s;
 }
 .mobile-roundtable-speaker {
   color: #8b5cf6;
@@ -436,24 +580,122 @@ body:has([data-classroom-stage][data-mobile='true']) {
 .mobile-classroom-nav {
   display: flex;
   flex-shrink: 0;
-  height: calc(52px + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
+  height: 44px;
+  padding: 0 8px;
   border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   background: var(--background);
 }
 .mobile-classroom-nav button {
+  position: relative;
   display: flex;
   flex: 1;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 4px;
   min-width: 44px;
   min-height: 44px;
   color: #8a879e;
-  font-size: 13px;
+  font-size: 14px;
 }
-.mobile-classroom-nav button[aria-pressed='true'] {
-  color: #8b5cf6;
+.mobile-classroom-nav button > svg {
+  display: none;
+}
+.mobile-classroom-nav button[aria-selected='true'] {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.mobile-classroom-nav button[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  width: 20px;
+  height: 3px;
+  border-radius: 3px;
+  background: #8b5cf6;
+  transform: translateX(-50%);
+}
+.mobile-classroom-nav-live {
+  display: none;
+}
+.mobile-classroom-nav button[data-live='true'] .mobile-classroom-nav-live {
+  display: inline-flex;
+}
+
+/* Portrait: tabs swap the area under the roundtable toolbar in place. */
+[data-mobile='true'][data-landscape='false'] .classroom-canvas-region {
+  order: 1;
+}
+[data-mobile='true'][data-landscape='false'] .classroom-main > div:has(> .mobile-roundtable) {
+  order: 2;
+}
+[data-mobile='true'][data-landscape='false'] .classroom-directory,
+[data-mobile='true'][data-landscape='false'] .classroom-chat {
+  order: 3;
+}
+[data-mobile='true'][data-landscape='false'] .mobile-classroom-composer {
+  order: 4;
+}
+/* Give spare height to the roster and speech before making that area scroll. */
+.classroom-playback[data-mobile-panel='classroom'][data-landscape='false'][data-quiz-focused='false'][data-whiteboard='false'] {
+  .classroom-main > div:has(> .mobile-roundtable) {
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+  }
+  .mobile-roundtable {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .mobile-roundtable-toolbar,
+  .mobile-classroom-nav,
+  .mobile-classroom-composer {
+    flex: 0 0 auto;
+  }
+  .mobile-roundtable-content {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: none;
+    overscroll-behavior-y: contain;
+  }
+}
+[data-mobile='true'][data-landscape='false']:not([data-mobile-panel='classroom'])
+  .mobile-roundtable-content {
+  display: none;
+}
+[data-mobile='true'][data-landscape='false'] .mobile-panel-backdrop,
+[data-mobile='true'][data-landscape='false'] .mobile-panel-close {
+  display: none;
+}
+[data-mobile='true'][data-landscape='false'] .classroom-directory[data-open='true'],
+[data-mobile='true'][data-landscape='false'] .classroom-chat[data-open='true'] {
+  position: static;
+  flex: 1 1 0;
+  min-height: 0;
+  border-radius: 0;
+  z-index: auto;
+}
+[data-mobile='true'] .classroom-chat [data-slot='tabs-list'] {
+  display: none;
+}
+[data-mobile='true'][data-landscape='false'][data-mobile-panel='directory']
+  .mobile-classroom-composer,
+[data-mobile='true'][data-landscape='false'][data-mobile-panel='lecture']
+  .mobile-classroom-composer {
+  display: none;
+}
+[data-mobile='true'][data-landscape='false'][data-mobile-panel='chat'] .mobile-classroom-composer {
+  position: static;
+  flex: 0 0 auto;
+  height: auto;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+[data-mobile='true'][data-landscape='false'][data-mobile-panel='classroom']
+  .mobile-classroom-composer {
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
 }
 [data-mobile='true'] .classroom-directory {
   position: absolute;
@@ -515,11 +757,11 @@ body:has([data-classroom-stage][data-mobile='true']) {
   inset: 0;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.18s;
   z-index: 115;
 }
 .mobile-canvas-chrome[data-visible='true'] {
   opacity: 1;
+  transition: opacity 0.18s;
 }
 .mobile-canvas-chrome[data-visible='true'] button {
   pointer-events: auto;
@@ -610,26 +852,12 @@ body:has([data-classroom-stage][data-mobile='true']) {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.mobile-canvas-menu {
-  position: absolute;
-  top: 0;
-  right: 0;
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  z-index: 116;
-  color: #7c3aed;
-}
 
 /* Landscape is a reflow, never a new player or a second iframe. */
 [data-mobile='true'][data-landscape='true'] .classroom-canvas-region {
   flex: 1 1 0;
   aspect-ratio: auto;
   max-height: none;
-}
-[data-mobile='true'][data-landscape='true'] .classroom-main > div:has(> .mobile-roundtable) {
-  width: calc(100% - 144px);
 }
 [data-mobile='true'][data-landscape='true'] .mobile-roundtable {
   display: flex;
@@ -669,15 +897,23 @@ body:has([data-classroom-stage][data-mobile='true']) {
   gap: 3px;
   flex-shrink: 0;
 }
-[data-mobile='true'][data-landscape='true'] .mobile-roundtable-role > span:last-child {
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-role {
+  width: auto;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-role > strong,
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-role > small,
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-speech::before {
   display: none;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-speech {
+  margin-top: 0;
 }
 [data-mobile='true'][data-landscape='true'] .mobile-roundtable-avatar {
   width: 28px;
   height: 28px;
-}
-[data-mobile='true'][data-landscape='true'] .mobile-roundtable-role[data-role='user'] {
-  margin-inline-start: 0;
 }
 [data-mobile='true'][data-landscape='true'] .mobile-roundtable-full-speech {
   display: none;
@@ -692,13 +928,29 @@ body:has([data-classroom-stage][data-mobile='true']) {
   margin: 0;
 }
 [data-mobile='true'][data-landscape='true'] .mobile-classroom-nav {
-  position: absolute;
-  bottom: 0;
-  right: env(safe-area-inset-right);
-  width: 144px;
+  order: 4;
+  flex: 0 0 auto;
+  height: 48px;
+  padding: 0;
+  border: 0;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-classroom-nav button {
+  flex: 0 0 40px;
+  min-width: 40px;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-classroom-nav button > svg {
+  display: block;
 }
 [data-mobile='true'][data-landscape='true'] .mobile-classroom-nav span {
   display: none;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-classroom-nav button[aria-selected='true'] {
+  color: #8b5cf6;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-classroom-nav-live {
+  position: absolute;
+  top: 8px;
+  right: 4px;
 }
 [data-mobile='true'][data-landscape='true'] .classroom-chat[data-open='true'],
 [data-mobile='true'][data-landscape='true'] .classroom-directory[data-open='true'] {
@@ -778,7 +1030,65 @@ body:has([data-classroom-stage][data-mobile='true']) {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mobile-canvas-chrome {
+  .mobile-canvas-chrome[data-visible='true'] {
     transition: none;
   }
+}
+/* The tab bar already names and closes the directory. */
+[data-mobile='true'] .classroom-directory div:has(> [data-testid='page-rail-collapse']) {
+  display: none;
+}
+[data-mobile='true'] .classroom-chat div:has(> [data-slot='tabs-list']) {
+  display: none;
+}
+
+/* Landscape: the speech is one line inside the bar, never a scroll box. */
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-content {
+  overflow: hidden;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-speech {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  height: 36px;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-speaker,
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-status {
+  flex-shrink: 0;
+  margin: 0;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-text {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+[data-mobile='true'][data-landscape='true'] .classroom-chat[data-open='true'] > div,
+[data-mobile='true'][data-landscape='true'] .classroom-directory[data-open='true'] > aside {
+  padding-top: 44px;
+  background: var(--background);
+  backdrop-filter: none;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-roles {
+  padding-block: 0;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-roundtable-status {
+  display: none;
+}
+/* Landscape tabs live in the bottom bar: panels and their composer sit above it. */
+.classroom-playback[data-mobile='true'][data-landscape='true'] {
+  --mobile-nav-height: calc(52px + env(safe-area-inset-bottom));
+}
+[data-mobile='true'][data-landscape='true'][data-mobile-panel='lecture'] .mobile-classroom-composer,
+[data-mobile='true'][data-landscape='true'][data-mobile-panel='directory']
+  .mobile-classroom-composer {
+  display: none;
+}
+[data-mobile='true'][data-landscape='true'][data-mobile-panel='lecture']
+  .classroom-chat[data-open='true'],
+[data-mobile='true'][data-landscape='true'][data-mobile-panel='directory']
+  .classroom-directory[data-open='true'] {
+  bottom: var(--mobile-nav-height);
 }

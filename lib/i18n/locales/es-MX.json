@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "Empezar a editar"
+    },
+    "mobile": {
+      "openMenu": "Abrir navegación",
+      "closeMenu": "Cerrar navegación"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "Espera a que el entorno de aprendizaje esté listo antes de comenzar. Si la preparación falló, vuelve a intentarlo arriba.",
         "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de comenzar.",
         "preparing": "Preparando el espacio de trabajo. Espera antes de comenzar."
-      }
+      },
+      "singleFlow": "Proceso del proyecto",
+      "concepts": "Conceptos de ingeniería",
+      "deliverables": "Resultados funcionales"
     },
     "journey": {
       "currentMilestone": "Etapa actual",
@@ -3445,6 +3452,7 @@
     "soundSettings": "Configuración de sonido",
     "playSound": "Reproducir sonido",
     "materials": "Material del curso",
+    "classroom": "Clase",
     "directory": "Índice",
     "lecture": "Notas",
     "volume": "Volumen",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "La vista previa no está disponible en teléfonos. Abre este proyecto en una computadora para probarlo.",
     "chat": "Chat",
     "askTeacher": "Pregunta al docente…",
+    "viewInNotes": "Ver en las notas",
+    "viewInChat": "Ver en el chat",
     "fullSpeech": "Mensaje completo",
     "me": "Yo",
+    "listening": "Escuchando",
     "whiteboardTitle": "Pizarrón de la clase"
   }
 }

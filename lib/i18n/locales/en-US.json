@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "Start editing"
+    },
+    "mobile": {
+      "openMenu": "Open navigation",
+      "closeMenu": "Close navigation"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "Wait for the learning environment to be ready before starting. If preparation failed, retry above.",
         "unsaved": "Project files have unsaved changes. Save them or discard the changes before starting.",
         "preparing": "Preparing the workspace. Please wait before starting."
-      }
+      },
+      "singleFlow": "Project workflow",
+      "concepts": "Engineering concepts",
+      "deliverables": "Functional outcomes"
     },
     "journey": {
       "currentMilestone": "Current milestone",
@@ -3445,6 +3452,7 @@
     "soundSettings": "Sound settings",
     "playSound": "Play sound",
     "materials": "Materials",
+    "classroom": "Class",
     "directory": "Contents",
     "lecture": "Notes",
     "volume": "Volume",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "Preview is not available on phones. Open this project on a computer to try it.",
     "chat": "Chat",
     "askTeacher": "Ask the teacher…",
+    "viewInNotes": "View in notes",
+    "viewInChat": "View in chat",
     "fullSpeech": "Full message",
     "me": "Me",
+    "listening": "Listening",
     "whiteboardTitle": "Classroom whiteboard"
   }
 }

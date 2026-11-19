@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useLayoutEffect, useCallback } from 'react';
+import { measureSpotlightRect } from '@openmaic/renderer';
 import { AnimatePresence } from 'motion/react';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -57,26 +58,21 @@ export function LaserPointerOverlay({
     const contentEl = domElement.querySelector('.element-content');
     const targetEl = contentEl ?? domElement;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const targetRect = targetEl.getBoundingClientRect();
-
-    if (containerRect.width === 0 || containerRect.height === 0) {
-      setCenter(null);
-      return;
-    }
-
-    setCenter({
-      x:
-        ((targetRect.left + targetRect.width / 2 - containerRect.left) / containerRect.width) * 100,
-      y:
-        ((targetRect.top + targetRect.height / 2 - containerRect.top) / containerRect.height) * 100,
-    });
+    const rect = measureSpotlightRect(containerRef.current, targetEl);
+    setCenter(rect ? { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2 } : null);
   }, [laserElementId, domIdPrefix]);
 
   useLayoutEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- DOM measurement requires effect
     measure();
-  }, [measure, elements]);
+    const container = containerRef.current;
+    const root = laserElementId && document.getElementById(domIdPrefix + laserElementId);
+    if (!container || !root) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(root.querySelector('.element-content') ?? root);
+    return () => observer.disconnect();
+  }, [measure, elements, laserElementId, domIdPrefix]);
 
   return (
     // No overflow-hidden: the laser flies in from just outside the frame.

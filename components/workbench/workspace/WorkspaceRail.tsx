@@ -70,6 +70,7 @@ import {
   Search,
   SquareArrowOutUpRight,
   SquarePen,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -137,6 +138,8 @@ export function WorkspaceRail({
   resizeHandle,
   miniResizeHandle,
   fadeIn = true,
+  variant = 'rail',
+  onCloseDrawer,
 }: {
   readonly sessions: readonly ProHomeSessionItem[];
   readonly sessionState: HomeDiscoveryState;
@@ -185,7 +188,16 @@ export function WorkspaceRail({
    * animation switched off and on again replays on the element already there.
    */
   readonly fadeIn?: boolean;
+  /**
+   * `drawer`: the phone's navigation sheet. The same expanded tree, always
+   * shown (the rail itself is `md:` only), closing from its header instead of
+   * folding, with no width drag and no keyboard-shortcut hints.
+   */
+  readonly variant?: 'rail' | 'drawer';
+  /** The drawer's close button. Required for `variant: 'drawer'`. */
+  readonly onCloseDrawer?: () => void;
 }) {
+  const drawer = variant === 'drawer';
   const { t } = useI18n();
   const brand = useBrand();
 
@@ -223,8 +235,13 @@ export function WorkspaceRail({
       active: activeView === WORKSPACE_LIBRARY_VIEW,
       onSelect: () => onOpenView(WORKSPACE_LIBRARY_VIEW),
     },
-    ...(extensions.navItems ?? []).map(
-      (item): RailDestination => ({
+    ...(extensions.navItems ?? []).map((item): RailDestination => {
+      const select = item.onSelect;
+      const selectDrawerAction = () => {
+        onCloseDrawer?.();
+        select?.();
+      };
+      return {
         id: item.id,
         testId: `pro-nav-host-${item.id}`,
         label: item.label,
@@ -233,9 +250,13 @@ export function WorkspaceRail({
         active: activeView === item.id,
         href: item.render ? undefined : item.href,
         external: item.external,
-        onSelect: item.render ? () => onOpenView(item.id) : item.onSelect,
-      }),
-    ),
+        onSelect: item.render
+          ? () => onOpenView(item.id)
+          : drawer && select
+            ? selectDrawerAction
+            : select,
+      };
+    }),
   ];
 
   // How many extra pages the list has revealed (see `workspace-paging`);
@@ -338,7 +359,7 @@ export function WorkspaceRail({
    */
   const expandLabel = (section: string) => t('workspace.expandNavInto', { section });
 
-  if (collapsed) {
+  if (collapsed && !drawer) {
     return (
       <nav
         data-testid="pro-nav-rail-mini"
@@ -489,16 +510,18 @@ export function WorkspaceRail({
 
   return (
     <nav
-      data-testid="pro-nav-rail"
+      data-testid={drawer ? 'pro-nav-drawer' : 'pro-nav-rail'}
+      data-variant={drawer ? 'drawer' : undefined}
       aria-label={t('workspace.navAria')}
       // `z-10`: the resize handle straddles the rail's right edge, and the
       // panes are later positioned siblings — without a stacking order the
       // canvas paints over the handle and swallows the drag.
       className={cn(
-        'ws-rail relative z-10 hidden h-full shrink-0 flex-col md:flex',
+        'ws-rail relative z-10 h-full shrink-0 flex-col',
+        drawer ? 'flex w-full' : 'hidden md:flex',
         fadeIn && 'ws-enter-rail',
       )}
-      style={{ width: 'var(--ws-rail-w)' }}
+      style={drawer ? undefined : { width: 'var(--ws-rail-w)' }}
     >
       <div className="flex h-14 shrink-0 items-center gap-2 pl-4 pr-3">
         {/* The wordmark is the way home: back to the bare workspace. */}
@@ -513,14 +536,26 @@ export function WorkspaceRail({
         {/* THE rail's header, and therefore where the rail folds — the same
             button, in the same place, that the conversation and the classroom
             fold from. The seam only resizes. */}
-        <PaneFoldButton
-          testId="pro-nav-collapse"
-          label={t('workspace.collapseNav')}
-          direction="left"
-          expanded
-          className="ml-auto"
-          onClick={onToggleCollapsed}
-        />
+        {drawer ? (
+          <button
+            type="button"
+            data-testid="pro-nav-drawer-close"
+            onClick={onCloseDrawer}
+            aria-label={t('workspace.mobile.closeMenu')}
+            className="ws-quiet ml-auto grid size-11 place-items-center rounded-lg"
+          >
+            <X className="size-5" aria-hidden="true" />
+          </button>
+        ) : (
+          <PaneFoldButton
+            testId="pro-nav-collapse"
+            label={t('workspace.collapseNav')}
+            direction="left"
+            expanded
+            className="ml-auto"
+            onClick={onToggleCollapsed}
+          />
+        )}
       </div>
 
       {/* New chat: the one raised object in the rail. It starts a conversation
@@ -530,18 +565,20 @@ export function WorkspaceRail({
           type="button"
           data-testid="pro-workspace-new-session"
           onClick={onNewSession}
-          aria-keyshortcuts={newChatShortcut.aria}
+          aria-keyshortcuts={drawer ? undefined : newChatShortcut.aria}
           className="ws-new flex h-[38px] w-full min-w-0 items-center gap-2.5 rounded-[10px] px-[9px] text-[13.5px] font-medium focus-visible:outline-none"
         >
           <SquarePen className="size-[18px] shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-left">{t('workspace.newSession')}</span>
-          <kbd
-            data-testid="pro-workspace-new-session-shortcut"
-            className="ws-kbd"
-            aria-hidden="true"
-          >
-            {newChatShortcut.label}
-          </kbd>
+          {drawer ? null : (
+            <kbd
+              data-testid="pro-workspace-new-session-shortcut"
+              className="ws-kbd"
+              aria-hidden="true"
+            >
+              {newChatShortcut.label}
+            </kbd>
+          )}
         </button>
       </div>
 
@@ -554,14 +591,16 @@ export function WorkspaceRail({
           type="button"
           data-testid="pro-nav-search"
           onClick={onOpenSearch}
-          aria-keyshortcuts={searchShortcut.aria}
+          aria-keyshortcuts={drawer ? undefined : searchShortcut.aria}
           className="ws-nav-item"
         >
           <Search className="size-[18px] shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 truncate text-left">{t('workspace.nav.search')}</span>
-          <kbd data-testid="pro-nav-search-shortcut" className="ws-kbd" aria-hidden="true">
-            {searchShortcut.label}
-          </kbd>
+          {drawer ? null : (
+            <kbd data-testid="pro-nav-search-shortcut" className="ws-kbd" aria-hidden="true">
+              {searchShortcut.label}
+            </kbd>
+          )}
         </button>
         {destinations.map((item) => (
           <RailDestinationButton key={item.id} item={item} />
@@ -613,7 +652,7 @@ export function WorkspaceRail({
         <WorkspaceAccountBlock onOpenSettings={onOpenSettings} onOpenGuide={onOpenGuide} />
       </div>
 
-      {resizeHandle}
+      {drawer ? null : resizeHandle}
     </nav>
   );
 }

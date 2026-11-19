@@ -28,12 +28,12 @@ test.describe('Phone classroom materials panels', () => {
     const composer = await input.boundingBox();
     const nav = await page.getByTestId('mobile-classroom-nav').boundingBox();
     expect(composer!.y).toBeGreaterThan(700);
-    expect(composer!.y + composer!.height).toBeLessThanOrEqual(nav!.y);
+    expect(nav!.y + nav!.height).toBeLessThanOrEqual(composer!.y);
     const prev = await page
       .getByRole('button', { name: 'Previous scene', exact: true })
       .boundingBox();
     const play = await page
-      .getByTestId('mobile-roundtable')
+      .locator('[data-mobile-toolbar]')
       .getByRole('button', { name: 'Play', exact: true })
       .boundingBox();
     const next = await page.getByRole('button', { name: 'Next scene', exact: true }).boundingBox();
@@ -43,20 +43,19 @@ test.describe('Phone classroom materials panels', () => {
     expect(prev!.x).toBeLessThan(play!.x);
     expect(play!.x).toBeLessThan(next!.x);
     expect(next!.x).toBeLessThan(speed!.x);
-    await expect(page.locator('.mobile-roundtable-role-label')).toHaveCount(3);
+    await expect(page.locator('.mobile-roundtable-role-label')).toHaveCount(4);
     await input.fill('Keep this question while reading materials');
+    const classTab = page.getByTestId('mobile-nav-classroom');
     for (const target of ['lecture', 'chat', 'directory']) {
       await page.getByTestId(`mobile-nav-${target}`).click();
       if (target === 'directory') await expect(page.getByTestId('scene-list')).toBeVisible();
       else await expect(panel).toBeVisible();
-      await page.getByTestId('mobile-panel-close').click();
+      await classTab.click();
+      await expect(classTab).toHaveAttribute('aria-selected', 'true');
       await expect(panel).not.toBeVisible();
       await expect(input).toBeInViewport();
       await expect(input).toHaveValue('Keep this question while reading materials');
     }
-    await page.getByTestId('mobile-nav-lecture').click();
-    await page.locator('.mobile-panel-backdrop').click({ position: { x: 10, y: 10 } });
-    await expect(panel).not.toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('portrait-panels-closed.png') });
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(panel).not.toBeVisible();
@@ -65,6 +64,12 @@ test.describe('Phone classroom materials panels', () => {
     await expect(input).toBeInViewport();
     await expect(input).toHaveValue('Keep this question while reading materials');
     await page.getByTestId('mobile-panel-close').click();
+    await expect(panel).not.toBeVisible();
+    await expect(classTab).toHaveAttribute('aria-selected', 'true');
+    await page.getByTestId('mobile-nav-lecture').click();
+    await expect(panel).toBeVisible();
+    await page.locator('.mobile-panel-backdrop').click({ position: { x: 10, y: 10 } });
+    await expect(panel).not.toBeVisible();
     await page.screenshot({ path: testInfo.outputPath('landscape-panels-closed.png') });
     await page.setViewportSize({ width: 360, height: 640 });
     await expect(input).toBeInViewport();
@@ -542,7 +547,7 @@ test.describe('Phone classroom return contracts', () => {
       await expect(video).toBeVisible();
       const chrome = page.locator('.mobile-canvas-chrome');
       await expect(chrome).toHaveAttribute('data-visible', 'false', { timeout: 4000 });
-      await page.getByRole('button', { name: 'Playback controls', exact: true }).click();
+      await page.getByTestId('mobile-nav-classroom').click();
       await expect(chrome).toHaveAttribute('data-visible', 'true');
       await expect(page.locator('.mobile-canvas-play')).toHaveAttribute('aria-label', 'Play');
       await expect(page.getByRole('button', { name: 'Captions', exact: true })).toBeVisible();
@@ -586,7 +591,7 @@ test.describe('Phone classroom return contracts', () => {
       await expect(page.getByTestId('pbl-workspace-frame')).toHaveCount(0);
       const chrome = page.locator('.mobile-canvas-chrome');
       await expect(chrome).toHaveAttribute('data-visible', 'false', { timeout: 4000 });
-      const recovery = page.getByRole('button', { name: 'Playback controls', exact: true });
+      const recovery = page.getByTestId('mobile-nav-classroom');
       await expect(recovery).toBeVisible();
       await recovery.click();
       await expect(chrome).toHaveAttribute('data-visible', 'true');

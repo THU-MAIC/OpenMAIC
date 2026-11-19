@@ -5,6 +5,80 @@ import guide from '../../public/guide-course/zh.json';
 test.describe('Mobile classroom with the shared playback surface', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
+  test('keeps the classroom anchored when Safari pans the visual viewport during a swipe', async ({
+    page,
+  }) => {
+    const id = uniqueStageId('classroom-pan');
+    const interactive = guide.scenes.find((scene) => scene.type === 'interactive')!;
+    await page.goto('/');
+    await seedServerDocument(page, {
+      stage: { ...guide.stage, id },
+      scenes: [{ ...interactive, stageId: id }],
+    });
+    await setCurrentScene(page, id, interactive.id);
+    await page.goto(`/classroom/${id}`);
+    const root = page.locator('[data-playback-stage]');
+    await expect(page.locator('.mobile-roundtable-input textarea')).toBeVisible();
+    await page.evaluate(() => {
+      const viewport = window.visualViewport!;
+      Object.defineProperty(viewport, 'offsetTop', { configurable: true, value: 110 });
+      viewport.dispatchEvent(new Event('scroll'));
+    });
+    await expect(root).toHaveCSS('--classroom-visible-top', '110px');
+    await expect(root).toHaveCSS('top', '0px');
+    await page.locator('.mobile-roundtable-input textarea').focus();
+    await expect(root).toHaveCSS('top', '110px');
+    await page.locator('.mobile-roundtable-input textarea').blur();
+    await expect(root).toHaveCSS('top', '0px');
+  });
+
+  test('keeps the interactive viewport aligned through in-page rotation', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(Element.prototype, 'requestFullscreen', { value: undefined });
+    });
+    const id = uniqueStageId('interactive-rotation');
+    const interactive = guide.scenes.find((scene) => scene.type === 'interactive')!;
+    await page.goto('/');
+    await seedServerDocument(page, {
+      stage: { ...guide.stage, id },
+      scenes: [{ ...interactive, stageId: id }],
+    });
+    await setCurrentScene(page, id, interactive.id);
+    await page.goto(`/classroom/${id}`);
+    const frame = page.locator('iframe[title^="Interactive Scene"]');
+    const slot = page.getByTestId('classroom-canvas-region');
+    const button = page.locator('.mobile-canvas-footer button').last();
+    await expect(frame).toBeVisible();
+    await frame.evaluate((el) => el.setAttribute('data-retained', 'true'));
+    const menu = page.locator('.mobile-canvas-menu');
+    const chrome = page.locator('.mobile-canvas-chrome');
+    for (const landscape of [true, false]) {
+      await menu.click();
+      await expect(chrome).toHaveAttribute('data-visible', 'true');
+      await button.click();
+      await expect(page.locator('[data-playback-stage]')).toHaveAttribute(
+        'data-landscape',
+        String(landscape),
+      );
+      await expect
+        .poll(async () => {
+          const viewport = await frame.locator('..').boundingBox();
+          const canvas = await slot.boundingBox();
+          if (!viewport || !canvas) return false;
+          return (
+            Math.abs(viewport.x - canvas.x) < 2 &&
+            Math.abs(viewport.y - canvas.y) < 2 &&
+            Math.abs(viewport.width - canvas.width) < 2 &&
+            Math.abs(viewport.height - canvas.height) < 2
+          );
+        })
+        .toBe(true);
+      await expect(frame).toHaveAttribute('data-retained', 'true');
+      await expect(chrome).toHaveAttribute('data-visible', 'false', { timeout: 4000 });
+      await expect(menu).toBeVisible();
+    }
+  });
+
   test('fills portrait, keeps the interactive frame across panels and rotation, and focuses quizzes', async ({
     page,
   }, testInfo) => {
@@ -68,7 +142,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await expect(page.locator('.mobile-roundtable-input textarea')).toHaveValue(
       'A question to keep across rotation',
     );
-    await page.getByTestId('mobile-panel-close').click();
+    await page.getByTestId('mobile-nav-classroom').click();
     await expect(frame).toBeVisible();
     await expect(page.getByTestId('mobile-classroom-nav')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -78,8 +152,11 @@ test.describe('Mobile classroom with the shared playback surface', () => {
       page.frameLocator('iframe[title^="Interactive Scene"]').locator('#btn-speed'),
     ).toHaveClass(/done/);
     await page.screenshot({ path: testInfo.outputPath('interactive-844.png') });
+    const menu = page.getByRole('button', { name: 'Playback controls', exact: true });
+    await expect(menu).toBeVisible();
     // Mobile fullscreen includes the SAME keep-alive host and participant dialogs.
-    await page.locator('.mobile-canvas-menu').click();
+    await menu.click();
+    await expect(menu).toHaveCount(0);
     await page
       .locator('.mobile-canvas-footer')
       .getByRole('button', { name: 'Fullscreen', exact: true })
@@ -124,7 +201,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await page.screenshot({ path: testInfo.outputPath('quiz-390.png') });
     await page.getByTestId('mobile-nav-chat').click();
     await expect(page.locator('.mobile-roundtable-input textarea')).toBeVisible();
-    await page.getByTestId('mobile-panel-close').click();
+    await page.getByTestId('mobile-nav-classroom').click();
     await page.setViewportSize({ width: 844, height: 390 });
     await page.screenshot({ path: testInfo.outputPath('quiz-844.png') });
     await page.getByRole('button', { name: 'Submit Answers', exact: true }).click();
@@ -246,7 +323,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await expect(page.locator('.mobile-roundtable-input textarea')).toHaveValue(
       'Keep this workspace question',
     );
-    await page.getByTestId('mobile-panel-close').click();
+    await page.getByTestId('mobile-nav-classroom').click();
     if ((await page.locator('.mobile-canvas-chrome[data-visible="true"]').count()) === 0) {
       await page.getByTestId('classroom-canvas-region').click({ position: { x: 20, y: 90 } });
     }

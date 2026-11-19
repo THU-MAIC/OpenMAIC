@@ -468,7 +468,6 @@ function PooledIframe({
     typeof latestRuntimeError === 'string' &&
     dismissedRuntimeSignature !== runtimeErrorSignature;
   const wrapStyle: CSSProperties = {
-    position: 'fixed',
     left: visibleViewport?.left ?? 0,
     top: visibleViewport?.top ?? 0,
     width: visibleViewport?.width ?? 0,
@@ -491,7 +490,7 @@ function PooledIframe({
   };
 
   return (
-    <div style={wrapStyle}>
+    <div className="interactive-iframe-viewport fixed" style={wrapStyle}>
       <iframe
         ref={iframeRef}
         srcDoc={observation.html}

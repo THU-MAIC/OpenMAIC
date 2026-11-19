@@ -318,7 +318,7 @@ export function ProjectReport({
                   <Target size={18} className="text-violet-500" />
                   <h3 className="text-xl font-semibold">{t('pblV3.reportCopy.projectResults')}</h3>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className={results.length === 1 ? 'grid gap-3' : 'grid gap-3 sm:grid-cols-2'}>
                   {results.map((result) => (
                     <article
                       key={result.id}
@@ -328,10 +328,12 @@ export function ProjectReport({
                         <CheckCircle2 size={18} aria-hidden="true" />
                       </span>
                       <div className="min-w-0 break-words">
-                        <h4 className="text-sm font-semibold">{result.title}</h4>
-                        {result.goal && (
+                        <h4 className="text-sm font-semibold">
+                          {result.shareResult?.title ?? result.title}
+                        </h4>
+                        {(result.shareResult?.description ?? result.goal) && (
                           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                            {result.goal}
+                            {result.shareResult?.description ?? result.goal}
                           </p>
                         )}
                       </div>
@@ -446,9 +448,11 @@ export function ProjectReport({
                 {report.milestones.map((m, i) => (
                   <li key={m.id} className="rounded-2xl border p-5">
                     <div className="mb-4 flex items-center gap-3">
-                      <span className="flex size-8 items-center justify-center rounded-full bg-violet-500/10 font-mono text-sm text-violet-500">
-                        {i + 1}
-                      </span>
+                      {report.milestones.length > 1 && (
+                        <span className="flex size-8 items-center justify-center rounded-full bg-violet-500/10 font-mono text-sm text-violet-500">
+                          {i + 1}
+                        </span>
+                      )}
                       <h4 className="font-semibold">{m.title}</h4>
                       {m.status === 'completed' && (
                         <CheckCircle2 size={17} className="ml-auto shrink-0 text-emerald-500" />

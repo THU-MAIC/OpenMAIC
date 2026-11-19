@@ -57,6 +57,7 @@ const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string 
 interface LectureNotesViewProps {
   mobile?: boolean;
   notes: LectureNoteEntry[];
+  target?: { sceneId: string; actionIndex: number } | null;
   currentSceneId?: string | null;
   currentActionIndex?: number | null;
   canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;
@@ -66,6 +67,7 @@ interface LectureNotesViewProps {
 export function LectureNotesView({
   mobile = false,
   notes,
+  target,
   currentSceneId,
   currentActionIndex,
   canJumpToAction,
@@ -82,6 +84,16 @@ export function LectureNotesView({
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [currentSceneId]);
+
+  useEffect(() => {
+    if (target?.sceneId !== currentSceneId || !target) return;
+    const frame = requestAnimationFrame(() =>
+      containerRef.current
+        ?.querySelector('[data-speech-target]')
+        ?.scrollIntoView({ block: 'center' }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [target, currentSceneId]);
 
   // Empty state
   if (notes.length === 0) {
@@ -221,7 +233,10 @@ export function LectureNotesView({
                   const actions = row.kind === 'trailing' ? row.inlineActions : row.inlineActions;
                   const isSpeech = row.kind === 'speech';
                   const isActiveSpeech =
-                    isCurrent && isSpeech && row.actionIndex === currentActionIndex;
+                    isCurrent &&
+                    isSpeech &&
+                    row.actionIndex ===
+                      (target?.sceneId === note.sceneId ? target.actionIndex : currentActionIndex);
                   const canJump =
                     isCurrent &&
                     isSpeech &&
@@ -256,6 +271,9 @@ export function LectureNotesView({
                       <button
                         key={row.actionId}
                         type="button"
+                        data-speech-target={
+                          (isActiveSpeech && target?.sceneId === note.sceneId) || undefined
+                        }
                         data-active={isActiveSpeech || undefined}
                         disabled={!canJump}
                         title={jumpTitle}

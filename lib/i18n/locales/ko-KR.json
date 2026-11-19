@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "편집 시작"
+    },
+    "mobile": {
+      "openMenu": "탐색 열기",
+      "closeMenu": "탐색 닫기"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "학습 환경이 준비된 후 시작하세요. 준비에 실패했다면 위에서 다시 시도하세요.",
         "unsaved": "프로젝트 파일에 저장하지 않은 변경 사항이 있습니다. 저장하거나 변경 사항을 버린 후 학습을 시작하세요.",
         "preparing": "작업 공간을 준비하고 있습니다. 잠시 기다린 후 학습을 시작하세요."
-      }
+      },
+      "singleFlow": "프로젝트 진행 과정",
+      "concepts": "엔지니어링 개념",
+      "deliverables": "구현한 기능"
     },
     "journey": {
       "currentMilestone": "현재 단계",
@@ -3445,6 +3452,7 @@
     "soundSettings": "소리 설정",
     "playSound": "소리 재생",
     "materials": "수업 자료",
+    "classroom": "수업",
     "directory": "목차",
     "lecture": "노트",
     "volume": "음량",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "휴대폰에서는 미리보기를 지원하지 않습니다. 컴퓨터에서 열어 체험해 주세요.",
     "chat": "채팅",
     "askTeacher": "선생님께 질문…",
+    "viewInNotes": "노트에서 보기",
+    "viewInChat": "채팅에서 보기",
     "fullSpeech": "전체 발언",
     "me": "나",
+    "listening": "청강 중",
     "whiteboardTitle": "수업 화이트보드"
   }
 }

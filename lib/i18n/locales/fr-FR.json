@@ -2678,6 +2678,10 @@
         }
       },
       "editDone": "Commencer"
+    },
+    "mobile": {
+      "openMenu": "Ouvrir la navigation",
+      "closeMenu": "Fermer la navigation"
     }
   },
   "profile": {
@@ -3072,7 +3076,10 @@
         "environment": "Attendez que l’environnement d’apprentissage soit prêt avant de commencer. Si la préparation a échoué, réessayez ci-dessus.",
         "unsaved": "Les fichiers du projet contiennent des modifications non enregistrées. Enregistrez-les ou annulez-les avant de commencer.",
         "preparing": "Préparation de l’espace de travail. Patientez avant de commencer."
-      }
+      },
+      "singleFlow": "Déroulement du projet",
+      "concepts": "Notions d’ingénierie",
+      "deliverables": "Résultats fonctionnels"
     },
     "journey": {
       "currentMilestone": "Étape actuelle",
@@ -3445,6 +3452,7 @@
     "soundSettings": "Paramètres audio",
     "playSound": "Activer le son",
     "materials": "Supports de cours",
+    "classroom": "Classe",
     "directory": "Sommaire",
     "lecture": "Notes",
     "volume": "Volume",
@@ -3460,8 +3468,11 @@
     "pblDesktop": "L’aperçu n’est pas disponible sur téléphone. Ouvrez ce projet sur un ordinateur pour l’essayer.",
     "chat": "Discussion",
     "askTeacher": "Poser une question…",
+    "viewInNotes": "Voir dans les notes",
+    "viewInChat": "Voir dans le chat",
     "fullSpeech": "Message complet",
     "me": "Moi",
+    "listening": "À l’écoute",
     "whiteboardTitle": "Tableau du cours"
   }
 }
