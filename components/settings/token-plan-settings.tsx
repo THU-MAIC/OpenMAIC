@@ -53,8 +53,10 @@ import { cn } from '@/lib/utils';
 import {
   TOKEN_PLAN_PRESETS,
   MODALITY_ORDER,
+  tokenPlanInRegion,
   type TokenPlanPreset,
   type TokenPlanModality,
+  type TokenPlanRegion,
 } from '@/lib/config/token-plan-presets';
 import { tokenPlanPresetId } from '@/lib/config/preset-ids';
 import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
@@ -96,6 +98,8 @@ const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
   webSearch: Search,
   webFetch: Globe,
 };
+
+const REGIONS: readonly TokenPlanRegion[] = ['domestic', 'international'];
 
 /** Display-name mapping: the volcengine-ark preset is shown as "Seed". */
 function presetDisplayName(preset: TokenPlanPreset): string {
@@ -199,14 +203,23 @@ export function TokenPlanSettings({
   view: ModelSettingsView;
   apply: ApplyChange;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
-  // The plans connecting can still change something with, and the ones
-  // already connected (to manage or disconnect); see tokenPlanListed.
-  const plans = TOKEN_PLAN_PRESETS.filter((plan) => {
-    const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
-    return !!preset && tokenPlanListed(view, preset);
-  });
+  // The page opens on the side matching the interface language; mainland
+  // plans are for the Simplified Chinese interface.
+  const [region, setRegion] = useState<TokenPlanRegion>(
+    locale === 'zh-CN' ? 'domestic' : 'international',
+  );
+
+  // A region's plans connecting can still change something with, and the
+  // ones already connected (to manage or disconnect); see tokenPlanListed.
+  const plansIn = (side: TokenPlanRegion) =>
+    TOKEN_PLAN_PRESETS.filter((plan) => {
+      if (!tokenPlanInRegion(plan, side)) return false;
+      const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
+      return !!preset && tokenPlanListed(view, preset);
+    });
+  const plans = plansIn(region);
   const [selectedId, setSelectedId] = useState<string>(plans[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -241,6 +254,14 @@ export function TokenPlanSettings({
     setApiKey('');
     setEditingKey(false);
     setDisconnectOpen(false);
+  };
+
+  // Switching sides selects that side's first plan.
+  const selectRegion = (side: TokenPlanRegion) => {
+    if (side === region) return;
+    setRegion(side);
+    const first = plansIn(side)[0];
+    if (first) selectPreset(first);
   };
 
   // Disconnect = remove the plan's provider; the stages that used it follow
@@ -323,9 +344,30 @@ export function TokenPlanSettings({
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
-      <div>
-        <h3 className="text-sm font-semibold mb-1">{t(`${tp}.title`)}</h3>
-        <p className="text-xs text-muted-foreground">{t(`${tp}.desc`)}</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold mb-1">{t(`${tp}.title`)}</h3>
+          <p className="text-xs text-muted-foreground">{t(`${tp}.desc`)}</p>
+        </div>
+        {/* Mainland / international: each side lists the plans that region's accounts can use. */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {REGIONS.map((side) => (
+            <button
+              key={side}
+              type="button"
+              aria-pressed={region === side}
+              onClick={() => selectRegion(side)}
+              className={cn(
+                'rounded-md border px-2 py-0.5 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring',
+                region === side
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border bg-background text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {t(`settings.providerLinks.${side}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 1:2 比例分割：服务商列表不需要太宽，右侧密钥/能力详情是主体 */}

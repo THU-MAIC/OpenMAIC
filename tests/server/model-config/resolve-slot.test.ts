@@ -612,3 +612,42 @@ describe('declared context windows', () => {
     expect(resolveSlot('agent', [hand])).not.toHaveProperty('declaredContextWindow');
   });
 });
+
+describe('international token plans', () => {
+  it.each([
+    [
+      'minimax-intl',
+      'llm: p:MiniMax-M3\n  image: p:image-01\n  video: p:MiniMax-Hailuo-2.3\n  tts: p:speech-2.8-turbo\n  webSearch: p',
+      {
+        llm: 'https://api.minimax.io/anthropic/v1',
+        image: 'https://api.minimax.io',
+        video: 'https://api.minimax.io',
+        tts: 'https://api.minimax.io',
+        webSearch: 'https://api.minimax.io',
+      },
+    ],
+    [
+      'kimi-intl',
+      'llm: p:kimi-for-coding\n  webSearch: p\n  webFetch: p',
+      {
+        llm: 'https://api.kimi.ai/coding/v1',
+        webSearch: 'https://api.kimi.ai/coding/v1',
+        webFetch: 'https://api.kimi.ai/coding/v1',
+      },
+    ],
+  ] as const)('resolves every %s slot to the international endpoint', (preset, slots, expected) => {
+    const workspace = layer(
+      'workspace',
+      `providers:\n  p:\n    preset: ${preset}\n    apiKey: \${KEY}\nslots:\n  ${slots}\n`,
+    );
+    for (const [slot, baseUrl] of Object.entries(expected)) {
+      expect(
+        resolveSlot(slot as Parameters<typeof resolveSlot>[0], [workspace]),
+        slot,
+      ).toMatchObject({
+        status: 'assigned',
+        baseUrl,
+      });
+    }
+  });
+});
