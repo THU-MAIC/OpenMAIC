@@ -1,147 +1,61 @@
 /**
  * Browser Native TTS (Text-to-Speech) Hook
- * Uses Web Speech API for client-side text-to-speech
- * Completely free, no API key required
+ *
+ * A React handle on one BrowserSpeechPlayer: speaks text with the Web Speech
+ * API sentence by sentence, pauses by cancelling and resumes the sentence
+ * from its start. Free, no API key required.
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { resolveBrowserVoice } from '@/lib/audio/browser-tts-preview';
-
-// Note: Window.SpeechSynthesis declaration is already in the global scope
+import { useCallback, useEffect, useRef } from 'react';
+import { BrowserSpeechPlayer, type SpeechLineSettings } from '@/lib/audio/browser-speech-player';
 
 export interface UseBrowserTTSOptions {
-  onStart?: () => void;
+  /** A line was spoken to the end (also when some of its sentences failed). */
   onEnd?: () => void;
+  /** A sentence failed; the line continues with the next sentence. */
   onError?: (error: string) => void;
-  rate?: number; // 0.1 to 10
-  pitch?: number; // 0 to 2
-  volume?: number; // 0 to 1
-  /** Language fallback for text detection; an explicit voice keeps its own language. */
-  lang?: string;
+  /**
+   * Language, rate, volume and mute, read before each sentence so that a
+   * change applies from the next sentence. The voice comes from `speak`.
+   */
+  getSettings?: () => Omit<SpeechLineSettings, 'voice'>;
 }
 
 export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
-  const {
-    onStart,
-    onEnd,
-    onError,
-    rate = 1.0,
-    pitch = 1.0,
-    volume = 1.0,
-    lang = 'zh-CN',
-  } = options;
+  const optionsRef = useRef(options);
+  const playerRef = useRef<BrowserSpeechPlayer | null>(null);
 
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-
-  // Load available voices
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      return;
-    }
+    optionsRef.current = options;
+  });
 
-    const loadVoices = () => {
-      const voices = window.speechSynthesis.getVoices();
-      setAvailableVoices(voices);
-    };
-
-    loadVoices();
-
-    // Some browsers load voices asynchronously
-    if (window.speechSynthesis.onvoiceschanged !== undefined) {
-      window.speechSynthesis.onvoiceschanged = loadVoices;
-    }
-
-    return () => {
-      if (window.speechSynthesis.onvoiceschanged !== undefined) {
-        window.speechSynthesis.onvoiceschanged = null;
-      }
-    };
-  }, []);
-
-  const speak = useCallback(
-    (text: string, voiceURI?: string) => {
-      if (typeof window === 'undefined' || !window.speechSynthesis) {
-        onError?.('浏览器不支持 Web Speech API');
-        return;
-      }
-
-      // Cancel any ongoing speech
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = rate;
-      utterance.pitch = pitch;
-      utterance.volume = volume;
-      // 讨论发言与预览、课堂朗读共用语言和音色优先级，避免在不同播放路径之间切回中文。
-      const resolved = resolveBrowserVoice(availableVoices, voiceURI ?? '', text, lang);
-      utterance.lang = resolved.lang;
-      if (resolved.voice) utterance.voice = resolved.voice;
-
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-        setIsPaused(false);
-        onStart?.();
-      };
-
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        setIsPaused(false);
-        utteranceRef.current = null;
-        onEnd?.();
-      };
-
-      utterance.onerror = (event) => {
-        setIsSpeaking(false);
-        setIsPaused(false);
-        utteranceRef.current = null;
-        onError?.(event.error);
-      };
-
-      utterance.onpause = () => {
-        setIsPaused(true);
-      };
-
-      utterance.onresume = () => {
-        setIsPaused(false);
-      };
-
-      utteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
+  useEffect(
+    () => () => {
+      playerRef.current?.destroy();
+      playerRef.current = null;
     },
-    [rate, pitch, volume, lang, availableVoices, onStart, onEnd, onError],
+    [],
   );
 
-  const pause = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.pause();
+  /**
+   * Speak `text`, replacing the current line. Resolves `false` when nothing
+   * will be spoken (unsupported browser, blank text, or replaced while voices
+   * were loading); `onEnd` is then not called for this line.
+   */
+  const speak = useCallback((text: string, voice?: string): Promise<boolean> => {
+    let player = playerRef.current;
+    if (!player) {
+      player = new BrowserSpeechPlayer();
+      player.onEnded(() => optionsRef.current.onEnd?.());
+      player.onError((error) => optionsRef.current.onError?.(error.code));
+      playerRef.current = player;
     }
+    return player.play(text, () => ({ ...optionsRef.current.getSettings?.(), voice }));
   }, []);
 
-  const resume = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.resume();
-    }
-  }, []);
+  const pause = useCallback(() => playerRef.current?.pause(), []);
+  const resume = useCallback(() => playerRef.current?.resume(), []);
+  const cancel = useCallback(() => playerRef.current?.stop(), []);
 
-  const cancel = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      setIsPaused(false);
-      utteranceRef.current = null;
-    }
-  }, []);
-
-  return {
-    speak,
-    pause,
-    resume,
-    cancel,
-    isSpeaking,
-    isPaused,
-    availableVoices,
-  };
+  return { speak, pause, resume, cancel };
 }

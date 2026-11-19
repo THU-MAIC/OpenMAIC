@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     agentVoiceOverrides: {},
   },
   browserOptions: {} as UseBrowserTTSOptions,
-  speak: vi.fn(),
+  speak: vi.fn<(text: string, voice?: string) => Promise<boolean>>(),
   pause: vi.fn(),
   resume: vi.fn(),
   cancel: vi.fn(),
@@ -183,7 +183,9 @@ beforeEach(() => {
   clearUnavailableVoiceBindingsForTests();
   resetDiscussionAudioElementForTests();
   mocks.voiceOptions.mockResolvedValue(undefined);
+  mocks.speak.mockResolvedValue(true);
   mocks.settings.ttsMuted = false;
+  mocks.settings.ttsSpeed = 1;
   mocks.settings.ttsVolume = 0.7;
   mocks.settings.playbackSpeed = 1;
   requests.length = 0;
@@ -574,6 +576,44 @@ describe('discussion TTS synthesis lookahead', () => {
     await act(async () => hook.resume());
     expect(FakeAudio.instances).toHaveLength(1);
     expect(FakeAudio.instances[0].play).toHaveBeenCalledTimes(2);
+  });
+
+  it('finishes a browser line that cannot be spoken and moves on to the next one', async () => {
+    agents = [
+      teacher,
+      {
+        ...teacher,
+        id: 'browser-teacher',
+        voiceConfig: { providerId: 'browser-native-tts', voiceId: 'browser-voice' },
+      },
+    ];
+    act(() => root.render(createElement(Probe)));
+    mocks.speak.mockResolvedValueOnce(false);
+    await seal('A', 'browser-teacher');
+    await seal('B', 'browser-teacher');
+    expect(mocks.speak.mock.calls.map(([text]) => text)).toEqual(['Sentence A.', 'Sentence B.']);
+    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 1 });
+    act(() => mocks.browserOptions.onEnd?.());
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
+  });
+
+  it('gives browser speech the discussion speed, volume, mute and language', async () => {
+    mocks.settings.ttsSpeed = 1.5;
+    mocks.settings.playbackSpeed = 2;
+    mocks.settings.ttsVolume = 0.4;
+    act(() => root.render(createElement(Probe)));
+    expect(mocks.browserOptions.getSettings?.()).toEqual({
+      locale: 'en',
+      rate: 3,
+      volume: 0.4,
+      muted: false,
+    });
+
+    // Read per sentence: a later change shows up on the next read.
+    mocks.settings.ttsMuted = true;
+    mocks.settings.playbackSpeed = 1;
+    act(() => root.render(createElement(Probe)));
+    expect(mocks.browserOptions.getSettings?.()).toMatchObject({ rate: 1.5, muted: true });
   });
 
   it('applies current playback speed and volume when consuming prepared audio', async () => {
