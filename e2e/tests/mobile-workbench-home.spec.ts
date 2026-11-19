@@ -158,6 +158,30 @@ test.describe('Workspace navigation on a phone', () => {
     await expect(drawer).toHaveCount(0);
   });
 
+  test('exposes chat actions in the phone drawer without a hover', async ({ page }) => {
+    await page.route('**/api/agent/sessions', (route) =>
+      route.fulfill({
+        json: [
+          {
+            id: 'mobile-chat',
+            title: 'Mobile chat',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+    await page.goto('/workspace');
+    await page.getByTestId('pro-mobile-menu').tap();
+    const drawer = page.getByTestId('pro-mobile-drawer');
+    const more = drawer.getByTestId('pro-nav-more-session-mobile-chat');
+    await expect(more.locator('..')).toHaveCSS('opacity', '1');
+    await more.tap();
+    await expect(page.getByTestId('pro-nav-more-session-mobile-chat-rename')).toBeVisible();
+    await expect(page.getByTestId('pro-nav-more-session-mobile-chat-delete')).toBeVisible();
+    await expect(drawer).toBeVisible();
+  });
+
   test('closes when touched while the sheet is still sliding in', async ({ page }) => {
     // The sheet travels over 200ms, so a press aimed at its close button during
     // that time lands on the panel itself. It used to do nothing at all — the
