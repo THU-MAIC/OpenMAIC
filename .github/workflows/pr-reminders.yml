@@ -2,11 +2,13 @@ name: Stuck PR Reminders
 
 # Once a day, remind open non-draft pull requests that are stuck: merge
 # conflicts (GitHub starts no pull_request workflows), workflow runs waiting
-# more than a day for maintainer approval, and Codex review threads left
-# unresolved for more than a day. Pull requests whose Codex threads stay
-# unresolved with no author activity for 7 days after that reminder are closed
-# (pull-requests: write). Logic and tests live in
-# .github/scripts/pr-reminders.mjs.
+# more than a day for maintainer approval, checks failing on the head commit
+# for more than a day, and Codex review threads left unresolved for more than
+# a day. Pull requests that still conflict, still fail CI or still have
+# unresolved Codex threads with no author activity for 7 days after the
+# reminder are closed with one comment listing the reasons (pull-requests:
+# write); waiting for approval never closes, and status:blocked pull requests
+# are never closed. Logic and tests live in .github/scripts/pr-reminders.mjs.
 #
 # Scheduled runs only comment or close when the repository variable PR_REMINDERS_MODE
 # is `apply`; otherwise they report to the job summary. Manual runs are dry
@@ -38,6 +40,8 @@ jobs:
       checks: read
       contents: read
       pull-requests: write
+      # Commit statuses in the statusCheckRollup used for failing CI.
+      statuses: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

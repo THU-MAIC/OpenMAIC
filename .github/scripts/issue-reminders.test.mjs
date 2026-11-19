@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ASSIGNED_CLOSE_MS,
   ASSIGNED_STALE_MS,
   EXEMPT_LABELS,
   HELP_WANTED_CLOSE_MS,
   MARKERS,
   MAX_WRITES_PER_RUN,
   NEEDS_INFO_CLOSE_MS,
+  assignedClosedBody,
   assignedStaleBody,
   decide,
   exemptReason,
@@ -154,7 +156,7 @@ test('needs-info issues are never treated as stale assigned or help wanted issue
   assert.equal(decide(issue, { now: NOW, repo }), null);
 });
 
-test('an assigned issue is reminded strictly after 60 days without activity', () => {
+test('an assigned issue is reminded strictly after 30 days without activity', () => {
   const due = decide(assigned(10, ASSIGNED_STALE_MS + 1), { now: NOW, repo });
   assert.equal(due.kind, 'assignedStale');
   assert.equal(due.since, ago(ASSIGNED_STALE_MS + 1));
@@ -281,7 +283,11 @@ test('message bodies start with their marker and say what happens next', () => {
 
   const reminder = assignedStaleBody(makeIssue(27, { assignees: ['a', 'b'] }));
   assert.ok(reminder.startsWith(MARKERS.assignedStale));
-  assert.match(reminder, /^Hi @a @b, this issue has had no activity for 60 days/m);
+  assert.match(reminder, /^Hi @a @b, this issue has had no activity for 30 days/m);
+  assert.match(
+    reminder,
+    /within 14 days after this reminder, the issue will be closed as not planned/,
+  );
   assert.deepEqual(reminder.match(/@[\w-]+/g), ['@a', '@b']);
 
   const hw = helpWantedClosedBody(makeIssue(28), repo);
@@ -434,4 +440,125 @@ test('writes per run are capped and a close is deferred rather than split', asyn
       [201, 'create'],
     ],
   );
+});
+
+test('an assigned issue closes as not planned 14 days after a reminder that announced it', async () => {
+  const due = assigned(50, 70 * DAY);
+  const early = assigned(51, 70 * DAY);
+  const edited = assigned(52, 70 * DAY);
+  const client = fakeClient({
+    issues: [due, early, edited],
+    comments: {
+      50: [botComment(701, assignedStaleBody(due), ago(ASSIGNED_CLOSE_MS + DAY))],
+      51: [botComment(702, assignedStaleBody(early), ago(ASSIGNED_CLOSE_MS - DAY))],
+      // Created long ago, but rewritten in place (for example with new
+      // assignees) only 3 days ago: the window starts at that update.
+      52: [
+        {
+          ...botComment(703, assignedStaleBody(edited), ago(40 * DAY)),
+          updated_at: ago(3 * DAY),
+        },
+      ],
+    },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.number, r.action]),
+    [
+      [50, 'close'],
+      [51, 'unchanged'],
+      [52, 'unchanged'],
+    ],
+  );
+  assert.deepEqual(
+    client.writes.map((w) => w.route),
+    [routes.comment, routes.close],
+  );
+  assert.ok(client.writes[0].params.body.startsWith(MARKERS.assignedClosed));
+  assert.match(client.writes[0].params.body, /@owner1/);
+  assert.equal(client.writes[1].params.state_reason, 'not_planned');
+});
+
+test('a reminder with older wording is updated first and does not close', async () => {
+  const issue = assigned(53, 120 * DAY);
+  const client = fakeClient({
+    issues: [issue],
+    comments: {
+      53: [botComment(704, `${MARKERS.assignedStale}\nno activity for 60 days`, ago(60 * DAY))],
+    },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => r.action),
+    ['update'],
+  );
+  assert.deepEqual(
+    client.writes.map((w) => [w.route, w.params.comment_id]),
+    [[routes.update, 704]],
+  );
+  assert.equal(client.writes[0].params.body, assignedStaleBody(issue));
+});
+
+test('activity after the reminder starts a new period instead of closing', async () => {
+  // A human comment 20 days ago, after a reminder 40 days ago: still idle for
+  // less than 30 days, so nothing happens.
+  const recent = assigned(54, 70 * DAY, {
+    events: [event('AssignedEvent', ago(70 * DAY)), comment('owner1', ago(20 * DAY))],
+  });
+  // A label change 35 days ago, after a reminder 50 days ago: the old reminder
+  // belongs to the earlier period, so a new one is posted and nothing closes.
+  const again = assigned(55, 70 * DAY, {
+    events: [event('AssignedEvent', ago(70 * DAY)), labeled('bug', ago(35 * DAY))],
+  });
+  const client = fakeClient({
+    issues: [recent, again],
+    comments: {
+      54: [botComment(705, assignedStaleBody(recent), ago(40 * DAY))],
+      55: [botComment(706, assignedStaleBody(again), ago(50 * DAY))],
+    },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.number, r.action]),
+    [[55, 'create']],
+  );
+  assert.deepEqual(
+    client.writes.map((w) => [w.route, w.params.issue_number]),
+    [[routes.comment, 55]],
+  );
+});
+
+test('an assigned close whose comment was already posted only retries the close', async () => {
+  const issue = assigned(56, 70 * DAY);
+  const client = fakeClient({
+    issues: [issue],
+    comments: {
+      56: [
+        botComment(707, assignedStaleBody(issue), ago(20 * DAY)),
+        botComment(708, assignedClosedBody(issue), ago(DAY)),
+      ],
+    },
+  });
+  await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    client.writes.map((w) => w.route),
+    [routes.close],
+  );
+});
+
+test('exempt assigned issues are neither reminded nor closed', async () => {
+  const blocked = assigned(57, 70 * DAY, { labels: ['bug', 'status:blocked'] });
+  const linked = assigned(58, 70 * DAY, {
+    closedByPullRequestsReferences: { nodes: [pr(900, 'OPEN')] },
+  });
+  const client = fakeClient({
+    issues: [blocked, linked],
+    comments: {
+      57: [botComment(709, assignedStaleBody(blocked), ago(30 * DAY))],
+      58: [botComment(710, assignedStaleBody(linked), ago(30 * DAY))],
+    },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(result.results, []);
+  assert.deepEqual(client.writes, []);
 });
