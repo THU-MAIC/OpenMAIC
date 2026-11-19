@@ -289,21 +289,6 @@
       "qa": "Q&A",
       "discussion": "Disk.",
       "lecture": "Vortrag"
-    },
-    "webEvidence": {
-      "label": "Webquellen",
-      "reading": "Seite wird gelesen…",
-      "searching": "Web wird durchsucht…",
-      "read": "Seitentext abgerufen",
-      "searched": "Suchergebnisse",
-      "cancelled": "Gestoppt",
-      "failed": "Seite konnte nicht gelesen werden",
-      "searchFailed": "Suche fehlgeschlagen",
-      "range": "Zeichen {{start}}–{{end}} von {{total}} gelesen",
-      "timeout": "Zeitüberschreitung beim Lesen. Der Originaltext wurde nicht überprüft.",
-      "unverified": "Der Originaltext wurde nicht überprüft. Füge den Text ein oder versuche eine andere Quelle.",
-      "excerpts": "Nur Suchauszüge; der Seitentext wurde nicht gelesen.",
-      "sourceCount": "{{count}} Suchquellen anzeigen"
     }
   },
   "actions": {

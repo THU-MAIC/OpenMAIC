@@ -22,7 +22,7 @@ import {
   type DirectorSceneEvidencePacket,
 } from './tools/read-scene';
 import type { NativeWebSearchConfig } from './tools/web-search';
-import type { ClassroomWebFetchContext } from './tools/web-fetch';
+import type { ClassroomFetchUrlOptions } from '@/lib/server/agent-runtime/fetch-url';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import type { ResolvedElementReference } from './element-reference';
 
@@ -50,7 +50,7 @@ export async function runPiDirectorLoop(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
-  nativeWebFetchContext?: ClassroomWebFetchContext;
+  nativeWebFetch?: ClassroomFetchUrlOptions;
   nativeWhiteboardService?: WhiteboardRuntimeService;
   nativeWhiteboardStageId?: string;
   nativeWhiteboardLearnerKey?: string;
@@ -186,7 +186,7 @@ export async function runPiDirectorLoop(opts: {
       childRuntimeMode: opts.childRuntimeMode ?? 'legacy',
       enableNativeChildSpotlight: opts.enableNativeChildSpotlight === true,
       nativeWebSearchConfig: opts.nativeWebSearchConfig,
-      nativeWebFetchContext: opts.nativeWebFetchContext,
+      nativeWebFetch: opts.nativeWebFetch,
       nativeWhiteboardService: opts.nativeWhiteboardService,
       nativeWhiteboardStageId: opts.nativeWhiteboardStageId,
       nativeWhiteboardLearnerKey: opts.nativeWhiteboardLearnerKey,
@@ -237,7 +237,7 @@ export async function runPiDirectorLoop(opts: {
       opts.agentConfigs,
       opts.childRuntimeMode === 'native',
       Boolean(opts.nativeWhiteboardService),
-      opts.childRuntimeMode === 'native' && opts.nativeWebFetchContext
+      opts.childRuntimeMode === 'native' && opts.nativeWebFetch
         ? { searchConfigured: Boolean(opts.nativeWebSearchConfig) }
         : undefined,
     ),

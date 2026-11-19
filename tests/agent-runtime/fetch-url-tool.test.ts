@@ -8,7 +8,11 @@
  * fetch-url.test.ts; the store-backed persistence round-trip (trust gate +
  * asset registry + material row) is covered in session-materials.test.ts.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { builtin } from '@/lib/web-fetch/providers/builtin';
+import * as extraction from '@/lib/server/material-extraction/services';
+import * as materials from '@/lib/server/agent-runtime/session-materials';
+import * as urls from '@/lib/server/agent-runtime/session-urls';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   buildFetchUrlTool,
@@ -241,5 +245,55 @@ describe('fetch_url tool', () => {
     );
 
     expect((result.details as { untrusted: { title: string } }).untrusted.title).toHaveLength(180);
+  });
+});
+
+describe('classroom fetch_url', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const fetch = buildFetchUrlTool({
+    mode: 'classroom',
+    connection: { providerId: 'builtin', managed: true, userEndpoint: false, origin: 'default' },
+    workspaceId: 'workspace-a',
+  });
+
+  it.each([
+    { length: 2000, truncated: false, partial: false },
+    { length: 2001, truncated: false, partial: true },
+    { length: 500, truncated: true, partial: true },
+  ])(
+    'bounds and labels the preview for $length characters, reader truncated=$truncated',
+    async ({ length, truncated, partial }) => {
+      const fetched = page({ markdown: 'x'.repeat(length), truncated });
+      vi.spyOn(builtin, 'extract').mockResolvedValue(fetched);
+      const gate = vi.spyOn(urls, 'isSessionUrlAllowed');
+      const save = vi.spyOn(materials, 'createWebMaterial');
+      const result = await fetch.execute('preview', { url: fetched.sourceUrl });
+      const part = result.content[0];
+      if (part.type !== 'text') throw new Error('Expected model-visible preview text');
+      const visible = JSON.parse(part.text);
+      expect(Object.keys(fetch.parameters.properties)).toEqual(['url']);
+      expect(visible.untrusted.content).toBe(fetched.markdown.slice(0, 2000));
+      expect(visible.trusted.truncated).toBe(partial);
+      if (partial) expect(visible.trusted.note).toContain('Only the first part');
+      else expect(visible.trusted.note).toBeUndefined();
+      expect(visible.trusted).not.toHaveProperty('materialId');
+      expect(visible.trusted).not.toHaveProperty('nextOffset');
+      expect(gate).not.toHaveBeenCalled();
+      expect(save).not.toHaveBeenCalled();
+    },
+  );
+
+  it('resolves document services lazily for the requesting workspace, without following a claim', async () => {
+    const resolve = vi
+      .spyOn(extraction, 'resolveExtractionServices')
+      .mockResolvedValue({ document: null });
+    const extract = vi.spyOn(builtin, 'extract').mockResolvedValue(page());
+    await fetch.execute('read', { url: page().sourceUrl });
+    const options = extract.mock.calls[0][1];
+    expect(options.extractionServices).toBeUndefined();
+    expect(resolve).not.toHaveBeenCalled();
+    await options.loadExtractionServices!();
+    expect(resolve).toHaveBeenCalledWith('workspace-a', { forward: false });
   });
 });

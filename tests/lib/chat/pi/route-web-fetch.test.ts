@@ -5,6 +5,7 @@ import {
   setDeploymentConfigForTests,
   setWorkspaceLayerLoaderForTests,
 } from '@/lib/server/model-config/runtime';
+import * as webFetchConfig from '@/lib/server/web-fetch-config';
 import { kimi } from '@/lib/web-fetch/providers/kimi';
 
 const mocks = vi.hoisted(() => ({ streamLLM: vi.fn(), searchWeb: vi.fn(), resolveModel: vi.fn() }));
@@ -21,7 +22,7 @@ vi.mock('@/lib/logger', () => ({
 
 const URL = 'https://example.com/classroom-evidence';
 const FACT = 'The experimental group repeats each measurement three times and takes the mean';
-const PAGE = `${'This is background for the article and does not describe the procedure. '.repeat(65)}\n\n## Procedure\n${FACT}. The search excerpt does not include this detail.`;
+const PAGE = `${FACT}. ${'This is background for the article. '.repeat(75)}End of article.`;
 const usage = {
   inputTokens: 0,
   outputTokens: 0,
@@ -99,7 +100,7 @@ beforeEach(() => {
       .flatMap((message: { content: Array<{ output?: { value?: unknown } }> }) =>
         message.content.map((part) => String(part.output?.value ?? '')),
       );
-    const parts = (source === 'pi-chat-native-child' ? childResponses : directorResponses).shift();
+    const parts = (source === 'pi-chat-director' ? directorResponses : childResponses).shift();
     if (!parts) throw new Error(`Unexpected fixture transport ${source}`);
     transportRecords.push({
       source,
@@ -202,18 +203,12 @@ describe('POST /api/chat/pi classroom fetch_url (#1925)', () => {
     ];
     const { children, events } = await run(`Please read ${URL} — what is the procedure?`);
     expect(children[1].toolResults.join('\n')).toContain(FACT);
-    const evidence = events
-      .filter((event) => event.type === 'web_evidence')
-      .map((event) => event.data.evidence);
-    expect(evidence).toEqual([
-      expect.objectContaining({ kind: 'read', status: 'running', url: URL }),
-      expect.objectContaining({
-        kind: 'read',
-        status: 'done',
-        url: URL,
-        title: 'Classroom experiment guide',
-      }),
+    const messageId = events.find((event) => event.type === 'agent_start').data.messageId;
+    expect(events.filter((event) => event.type === 'action').map((event) => event.data)).toEqual([
+      { actionName: 'fetch_url', actionId: 'fetch_url', messageId, agentId: 'teacher', params: {} },
     ]);
+    expect(children[1].toolResults.join('\n')).toContain('Only the first part');
+    expect(children[1].toolResults.join('\n')).not.toContain('End of article.');
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(mocks.searchWeb).not.toHaveBeenCalled();
     const director = transportRecords.find((transport) => transport.source === 'pi-chat-director');
@@ -228,11 +223,14 @@ describe('POST /api/chat/pi classroom fetch_url (#1925)', () => {
       toolTurn(call('fetch_url', { url: URL })),
       speech(`The excerpt has no procedure; the page says ${FACT}.`),
     ];
-    const { children } = await run(
+    const { children, events } = await run(
       'Find the classroom experiment guide and tell me the measurement steps.',
     );
     expect(children[1].toolResults.join('\n')).not.toContain(FACT);
     expect(children[2].toolResults.join('\n')).toContain(FACT);
+    expect(
+      events.filter((event) => event.type === 'action').map((event) => event.data.actionName),
+    ).toEqual(['web_search', 'fetch_url']);
     expect(mocks.searchWeb).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   }, 15_000);
@@ -256,7 +254,9 @@ describe('POST /api/chat/pi classroom fetch_url (#1925)', () => {
     expect(children[0].system).not.toContain('# Reading web evidence');
     const director = transportRecords.find((transport) => transport.source === 'pi-chat-director');
     expect(director?.system).not.toContain('fetch_url');
-    expect(events.some((event) => event.type === 'web_evidence')).toBe(false);
+    expect(
+      events.filter((event) => event.type === 'action').map((event) => event.data.actionName),
+    ).toEqual(['web_search']);
     expect(fetchSpy).not.toHaveBeenCalled();
   }, 15_000);
 
@@ -272,24 +272,43 @@ describe('POST /api/chat/pi classroom fetch_url (#1925)', () => {
       toolTurn(call('fetch_url', { url: 'http://127.0.0.1/private' })),
       speech('That link cannot be read safely; please share a public page or paste the text.'),
     ];
-    const { children } = await run('Please read http://127.0.0.1/private.');
-    expect(children[1].toolResults.join('\n')).toContain('safely');
+    const { children, events } = await run('Please read http://127.0.0.1/private.');
+    expect(children[1].toolResults.join('\n')).toContain('The page could not be read');
+    expect(
+      events.filter((event) => event.type === 'action').map((event) => event.data.actionName),
+    ).toEqual(['fetch_url']);
     expect(fetchSpy).not.toHaveBeenCalled();
   }, 15_000);
 
-  it('allows at most two fetches per request', async () => {
+  it('can retry an unobserved public URL and read another page in the same request', async () => {
+    fetchSpy.mockRejectedValueOnce(new Error('Temporary reader failure'));
     childResponses = [
-      toolTurn(
-        call('fetch_url', { url: URL }, 'f1'),
-        call('fetch_url', { url: 'https://example.com/second' }, 'f2'),
-        call('fetch_url', { url: 'https://example.com/third' }, 'f3'),
-      ),
-      speech('I read two pages; the third is over budget, so I answer from what I read.'),
+      toolTurn(call('fetch_url', { url: URL }, 'f1')),
+      toolTurn(call('fetch_url', { url: URL }, 'f2')),
+      toolTurn(call('fetch_url', { url: 'https://example.org/another' }, 'f3')),
+      speech('The guide describes repeated measurements.'),
     ];
-    const { children } = await run(
-      `Compare ${URL}, https://example.com/second and https://example.com/third.`,
-    );
-    expect(children[1].toolResults.join('\n')).toContain('budget_exhausted');
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const { children, events } = await run('Check the measurement procedure in two guides.');
+    expect(mocks.searchWeb).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(children[1].toolResults.join('\n')).toContain('Its contents are unverified');
+    expect(children[1].toolResults.join('\n')).not.toContain('Temporary reader failure');
+    expect(children[2].toolResults.join('\n')).toContain(FACT);
+    expect(
+      events.filter((event) => event.type === 'action').map((event) => event.data.actionId),
+    ).toEqual(['f1', 'f2', 'f3']);
+  }, 15_000);
+
+  it('skips webFetch resolution and registration for Legacy Children', async () => {
+    vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', 'false');
+    const resolveFetch = vi.spyOn(webFetchConfig, 'resolveWebFetchCapability');
+    childResponses = [speech('[{"type":"text","content":"Legacy response."}]')];
+    const { events } = await run('Explain the measurement procedure.');
+    expect(resolveFetch).not.toHaveBeenCalled();
+    const legacy = transportRecords.find((record) => record.source === 'pi-chat-child');
+    expect(legacy).toBeDefined();
+    expect(legacy!.tools).not.toContain('fetch_url');
+    expect(legacy!.system).not.toContain('# Reading web evidence');
+    expect(events.filter((event) => event.type === 'action')).toHaveLength(0);
   }, 15_000);
 });

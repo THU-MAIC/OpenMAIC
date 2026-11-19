@@ -32,25 +32,6 @@ export interface ChatMessageMetadata {
   agentColor?: string;
   createdAt?: number;
   interrupted?: boolean;
-  /** Classroom web_search / fetch_url status, projected from tool results only. */
-  webEvidence?: ClassroomWebEvidence[];
-}
-
-/** Tool-owned source status; model prose never establishes that a page was read. */
-export interface ClassroomWebEvidence {
-  id: string;
-  kind: 'read' | 'search';
-  status: 'running' | 'done' | 'error' | 'cancelled';
-  startedAt: number;
-  finishedAt?: number;
-  url?: string;
-  query?: string;
-  title?: string;
-  sources?: Array<{ title: string; url: string }>;
-  reason?: string;
-  offset?: number;
-  chars?: number;
-  totalChars?: number;
 }
 
 /**
@@ -482,7 +463,6 @@ export type StatelessEvent =
     }
   | { type: 'agent_end'; data: { messageId: string; agentId: string } }
   | { type: 'text_delta'; data: { content: string; messageId?: string } }
-  | { type: 'web_evidence'; data: { messageId: string; evidence: ClassroomWebEvidence } }
   | {
       type: 'action';
       data: {

@@ -1361,7 +1361,9 @@ describe('PR2 Native Child route production wiring', () => {
       expect(JSON.stringify(events)).not.toContain('toolbar-search-key');
       expect(JSON.stringify(payloads)).not.toContain('server-search-key');
       expect(JSON.stringify(events)).not.toContain('server-search-key');
-      expect(events.filter((event) => event.type === 'action')).toHaveLength(0);
+      expect(events.filter((event) => event.type === 'action').map((event) => event.data)).toEqual([
+        expect.objectContaining({ actionName: 'web_search', params: {} }),
+      ]);
       expect(events.find((event) => event.type === 'done')).toMatchObject({
         data: { totalAgents: 1, totalActions: 0, agentHadContent: true },
       });

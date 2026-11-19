@@ -1004,48 +1004,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             setSessions((prev) =>
               prev.map((s) => {
                 if (s.id !== sessionId) return s;
-                // A message with only source cards still shows a failed or partial read.
                 const msgs = s.messages.filter(
-                  (m) =>
-                    !(
-                      m.role === 'assistant' &&
-                      m.parts.length === 0 &&
-                      !m.metadata?.webEvidence?.length
-                    ),
+                  (m) => !(m.role === 'assistant' && m.parts.length === 0),
                 );
                 return msgs.length !== s.messages.length
                   ? { ...s, messages: msgs, updatedAt: nextChatUpdatedAt(s) }
                   : s;
               }),
-            );
-          },
-
-          onWebEvidence({ messageId, evidence }) {
-            setSessions((prev) =>
-              prev.map((s) =>
-                s.id === sessionId
-                  ? {
-                      ...s,
-                      updatedAt: nextChatUpdatedAt(s),
-                      messages: s.messages.map((m) =>
-                        m.id === messageId
-                          ? {
-                              ...m,
-                              metadata: {
-                                ...m.metadata,
-                                webEvidence: [
-                                  ...(m.metadata?.webEvidence ?? []).filter(
-                                    (item) => item.id !== evidence.id,
-                                  ),
-                                  evidence,
-                                ],
-                              },
-                            }
-                          : m,
-                      ),
-                    }
-                  : s,
-              ),
             );
           },
 
@@ -1274,9 +1239,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           }
           case 'thinking':
             currentBuffer.pushThinking(event.data);
-            break;
-          case 'web_evidence':
-            if (!controller.signal.aborted) currentBuffer.pushWebEvidence(event.data);
             break;
           case 'cue_user':
             currentBuffer.pushCueUser(event.data);

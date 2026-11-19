@@ -28,8 +28,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import type { ChildRuntimeMode } from '../child-runtime';
 import type { DirectorSceneEvidenceMetadata } from './read-scene';
 import { buildNativeWebSearchTool, type NativeWebSearchConfig } from './web-search';
-import { buildNativeWebFetchTool, type ClassroomWebFetchContext } from './web-fetch';
-import { withClassroomWebEvidence } from './web-evidence';
+import type { ClassroomFetchUrlOptions } from '@/lib/server/agent-runtime/fetch-url';
 import type { ParsedAction, StatelessChatRequest } from '@/lib/types/chat';
 import {
   buildChildPrompt,
@@ -578,8 +577,8 @@ export function buildCallAgentTool(opts: {
   childRuntimeMode?: ChildRuntimeMode;
   enableNativeChildSpotlight?: boolean;
   nativeWebSearchConfig?: NativeWebSearchConfig;
-  /** Request-scoped fetch_url state; absent when the webFetch slot is off. */
-  nativeWebFetchContext?: ClassroomWebFetchContext;
+  /** Reader and workspace resolved for this request's Native Children. */
+  nativeWebFetch?: ClassroomFetchUrlOptions;
   nativeWhiteboardService?: WhiteboardRuntimeService;
   nativeWhiteboardStageId?: string;
   nativeWhiteboardLearnerKey?: string;
@@ -765,24 +764,32 @@ export function buildCallAgentTool(opts: {
                     opts.requestStartManualVisibilityRevision ?? 0,
                 })
               : []),
-            ...(opts.nativeWebFetchContext
-              ? [
-                  withClassroomWebEvidence(
-                    buildNativeWebSearchTool({
-                      config: opts.nativeWebSearchConfig,
-                      onUrlsObserved: opts.nativeWebFetchContext.observeUrls,
-                    }),
-                    messageId,
-                    send,
-                  ),
-                  withClassroomWebEvidence(
-                    buildNativeWebFetchTool(opts.nativeWebFetchContext),
-                    messageId,
-                    send,
-                  ),
-                ]
-              : [buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig })]),
           ];
+          const webTools: AgentTool[] = [
+            buildNativeWebSearchTool({ config: opts.nativeWebSearchConfig }),
+          ];
+          if (opts.nativeWebFetch) {
+            const { buildFetchUrlTool } = await import('@/lib/server/agent-runtime/fetch-url');
+            webTools.push(buildFetchUrlTool(opts.nativeWebFetch));
+          }
+          for (const tool of webTools) {
+            nativeTools.push({
+              ...tool,
+              async execute(actionId, params, signal, onUpdate) {
+                await send({
+                  type: 'action',
+                  data: {
+                    actionId,
+                    actionName: tool.name,
+                    params: {},
+                    agentId: agent.id,
+                    messageId,
+                  },
+                });
+                return tool.execute(actionId, params, signal, onUpdate);
+              },
+            });
+          }
           const availableToolNames = nativeTools.map((tool) => tool.name);
           const sanitizeNativeDelta = createVisibleSpeechDeltaSanitizer();
           const nativeResult = await runNativeChild({

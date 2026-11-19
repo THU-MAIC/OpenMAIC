@@ -82,33 +82,17 @@ a script or a playback synchronization guarantee.
 
 ## Reading web pages
 
-Native Children that have `web_search` also get `fetch_url` when the
-deployment's `webFetch` slot resolves to a reader. With `webFetch: null`
-(disabled or unassigned) the tool and its Director and Child prompt sections
-are omitted together. Legacy Children never receive it.
+Native Children can call the shared `fetch_url` tool when the request's `webFetch`
+slot resolves to a reader. Disabling the slot removes the tool and its prompt
+sections. Each Native Child search or read displays an inline tool-call tag.
 
-`tools/web-fetch.ts` keeps all state per chat HTTP request; nothing is
-persisted and no material is created. Only origins from learner (`user`)
-messages, or from normalized `web_search` source URLs, may be read. Agent
-speech, search answer text and links inside a fetched page never widen that
-set. Reads go through the workbench reader (`fetchAndExtractUrl`): the builtin
-reader checks every redirect hop against the private-address, DNS and origin
-rules; a hosted reader gets the same checks on the requested URL before the
-provider call, and the tool checks the final URL the provider reports. Each
-request may make at most 2 external reads, each limited to 12 seconds and
-1 MiB. A failed read counts toward the budget and is not retried in the same
-request; paging an already-read page is free, and a `#fragment` does not make
-it a different page. Page text returns in 8,000-character pages under
-`untrusted`, and every refusal or failure tells the Child that the source is
-unverified. For a PDF, the builtin reader resolves the document service only
-after the download, for the request's own workspace, and passes the deadline
-to the extractor.
-
-`tools/web-evidence.ts` streams each `web_search` and `fetch_url` call as
-`web_evidence` events. The classroom source card shows progress, the sources
-and any failure from the tool result itself, never from model text. A read
-links only to the page it retrieved; a running or failed read shows the
-requested URL as plain text.
+A Child can request a public HTTP(S) URL from any origin. The shared reader
+enforces its network and size limits. The builtin reader checks each redirect
+and resolves PDF extraction for the request's workspace. Hosted reads validate
+the requested URL and the provider's reported final URL. The Child receives up
+to 2,000 characters of untrusted page text. The result flags a partial preview
+when more text exists or the reader reports truncation. Classroom reads create
+no session material and offer no continuation.
 
 ## Verification boundaries
 

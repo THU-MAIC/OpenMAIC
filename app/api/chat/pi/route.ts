@@ -30,10 +30,7 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveWebFetchCapability } from '@/lib/server/web-fetch-config';
-import {
-  createClassroomWebFetchContext,
-  type ClassroomWebFetchContext,
-} from '@/lib/chat/pi/tools/web-fetch';
+import type { ClassroomFetchUrlOptions } from '@/lib/server/agent-runtime/fetch-url';
 import { resolveRequestOwner } from '@/lib/server/identity/resolve';
 import {
   attachOwnerCookies,
@@ -254,40 +251,28 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       }
     }
     let nativeWebSearchConfig: Awaited<ReturnType<typeof resolveClassroomWebSearchConfig>>;
-    let nativeWebFetchContext: ClassroomWebFetchContext | undefined;
-    try {
-      const workspaceId = childRuntimeMode === 'native' ? await requestWorkspaceId(req) : null;
-      nativeWebSearchConfig =
-        childRuntimeMode === 'native'
-          ? await resolveClassroomWebSearchConfig(workspaceId, {
-              webSearchProviderId: body.webSearchProviderId,
-              webSearchApiKey: body.webSearchApiKey,
-              webSearchBaseUrl: body.webSearchBaseUrl,
-              webSearchModelId: body.webSearchModelId,
-              baiduSubSources: body.baiduSubSources,
-            })
-          : undefined;
-      // `webFetch: null` (disabled or unassigned) omits fetch_url and its prompt sections.
-      // fetch_url is optional here, so an unusable slot omits it instead of failing the chat.
-      const fetchConnection =
-        childRuntimeMode === 'native'
-          ? await resolveWebFetchCapability(workspaceId).catch((error: unknown) => {
-              log.warn('Classroom fetch_url unavailable: webFetch slot did not resolve', error);
-              return null;
-            })
-          : null;
-      nativeWebFetchContext = fetchConnection
-        ? createClassroomWebFetchContext({
-            messages: body.messages,
-            connection: fetchConnection,
-            workspaceId,
-          })
-        : undefined;
-    } catch (error) {
-      if (error instanceof ModelAuthorizationError)
-        return apiError(error.code, error.httpStatus, error.message);
-      const message = error instanceof Error ? error.message : 'Invalid Web Search configuration';
-      return apiError('INVALID_REQUEST', 400, message);
+    let nativeWebFetch: ClassroomFetchUrlOptions | undefined;
+    if (childRuntimeMode === 'native') {
+      try {
+        const workspaceId = await requestWorkspaceId(req);
+        nativeWebSearchConfig = await resolveClassroomWebSearchConfig(workspaceId, {
+          webSearchProviderId: body.webSearchProviderId,
+          webSearchApiKey: body.webSearchApiKey,
+          webSearchBaseUrl: body.webSearchBaseUrl,
+          webSearchModelId: body.webSearchModelId,
+          baiduSubSources: body.baiduSubSources,
+        });
+        const connection = await resolveWebFetchCapability(workspaceId).catch((error: unknown) => {
+          log.warn('Classroom fetch_url unavailable: webFetch slot did not resolve', error);
+          return null;
+        });
+        if (connection) nativeWebFetch = { mode: 'classroom', connection, workspaceId };
+      } catch (error) {
+        if (error instanceof ModelAuthorizationError)
+          return apiError(error.code, error.httpStatus, error.message);
+        const message = error instanceof Error ? error.message : 'Invalid Web Search configuration';
+        return apiError('INVALID_REQUEST', 400, message);
+      }
     }
 
     log.info(
@@ -341,7 +326,7 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
           childRuntimeMode,
           enableNativeChildSpotlight,
           nativeWebSearchConfig,
-          nativeWebFetchContext,
+          nativeWebFetch,
           nativeWhiteboardService,
           nativeWhiteboardStageId: nativeWhiteboardService ? validRequestStartStageId : undefined,
           nativeWhiteboardLearnerKey,

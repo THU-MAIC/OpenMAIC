@@ -1012,9 +1012,9 @@ describe('classroom fetch_url prompt sections (#1925)', () => {
     const searchOnly = buildNativeChildPrompt(makeBody(), agents[0], [], ['web_search']);
 
     expect(withFetch).toContain('# Reading web evidence');
-    expect(withFetch).toContain('The exact inventory is the authority for tool availability.');
+    expect(withFetch).toContain('Base your answer on the returned preview');
+    expect(withFetch).not.toContain('nextOffset');
     expect(searchOnly).not.toContain('# Reading web evidence');
-    expect(searchOnly).not.toContain('The exact inventory is the authority');
     expect(searchOnly).not.toContain('fetch_url');
   });
 });

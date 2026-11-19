@@ -272,19 +272,16 @@ function pdfExtractionCandidates(services: ExtractionServices): Array<{
 async function extractPdfToMarkdown(
   bytes: Buffer,
   services: ExtractionServices,
-  signal?: AbortSignal,
 ): Promise<{ title: string; markdown: string; truncated: boolean }> {
   const failures: string[] = [];
   for (const { provider, config } of pdfExtractionCandidates(services)) {
-    // A caller that stopped waiting starts no further extractor.
-    signal?.throwIfAborted();
     try {
       const artifact = await provider.extract({
         buffer: bytes,
         fileName: 'fetched.pdf',
         fileSize: bytes.byteLength,
         mimeType: 'application/pdf',
-        config: signal ? { ...config, signal } : config,
+        config,
       });
       const chunks: string[] = [];
       let chars = 0;
@@ -312,7 +309,6 @@ async function extractPdfToMarkdown(
         truncated,
       };
     } catch (error) {
-      signal?.throwIfAborted();
       failures.push(`${provider.id}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -458,7 +454,6 @@ export async function fetchAndExtractUrl(
           prepared.bytes,
           options.extractionServices ??
             (await (options.loadExtractionServices ?? resolveExtractionServices)()),
-          options.signal,
         );
         downloaded.truncated ||= prepared.truncated || extracted.truncated === true;
       } else {

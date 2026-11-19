@@ -289,21 +289,6 @@
       "qa": "P&R",
       "discussion": "DEB",
       "lecture": "AULA"
-    },
-    "webEvidence": {
-      "label": "Fontes da web",
-      "reading": "Lendo a página…",
-      "searching": "Pesquisando na web…",
-      "read": "Texto da página obtido",
-      "searched": "Resultados da pesquisa",
-      "cancelled": "Interrompido",
-      "failed": "Não foi possível ler a página",
-      "searchFailed": "A pesquisa falhou",
-      "range": "Caracteres {{start}}–{{end}} de {{total}} lidos",
-      "timeout": "A leitura excedeu o tempo limite. O texto original não foi verificado.",
-      "unverified": "O texto original não foi verificado. Cole o texto ou tente outra fonte.",
-      "excerpts": "Apenas trechos da pesquisa; o texto da página não foi lido.",
-      "sourceCount": "Ver {{count}} fontes da pesquisa"
     }
   },
   "actions": {

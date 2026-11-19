@@ -289,21 +289,6 @@
       "qa": "Q&A",
       "discussion": "토론",
       "lecture": "강의"
-    },
-    "webEvidence": {
-      "label": "웹 출처",
-      "reading": "페이지 읽는 중…",
-      "searching": "웹 검색 중…",
-      "read": "페이지 본문을 가져왔습니다",
-      "searched": "검색 결과",
-      "cancelled": "중지됨",
-      "failed": "페이지를 읽을 수 없습니다",
-      "searchFailed": "검색 실패",
-      "range": "전체 {{total}}자 중 {{start}}–{{end}}자를 읽었습니다",
-      "timeout": "읽기 시간이 초과되었습니다. 원문을 확인하지 못했습니다.",
-      "unverified": "원문을 확인하지 못했습니다. 본문을 붙여 넣거나 다른 출처를 사용해 보세요.",
-      "excerpts": "검색 요약일 뿐이며 페이지 본문은 아직 읽지 않았습니다.",
-      "sourceCount": "검색 출처 {{count}}개 보기"
     }
   },
   "actions": {

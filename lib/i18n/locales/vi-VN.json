@@ -289,21 +289,6 @@
       "qa": "HỎI ĐÁP",
       "discussion": "THẢO LUẬN",
       "lecture": "GIẢNG"
-    },
-    "webEvidence": {
-      "label": "Nguồn web",
-      "reading": "Đang đọc trang…",
-      "searching": "Đang tìm kiếm trên web…",
-      "read": "Đã lấy được nội dung trang",
-      "searched": "Kết quả tìm kiếm",
-      "cancelled": "Đã dừng",
-      "failed": "Không thể đọc trang",
-      "searchFailed": "Tìm kiếm thất bại",
-      "range": "Đã đọc ký tự {{start}}–{{end}} trên tổng {{total}}",
-      "timeout": "Hết thời gian đọc. Văn bản gốc chưa được xác minh.",
-      "unverified": "Văn bản gốc chưa được xác minh. Hãy dán nội dung hoặc thử nguồn khác.",
-      "excerpts": "Chỉ là trích đoạn tìm kiếm; chưa đọc nội dung trang.",
-      "sourceCount": "Xem {{count}} nguồn tìm kiếm"
     }
   },
   "actions": {

@@ -289,21 +289,6 @@
       "qa": "Q/R",
       "discussion": "DISC",
       "lecture": "COURS"
-    },
-    "webEvidence": {
-      "label": "Sources web",
-      "reading": "Lecture de la page…",
-      "searching": "Recherche sur le web…",
-      "read": "Texte de la page récupéré",
-      "searched": "Résultats de recherche",
-      "cancelled": "Arrêté",
-      "failed": "Impossible de lire la page",
-      "searchFailed": "Échec de la recherche",
-      "range": "Caractères {{start}}–{{end}} lus sur {{total}}",
-      "timeout": "Délai de lecture dépassé. Le texte original n’a pas été vérifié.",
-      "unverified": "Le texte original n’a pas été vérifié. Collez le texte ou essayez une autre source.",
-      "excerpts": "Extraits de recherche uniquement ; le texte de la page n’a pas été lu.",
-      "sourceCount": "Voir {{count}} sources de recherche"
     }
   },
   "actions": {
