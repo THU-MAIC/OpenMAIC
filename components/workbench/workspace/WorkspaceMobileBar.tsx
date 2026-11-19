@@ -26,10 +26,12 @@ import { useMediaQuery } from '@/lib/hooks/use-media-query';
 /** Tailwind's `md`: from here up the rail is on screen and the sheet has no job. */
 const DESKTOP_QUERY = '(min-width: 768px)';
 export function WorkspaceMobileBar({
+  isHome = false,
   onOpenMenu,
   onGoHome,
   onNewSession,
 }: {
+  readonly isHome?: boolean;
   readonly onOpenMenu: () => void;
   readonly onGoHome: () => void;
   readonly onNewSession: () => void;
@@ -65,10 +67,10 @@ export function WorkspaceMobileBar({
           className="ws-home inline-flex h-11 min-w-0 items-center px-1"
         >
           <img
-            src={brand.logoSrc}
+            src={isHome ? brand.markSrc : brand.logoSrc}
             alt=""
             aria-hidden="true"
-            className="ws-wordmark h-[22px] w-auto max-w-[128px]"
+            className={isHome ? 'size-[22px]' : 'ws-wordmark h-[22px] w-auto max-w-[128px]'}
           />
         </a>
         <button
