@@ -1069,6 +1069,16 @@
   opacity: 1;
 }
 
+/* Leave a separate slot for the always-visible action in the phone drawer. */
+.ws-rail[data-variant='drawer'] .ws-row-wrap-actionable .ws-chat-row {
+  padding-right: 36px;
+}
+
+.ws-rail[data-variant='drawer'] .ws-row-wrap-actionable .ws-row-meta,
+.ws-rail[data-variant='drawer'] .ws-row-trailing {
+  opacity: 1;
+}
+
 /* Revealed on hover — a per-row ⋯ shown on all 139 rows at once would be a
    column of noise — but once revealed it has to look pressable, which a bare
    grey glyph did not. It gets the rail's own surface and a hairline. */
