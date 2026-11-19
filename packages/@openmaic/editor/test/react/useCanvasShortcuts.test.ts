@@ -79,7 +79,11 @@ describe('handleCanvasShortcut', () => {
       tagName: 'DIV',
       closest: (selector: string) => (selector.includes('ProseMirror') ? {} : null),
     },
-  ])('ignores editable targets', (target) => {
+    {
+      tagName: 'DIV',
+      closest: (selector: string) => (selector.includes('[role="listbox"]') ? {} : null),
+    },
+  ])('ignores editable targets and font picker options', (target) => {
     const available = commands();
     const event = keyEvent('Delete', { target });
 

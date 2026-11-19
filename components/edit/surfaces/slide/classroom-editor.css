@@ -1,0 +1,68 @@
+.classroom-slide-editor {
+  --maic-editor-selection-color: var(--primary);
+  --maic-editor-frame-style: dashed;
+  --maic-editor-marquee-width: 2px;
+  --maic-editor-marquee-fill: transparent;
+}
+
+.classroom-slide-editor [data-hit-kind='line-highlight'] {
+  stroke: var(--primary);
+}
+
+.classroom-slide-editor .maic-editing-text-frame {
+  --maic-editor-frame-style: solid;
+}
+
+.classroom-slide-editor[data-editable-slide-canvas]
+  :is([data-rotate-handle], [data-resize-handle], [data-line-handle], [data-shape-keypoint]) {
+  border-radius: 1px;
+}
+
+.classroom-slide-editor[data-editable-slide-canvas] [data-resize-handle] {
+  transform: translate(-50%, -50%) rotate(var(--maic-handle-angle));
+}
+
+/* Legacy rotate handles start 25px above the frame, placing their center 20px above it. */
+.classroom-slide-editor[data-editable-slide-canvas] [data-rotate-handle] {
+  transform: translate(-50%, -50%) rotate(var(--maic-handle-angle)) translateY(5px);
+}
+
+.classroom-slide-editor [data-rotate-handle]:active {
+  cursor: grabbing !important;
+}
+
+/* Element bars are portaled to the body. Their anchor ID identifies the classroom canvas. */
+[data-toolbar-anchor^='editable-element-'] {
+  --maic-editing-ui-bg: var(--popover);
+  --maic-editing-ui-fg: var(--popover-foreground);
+  --maic-editing-ui-border: var(--border);
+  --maic-editing-ui-radius: var(--radius-md);
+  --maic-editing-ui-shadow: var(--shadow-md);
+}
+
+[data-toolbar-anchor^='editable-element-'].maic-editing-ui-element-toolbar {
+  /* The replacement image picker opens outside the toolbar. */
+  overflow: visible;
+}
+
+[data-toolbar-anchor^='editable-element-'].maic-editing-ui-latex-toolbar,
+[data-toolbar-anchor^='editable-element-']
+  :is(.maic-editing-ui-video-toolbar, .maic-editing-ui-audio-toolbar) {
+  gap: 4px;
+  background: var(--popover);
+  border-color: var(--border);
+  box-shadow: var(--shadow-md);
+}
+
+[data-toolbar-anchor^='editable-element-'] .maic-editing-ui-icon-button {
+  color: var(--color-zinc-500);
+}
+
+.dark [data-toolbar-anchor^='editable-element-'] .maic-editing-ui-icon-button {
+  color: var(--color-zinc-400);
+}
+
+.dark [data-toolbar-anchor^='editable-element-'] .maic-editing-ui-icon-button:hover {
+  background: var(--color-zinc-800);
+  color: var(--color-zinc-100);
+}

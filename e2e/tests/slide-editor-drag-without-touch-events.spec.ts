@@ -98,15 +98,18 @@ test.describe('Slide editor without the TouchEvent global (desktop Safari)', () 
     const start = await shape.boundingBox();
     if (!start) throw new Error('Shape has no bounding box');
 
-    // Select, then drag the selected element.
+    // Move by a fraction of this fixture's size so its edges stay clear of canvas
+    // alignment guides at any zoom. The selected shape moves from its border.
+    const dx = Math.round(start.width / 2);
+    const dy = Math.round(start.height / 3);
     await page.mouse.click(start.x + start.width / 2, start.y + start.height / 2);
-    await dragBy(page, start.x + start.width / 4, start.y + 1, 77, 41);
+    await dragBy(page, start.x + start.width / 4, start.y + 1, dx, dy);
     await expect
       .poll(async () => {
         const box = await shape.boundingBox();
         return box && { dx: Math.round(box.x - start.x), dy: Math.round(box.y - start.y) };
       })
-      .toEqual({ dx: 77, dy: 41 });
+      .toEqual({ dx, dy });
 
     // Resize from the bottom-right handle of the selection.
     const moved = await shape.boundingBox();

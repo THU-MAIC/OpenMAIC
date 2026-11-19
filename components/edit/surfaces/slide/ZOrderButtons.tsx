@@ -14,7 +14,15 @@ const BTN =
  * disambiguated by a hover tooltip. `onMouseDown` preventDefault keeps the
  * canvas selection alive until the click fires.
  */
-export function ZOrderButtons({ elementId }: { readonly elementId: string }) {
+export function ZOrderButtons({
+  elementId,
+  onBringToFront,
+  onSendToBack,
+}: {
+  readonly elementId: string;
+  readonly onBringToFront?: () => void;
+  readonly onSendToBack?: () => void;
+}) {
   const { t } = useI18n();
   return (
     <>
@@ -24,7 +32,7 @@ export function ZOrderButtons({ elementId }: { readonly elementId: string }) {
             type="button"
             aria-label={t('edit.zorder.toFront')}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => reorderSlideElement(elementId, 'front')}
+            onClick={onBringToFront ?? (() => reorderSlideElement(elementId, 'front'))}
             className={BTN}
           >
             <BringToFront className="h-4 w-4" />
@@ -38,7 +46,7 @@ export function ZOrderButtons({ elementId }: { readonly elementId: string }) {
             type="button"
             aria-label={t('edit.zorder.toBack')}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => reorderSlideElement(elementId, 'back')}
+            onClick={onSendToBack ?? (() => reorderSlideElement(elementId, 'back'))}
             className={BTN}
           >
             <SendToBack className="h-4 w-4" />

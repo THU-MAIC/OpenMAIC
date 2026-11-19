@@ -128,17 +128,12 @@ test.describe('#619 interactive iframe keep-alive', () => {
     // state across scene transitions, not thumbnail pointer routing.
     await classroom.sidebarScenes.nth(1).click({ force: true }); // slide
     const handle = page.getByTestId('insert-toolbar-drag-handle');
-    const docked = page.getByTestId('renderer-insert-toolbar');
-    await expect(handle.or(docked)).toBeVisible();
-    if (await docked.isVisible()) {
-      await expect(docked).toHaveAttribute('data-placement', 'left');
-      await classroom.sidebarScenes.nth(0).click({ force: true });
-      await expect(docked).toBeHidden();
-      await classroom.sidebarScenes.nth(1).click({ force: true });
-      await expect(docked).toBeVisible();
-      await expect(docked).toHaveAttribute('data-placement', 'left');
-      return;
-    }
+    await expect(handle).toBeVisible();
+    const collapse = page.getByTestId('insert-toolbar-collapse');
+    await collapse.click();
+    await expect(collapse).toHaveAttribute('aria-expanded', 'false');
+    // Wait for the fold animation to remove the insert buttons before measuring the grip.
+    await expect(page.getByTestId('insert-toolbar').getByRole('button')).toHaveCount(2);
     const initial = await handle.boundingBox();
     expect(initial).not.toBeNull();
 
@@ -155,10 +150,13 @@ test.describe('#619 interactive iframe keep-alive', () => {
     await expect(handle).toBeHidden();
     await classroom.sidebarScenes.nth(1).click({ force: true });
     await expect(handle).toBeVisible();
+    await expect(collapse).toHaveAttribute('aria-expanded', 'false');
     const restored = await handle.boundingBox();
     expect(restored).not.toBeNull();
     expect(restored!.x).toBeCloseTo(moved!.x, 0);
     expect(restored!.y).toBeCloseTo(moved!.y, 0);
+    await collapse.click();
+    await expect(collapse).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('iframe survives Pro-mode toggle and scene switch without reloading', async ({ page }) => {

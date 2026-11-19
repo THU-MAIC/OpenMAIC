@@ -1,5 +1,6 @@
 'use client';
 
+import { measureEditorToolbarAnchor } from '@openmaic/editor/ui';
 import { useEffect, useState } from 'react';
 import { useCanvasStore } from '@/lib/store/canvas';
 
@@ -74,7 +75,7 @@ export function useTrackedRect(elementId: string): TrackedRect | null {
       const wrapper = document.getElementById(`editable-element-${elementId}`);
       const node = wrapper?.querySelector<HTMLElement>('.element-content') ?? null;
       if (!node) return null;
-      const r = node.getBoundingClientRect();
+      const r = measureEditorToolbarAnchor(node, elementId);
       return {
         left: r.left,
         top: r.top,

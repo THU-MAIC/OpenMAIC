@@ -23,7 +23,8 @@ export function BorderLine({ width, height, className, style }: BorderLineProps)
         position: 'absolute',
         width: `${width}px`,
         height: `${height}px`,
-        outline: '1px solid #3b82f6',
+        outline:
+          '1px var(--maic-editor-frame-style, solid) var(--maic-editor-selection-color, #3b82f6)',
         outlineOffset: '-1px',
         boxSizing: 'border-box',
         pointerEvents: 'none',
