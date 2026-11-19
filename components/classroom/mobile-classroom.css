@@ -15,7 +15,8 @@ body:has([data-classroom-stage][data-mobile='true']) {
   transform-origin: top left;
 }
 [data-classroom-stage][data-mobile='true'] > .interactive-iframe-viewport {
-  position: absolute;
+  /* The mobile host measures in stage coordinates; standalone hosts use an inline fixed position. */
+  position: absolute !important;
 }
 /* Native orientation changes have their own animation. Ease the in-page turn
    in both directions while the device viewport itself stays in portrait. */
