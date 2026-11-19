@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { PPTVideoElement, Slide } from '@openmaic/dsl';
+import type { PPTAudioElement, PPTVideoElement, Slide } from '@openmaic/dsl';
 import type { MediaTask } from '@/lib/store/media-generation';
 import {
+  poolLeasableSlideRefs,
   resolveSlideMedia,
   resolveSlideMediaState,
 } from '@/components/slide-renderer/use-resolved-slide';
@@ -44,6 +45,52 @@ function task(overrides: Partial<MediaTask>): MediaTask {
     ...overrides,
   };
 }
+
+describe('ZIP-imported slide audio', () => {
+  const pooled: PPTAudioElement = {
+    type: 'audio',
+    id: 'audio',
+    left: 0,
+    top: 0,
+    width: 40,
+    height: 40,
+    rotate: 0,
+    fixedRatio: true,
+    color: '#000000',
+    loop: false,
+    autoplay: false,
+    src: 'ast_imported_audio',
+  };
+  const inline = { ...pooled, id: 'inline', src: 'data:audio/mpeg;base64,SUQz' };
+  const audioSlide = { ...slide, elements: [pooled, inline] };
+
+  it('leases only the pooled audio and gives the player its URL', () => {
+    expect(poolLeasableSlideRefs(audioSlide, 'stage-1', {})).toEqual([pooled.src]);
+    const resolved = resolveSlideMedia(
+      audioSlide,
+      'stage-1',
+      {},
+      {
+        assetUrls: { [pooled.src]: 'blob:audio' },
+      },
+    );
+    expect(resolved.elements[0]).toEqual({ ...pooled, src: 'blob:audio' });
+    expect(resolved.elements[1]).toBe(inline);
+    expect(audioSlide.elements[0].src).toBe('ast_imported_audio');
+  });
+
+  it.each(['pending', 'missing'] as const)('withholds a %s pool ID from the player', (status) => {
+    const resolved = resolveSlideMedia(
+      audioSlide,
+      'stage-1',
+      {},
+      {
+        assetLeases: { [pooled.src]: { status } },
+      },
+    );
+    expect(resolved.elements[0]).toMatchObject({ src: '' });
+  });
+});
 
 describe('resolveSlideMedia', () => {
   it('clears an unresolved generated image while status metadata stays separate', () => {
