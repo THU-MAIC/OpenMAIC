@@ -1161,22 +1161,24 @@
    chat, which is the narrow-layout form of folding the classroom on the right.
    Nothing has to be suppressed alongside it any more — the rail's fold moved
    into its own header, so the seam carries only the resize thread. */
-.ws-root:has(> .ws-tab:not(.ws-pane-last)) > .ws-tab:not(.ws-pane-last) {
-  z-index: 30;
-  margin-inline: -15px;
-  background-color: transparent;
-  background-image: none;
-  box-shadow: none;
-}
+@media (min-width: 768px) {
+  .ws-pane-row > .ws-tab:not(.ws-pane-last) {
+    z-index: 30;
+    margin-inline: -15px;
+    background-color: transparent;
+    background-image: none;
+    box-shadow: none;
+  }
 
-.ws-root:has(> .ws-tab:not(.ws-pane-last)) > .ws-tab:not(.ws-pane-last):hover {
-  background-color: transparent;
-}
+  .ws-pane-row > .ws-tab:not(.ws-pane-last):hover {
+    background-color: transparent;
+  }
 
-.ws-root:has(> .ws-tab:not(.ws-pane-last):hover) > .ws-rail .ws-resize-thread,
-.ws-root:has(> .ws-tab:not(.ws-pane-last):focus-visible) > .ws-rail .ws-resize-thread {
-  width: 2px;
-  background: var(--ws-ink-faint);
+  .ws-pane-row:has(> .ws-tab:not(.ws-pane-last):hover) > .ws-rail .ws-resize-thread,
+  .ws-pane-row:has(> .ws-tab:not(.ws-pane-last):focus-visible) > .ws-rail .ws-resize-thread {
+    width: 2px;
+    background: var(--ws-ink-faint);
+  }
 }
 
 /* No transition on the rail's width: it is driven straight from the pointer,

@@ -2072,7 +2072,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           </WorkspaceMobileDrawer>
         </>
       )}
-      <div className="flex min-h-0 w-full flex-1 overflow-hidden">
+      <div className="ws-pane-row flex min-h-0 w-full flex-1 overflow-hidden">
         {courses.importInput}
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
