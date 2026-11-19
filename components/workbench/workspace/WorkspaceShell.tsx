@@ -2015,6 +2015,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       {classroomOpen && playbackOn ? null : (
         <>
           <WorkspaceMobileBar
+            isHome={render.home}
             onOpenMenu={() => setMobileNavOpen(true)}
             onGoHome={goHome}
             onNewSession={startNewConversation}

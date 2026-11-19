@@ -116,8 +116,11 @@ export function WorkspaceHome({
               )}
             </div>
 
-            <div className="mt-3.5 flex flex-wrap items-center justify-center gap-3">
-              <p className="ws-tagline" data-testid="pro-workspace-hero-tagline">
+            <div className="mt-3.5 flex flex-col items-center justify-center gap-3 md:flex-row md:flex-wrap">
+              <p
+                className="ws-tagline text-center md:text-start"
+                data-testid="pro-workspace-hero-tagline"
+              >
                 {t('home.slogan')}
               </p>
               <a
