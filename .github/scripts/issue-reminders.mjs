@@ -7,7 +7,13 @@
 //   not planned with a comment saying it can be reopened once the information
 //   is added.
 // - assigned stale: an assigned issue with no activity for ASSIGNED_STALE_MS
-//   gets one reminder asking the assignees whether it is still planned.
+//   gets one reminder asking the assignees whether it is still planned and
+//   announcing the close below.
+// - assigned close: still no activity for ASSIGNED_CLOSE_MS after that
+//   reminder. The issue is closed as not planned. Only a reminder whose body
+//   is the current one (so it announced the close) starts the window, from
+//   when it was last written: a reminder with older wording is first updated
+//   in place, and the window starts at that update.
 // - help wanted close: an unassigned `help wanted` issue with no activity for
 //   HELP_WANTED_CLOSE_MS is closed as not planned, pointing to Discussions.
 //
@@ -34,11 +40,13 @@ export { fetchClient, isDryRun };
 export const MARKERS = {
   needsInfoClosed: '<!-- openmaic-issue-reminder:needs-info-closed -->',
   assignedStale: '<!-- openmaic-issue-reminder:assigned-stale -->',
+  assignedClosed: '<!-- openmaic-issue-reminder:assigned-closed -->',
   helpWantedClosed: '<!-- openmaic-issue-reminder:help-wanted-closed -->',
 };
 const DAY = 24 * 60 * 60 * 1000;
 export const NEEDS_INFO_CLOSE_MS = 14 * DAY;
-export const ASSIGNED_STALE_MS = 60 * DAY;
+export const ASSIGNED_STALE_MS = 14 * DAY;
+export const ASSIGNED_CLOSE_MS = 7 * DAY;
 export const HELP_WANTED_CLOSE_MS = 90 * DAY;
 export const MAX_WRITES_PER_RUN = 20;
 export const LABELS = {
@@ -203,7 +211,24 @@ export function assignedStaleBody(issue) {
     '- If yes, a short status comment is enough.',
     '- If not, please unassign yourself and mark it `help wanted` (or say so here and a maintainer will), or close it if it is no longer needed.',
     '',
+    `If there is no activity within ${ASSIGNED_CLOSE_MS / DAY} days after this reminder, the issue will be closed as not planned; it can be reopened later.`,
+    '',
     '<sub>Automated reminder. It is posted once per period of inactivity and updated in place.</sub>',
+    '',
+  ].join('\n');
+}
+
+export function assignedClosedBody(issue) {
+  const who = assigneeLogins(issue)
+    .map((login) => `@${login}`)
+    .join(' ');
+  return [
+    MARKERS.assignedClosed,
+    `Hi ${who}, closing this issue as not planned: there has been no activity for ${ASSIGNED_CLOSE_MS / DAY} days since the reminder above.`,
+    '',
+    'If it is still planned, comment here and it can be reopened.',
+    '',
+    '<sub>Automated message. See MAINTAINING.md for the issue lifecycle.</sub>',
     '',
   ].join('\n');
 }
@@ -259,6 +284,20 @@ export function latestMessage(comments, kind) {
   return matches.length
     ? matches.reduce((a, b) => (time(b.created_at) > time(a.created_at) ? b : a))
     : null;
+}
+
+// When a message was last written: an update in place restarts its window.
+export function writtenAt(comment) {
+  return comment.updated_at ?? comment.created_at;
+}
+
+// An assigned-stale reminder closes the issue ASSIGNED_CLOSE_MS after it was
+// last written, but only if its body is the current one: a reminder with older
+// wording never announced the close and is updated first. Activity after the
+// reminder starts a new period of inactivity, so `decide` drops the decision
+// or the reminder stops being current before this is reached.
+export function assignedCloseDue(reminder, body, now) {
+  return reminder.body === body && now - time(writtenAt(reminder)) > ASSIGNED_CLOSE_MS;
 }
 
 // ---- GitHub access (an octokit-compatible `request` / `graphql` client) ----
@@ -377,7 +416,18 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
       // A message older than the current window belongs to an earlier episode.
       const current = existing && time(existing.created_at) >= time(decision.since);
       if (decision.kind === 'assignedStale') {
-        if (current && existing.body === decision.body) action = 'unchanged';
+        const due = current && assignedCloseDue(existing, decision.body, now);
+        if (due) {
+          // Retry-safe: a closing comment already posted after the reminder
+          // (a previous run whose close failed) is not posted again.
+          const closing = latestMessage(comments, 'assignedClosed');
+          const announced = closing && time(closing.created_at) >= time(writtenAt(existing));
+          action = 'close';
+          done = await write(announced ? 1 : 2, async () => {
+            if (!announced) await postComment(issue, assignedClosedBody(issue));
+            await closeNotPlanned(issue);
+          });
+        } else if (current && existing.body === decision.body) action = 'unchanged';
         else if (current) {
           action = 'update';
           done = await write(1, () =>
@@ -420,7 +470,7 @@ export async function run({ client, repo, now = Date.now(), dryRun = true, log =
 const REASONS = {
   needsInfoReplied: 'author replied to `status:needs-info`',
   needsInfoClosed: `no reply to \`status:needs-info\` for ${NEEDS_INFO_CLOSE_MS / DAY} days`,
-  assignedStale: `assigned, no activity for ${ASSIGNED_STALE_MS / DAY} days`,
+  assignedStale: `assigned, no activity for ${ASSIGNED_STALE_MS / DAY} days (closed ${ASSIGNED_CLOSE_MS / DAY} days after the reminder)`,
   helpWantedClosed: `\`help wanted\`, no activity for ${HELP_WANTED_CLOSE_MS / DAY} days`,
 };
 

@@ -1,32 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  CODEX_CLOSE_MS,
+  CLOSE_MS,
   MARKERS,
   MAX_WRITES_PER_RUN,
   approvalBody,
   approvalSince,
+  ciBody,
+  closedBody,
+  closeDue,
   codexBody,
-  codexClosedBody,
-  codexCloseDue,
-  isEligible,
-  newestCodexThreadAt,
   codexSince,
   conflictBody,
   conflictSince,
   decide,
   decideCodex,
+  failingChecks,
   fetchClient,
   findReminder,
   globalOwners,
   groupRunsBySha,
   isDryRun,
+  isEligible,
   isStale,
   lastAuthorActivity,
   listOpenPullRequests,
+  newestCodexThreadAt,
+  reminderPlan,
   run,
   summaryMarkdown,
   unresolvedCodexThreads,
+  writtenAt,
 } from './pr-reminders.mjs';
 
 const repo = { owner: 'THU-MAIC', repo: 'OpenMAIC' };
@@ -377,9 +381,10 @@ test('codex comment bodies mention the author, the count and the close window', 
   assert.match(body, /Hi @author35, 2 Codex review threads are still unresolved/);
   assert.match(body, /within 7 days after this reminder/);
   assert.match(codexBody(pr, 1), /1 Codex review thread is still unresolved/);
-  const closed = codexClosedBody(pr, 1);
-  assert.ok(closed.startsWith(MARKERS.codexClosed));
-  assert.match(closed, /@author35, closing this pull request: 1 Codex review thread is/);
+  const closed = closedBody(pr, [{ kind: 'codex', count: 1 }]);
+  assert.ok(closed.startsWith(MARKERS.closed));
+  assert.match(closed, /@author35, closing this pull request: .* for 7 days/);
+  assert.match(closed, /^- 1 Codex review thread is still unresolved\.$/m);
   assert.match(closed, /reopen/);
 });
 
@@ -404,7 +409,7 @@ test('the close window restarts at author activity, pushes and newer threads', (
   assert.equal(lastAuthorActivity(pr, {}, []), null);
 
   const due = (extras) =>
-    codexCloseDue({
+    closeDue({
       reminderAt: ago(8 * DAY),
       newestThreadAt: ago(10 * DAY),
       lastActivity: null,
@@ -412,7 +417,7 @@ test('the close window restarts at author activity, pushes and newer threads', (
       ...extras,
     });
   assert.equal(due({}), true);
-  assert.equal(due({ reminderAt: ago(CODEX_CLOSE_MS) }), false);
+  assert.equal(due({ reminderAt: ago(CLOSE_MS) }), false);
   assert.equal(due({ lastActivity: ago(5 * DAY) }), false);
   assert.equal(due({ newestThreadAt: ago(2 * DAY) }), false);
 
@@ -470,7 +475,7 @@ test('run reminds, closes after 7 quiet days and spares active authors', async (
       ['POST /repos/{owner}/{repo}/issues/{issue_number}/comments', 48],
     ],
   );
-  assert.ok(client.writes[1].params.body.startsWith(MARKERS.codexClosed));
+  assert.ok(client.writes[1].params.body.startsWith(MARKERS.closed));
   assert.equal(client.writes[2].params.state, 'closed');
 });
 
@@ -571,7 +576,8 @@ test('a close whose comment was already posted only retries the close', async ()
     comments: {
       60: [
         botComment(801, codexBody(pr, 1), ago(9 * DAY)),
-        botComment(802, codexClosedBody(pr, 1), ago(DAY)),
+        // Posted by an earlier version under the old marker.
+        botComment(802, `${MARKERS.codexClosed}\nold closing text`, ago(DAY)),
       ],
     },
     activity: { 60: {} },
@@ -619,4 +625,327 @@ test('a close is deferred rather than split when the write cap is reached', asyn
   const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
   assert.equal(client.writes.length, MAX_WRITES_PER_RUN - 1);
   assert.equal(result.results.at(-1).action, 'deferred');
+});
+
+const checkRun = (name, conclusion, completedAt = ago(2 * DAY)) => ({
+  __typename: 'CheckRun',
+  name,
+  conclusion,
+  completedAt,
+});
+const statusContext = (context, state, createdAt = ago(2 * DAY)) => ({
+  __typename: 'StatusContext',
+  context,
+  state,
+  createdAt,
+});
+const withChecks = (nodes) => ({
+  commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes } } } }] },
+});
+const blockedLabel = { labels: { nodes: [{ name: 'status:blocked' }] } };
+const decideCtx = (extras = {}) => ({
+  now: NOW,
+  branchRuns: [],
+  runsBySha: new Map(),
+  owners: [],
+  ...extras,
+});
+
+test('failingChecks counts failures, timeouts, startup failures and failed statuses', () => {
+  const pr = makePr(400, {
+    ...withChecks([
+      checkRun('lint', 'FAILURE', ago(2 * DAY)),
+      checkRun('test', 'TIMED_OUT', ago(3 * DAY)),
+      checkRun('build', 'STARTUP_FAILURE', ago(DAY)),
+      checkRun('lint', 'FAILURE', ago(4 * DAY)),
+      statusContext('ci/legacy', 'FAILURE', ago(5 * DAY)),
+      statusContext('ci/deploy', 'ERROR', ago(DAY)),
+      checkRun('cancelled', 'CANCELLED', ago(9 * DAY)),
+      checkRun('neutral', 'NEUTRAL', ago(9 * DAY)),
+      checkRun('skipped', 'SKIPPED', ago(9 * DAY)),
+      checkRun('approval', 'ACTION_REQUIRED', ago(9 * DAY)),
+      checkRun('ok', 'SUCCESS', ago(9 * DAY)),
+      statusContext('ci/pending', 'PENDING', ago(9 * DAY)),
+      statusContext('ci/ok', 'SUCCESS', ago(9 * DAY)),
+    ]),
+  });
+  assert.deepEqual(failingChecks(pr), {
+    names: ['build', 'ci/deploy', 'ci/legacy', 'lint', 'test'],
+    since: ago(5 * DAY),
+  });
+  const passing = makePr(401, {
+    ...withChecks(
+      ['CANCELLED', 'NEUTRAL', 'SKIPPED', 'ACTION_REQUIRED', 'SUCCESS'].map((c) => checkRun(c, c)),
+    ),
+  });
+  assert.equal(failingChecks(passing), null);
+  assert.equal(failingChecks(makePr(402)), null);
+  // A failure without a timestamp is not known to be stale yet.
+  const undated = makePr(403, withChecks([checkRun('lint', 'FAILURE', null)]));
+  assert.deepEqual(failingChecks(undated), { names: ['lint'], since: null });
+  assert.equal(decide(undated, decideCtx()), null);
+});
+
+test('decide prefers conflict over approval over failing CI', () => {
+  const failing = withChecks([checkRun('lint', 'FAILURE', ago(3 * DAY))]);
+  const pending = (pr) => groupRunsBySha([pendingRun(pr.headRefOid, 'CI', ago(3 * DAY))]);
+  const all = makePr(410, { ...failing, mergeable: 'CONFLICTING' });
+  assert.equal(decide(all, decideCtx({ runsBySha: pending(all) })).kind, 'conflict');
+  const approvalAndCi = makePr(411, failing);
+  assert.equal(
+    decide(approvalAndCi, decideCtx({ runsBySha: pending(approvalAndCi) })).kind,
+    'approval',
+  );
+  // A run waiting for approval for less than a day: no reminder yet, and the
+  // stale CI failure is not reported either.
+  const freshApproval = makePr(415, failing);
+  assert.equal(
+    decide(
+      freshApproval,
+      decideCtx({
+        runsBySha: groupRunsBySha([pendingRun(freshApproval.headRefOid, 'CI', ago(DAY / 2))]),
+      }),
+    ),
+    null,
+  );
+  const ci = decide(makePr(412, failing), decideCtx());
+  assert.equal(ci.kind, 'ci');
+  assert.equal(ci.since, ago(3 * DAY));
+  assert.deepEqual(ci.names, ['lint']);
+  assert.ok(ci.body.startsWith(MARKERS.ci));
+  assert.match(ci.body, /`lint`/);
+});
+
+test('failing CI is not stale within a day', () => {
+  const fresh = makePr(413, withChecks([checkRun('lint', 'FAILURE', ago(DAY))]));
+  assert.equal(decide(fresh, decideCtx()), null);
+  const stale = makePr(414, withChecks([checkRun('lint', 'FAILURE', ago(DAY + 1))]));
+  assert.equal(decide(stale, decideCtx()).kind, 'ci');
+});
+
+test('blocked pull requests get reminders without the close sentence', () => {
+  const close = /will be closed automatically/;
+  const pr = makePr(415);
+  assert.match(conflictBody(pr, 'main'), close);
+  assert.match(ciBody(pr, ['lint']), close);
+  assert.doesNotMatch(conflictBody(pr, 'main', { close: false }), close);
+  assert.doesNotMatch(ciBody(pr, ['lint'], { close: false }), close);
+  const conflicting = makePr(416, { ...blockedLabel, mergeable: 'CONFLICTING' });
+  assert.doesNotMatch(decide(conflicting, decideCtx()).body, close);
+  const failing = makePr(417, {
+    ...blockedLabel,
+    ...withChecks([checkRun('lint', 'FAILURE', ago(3 * DAY))]),
+  });
+  assert.doesNotMatch(decide(failing, decideCtx()).body, close);
+});
+
+test('reminderPlan only starts a window from a current-wording reminder of this episode', () => {
+  const pr = makePr(420, { mergeable: 'CONFLICTING' });
+  const decision = decide(pr, decideCtx());
+  const ciPr = makePr(421, withChecks([checkRun('lint', 'FAILURE', ago(5 * DAY))]));
+  const ciDecision = decide(ciPr, decideCtx());
+
+  // Old wording never announced the close: no window, so it gets updated.
+  for (const [p, d, marker] of [
+    [pr, decision, MARKERS.conflict],
+    [ciPr, ciDecision, MARKERS.ci],
+  ]) {
+    const old = botComment(1, `${marker}\nold wording`, ago(4 * DAY));
+    assert.deepEqual(reminderPlan(p, d, [old]), { existing: old, window: null });
+  }
+
+  // Current wording: the window starts when it was last written.
+  const current = {
+    ...botComment(2, decision.body, ago(9 * DAY)),
+    updated_at: ago(3 * DAY),
+  };
+  assert.equal(writtenAt(current), ago(3 * DAY));
+  assert.deepEqual(reminderPlan(pr, decision, [current]), {
+    existing: current,
+    window: { reminderAt: ago(3 * DAY) },
+  });
+
+  // Blocked: never a window.
+  const blocked = { ...pr, ...blockedLabel };
+  const blockedDecision = decide(blocked, decideCtx());
+  const blockedReminder = botComment(3, blockedDecision.body, ago(3 * DAY));
+  assert.equal(reminderPlan(blocked, blockedDecision, [blockedReminder]).window, null);
+
+  // Written before the episode began: belongs to an earlier one.
+  const earlier = botComment(4, ciDecision.body, ago(6 * DAY));
+  assert.deepEqual(reminderPlan(ciPr, ciDecision, [earlier]), { existing: null, window: null });
+});
+
+const conflictCodexPr = (number) =>
+  makePr(number, { ...withThreads([thread(ago(12 * DAY))]), mergeable: 'CONFLICTING' });
+
+test('run closes a quiet conflicting pull request once, listing every due reason', async () => {
+  const pr = conflictCodexPr(430);
+  const client = fakeClient({
+    prs: [pr],
+    comments: {
+      430: [
+        botComment(1001, conflictBody(pr, 'main'), ago(8 * DAY)),
+        botComment(1002, codexBody(pr, 1), ago(8 * DAY)),
+      ],
+    },
+    activity: { 430: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.kind, r.action]),
+    [
+      ['conflict', 'close'],
+      ['codex', 'close'],
+    ],
+  );
+  assert.deepEqual(client.activityQueries, [430]);
+  assert.deepEqual(
+    client.writes.map((w) => w.route),
+    [
+      'POST /repos/{owner}/{repo}/issues/{issue_number}/comments',
+      'PATCH /repos/{owner}/{repo}/pulls/{pull_number}',
+    ],
+  );
+  const body = client.writes[0].params.body;
+  assert.ok(body.startsWith(MARKERS.closed));
+  assert.match(body, /^- It has merge conflicts with `main`\.$/m);
+  assert.match(body, /^- 1 Codex review thread is still unresolved\.$/m);
+  assert.equal(client.writes[1].params.state, 'closed');
+});
+
+test('run closes a pull request whose CI keeps failing', async () => {
+  const pr = makePr(431, withChecks([checkRun('lint', 'FAILURE', ago(12 * DAY))]));
+  const client = fakeClient({
+    prs: [pr],
+    comments: { 431: [botComment(1003, ciBody(pr, ['lint']), ago(8 * DAY))] },
+    activity: { 431: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.kind, r.action]),
+    [['ci', 'close']],
+  );
+  assert.match(client.writes[0].params.body, /^- CI is failing: `lint`\.$/m);
+});
+
+test('author activity after a conflict reminder keeps the pull request open', async () => {
+  const pr = makePr(432, { mergeable: 'CONFLICTING' });
+  const client = fakeClient({
+    prs: [pr],
+    comments: {
+      432: [
+        botComment(1004, conflictBody(pr, 'main'), ago(8 * DAY)),
+        { user: { login: 'author432' }, created_at: ago(2 * DAY) },
+      ],
+    },
+    activity: { 432: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.kind, r.action]),
+    [['conflict', 'unchanged']],
+  );
+  assert.deepEqual(client.activityQueries, [432]);
+  assert.deepEqual(client.writes, []);
+});
+
+test('an old-wording conflict reminder is updated, not closed', async () => {
+  const pr = makePr(433, { mergeable: 'CONFLICTING', createdAt: ago(40 * DAY) });
+  const client = fakeClient({
+    prs: [pr],
+    comments: { 433: [botComment(1005, `${MARKERS.conflict}\nold wording`, ago(30 * DAY))] },
+    activity: { 433: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.kind, r.action]),
+    [['conflict', 'update']],
+  );
+  assert.deepEqual(client.activityQueries, []);
+  assert.deepEqual(
+    client.writes.map((w) => [w.route, w.params.comment_id]),
+    [['PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', 1005]],
+  );
+  assert.equal(client.writes[0].params.body, conflictBody(pr, 'main'));
+});
+
+test('a retried close posts no second closing comment, under either marker', async () => {
+  for (const marker of [MARKERS.closed, MARKERS.codexClosed]) {
+    const pr = conflictCodexPr(434);
+    const client = fakeClient({
+      prs: [pr],
+      comments: {
+        434: [
+          botComment(1006, conflictBody(pr, 'main'), ago(9 * DAY)),
+          botComment(1007, codexBody(pr, 1), ago(9 * DAY)),
+          botComment(1008, `${marker}\nclosing text`, ago(DAY)),
+        ],
+      },
+      activity: { 434: {} },
+    });
+    const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+    assert.deepEqual(
+      result.results.map((r) => r.action),
+      ['close', 'close'],
+      marker,
+    );
+    assert.deepEqual(
+      client.writes.map((w) => w.route),
+      ['PATCH /repos/{owner}/{repo}/pulls/{pull_number}'],
+      marker,
+    );
+  }
+});
+
+test('waiting for approval never closes', async () => {
+  const pr = makePr(435);
+  const pending = [pendingRun(pr.headRefOid, 'CI', ago(40 * DAY))];
+  const body = approvalBody(pr, pending, []);
+  const client = fakeClient({
+    prs: [pr],
+    pending,
+    comments: { 435: [botComment(1009, body, ago(30 * DAY))] },
+    activity: { 435: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.kind, r.action]),
+    [['approval', 'unchanged']],
+  );
+  assert.deepEqual(client.activityQueries, []);
+  assert.deepEqual(client.writes, []);
+});
+
+test('a push to a conflicting pull request restarts every close window', async () => {
+  // GitHub runs no checks on a conflicting pull request and the pushed commits
+  // may be old, so the new head is the only trace of the push.
+  const pr = conflictCodexPr(440);
+  const before = { ...pr, headRefOid: 'oldsha' };
+  const client = fakeClient({
+    prs: [pr],
+    comments: {
+      440: [
+        botComment(1101, conflictBody(before, 'main'), ago(8 * DAY)),
+        botComment(1102, codexBody(before, 1), ago(8 * DAY)),
+      ],
+    },
+    activity: { 440: {} },
+  });
+  const result = await run({ client, repo, now: NOW, dryRun: false, log: () => {} });
+  assert.deepEqual(
+    result.results.map((r) => [r.kind, r.action]),
+    [
+      ['conflict', 'update'],
+      ['codex', 'update'],
+    ],
+  );
+  assert.deepEqual(
+    client.writes.map((w) => [w.route, w.params.comment_id]),
+    [
+      ['PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', 1101],
+      ['PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}', 1102],
+    ],
+  );
+  assert.match(client.writes[0].params.body, /<!-- head: sha440 -->/);
 });
