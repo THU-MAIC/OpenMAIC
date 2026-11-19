@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Generated interactive pages: the page-writing prompts now require an element marked `hidden` to stay hidden under an author `display` rule and to be shown by removing the attribute, a canvas to sit out of the layout flow of the container it is sized from and to draw in CSS pixels on high-density screens, and reset to rerender every readout through the same render path as startup. The simulation, game and reveal examples follow these rules. This prevents a false "canvas unavailable" message, a canvas that grows until it is blank, and readouts left from the previous run. Scenes generated before this change keep their HTML. [#2019](https://github.com/THU-MAIC/OpenMAIC/issues/2019)
+- Roundtable discussion: browser-native speech is spoken one sentence at a time, as in lecture playback. A sentence that fails or never finishes is skipped instead of leaving every later speaker silent, pause and resume restart the current sentence, and the speech speed, playback speed, volume and mute settings now apply, from the next sentence on. Browser speech in lectures and discussions no longer splits decimals, version numbers, domains or abbreviations such as "e.g." into separate sentences. [#875](https://github.com/THU-MAIC/OpenMAIC/issues/875)
+
+## [1.5.0-rc.3] - 2026-11-17
+
+1.5.0-rc.3 is the third release candidate for 1.5.0. It adds DeepSeek speech recognition, speech synthesis and document OCR (one DeepSeek key now covers them), MiniCPM-OCR as a document parser, and chunked parsing of long PDFs on self-hosted MinerU, which the Pro agent can then read by chapter. In the workbench, an agent question with a recommended answer confirms itself after a short countdown. It also fixes the first-run tour, folder pins, the split-view export menu, PPTX import in the standalone image, editor fonts in the classroom, and several PBL v3 interactions. No upgrade conditions over 1.5.0-rc.2: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.
+
+### Behavior Changes
+
+- Documents (self-hosted MinerU only): PDFs over 50 pages are parsed in page chunks and merged back into one material, and PDFs over 1000 pages are refused with `too_many_pages` before any request. Set `PDF_MINERU_MAX_PAGES`, `PDF_MINERU_CHUNK_PAGES` and `PDF_MINERU_CHUNK_CONCURRENCY` (defaults 1000 / 50 / 4) to change this. If a chunk still fails after a retry, the document fails with `pages_failed` and the page range. MinerU Cloud, AliDocMind and unpdf are unchanged. [#2269](https://github.com/THU-MAIC/OpenMAIC/pull/2269) (by @LING-6150)
+- LLM fallback: a fallback call is capped at the fallback model's own output limit instead of keeping the primary model's `maxOutputTokens`, and evaluation and `verify-model` calls stay on the requested model. [#2169](https://github.com/THU-MAIC/OpenMAIC/pull/2169) (by @YizukiAme)
+
+### Features
+
+- Providers: DeepSeek speech synthesis (`deepseek-tts`, voices `stella` and `tide`), speech recognition (`deepseek-asr`, up to 120 s per request) and document OCR (`deepseek-ocr`, with figures cropped from PDF pages). The DeepSeek one-key plan now also fills TTS, ASR and document parsing. New variables: `TTS_DEEPSEEK_*`, `ASR_DEEPSEEK_*`, `PDF_DEEPSEEK_OCR_*`. [#2259](https://github.com/THU-MAIC/OpenMAIC/pull/2259)
+- Documents: MiniCPM-OCR as a document parsing provider, through ModelBest's hosted API (`PDF_MINICPM_OCR_API_KEY`) or a self-hosted MiniCPM-OCR web demo (`PDF_MINICPM_OCR_BASE_URL`). [#2236](https://github.com/THU-MAIC/OpenMAIC/pull/2236) (by @Caldalis)
+- Knowledge base: long documents parsed by self-hosted MinerU get a chapter tree, recognized once by the model in the new `material.chapters` slot (it follows the default model unless assigned), and `read_material` lists each chapter with its offset so the Pro agent can jump straight to it. Recognition is optional: if it fails, the material stays parsed without a tree. [#2269](https://github.com/THU-MAIC/OpenMAIC/pull/2269) (by @LING-6150)
+- Workbench: the agent can mark one option of a question as recommended; it is sent automatically after an 8-second countdown that pauses or stops when the user interacts. The countdown can be switched off on the card or in General settings. Long background goes in an optional `details` block, and the preview shows the question as one card. [#2271](https://github.com/THU-MAIC/OpenMAIC/pull/2271)
+
+### Bug Fixes
+
+- Workbench: the first-run tour waits behind the access-code dialog instead of trapping focus under it, and starts only once the guide course has been seeded, so its step count no longer jumps. [#2251](https://github.com/THU-MAIC/OpenMAIC/pull/2251), [#2253](https://github.com/THU-MAIC/OpenMAIC/pull/2253)
+- Workbench: pinned folders keep their pin after a refresh, the tour card stays on screen, and a long chat draft no longer runs under the composer toolbar. [#2250](https://github.com/THU-MAIC/OpenMAIC/pull/2250), [#2252](https://github.com/THU-MAIC/OpenMAIC/pull/2252)
+- Workbench: a course opened in the split view has the Export menu in its header, not only in full screen. [#2272](https://github.com/THU-MAIC/OpenMAIC/pull/2272)
+- Pro workbench: pages built from an uploaded document now show the document's extracted figures. `use_material_media` used to tell the agent to place an image with `patch_stage`, so new pages were generated through `generate_scene` without `media` and showed no figures. Its reply, the `generate_scene` description, the materials prompt and the `stage-design` skill now say to pass each image in `generate_scene.media`. [#2099](https://github.com/THU-MAIC/OpenMAIC/pull/2099) (by @aswanthwuhan)
+- Agent runtime: PPTX import works in the standalone image built from this repository's `Dockerfile`, which failed with `Cannot find package 'linkedom'` because the worker was not bundled. [#2255](https://github.com/THU-MAIC/OpenMAIC/pull/2255) (by @puxiao)
+- Fonts: the Chinese and Latin fonts offered by the slide editor's font picker render in the standalone classroom too, and `Inter` renders everywhere. [#2244](https://github.com/THU-MAIC/OpenMAIC/pull/2244), [#2247](https://github.com/THU-MAIC/OpenMAIC/pull/2247) (by @cosarah)
+- Voice settings mark each saved Qwen/CosyVoice profile cloned for a different clone target as soon as they open, against the target the server now reports with its provider settings, by the same rule the server uses to refuse it. A preview the server refuses with `QWEN_VC_RECLONE_REQUIRED` still marks its profile when the target changes while settings are open, and a successful preview clears the mark. Saved voices and bindings remain unchanged. [#2031](https://github.com/THU-MAIC/OpenMAIC/pull/2031) (by @YizukiAme)
+- PBL v3: first-time learners read the project overview first, and the opening teaching reply starts only when they click **Start learning**. [#2277](https://github.com/THU-MAIC/OpenMAIC/pull/2277) (by @Irisdai517)
+- PBL v3: the composer is simpler while the assistant replies (a red stop button, no repeated busy text); review responses no longer stay pending after their text is complete; invalid step advances explain what to do next; changing teaching state is sent after the reusable history, which keeps prompt caching. [#2257](https://github.com/THU-MAIC/OpenMAIC/pull/2257), [#2258](https://github.com/THU-MAIC/OpenMAIC/pull/2258), [#2268](https://github.com/THU-MAIC/OpenMAIC/pull/2268) (by @Irisdai517)
+- PBL v3: beta workbench polish: stable file names while resizing, no repeated waits when switching between files already read, panels close on an outside click, and submitted decisions and quizzes show as complete. [#2274](https://github.com/THU-MAIC/OpenMAIC/pull/2274) (by @Irisdai517)
+
+### Packages
+
+- `@openmaic/renderer` 0.2.2: adds the opt-in stylesheet `@openmaic/renderer/picker-fonts.css`, which declares the font names the editor's picker writes. [#2244](https://github.com/THU-MAIC/OpenMAIC/pull/2244)
+- All other packages are unchanged from 1.5.0-rc.2.
+
+### Known issues
+
+- The 1.5.0-rc.1 known issues still apply.
+- On a deployment with `ACCESS_CODE`, the "Persistence is unavailable" toast can flash behind the access-code dialog before the code is entered; saved classrooms load normally afterwards. [#2311](https://github.com/THU-MAIC/OpenMAIC/issues/2311)
+
 ## [1.5.0-rc.2] - 2026-11-12
 
 1.5.0-rc.2 is the second release candidate for 1.5.0. It polishes the workbench (drag to fold the rail and the classroom dock, clearer chat status, no duplicate guide course after sign-in), gives Native classroom agents fresh whiteboard state, and fixes PBL previews, assessments and history. No upgrade conditions over 1.5.0-rc.1: no new migrations, and the 1.5.0-rc.1 **Breaking Changes** still apply when upgrading from 1.4.x.

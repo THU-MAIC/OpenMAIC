@@ -12,6 +12,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 2,
         parser: 'mineru',
+        textFormat: 'markdown',
         imageMapping: {
           img_1: 'data:image/png;base64,abc',
         },
@@ -113,6 +114,7 @@ describe('PDF compatibility adapter', () => {
       metadata: {
         pageCount: 1,
         parser: 'mineru-cloud',
+        textFormat: 'markdown',
       },
     };
 
@@ -128,6 +130,77 @@ describe('PDF compatibility adapter', () => {
       id: 'document-text',
       type: 'markdown',
       text: '# Cloud Parsed Lesson',
+    });
+  });
+
+  it('normalizes MiniCPM-OCR Markdown output into a markdown document block', () => {
+    const parsed: ParsedPdfContent = {
+      text: '# OCR Lesson\n\n| A | B |\n| - | - |',
+      images: [],
+      diagnostics: [{ severity: 'warning', message: '1 block(s) were not recognized' }],
+      metadata: {
+        pageCount: 1,
+        parser: 'minicpm-ocr',
+        textFormat: 'markdown',
+      },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('png'),
+      fileName: 'scan.png',
+      fileSize: 321,
+      mimeType: 'image/png',
+      config: { providerId: 'minicpm-ocr' },
+    });
+
+    expect(artifact.blocks[0]).toMatchObject({
+      id: 'document-text',
+      type: 'markdown',
+      text: '# OCR Lesson\n\n| A | B |\n| - | - |',
+    });
+    expect(artifact.diagnostics).toEqual([
+      {
+        severity: 'warning',
+        message: '1 block(s) were not recognized',
+        providerId: 'minicpm-ocr',
+      },
+    ]);
+    expect(documentArtifactToParsedPdfContent(artifact).diagnostics).toEqual([
+      { severity: 'warning', message: '1 block(s) were not recognized' },
+    ]);
+  });
+
+  it('keeps DeepSeek OCR markdown, which names figures by path, as a markdown block', () => {
+    const parsed: ParsedPdfContent = {
+      text: '## Results\n\n![Figure 1](images/deepseek-ocr-p1-1.png)',
+      images: ['data:image/png;base64,AAAA'],
+      metadata: {
+        pageCount: 1,
+        parser: 'deepseek-ocr',
+        textFormat: 'markdown',
+        pdfImages: [
+          {
+            id: 'img_1',
+            src: 'data:image/png;base64,AAAA',
+            pageNumber: 1,
+            path: 'images/deepseek-ocr-p1-1.png',
+          },
+        ],
+      },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('%PDF'),
+      fileName: 'paper.pdf',
+      fileSize: 4,
+      mimeType: 'application/pdf',
+      config: { providerId: 'deepseek-ocr' },
+    });
+
+    expect(artifact.blocks[0]).toMatchObject({ type: 'markdown' });
+    expect(artifact.assets[0]).toMatchObject({
+      pageNumber: 1,
+      metadata: { path: 'images/deepseek-ocr-p1-1.png' },
     });
   });
 

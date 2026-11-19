@@ -216,6 +216,71 @@ describe('POST /api/verify-pdf-provider', () => {
       expect(cloud.lastHeaders()!.authorization).toBe('Bearer test-key');
     });
 
+    it('verifies a DeepSeek OCR key with a file-less request that recognizes nothing', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end('{"error":{"message":"\'file\' is a required property"}}');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-test',
+        baseUrl: `${deepseek.origin}/v1`,
+      });
+
+      expect(res).toEqual({
+        status: 200,
+        json: { success: true, message: 'Connection successful' },
+      });
+      expect(deepseek.requests()).toBe(1);
+      expect(deepseek.lastUrl()).toBe('/v1/tools/ocr');
+      expect(deepseek.lastHeaders()!.authorization).toBe('Bearer sk-test');
+    });
+
+    it('answers a rejected DeepSeek OCR key with the fixed auth message', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end('{"error":{"message":"Authentication Fails"}}');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-wrong',
+        baseUrl: `${deepseek.origin}/v1`,
+      });
+
+      expect(res).toEqual({
+        status: 500,
+        json: {
+          success: false,
+          errorCode: 'INTERNAL_ERROR',
+          error: 'Authentication failed, please check the API Key',
+        },
+      });
+    });
+
+    it('fails DeepSeek OCR verification when the base URL path answers 404', async () => {
+      const deepseek = await startLoopback((_req, res) => {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      });
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'deepseek-ocr',
+        apiKey: 'sk-test',
+        baseUrl: `${deepseek.origin}/wrong-prefix`,
+      });
+
+      expect(res).toEqual({
+        status: 500,
+        json: {
+          success: false,
+          errorCode: 'INTERNAL_ERROR',
+          error: 'Cannot connect to server, please check the Base URL',
+        },
+      });
+    });
+
     it('verifies a self-hosted MinerU on a local network', async () => {
       const selfHosted = await startLoopback();
 
@@ -229,6 +294,79 @@ describe('POST /api/verify-pdf-provider', () => {
         json: { success: true, message: 'Connection successful' },
       });
       expect(selfHosted.requests()).toBe(1);
+    });
+
+    it('verifies MiniCPM-OCR with its key against the models endpoint', async () => {
+      const service = await startLoopback();
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'minicpm-ocr',
+        apiKey: 'test-key',
+        baseUrl: service.origin,
+      });
+
+      expect(res).toEqual({
+        status: 200,
+        json: { success: true, message: 'Connection successful' },
+      });
+      expect(service.requests()).toBe(1);
+      expect(service.lastUrl()).toBe('/models');
+      expect(service.lastHeaders()!.authorization).toBe('Bearer test-key');
+    });
+
+    it('verifies a keyless self-hosted MiniCPM-OCR web demo', async () => {
+      const service = await startLoopback();
+
+      const res = await postVerifyPdfProvider({
+        providerId: 'minicpm-ocr',
+        baseUrl: `${service.origin}/api`,
+      });
+
+      expect(res).toEqual({
+        status: 200,
+        json: { success: true, message: 'Connection successful' },
+      });
+      expect(service.lastUrl()).toBe('/api/models');
+      expect(service.lastHeaders()!.authorization).toBeUndefined();
+    });
+
+    it.each([401, 403])(
+      'answers a MiniCPM-OCR %i with a fixed authentication message',
+      async (status) => {
+        const service = await startLoopback((_req, res) => {
+          res.writeHead(status, { 'Content-Type': 'text/plain' });
+          res.end('internal-secret-body');
+        });
+
+        const res = await postVerifyPdfProvider({
+          providerId: 'minicpm-ocr',
+          apiKey: 'bad-key',
+          baseUrl: service.origin,
+        });
+
+        expect(res).toEqual({
+          status: 500,
+          json: {
+            success: false,
+            errorCode: 'INTERNAL_ERROR',
+            error: 'Authentication failed, please check the API Key',
+          },
+        });
+        expect(JSON.stringify(res.json)).not.toContain('internal-secret-body');
+      },
+    );
+
+    it('requires a key when MiniCPM-OCR has no configured endpoint', async () => {
+      const res = await postVerifyPdfProvider({ providerId: 'minicpm-ocr' });
+
+      expect(res).toEqual({
+        status: 400,
+        json: {
+          success: false,
+          errorCode: 'MISSING_REQUIRED_FIELD',
+          error: 'API Key is required for MiniCPM-OCR',
+        },
+      });
     });
 
     it.each([401, 403])(

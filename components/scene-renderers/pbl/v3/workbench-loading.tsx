@@ -6,7 +6,13 @@ import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 /** Modal entry barrier; failures release it so recovery controls remain usable. */
-export function WorkbenchLoading({ root }: { root: RefObject<HTMLElement | null> }) {
+export function WorkbenchLoading({
+  root,
+  onReturnToHero,
+}: {
+  root: RefObject<HTMLElement | null>;
+  onReturnToHero?: () => void;
+}) {
   const { t } = useI18n();
   const content = useRef<HTMLDivElement>(null);
   const [nativeFullscreen, setNativeFullscreen] = useState(
@@ -48,9 +54,22 @@ export function WorkbenchLoading({ root }: { root: RefObject<HTMLElement | null>
           <Dialog.Title className="text-base font-semibold">
             {t('pblV3.onboarding.loading')}
           </Dialog.Title>
-          <Dialog.Description className="mt-2 text-sm text-muted-foreground">
-            {t('pblV3.onboarding.loadingDetail')}
+          <Dialog.Description className="mt-2 text-xs leading-5 text-muted-foreground">
+            {t(
+              onReturnToHero
+                ? 'pblV3.onboarding.loadingSlowDetail'
+                : 'pblV3.onboarding.loadingDetail',
+            )}
           </Dialog.Description>
+          {onReturnToHero && (
+            <button
+              type="button"
+              className="mt-3 rounded-md border px-3 py-1.5 text-sm hover:bg-muted"
+              onClick={onReturnToHero}
+            >
+              {t('pblV3.onboarding.loadingReturn')}
+            </button>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

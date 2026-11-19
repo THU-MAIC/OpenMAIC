@@ -48,6 +48,12 @@ export interface VoiceRegistrationAdapter {
   resolveRegistrationModel(clientModel?: string): string | undefined;
   /** Local saved-voice preflight only: no network work or model authorization. */
   assertVoiceCompatible?(voiceId: string, configuredVoices?: readonly { id: string }[]): void;
+  /**
+   * The target a saved voice must have been enrolled for, when the provider
+   * binds saved voices to one: a model id, safe to show clients. Settings use
+   * it to mark saved voices that need cloning again before anything is played.
+   */
+  cloneTarget?(): string;
   /** Whether `voiceId` is registered, or `unknown` when the lookup is inconclusive. */
   voiceExists(
     cfg: VoiceRegistrationConfig,

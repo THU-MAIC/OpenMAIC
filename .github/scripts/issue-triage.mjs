@@ -11,8 +11,6 @@ const TYPE_LABELS = new Set([
   'enhancement',
   'documentation',
   'question',
-  'type:question',
-  'type:task',
   'type:epic',
   'type:rfc',
 ]);
@@ -202,6 +200,8 @@ export async function collectContext({ github, repo, issueNumber, sha }) {
       ...compactIssue(thread.issue),
       body: clip(thread.issue.body, 16000),
       author: thread.issue.user.login,
+      author_association: thread.issue.author_association,
+      author_bot: thread.issue.user?.type === 'Bot',
       updated_at: thread.issue.updated_at,
     },
     comments: thread.comments.slice(-50).map((c) => ({
@@ -300,7 +300,7 @@ export function trackedFiles() {
   );
 }
 
-export function safeText(value) {
+function escapePlain(value) {
   return value
     .replace(/https?:\/\/\S+/gi, '[external URL omitted]')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -311,17 +311,31 @@ export function safeText(value) {
     .replace(/[\\`*_{}[\]()#!|]/g, '\\$&');
 }
 
+// Inline code spans stay code: inside one, Markdown, links and mentions do not
+// render, so only URLs and control characters are removed.
+function escapeCode(span) {
+  return span
+    .replace(/https?:\/\/[^\s`]+/gi, '[external URL omitted]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ');
+}
+
+export function safeText(value) {
+  return String(value)
+    .split(/(`[^`\n]{1,200}`)/g)
+    .map((part, index) => (index % 2 ? escapeCode(part) : escapePlain(part)))
+    .join('');
+}
+
 export function buildPlan(result, context) {
   const existing = context.issue.labels;
   const labels = [];
   const confident = result.confidence >= CONFIDENCE_THRESHOLD;
   const disposition = existing.some(
-    (label) => label.startsWith('status:') || ['duplicate', 'invalid', 'wontfix'].includes(label),
+    (label) => label.startsWith('status:') || ['duplicate', 'wontfix'].includes(label),
   );
   if (confident) {
     if (!existing.some((label) => TYPE_LABELS.has(label))) {
-      const type = result.type === 'question' ? 'type:question' : result.type;
-      if (type !== 'unknown') labels.push(type);
+      if (result.type !== 'unknown') labels.push(result.type);
     }
     if (!existing.some((label) => label.startsWith('area:'))) labels.push(...result.areas);
   }
@@ -334,12 +348,17 @@ export function buildPlan(result, context) {
     context.related_prs.some((pr) => pr.number === ref.number && pr.state === 'open'),
   );
   const canAsk = !context.maintainer_engaged && !incomplete && !openPr;
+  // The team's own issues (and bot reports) get labels and the report only: a
+  // public triage note on a maintainer's tracking issue is noise.
+  const teamIssue =
+    MAINTAINERS.has(context.issue.author_association) || context.issue.author_bot === true;
   const comment =
     confident &&
     result.should_comment &&
     result.next_action !== 'none' &&
     !disposition &&
     !context.maintainer_engaged &&
+    !teamIssue &&
     !incomplete &&
     (result.next_action !== 'needs-info' || canAsk)
       ? renderComment(result, context)
@@ -359,6 +378,22 @@ export function buildPlan(result, context) {
   };
 }
 
+// Issues are for bugs (see MAINTAINING.md): feature ideas and usage questions
+// are pointed to Discussions, where maintainers accept or answer them.
+function redirect(result, root) {
+  if (result.type === 'enhancement') {
+    return [
+      `Feature ideas are discussed in [Discussions → Ideas](${root}/discussions/new?category=ideas) before they become issues. A maintainer will decide whether to accept this here or move it there.`,
+    ];
+  }
+  if (result.type === 'question') {
+    return [
+      `Usage questions are answered in [Discussions → Q&A](${root}/discussions/new?category=q-a), where answers stay searchable. A maintainer may move this there.`,
+    ];
+  }
+  return [];
+}
+
 function renderComment(result, context) {
   const root = `https://github.com/${context.repository}`;
   const refs = (items, kind) =>
@@ -370,6 +405,7 @@ function renderComment(result, context) {
     safeText(result.summary),
     '',
     `Suggested next step: **${result.next_action}**.`,
+    ...redirect(result, root),
     ...result.questions.map((q) => `- ${safeText(q)}`),
     ...refs(result.related_issues, 'issues'),
     ...refs(result.related_prs, 'pull'),

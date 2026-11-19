@@ -4,6 +4,7 @@ import { changedLineRanges } from './file-changes';
 import { readProjectFileExcerpt } from './file-read';
 import { fileReferenceHref } from '@/lib/pbl/v3/file-reference';
 import 'server-only';
+import { withRequestStateTail } from '@/lib/agent/runtime/request-state-tail';
 import { responseLanguage, type ResponseLanguage } from './communication';
 import { supportedLocales } from '@/lib/i18n/locales';
 import { inspectApplication } from './application';
@@ -16,8 +17,8 @@ import {
   withLearningWorkspaceAccess,
 } from '@/lib/server/sandbox/managed-workspace';
 import { randomUUID } from 'node:crypto';
-import { createAssistantMessageEventStream } from '@earendil-works/pi-ai';
-import type { Agent, AgentTool, StreamFn } from '@earendil-works/pi-agent-core';
+import { createAssistantMessageEventStream, type Message } from '@earendil-works/pi-ai';
+import type { Agent, AgentMessage, AgentTool, StreamFn } from '@earendil-works/pi-agent-core';
 import { Type, type Static, type TSchema } from 'typebox';
 import { getAgentSessionStore } from '@/lib/server/agent-runtime/store';
 import { listAgentUserMessages } from '@/lib/server/agent-runtime/user-messages';
@@ -55,6 +56,7 @@ import {
 } from './teaching-prompt';
 import { GuidedSkillReview } from './guided-review';
 import { currentTeachingContext, type TeachingHistoryWindow } from './teaching-context';
+import { PLAN_TOOL_REFERENCE, preloadInitialPlan } from './plan-tool-context';
 import {
   hasStageCompletion,
   isFinalProjectRecap,
@@ -899,6 +901,7 @@ export async function teachingRunnerConfig(input: {
   if (row.environment_id && 'reads' in stage && stage.reads.includes('plan')) {
     planText = await (await service(input.signal)).readText(row.environment_id, 'PLAN.md');
     observedFiles.add('PLAN.md');
+    if (stage.kind === 'produce' && stage.writes === 'plan') observedText.set('PLAN.md', planText);
   }
   const promptInput: TeachingPromptInput = {
     definition: project.definition,
@@ -963,10 +966,29 @@ export async function teachingRunnerConfig(input: {
       : null,
   });
   const initialPrompt = currentPromptInput();
-  const { systemPrompt } = renderTeachingPrompt(initialPrompt);
+  const { systemPrompt, initialContext } = renderTeachingPrompt(initialPrompt);
+  const historyWindow: TeachingHistoryWindow = {
+    stageKey: bound.stage_key,
+    initialContext,
+    studentTurns: bound.feedback_seq,
+    automaticEntry: latest?.pblOpening === true,
+    ...(stage.kind === 'produce' && stage.writes === 'plan' && planText !== undefined
+      ? {
+          initialPlan: {
+            text: planText,
+            literalPrompt: systemPrompt,
+            referencePrompt: renderTeachingPrompt({
+              ...initialPrompt,
+              planText: PLAN_TOOL_REFERENCE,
+            }).systemPrompt,
+          },
+        }
+      : {}),
+  };
   return {
     tools,
     systemPrompt,
+    initialContext,
     thinkingConfig: (): ThinkingConfig =>
       review.state.welcome === 'pending'
         ? { mode: 'disabled' }
@@ -1018,11 +1040,21 @@ export async function teachingRunnerConfig(input: {
         })(),
         input.signal,
       ),
-    historyWindow: {
-      stageKey: bound.stage_key,
-      studentTurns: bound.feedback_seq,
-      automaticEntry: latest?.pblOpening === true,
-    },
+    historyWindow,
+    preloadMessages: (messages: AgentMessage[], model: Parameters<typeof preloadInitialPlan>[2]) =>
+      preloadInitialPlan(
+        currentTeachingContext(
+          {
+            systemPrompt,
+            messages: messages.filter((message): message is Message =>
+              ['user', 'assistant', 'toolResult'].includes(message.role),
+            ),
+          },
+          historyWindow,
+        ),
+        historyWindow.initialPlan,
+        model,
+      ),
   };
 }
 
@@ -1057,15 +1089,14 @@ export function withTeachingTurnBoundary(
           ),
       );
       const live = await liveContext?.();
-      const currentContext = (state: string | undefined) => ({
-        ...context,
-        messages,
-        ...(state
-          ? {
-              systemPrompt: `${context.systemPrompt ?? ''}${teachingLiveSuffix(state)}`,
-            }
-          : {}),
-      });
+      const currentContext = (state: string | undefined) =>
+        withRequestStateTail(
+          {
+            ...context,
+            messages,
+          },
+          (historyWindow?.initialContext ?? '') + teachingLiveSuffix(state ?? ''),
+        );
       const current = currentContext(live);
       let projected = historyWindow
         ? projectContext
@@ -1153,6 +1184,6 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   agent.state.messages = messages;
   const instruction =
     '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
-  if (!agent.state.systemPrompt.endsWith(instruction)) agent.state.systemPrompt += instruction;
+  window.continuationInstruction = instruction;
   return true;
 }

@@ -45,6 +45,15 @@ allowUserKeys: false
 `;
 
 describe('parseModelConfig', () => {
+  it('accepts chapter slot assignment, disablement and a deployment lock', () => {
+    for (const value of ['null', 'local:chapter-model']) {
+      const config = parseModelConfig(
+        `providers:\n  local:\n    preset: openai-compatible\n    baseUrl: https://example.test/v1\nslots:\n  material.chapters: ${value}\nlock: [material.chapters]\n`,
+      );
+      expect(config.slots?.['material.chapters']).toBe(value === 'null' ? null : value);
+      expect(config.lock).toEqual(['material.chapters']);
+    }
+  });
   it('accepts the RFC example and interpolates secrets', () => {
     const config = parseModelConfig(EXAMPLE, { env });
     expect(config.providers?.minimax.apiKey).toBe('sk-test');

@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Lokal)",
     "providerBrowserNativeTTS": "Browserintegrierte TTS",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "Hochladen",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "Diese gespeicherte Stimme muss erneut geklont werden. Laden Sie das Referenzaudio in den Stimmeinstellungen hoch.",
+    "qwenCloneNeedsReclone": "Erneut klonen",
+    "qwenCloneRecloneRequired": "Diese gespeicherte Stimme ist mit dem aktuellen Klonmodell nicht kompatibel. Laden Sie ihr Referenzaudio erneut hoch, um sie neu zu klonen.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "Videogenerierung",
       "capWebSearch": "Websuche",
       "capWebFetch": "Webseiten abrufen",
+      "capAsr": "Spracherkennung",
+      "capDocument": "Dokumentanalyse",
       "saved": "Verbindungseinstellungen gespeichert",
       "stageInteractive": "Interaktiv",
       "stageSlide": "Kursfolien",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Webseiten abrufen",
           "desc": "Lässt den Agent in der Sitzung zugelassene Webseiten lesen."
+        },
+        "materialChapters": {
+          "name": "Kapitelerkennung",
+          "desc": "Erkennt Kapitel und Abschnitte in langen Dokumenten."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "Suche",
           "fetch": "Abruf",
           "image": "Bild",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Analyse",
+          "chapters": "Kapitel"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Webseiten abrufen",
     "webFetchHint": "Wählen Sie, wie Webseiten gelesen werden. Gehostete Dienste erhalten nur öffentliche URLs, die in der Sitzung zugelassen sind. Ergebnisse bleiben nicht vertrauenswürdig; bei Fehlern wird der Dienst nicht gewechselt.",
     "webFetchApiKey": "API-Schlüssel",
-    "webFetchSharedKeyHint": "Dieser Schlüssel wird auch für den Chat mit diesem Anbieter verwendet. Änderungen oder das Entfernen wirken sich auf den Chat aus."
+    "webFetchSharedKeyHint": "Dieser Schlüssel wird auch für den Chat mit diesem Anbieter verwendet. Änderungen oder das Entfernen wirken sich auf den Chat aus.",
+    "autoConfirmRecommended": "Empfohlene Antworten automatisch bestätigen",
+    "autoConfirmRecommendedDesc": "Wenn der Agent eine Frage mit einer empfohlenen Option stellt, wird sie nach einem kurzen Countdown gewählt, falls du nicht reagierst. Jede Interaktion stoppt den Countdown."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "Analyse nicht abgeschlossen",
           "description": "Die Analyse konnte nicht abgeschlossen werden. Sie können es später erneut versuchen."
+        },
+        "pages_failed": {
+          "label": "PDF-Seiten konnten nicht analysiert werden",
+          "description": "Die Analyse der PDF-Seiten {{firstPage}}–{{lastPage}} ist fehlgeschlagen. Dieses Material kann daher noch nicht gelesen werden. Versuche es später erneut.",
+          "descriptionWithoutCount": "Die Analyse einiger PDF-Seiten ist fehlgeschlagen. Dieses Material kann daher noch nicht gelesen werden. Versuche es später erneut."
         },
         "too_many_pages": {
           "label": "Zu viele Seiten",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "Bearbeiten"
+    },
+    "mobile": {
+      "openMenu": "Navigation öffnen",
+      "closeMenu": "Navigation schließen"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Wird gesendet…",
+    "submitted": "Gesendet",
+    "resubmit": "Änderungen senden",
     "quizPassed": "Quiz bestanden: {{score}}/{{total}} richtig. Du kannst fortfahren.",
     "quizRetry": "{{score}}/{{total}} richtig. Prüfe deine Antworten und versuche es erneut.",
     "quizCorrect": "Letzte Abgabe: richtig",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Lernen starten",
       "title": "Projektübersicht",
       "expand": "Aufklappen",
       "collapse": "Einklappen",
@@ -3034,7 +3061,21 @@
       "eachStage": "Ablauf jeder Phase",
       "yourRole": "Sie entscheiden und prüfen; KI hilft beim Planen und Programmieren.",
       "preview": "Probieren Sie die Anwendung in der Vorschau aus und prüfen Sie das Ergebnis.",
-      "advance": "Die violette Schaltfläche über dem Eingabefeld erscheint erst, wenn der aktuelle Schritt zum Fortfahren bereit ist. Klicke dann darauf, um weiterzumachen."
+      "advance": "Die violette Schaltfläche über dem Eingabefeld erscheint erst, wenn der aktuelle Schritt zum Fortfahren bereit ist. Klicke dann darauf, um weiterzumachen.",
+      "startBlocked": {
+        "guide": "Gehe die Anleitung zum Arbeitsbereich bis zum Ende durch oder schließe sie, um mit dem Lernen zu beginnen.",
+        "connecting": "Live-Aktualisierungen werden verbunden, bevor du beginnen kannst…",
+        "retrying": "Live-Aktualisierungen werden erneut verbunden. Warte vor dem Start, bis die Verbindung wiederhergestellt ist.",
+        "unavailable": "Live-Aktualisierungen sind nicht verfügbar. Lade die Seite neu, um vor dem Start die Verbindung wiederherzustellen.",
+        "pending": "Eine Aktion wird ausgeführt. Warte, bis sie abgeschlossen ist, bevor du beginnst.",
+        "busy": "Der Assistent antwortet noch. Warte auf das Ende der Antwort, bevor du beginnst.",
+        "environment": "Warte vor dem Start, bis die Lernumgebung bereit ist. Falls die Vorbereitung fehlgeschlagen ist, versuche es oben erneut.",
+        "unsaved": "Die Projektdateien enthalten ungespeicherte Änderungen. Speichere oder verwirf sie, bevor du beginnst.",
+        "preparing": "Der Arbeitsbereich wird vorbereitet. Bitte warte, bevor du beginnst."
+      },
+      "singleFlow": "Projektablauf",
+      "concepts": "Technische Konzepte",
+      "deliverables": "Funktionale Ergebnisse"
     },
     "journey": {
       "currentMilestone": "Aktueller Meilenstein",
@@ -3171,13 +3212,14 @@
       "readOnly": "Read-only",
       "saved": "Gespeichert",
       "saveFailed": "Speichern fehlgeschlagen · Erneut versuchen",
-      "draftRetained": "Änderungen in diesem Browser behalten"
+      "draftRetained": "Änderungen in diesem Browser behalten",
+      "retryRead": "Lesen erneut versuchen"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Die Projektdateien enthalten ungespeicherte Änderungen. Speichere oder verwirf sie vor dem Senden; deine Nachricht bleibt hier.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3375,6 +3417,8 @@
       "waiting": "Die Anleitung ist verfügbar, sobald die Lernumgebung bereit ist.",
       "loading": "Arbeitsbereich wird geladen",
       "loadingDetail": "Die Lernumgebung wird verbunden und Projektdateien werden vorbereitet. Bitte warten.",
+      "loadingSlowDetail": "Die Vorbereitung dauert länger. Sie können zur Projekteinführung zurückkehren; die bereits gestartete Einrichtung läuft im Hintergrund weiter.",
+      "loadingReturn": "Zurück zur Projekteinführung",
       "steps": {
         "progress": {
           "title": "Fortschritt und aktuelle Aufgabe ansehen",

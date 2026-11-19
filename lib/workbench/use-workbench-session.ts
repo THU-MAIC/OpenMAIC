@@ -62,6 +62,8 @@ import {
 } from '@/lib/workbench/stage-freshness';
 import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 import { applyGenerateTtsResultToScenes } from '@/lib/workbench/tts-stage-sync';
+import { useQuestionAutoConfirm } from '@/lib/workbench/question-auto-confirm';
+import { sessionScopedKey } from '@/lib/workbench/request-scope';
 
 /**
  * pi's own `AgentEvent` types, which the runner appends verbatim.
@@ -142,6 +144,9 @@ export function useWorkbenchStream(sessionId: string | null): void {
     if (!sessionId) return;
     let active = true;
     const isCurrent = () => active && useWorkbenchStore.getState().sessionId === sessionId;
+    // A question may auto-confirm only if it arrived live during THIS
+    // attachment: whatever an earlier one saw arrive is history now.
+    useQuestionAutoConfirm.getState().forgetLiveSession(sessionId);
     const expectedTitleRevision = useWorkbenchStore.getState().sessionTitleRevision;
     // The header title wants the prompt before the runner emits session_start
     // (a queued session can sit there a while), and a `?session=` deep link
@@ -205,6 +210,20 @@ export function useWorkbenchStream(sessionId: string | null): void {
         appendCompactedReplayEvent(backlog, parsed);
         armReplayWatchdog();
         return;
+      }
+      // A question that arrives live may auto-confirm its recommended option
+      // (`question-auto-confirm.ts`). Live is the SERVER's word for this frame
+      // (`phase`, see the events route), never inferred from `caughtUp`: after
+      // a dropped connection the reconnect replays missed frames as backlog
+      // before its own `caught_up`, and those are history the user never saw
+      // arrive. A frame without the marker is not trusted as live either.
+      if (parsed.type === LIFECYCLE.userQuestion) {
+        const questionKey = sessionScopedKey(sessionId, `e${parsed.id}`);
+        if ((parsed as WorkbenchEvent & { phase?: unknown }).phase === 'live') {
+          useQuestionAutoConfirm.getState().markLive(questionKey);
+        } else {
+          useQuestionAutoConfirm.getState().unmarkLive(questionKey);
+        }
       }
       applyEvent(parsed);
       markAttached();
@@ -318,6 +337,8 @@ export function useWorkbenchStream(sessionId: string | null): void {
 
     return () => {
       active = false;
+      // Leaving (or switching away from) this session ends its attachment.
+      useQuestionAutoConfirm.getState().forgetLiveSession(sessionId);
       caughtUp = true;
       backlog.length = 0;
       window.clearTimeout(replayWatchdog);

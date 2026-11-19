@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { MINERU_CLOUD_DEFAULT_BASE, PDF_PROVIDERS } from '@/lib/pdf/constants';
+import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { getFormatLabelsForProviders } from '@/lib/document/mime';
 import { CheckCircle2, Loader2, Zap, XCircle } from 'lucide-react';
@@ -35,7 +35,7 @@ function getFeatureLabel(feature: string, t: (key: string) => string): string {
 }
 
 /**
- * A document parsing service. MinerU Cloud takes a key; AliDocMind's key pair
+ * A document parsing service. MinerU Cloud and DeepSeek OCR take a key; AliDocMind's key pair
  * and a self-hosted MinerU are the server's to configure; the built-in
  * parsers need nothing.
  */
@@ -48,6 +48,7 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
   const pdfProvider = PDF_PROVIDERS[providerId];
   const provider = entry.provider;
   const isCloud = providerId === 'mineru-cloud';
+  const hostedEndpoint = pdfProvider?.displayEndpoint;
   const needsRemoteConfig = !!pdfProvider?.requiresApiKey || !!pdfProvider?.requiresCredentials;
   const editable =
     (entry.state === 'workspace' || entry.state === 'available') && needsRemoteConfig;
@@ -113,11 +114,11 @@ export function PDFSettings({ view, apply, entry }: ServicePanelProps) {
           </div>
 
           {/* Base URL: the service's own; another endpoint is the server's to set. */}
-          {isCloud && (
+          {hostedEndpoint && (
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
               <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {MINERU_CLOUD_DEFAULT_BASE}/file-urls/batch
+                {t('settings.requestUrl')}: {hostedEndpoint}
               </p>
               <EndpointServerOnlyHint />
             </div>

@@ -34,10 +34,16 @@
     "placeholder": "Escreva sua resposta",
     "confirm": "Confirmar",
     "submit": "Enviar",
-    "dismiss": "Descartar",
+    "dismiss": "Recolher",
     "inFormBelow": "Responda no formulário abaixo",
     "inPreview": "Responda na pré-visualização",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Recomendada",
+    "autoConfirm": "Confirmação automática",
+    "autoConfirmed": "Opção recomendada escolhida automaticamente — você pode mudar quando quiser",
+    "showDetails": "Mostrar mais",
+    "hideDetails": "Mostrar menos",
+    "orAnswerInChat": "Você também pode responder no chat"
   },
   "material": {
     "maxSelected": "Você pode selecionar no máximo {{count}} materiais por vez",
@@ -131,6 +137,8 @@
     "steerQueued": "O agente responderá ao terminar a etapa atual",
     "runFailed": "Esta construção falhou",
     "retryHint": "Envie outra mensagem para tentar de novo",
+    "contextLengthLimit": "Esta conversa atingiu o tamanho máximo. Inicie um novo chat para continuar.",
+    "contextBudgetInvalid": "O orçamento de contexto do modelo atual está configurado incorretamente. Este turno foi interrompido.",
     "stopped": "Esta construção foi interrompida",
     "workerInterrupted": "Interrompido pelo reinício de um worker. Esta chamada não produziu resultado; o agente repetirá se necessário.",
     "userStopped": "Interrompido pela parada. Esta chamada não produziu resultado."

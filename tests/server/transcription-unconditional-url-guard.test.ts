@@ -143,4 +143,22 @@ describe('transcription — client-supplied base URL guard applies in every envi
     expect(json).toMatchObject({ success: false, errorCode: 'INVALID_URL' });
     expect(mocks.transcribeAudio).not.toHaveBeenCalled();
   });
+
+  it('returns a provider input-limit error to the user as is (413)', async () => {
+    const { ASRInputLimitError } = await import('@/lib/audio/asr-providers');
+    mocks.transcribeAudio.mockRejectedValueOnce(
+      new ASRInputLimitError(
+        'Provider accepts at most 8 MiB of audio per request. Record a shorter clip.',
+      ),
+    );
+    const res = await postTranscription('');
+    const json = await res.json();
+
+    expect(res.status).toBe(413);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'ASR_INPUT_TOO_LARGE',
+      error: 'Provider accepts at most 8 MiB of audio per request. Record a shorter clip.',
+    });
+  });
 });

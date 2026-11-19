@@ -6,6 +6,14 @@ import { FLOW, STATIONS, edgeKind, placeStations } from '@/lib/model-settings/di
 import { emptySlots, makeView } from './fixtures';
 
 describe('model map layout', () => {
+  it('places chapter recognition second in the document station without moving it', () => {
+    const station = placeStations(makeView()).find((entry) => entry.id === 'document');
+    expect(station).toMatchObject({ x: 111, y: 240, row: 1 });
+    expect(station?.lines.map(({ slot, labelKey }) => [slot, labelKey])).toEqual([
+      ['document', 'parse'],
+      ['material.chapters', 'chapters'],
+    ]);
+  });
   it('places every visible slot exactly once, and no configuration-only slot', () => {
     const stations = placeStations(makeView());
     const placed = stations.flatMap((station) => [

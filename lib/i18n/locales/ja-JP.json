@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（ローカル）",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "アップロード",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "この保存済み音声は再クローンが必要です。音声設定で参照音声をアップロードしてください。",
+    "qwenCloneNeedsReclone": "再クローンが必要",
+    "qwenCloneRecloneRequired": "この保存済み音声は現在のクローンモデルと互換性がありません。参照音声を再度アップロードして再クローンしてください。",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "動画生成",
       "capWebSearch": "ウェブ検索",
       "capWebFetch": "Webページ取得",
+      "capAsr": "音声認識",
+      "capDocument": "ドキュメント解析",
       "saved": "接続設定を保存しました",
       "stageInteractive": "インタラクティブ",
       "stageSlide": "スライド",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Webページ取得",
           "desc": "エージェントがセッションで許可されたWebページを読み取るために使います。"
+        },
+        "materialChapters": {
+          "name": "章構成の認識",
+          "desc": "長い資料の章と節を認識します。"
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "検索",
           "fetch": "取得",
           "image": "画像",
-          "video": "動画"
+          "video": "動画",
+          "parse": "解析",
+          "chapters": "章構成"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Webページ取得",
     "webFetchHint": "Webページの読み取り方法を選択します。ホスト型サービスには、セッションで許可された公開URLのみが送信されます。結果は信頼できないデータとして扱い、失敗しても別のサービスには切り替えません。",
     "webFetchApiKey": "APIキー",
-    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。"
+    "webFetchSharedKeyHint": "このキーは同じプロバイダーとのチャットにも使用されます。変更や削除はチャットにも影響します。",
+    "autoConfirmRecommended": "おすすめの回答を自動で確定",
+    "autoConfirmRecommendedDesc": "エージェントが質問でおすすめの選択肢を示したとき、操作がなければ短いカウントダウンの後にそれを選びます。何か操作するとカウントダウンは止まります。"
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "解析が完了しませんでした",
           "description": "解析を完了できませんでした。しばらくしてから再試行できます。"
+        },
+        "pages_failed": {
+          "label": "PDFページの解析に失敗",
+          "description": "PDFの{{firstPage}}～{{lastPage}}ページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。",
+          "descriptionWithoutCount": "PDFの一部のページの解析に失敗したため、この資料はまだ読み取れません。後でもう一度解析してください。"
         },
         "too_many_pages": {
           "label": "ページ数が多すぎます",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "編集を始める"
+    },
+    "mobile": {
+      "openMenu": "ナビゲーションを開く",
+      "closeMenu": "ナビゲーションを閉じる"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "送信中…",
+    "submitted": "送信済み",
+    "resubmit": "変更を送信",
     "quizPassed": "クイズ合格：{{total}} 問中 {{score}} 問正解。次へ進めます。",
     "quizRetry": "{{total}} 問中 {{score}} 問正解。回答を見直して再送信してください。",
     "quizCorrect": "前回の回答：正解",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "学習を始める",
       "title": "プロジェクト概要",
       "expand": "開く",
       "collapse": "折りたたむ",
@@ -3034,7 +3061,21 @@
       "eachStage": "各段階の進め方",
       "yourRole": "判断とレビューはあなたが行い、計画とコードの作成は AI が支援します。",
       "preview": "プレビューでアプリを使い、作成した機能を確かめましょう。",
-      "advance": "現在のステップを進められる状態になると、入力欄の上に紫色のボタンが表示されます。表示されたらクリックして進みましょう。"
+      "advance": "現在のステップを進められる状態になると、入力欄の上に紫色のボタンが表示されます。表示されたらクリックして進みましょう。",
+      "startBlocked": {
+        "guide": "学習を始めるには、ワークスペースガイドを完了するか閉じてください。",
+        "connecting": "学習を始められるよう、リアルタイム更新に接続しています…",
+        "retrying": "リアルタイム更新に再接続しています。接続が戻ってから学習を始めてください。",
+        "unavailable": "リアルタイム更新を利用できません。ページを再読み込みして接続してから学習を始めてください。",
+        "pending": "操作を処理しています。完了してから学習を始めてください。",
+        "busy": "アシスタントが返信中です。返信が終わってから学習を始めてください。",
+        "environment": "学習環境の準備が整ってから始めてください。準備に失敗した場合は上の操作で再試行してください。",
+        "unsaved": "プロジェクトファイルに未保存の変更があります。保存するか変更を破棄してから学習を始めてください。",
+        "preparing": "ワークスペースを準備しています。少し待ってから学習を始めてください。"
+      },
+      "singleFlow": "プロジェクトの進め方",
+      "concepts": "エンジニアリングの概念",
+      "deliverables": "実装した機能"
     },
     "journey": {
       "currentMilestone": "現在の段階",
@@ -3171,13 +3212,14 @@
       "readOnly": "Read-only",
       "saved": "保存済み",
       "saveFailed": "保存失敗 · 再試行",
-      "draftRetained": "変更をこのブラウザに保持"
+      "draftRetained": "変更をこのブラウザに保持",
+      "retryRead": "読み取りを再試行"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "プロジェクトファイルに未保存の変更があります。保存するか変更を破棄してから送信してください。入力したメッセージは保持されます。",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3375,6 +3417,8 @@
       "waiting": "学習環境の準備ができるとガイドを開けます。",
       "loading": "ワークスペースを読み込み中",
       "loadingDetail": "学習環境に接続し、プロジェクトファイルを準備しています。少々お待ちください。",
+      "loadingSlowDetail": "準備に時間がかかっています。プロジェクト紹介に戻っても、開始済みの環境の準備はバックグラウンドで続きます。",
+      "loadingReturn": "プロジェクト紹介に戻る",
       "steps": {
         "progress": {
           "title": "進捗と現在のタスクを確認する",

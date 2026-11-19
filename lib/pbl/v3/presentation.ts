@@ -10,6 +10,22 @@ export function hasTaskDrawer(view: Pick<LearningView, 'state' | 'stage'>): bool
   return view.state.status !== 'completed';
 }
 
+/** A project peek creates a study, but does not consent to its first teaching turn. */
+export function needsInitialStart(view: LearningView): boolean {
+  return (
+    view.needsOpening === true &&
+    view.state.position.milestoneIndex === 0 &&
+    view.state.position.stageIndex === 0 &&
+    view.state.status !== 'completed' &&
+    !view.roleRun &&
+    !view.messages.length &&
+    !view.conversation?.length &&
+    !view.conversationHistory?.length &&
+    !view.recovery?.progressReset &&
+    !view.archiveDiscard
+  );
+}
+
 /** Labels follow authoritative progress; they never authorize a transition. */
 export function learningStep(view: Pick<LearningView, 'state' | 'stage'>): string {
   return stageStep(view.stage);

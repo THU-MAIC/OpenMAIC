@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "小米 MiMo TTS",
     "providerXiaomiASR": "小米 MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS（本機）",
     "providerBrowserNativeTTS": "瀏覽器原生 TTS",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "上傳",
     "qwenCloneRefAudioHint": "請使用 5–60 秒的清晰人聲，建議 10–20 秒；音訊將轉換為 24 kHz 單聲道 PCM WAV。",
     "qwenCloneMigrationHint": "此音色需要重新複刻，請在音色設定中上傳原始參考音訊。",
+    "qwenCloneNeedsReclone": "需重新複刻",
+    "qwenCloneRecloneRequired": "此音色與目前的複刻模型不相容，請重新上傳原始參考音訊進行複刻。",
     "qwenCloneSaved": "Qwen 複刻音色已註冊並儲存",
     "qwenCloneSaveFailed": "Qwen 複刻音色註冊失敗",
     "qwenCloneUnsupported": "此瀏覽器不支援錄音，請改為上傳音訊檔案。",
@@ -1857,6 +1861,8 @@
       "capVideo": "影片生成",
       "capWebSearch": "網路搜尋",
       "capWebFetch": "網頁擷取",
+      "capAsr": "語音辨識",
+      "capDocument": "文件解析",
       "saved": "連線設定已儲存",
       "stageInteractive": "互動頁面",
       "stageSlide": "課件頁面",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "網頁擷取",
           "desc": "供智慧體讀取工作階段中已獲准的網頁。"
+        },
+        "materialChapters": {
+          "name": "章節辨識",
+          "desc": "辨識長資料中的章與節。"
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "搜尋",
           "fetch": "擷取",
           "image": "圖像",
-          "video": "影片"
+          "video": "影片",
+          "parse": "解析",
+          "chapters": "章節"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "網頁擷取",
     "webFetchHint": "選擇網頁讀取方式。託管服務只會收到工作階段中已獲准的公開網址。結果仍是不可信資料，失敗時不會切換讀取服務。",
     "webFetchApiKey": "API 金鑰",
-    "webFetchSharedKeyHint": "此金鑰也用於與同一供應商進行對話。修改或移除金鑰也會影響對話。"
+    "webFetchSharedKeyHint": "此金鑰也用於與同一供應商進行對話。修改或移除金鑰也會影響對話。",
+    "autoConfirmRecommended": "自動確認推薦選項",
+    "autoConfirmRecommendedDesc": "Agent 提問並給出推薦選項時，若你一段時間內沒有操作，倒數結束後自動選擇推薦項。任何操作都會停止倒數。"
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "解析未完成",
           "description": "本次解析未能完成，可以稍後重試。"
+        },
+        "pages_failed": {
+          "label": "PDF 頁面解析失敗",
+          "description": "PDF 第 {{firstPage}}–{{lastPage}} 頁解析失敗，這份資料暫時無法讀取，可以稍後重新解析。",
+          "descriptionWithoutCount": "PDF 部分頁面解析失敗，這份資料暫時無法讀取，可以稍後重新解析。"
         },
         "too_many_pages": {
           "label": "頁數過多",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "開始編輯"
+    },
+    "mobile": {
+      "openMenu": "開啟導覽",
+      "closeMenu": "關閉導覽"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "提交中…",
+    "submitted": "已提交",
+    "resubmit": "重新提交",
     "quizPassed": "測驗通過：答對 {{score}}/{{total}} 題，可以繼續。",
     "quizRetry": "答對 {{score}}/{{total}} 題，請檢查答案後重新提交。",
     "quizCorrect": "上次提交：回答正確",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "開始學習",
       "title": "專案總覽",
       "expand": "展開",
       "collapse": "收起",
@@ -3034,7 +3061,21 @@
       "eachStage": "每個階段怎麼走",
       "yourRole": "由你做決策和審閱，AI 協助撰寫計畫和程式碼。",
       "preview": "在作品預覽區使用自己的產品，檢查做出的效果。",
-      "advance": "目前環節達到推進條件後，輸入框上方才會出現紫色操作列；看到它時，點擊即可繼續。"
+      "advance": "目前環節達到推進條件後，輸入框上方才會出現紫色操作列；看到它時，點擊即可繼續。",
+      "startBlocked": {
+        "guide": "請先完成或關閉工作台指引，再開始學習。",
+        "connecting": "正在連線即時更新，連線後即可開始學習…",
+        "retrying": "正在重新連線即時更新，請連線恢復後再開始學習。",
+        "unavailable": "即時更新無法使用，請重新整理並重新連線後再開始學習。",
+        "pending": "目前操作尚未結束，請等待操作結束後再開始學習。",
+        "busy": "助手仍在回覆，請回覆結束後再開始學習。",
+        "environment": "學習環境尚未就緒，請等待就緒後再開始學習；若準備失敗，請在上方重試。",
+        "unsaved": "專案檔案有未儲存的變更，請先儲存或捨棄變更，再開始學習。",
+        "preparing": "工作台正在準備中，請稍候再開始學習。"
+      },
+      "singleFlow": "專案實施流程",
+      "concepts": "工程知識",
+      "deliverables": "功能成果"
     },
     "journey": {
       "currentMilestone": "目前階段",
@@ -3171,13 +3212,14 @@
       "readOnly": "唯讀",
       "saved": "已儲存",
       "saveFailed": "儲存失敗 · 重試",
-      "draftRetained": "修改暫存於此瀏覽器"
+      "draftRetained": "修改暫存於此瀏覽器",
+      "retryRead": "重試讀取"
     },
     "inputBlocked": {
       "pending": "正在处理操作，请稍候；输入的内容会保留。",
       "busy": "助手正在回覆，可停止回覆後再傳送。",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "正在自动保存项目文件，完成后即可发送；输入的内容会保留。",
+      "unsaved": "專案檔案有未儲存的變更，請先儲存或捨棄變更，再傳送；輸入的內容會保留。",
       "opening": "助手尚未完成本環節開場，請重試開場；輸入的內容會保留。"
     },
     "recoverEnvironment": "恢復學習環境",
@@ -3375,6 +3417,8 @@
       "waiting": "學習環境就緒後即可查看新手指引。",
       "loading": "頁面正在載入中",
       "loadingDetail": "正在連接學習環境、準備專案檔案，請稍候。",
+      "loadingSlowDetail": "準備時間稍長，可先返回專案介紹頁。已開始的環境準備會在背景繼續。",
+      "loadingReturn": "先返回專案介紹",
       "steps": {
         "progress": {
           "title": "在這裡查看進度和目前任務",

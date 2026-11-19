@@ -34,10 +34,16 @@
     "placeholder": "Escribe tu respuesta",
     "confirm": "Confirmar",
     "submit": "Enviar",
-    "dismiss": "Descartar",
+    "dismiss": "Contraer",
     "inFormBelow": "Responde en el formulario de abajo",
     "inPreview": "Responde en la vista previa",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Recomendada",
+    "autoConfirm": "Confirmación automática",
+    "autoConfirmed": "Se eligió la opción recomendada automáticamente; puedes cambiarla cuando quieras",
+    "showDetails": "Ver más",
+    "hideDetails": "Ver menos",
+    "orAnswerInChat": "También puedes responder en el chat"
   },
   "material": {
     "maxSelected": "Puedes seleccionar hasta {{count}} materiales a la vez",
@@ -131,6 +137,8 @@
     "steerQueued": "El agente responderá al terminar el paso actual",
     "runFailed": "Esta construcción falló",
     "retryHint": "Envía otro mensaje para reintentar",
+    "contextLengthLimit": "Esta conversación alcanzó su longitud máxima. Inicia un chat nuevo para continuar.",
+    "contextBudgetInvalid": "El presupuesto de contexto del modelo actual está mal configurado. Este turno se detuvo.",
     "stopped": "Esta construcción se detuvo",
     "workerInterrupted": "Interrumpido por el reinicio de un worker. Esta llamada no produjo resultado; el agente la repetirá si hace falta.",
     "userStopped": "Interrumpido por la detención. Esta llamada no produjo resultado."

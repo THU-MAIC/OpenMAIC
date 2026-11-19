@@ -34,10 +34,16 @@
     "placeholder": "回答を入力",
     "confirm": "確定",
     "submit": "送信",
-    "dismiss": "閉じる",
+    "dismiss": "折りたたむ",
     "inFormBelow": "下のフォームで回答してください",
     "inPreview": "プレビューで回答してください",
-    "multiAnswerSeparator": "、"
+    "multiAnswerSeparator": "、",
+    "recommended": "おすすめ",
+    "autoConfirm": "自動で確定",
+    "autoConfirmed": "おすすめの選択肢を自動で選びました。いつでも変更できます",
+    "showDetails": "もっと見る",
+    "hideDetails": "閉じる",
+    "orAnswerInChat": "チャットで直接答えることもできます"
   },
   "material": {
     "maxSelected": "一度に選べる素材は {{count}} 件までです",
@@ -131,6 +137,8 @@
     "steerQueued": "現在のステップが終わってからエージェントが応答します",
     "runFailed": "この生成は失敗しました",
     "retryHint": "もう一度メッセージを送ると再試行します",
+    "contextLengthLimit": "この会話の長さの上限に達しました。新しいチャットを始めると会話を続けられます。",
+    "contextBudgetInvalid": "現在のモデルのコンテキスト予算の設定に問題があります。このターンは停止しました。",
     "stopped": "この生成は停止されました",
     "workerInterrupted": "ワーカーの再起動により中断されました。この呼び出しは結果を返していません。必要に応じてエージェントが再実行します。",
     "userStopped": "停止により中断されました。この呼び出しは結果を返していません。"

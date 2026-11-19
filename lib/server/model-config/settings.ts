@@ -15,6 +15,7 @@ import type { ConfiguredTTSVoice } from '@/lib/audio/types';
  */
 import type { WebFetchProviderInfo } from '@/lib/web-fetch/types';
 import { DEFAULT_WEB_FETCH_PROVIDER, webFetchProviderMetadata } from '@/lib/web-fetch/registry';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
 import {
   deploymentAuthorizedModels,
   ModelAuthorizationError,
@@ -92,6 +93,12 @@ export interface ProviderView {
   /** Non-secret adapter options, also available when previewing an inactive provider. */
   options?: Record<string, string | number | boolean>;
   voices?: ConfiguredTTSVoice[];
+  /**
+   * The target its saved cloned voices must match (a model id), when its
+   * speech service binds them to one: settings mark a saved voice that needs
+   * cloning again as soon as they open.
+   */
+  cloneTarget?: string;
   /** What it offers, with the models to pick from per capability. */
   capabilities: CapabilityModels;
   /** Workspace providers only. */
@@ -468,6 +475,18 @@ function sourceFor(
   return { kind: found.source };
 }
 
+/**
+ * A provider's view with the clone target its saved voices must match, as its
+ * speech service's voice-registration adapter resolves it (nothing secret).
+ */
+function withCloneTarget(view: ProviderView): ProviderView {
+  const registryId = view.capabilities.tts?.registryId;
+  const cloneTarget = registryId
+    ? getVoiceRegistrationAdapter(registryId)?.cloneTarget?.()
+    : undefined;
+  return cloneTarget ? { ...view, cloneTarget } : view;
+}
+
 /** The view of the settings for a workspace's stored configuration (or none). */
 export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSettingsView {
   const { layer: deployment } = deploymentConfig();
@@ -485,40 +504,44 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
     [deployment, counted].filter((layer): layer is ModelConfigLayer => !!layer),
   );
   const providers: ProviderView[] = [
-    ...Object.entries(deploymentProviders).map(([id, provider]) => ({
-      id,
-      preset: provider.preset,
-      ...presetLabel(provider.preset),
-      source: 'deployment' as const,
-      ...(provider.models ? { models: [...provider.models] } : {}),
-      ...(provider.options ? { options: { ...provider.options } } : {}),
-      ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
-      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
-        strictModels: usesServerCredentials(provider),
-        deployment: deployment?.config,
-        providerId: id,
+    ...Object.entries(deploymentProviders).map(([id, provider]) =>
+      withCloneTarget({
+        id,
+        preset: provider.preset,
+        ...presetLabel(provider.preset),
+        source: 'deployment' as const,
+        ...(provider.models ? { models: [...provider.models] } : {}),
+        ...(provider.options ? { options: { ...provider.options } } : {}),
+        ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
+        capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
+          strictModels: usesServerCredentials(provider),
+          deployment: deployment?.config,
+          providerId: id,
+        }),
       }),
-    })),
-    ...Object.entries(workspaceProviders).map(([id, provider]) => ({
-      id,
-      preset: provider.preset,
-      ...presetLabel(provider.preset),
-      source: 'workspace' as const,
-      ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
-      ...(provider.models ? { models: [...provider.models] } : {}),
-      ...(provider.options ? { options: { ...provider.options } } : {}),
-      ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
-      capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
-        // An official regional endpoint is the service's own, not a custom one.
-        chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),
-        baseUrl: provider.baseUrl,
+    ),
+    ...Object.entries(workspaceProviders).map(([id, provider]) =>
+      withCloneTarget({
+        id,
+        preset: provider.preset,
+        ...presetLabel(provider.preset),
+        source: 'workspace' as const,
+        ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
+        ...(provider.models ? { models: [...provider.models] } : {}),
+        ...(provider.options ? { options: { ...provider.options } } : {}),
+        ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
+        capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
+          // An official regional endpoint is the service's own, not a custom one.
+          chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),
+          baseUrl: provider.baseUrl,
+        }),
+        key: {
+          set: Boolean(provider.apiKey) || unreadable.has(id),
+          ...(provider.apiKey ? { mask: maskKey(provider.apiKey) } : {}),
+          ...(unreadable.has(id) ? { unreadable: true } : {}),
+        },
       }),
-      key: {
-        set: Boolean(provider.apiKey) || unreadable.has(id),
-        ...(provider.apiKey ? { mask: maskKey(provider.apiKey) } : {}),
-        ...(unreadable.has(id) ? { unreadable: true } : {}),
-      },
-    })),
+    ),
     {
       id: implicitId,
       preset: DEFAULT_WEB_FETCH_PROVIDER.id,

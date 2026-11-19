@@ -42,7 +42,7 @@
 
 ## 🗞️ News
 
-- **2026-11-12** — [v1.5.0-rc.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.2): **A brand-new home, redesigned end to end** (release candidate) — the home page becomes the workbench, with the course beside the conversation and one full-screen classroom for learning and editing. Off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`).
+- **2026-11-17** — [v1.5.0-rc.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.3): **A brand-new home, redesigned end to end** (release candidate) — the home page becomes the workbench, with the course beside the conversation and one full-screen classroom for learning and editing. Off by default (`NEXT_PUBLIC_WORKBENCH_ENABLED`).
 - **2026-11-09** — [v1.4.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.2): **course-level undo** for manual edits and agent runs; sandboxes open to every admitted owner.
 - **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1): edits and learner progress kept through background syncs; faster loading on slow connections.
 - **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0): **PBL v3** — build a working project with an AI tutor, milestone by milestone. One-way upgrade.
@@ -493,6 +493,22 @@ slots:
 ```
 
 Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_MINERU_BASE_URL` in `.env.local` still work.
+
+### Optional: MiniCPM-OCR (Document Parsing)
+
+[MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) is a compact open-source OCR model from OpenBMB for text, tables, formulas and layout. Use the hosted API with an API key, or point `baseUrl` at the MiniCPM-OCR web demo from the official SDK (its routes live under `/api`).
+
+```yaml
+providers:
+  minicpm-ocr:
+    preset: minicpm-ocr
+    apiKey: ${PDF_MINICPM_OCR_API_KEY}
+
+slots:
+  document: minicpm-ocr
+```
+
+Without `openmaic.yml`, set `PDF_MINICPM_OCR_API_KEY` (hosted) or `PDF_MINICPM_OCR_BASE_URL` (self-hosted) in `.env.local`.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 

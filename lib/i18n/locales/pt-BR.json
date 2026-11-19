@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "TTS Nativo do Navegador",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "Enviar",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "Esta voz salva precisa ser clonada novamente. Envie o áudio de referência nas configurações de voz.",
+    "qwenCloneNeedsReclone": "Requer nova clonagem",
+    "qwenCloneRecloneRequired": "Esta voz salva não é compatível com o modelo de clonagem atual. Envie o áudio de referência novamente para cloná-la outra vez.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "Geração de vídeo",
       "capWebSearch": "Pesquisa na web",
       "capWebFetch": "Buscar páginas web",
+      "capAsr": "Reconhecimento de fala",
+      "capDocument": "Análise de documentos",
       "saved": "Ajustes de conexão salvos",
       "stageInteractive": "Interativo",
       "stageSlide": "Slides",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Buscar páginas web",
           "desc": "Permite ao agente ler páginas web autorizadas na sessão."
+        },
+        "materialChapters": {
+          "name": "Reconhecimento de capítulos",
+          "desc": "Identifica capítulos e seções em documentos longos."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "Busca",
           "fetch": "Leitura",
           "image": "Imagem",
-          "video": "Vídeo"
+          "video": "Vídeo",
+          "parse": "Análise",
+          "chapters": "Capítulos"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Buscar páginas web",
     "webFetchHint": "Escolha como ler as páginas web. Os serviços hospedados recebem URLs públicas autorizadas na sessão. Os resultados continuam sendo dados não confiáveis, e falhas não mudam o leitor.",
     "webFetchApiKey": "Chave de API",
-    "webFetchSharedKeyHint": "Esta chave também é usada no chat com este provedor. Alterá-la ou removê-la afeta o chat."
+    "webFetchSharedKeyHint": "Esta chave também é usada no chat com este provedor. Alterá-la ou removê-la afeta o chat.",
+    "autoConfirmRecommended": "Confirmar automaticamente respostas recomendadas",
+    "autoConfirmRecommendedDesc": "Quando o agente faz uma pergunta com uma opção recomendada, ela é escolhida após uma breve contagem regressiva se você não responder. Qualquer interação interrompe a contagem."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "Análise não concluída",
           "description": "Não foi possível concluir a análise. Você pode tentar novamente mais tarde."
+        },
+        "pages_failed": {
+          "label": "Falha ao analisar páginas do PDF",
+          "description": "Não foi possível analisar as páginas {{firstPage}}–{{lastPage}} do PDF, então este material ainda não pode ser lido. Tente analisá-lo novamente mais tarde.",
+          "descriptionWithoutCount": "Não foi possível analisar algumas páginas do PDF, então este material ainda não pode ser lido. Tente analisá-lo novamente mais tarde."
         },
         "too_many_pages": {
           "label": "Páginas demais",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "Começar a editar"
+    },
+    "mobile": {
+      "openMenu": "Abrir navegação",
+      "closeMenu": "Fechar navegação"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Enviando…",
+    "submitted": "Enviado",
+    "resubmit": "Enviar alterações",
     "quizPassed": "Questionário aprovado: {{score}}/{{total}} respostas corretas. Você pode continuar.",
     "quizRetry": "{{score}}/{{total}} respostas corretas. Revise suas respostas e tente novamente.",
     "quizCorrect": "Último envio: correto",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Começar a aprender",
       "title": "Visão geral do projeto",
       "expand": "Expandir",
       "collapse": "Recolher",
@@ -3034,7 +3061,21 @@
       "eachStage": "Como seguir cada etapa",
       "yourRole": "Você decide e revisa; a IA ajuda a escrever o plano e o código.",
       "preview": "Use seu aplicativo na prévia e confira o que foi construído.",
-      "advance": "O botão roxo acima do campo de entrada só aparece quando a etapa atual permite avançar. Quando aparecer, clique nele para continuar."
+      "advance": "O botão roxo acima do campo de entrada só aparece quando a etapa atual permite avançar. Quando aparecer, clique nele para continuar.",
+      "startBlocked": {
+        "guide": "Conclua ou feche o guia do espaço de trabalho para começar a aprender.",
+        "connecting": "Conectando as atualizações ao vivo antes de começar…",
+        "retrying": "Reconectando as atualizações ao vivo. Aguarde a conexão ser restabelecida antes de começar.",
+        "unavailable": "As atualizações ao vivo estão indisponíveis. Atualize a página para reconectar antes de começar.",
+        "pending": "Uma ação está em andamento. Aguarde sua conclusão antes de começar.",
+        "busy": "O assistente ainda está respondendo. Aguarde a resposta terminar antes de começar.",
+        "environment": "Aguarde o ambiente de aprendizagem ficar pronto antes de começar. Se a preparação falhou, tente novamente acima.",
+        "unsaved": "Os arquivos do projeto têm alterações não salvas. Salve ou descarte as alterações antes de começar.",
+        "preparing": "Preparando o espaço de trabalho. Aguarde antes de começar."
+      },
+      "singleFlow": "Etapas do projeto",
+      "concepts": "Conceitos de engenharia",
+      "deliverables": "Resultados funcionais"
     },
     "journey": {
       "currentMilestone": "Etapa atual",
@@ -3171,13 +3212,14 @@
       "readOnly": "Read-only",
       "saved": "Salvo",
       "saveFailed": "Falha ao salvar · Tentar novamente",
-      "draftRetained": "Alterações mantidas neste navegador"
+      "draftRetained": "Alterações mantidas neste navegador",
+      "retryRead": "Tentar ler novamente"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Os arquivos do projeto têm alterações não salvas. Salve ou descarte as alterações antes de enviar; sua mensagem permanece aqui.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3375,6 +3417,8 @@
       "waiting": "O guia estará disponível quando o ambiente estiver pronto.",
       "loading": "Carregando o espaço de trabalho",
       "loadingDetail": "Conectando o ambiente de aprendizagem e preparando os arquivos. Aguarde um momento.",
+      "loadingSlowDetail": "A preparação está demorando um pouco mais. Você pode voltar à apresentação do projeto; a preparação já iniciada continuará em segundo plano.",
+      "loadingReturn": "Voltar à apresentação do projeto",
       "steps": {
         "progress": {
           "title": "Confira o progresso e a tarefa atual",

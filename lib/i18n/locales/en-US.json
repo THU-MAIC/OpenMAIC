@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "Browser Native TTS",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "Upload",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "This saved voice needs to be cloned again. Upload its reference audio in voice settings.",
+    "qwenCloneNeedsReclone": "Needs re-clone",
+    "qwenCloneRecloneRequired": "Incompatible with the current cloning model. Upload its reference audio again to re-clone it.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "Video generation",
       "capWebSearch": "Web search",
       "capWebFetch": "Web fetch",
+      "capAsr": "Speech recognition",
+      "capDocument": "Document parsing",
       "saved": "Connection settings saved",
       "stageInteractive": "Interactive",
       "stageSlide": "Slides",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Web Fetch",
           "desc": "Lets the agent read web pages approved in the session."
+        },
+        "materialChapters": {
+          "name": "Chapter recognition",
+          "desc": "Identifies chapters and sections in long documents."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "Search",
           "fetch": "Fetch",
           "image": "Image",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Parse",
+          "chapters": "Chapters"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Web Fetch",
     "webFetchHint": "Choose how web pages are read. Hosted readers receive session-approved public URLs. Results remain untrusted, and failures do not switch readers.",
     "webFetchApiKey": "API Key",
-    "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat."
+    "webFetchSharedKeyHint": "This key is also used for chat with this provider. Changing or removing it affects chat.",
+    "autoConfirmRecommended": "Auto-confirm recommended answers",
+    "autoConfirmRecommendedDesc": "When the workbench agent asks a question and recommends an option, choose it after a short countdown if you don't respond. Any interaction stops the countdown."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "Parsing did not finish",
           "description": "Parsing could not be completed. You can try again later."
+        },
+        "pages_failed": {
+          "label": "PDF pages failed to parse",
+          "description": "PDF pages {{firstPage}}–{{lastPage}} failed to parse, so this material cannot be read yet. Try parsing it again later.",
+          "descriptionWithoutCount": "Some PDF pages failed to parse, so this material cannot be read yet. Try parsing it again later."
         },
         "too_many_pages": {
           "label": "Too many pages",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "Start editing"
+    },
+    "mobile": {
+      "openMenu": "Open navigation",
+      "closeMenu": "Close navigation"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Submitting…",
+    "submitted": "Submitted",
+    "resubmit": "Submit changes",
     "quizPassed": "Quiz passed: {{score}}/{{total}} correct. You can continue.",
     "quizRetry": "{{score}}/{{total}} correct. Review your answers and try again.",
     "quizCorrect": "Last submission: correct",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Start learning",
       "title": "Project overview",
       "expand": "Expand",
       "collapse": "Collapse",
@@ -3034,7 +3061,21 @@
       "eachStage": "In each stage",
       "yourRole": "You make decisions and review; AI helps write the plan and code.",
       "preview": "Try your application in the preview pane and check what you built.",
-      "advance": "The purple action above the input appears only when the current step is ready to advance. Click it to continue."
+      "advance": "The purple action above the input appears only when the current step is ready to advance. Click it to continue.",
+      "startBlocked": {
+        "guide": "Finish or close the workspace guide to start learning.",
+        "connecting": "Connecting live updates before learning can start…",
+        "retrying": "Reconnecting live updates. Wait for the connection before starting.",
+        "unavailable": "Live updates are unavailable. Refresh to reconnect before starting.",
+        "pending": "An action is in progress. Wait for it to finish before starting.",
+        "busy": "The assistant is still replying. Wait for it to finish before starting.",
+        "environment": "Wait for the learning environment to be ready before starting. If preparation failed, retry above.",
+        "unsaved": "Project files have unsaved changes. Save them or discard the changes before starting.",
+        "preparing": "Preparing the workspace. Please wait before starting."
+      },
+      "singleFlow": "Project workflow",
+      "concepts": "Engineering concepts",
+      "deliverables": "Functional outcomes"
     },
     "journey": {
       "currentMilestone": "Current milestone",
@@ -3171,13 +3212,14 @@
       "readOnly": "Read-only",
       "saved": "Saved",
       "saveFailed": "Save failed · Retry",
-      "draftRetained": "Changes kept in this browser"
+      "draftRetained": "Changes kept in this browser",
+      "retryRead": "Retry read"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Project files have unsaved changes. Save them or discard the changes before sending; your message stays here.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3375,6 +3417,8 @@
       "waiting": "The workspace guide is available when the learning environment is ready.",
       "loading": "Loading your workspace",
       "loadingDetail": "Connecting the learning environment and preparing project files. Please wait.",
+      "loadingSlowDetail": "Preparation is taking longer. You can return to the project introduction while setup already in progress continues in the background.",
+      "loadingReturn": "Back to project introduction",
       "steps": {
         "progress": {
           "title": "Check progress and the current task",

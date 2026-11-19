@@ -9,6 +9,7 @@ import {
   type DecisionRecord,
 } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { Check, LoaderCircle } from 'lucide-react';
 
 export interface DecisionDraft {
   chosen: string;
@@ -40,7 +41,11 @@ export function DecisionResponseForm({
   const unchanged =
     selected?.chosen === value.chosen && (selected.rationale ?? '') === value.rationale;
   return (
-    <fieldset disabled={disabled} className="grid gap-3" data-testid="pbl-decision-response">
+    <fieldset
+      disabled={disabled && !!hasForm}
+      className="grid gap-3"
+      data-testid="pbl-decision-response"
+    >
       <legend className="whitespace-pre-wrap text-sm font-medium">{decision.prompt}</legend>
       {textResponse ? (
         <label className="grid gap-1 text-sm">
@@ -60,16 +65,21 @@ export function DecisionResponseForm({
             <button
               key={option.id}
               type="button"
-              className="rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+              className="rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-primary"
+              disabled={disabled && !!hasForm}
+              aria-disabled={disabled || (!hasForm && selected?.chosen === option.id)}
               aria-busy={pendingChosen === option.id}
               aria-pressed={
                 hasForm
                   ? value.chosen === option.id
                   : (pendingChosen ?? selected?.chosen) === option.id
               }
-              onClick={() =>
-                hasForm ? onDraftChange({ ...value, chosen: option.id }) : void onSubmit(option.id)
-              }
+              onClick={() => {
+                // Immediate choices stay focusable through pending and acknowledged states.
+                if (disabled || (!hasForm && selected?.chosen === option.id)) return;
+                if (hasForm) onDraftChange({ ...value, chosen: option.id });
+                else void onSubmit(option.id);
+              }}
             >
               {option.label}
             </button>
@@ -93,19 +103,46 @@ export function DecisionResponseForm({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
-            disabled={disabled || !valid}
+            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:cursor-default disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
+            disabled={disabled || !valid || unchanged}
             aria-busy={pendingChosen !== undefined}
             onClick={() => void onSubmit(value.chosen, value.rationale || undefined)}
           >
-            {t('pblV3.submitDecision')}
+            {pendingChosen !== undefined ? (
+              <LoaderCircle size={16} aria-hidden="true" className="animate-spin" />
+            ) : unchanged ? (
+              <Check size={16} aria-hidden="true" />
+            ) : null}
+            {t(
+              pendingChosen !== undefined
+                ? 'pblV3.submitting'
+                : unchanged
+                  ? 'pblV3.submitted'
+                  : selected
+                    ? 'pblV3.resubmit'
+                    : 'pblV3.submitDecision',
+            )}
           </button>
           {selected && (
-            <span className="text-xs text-muted-foreground" role="status">
+            <span className={unchanged ? 'sr-only' : 'text-xs text-muted-foreground'} role="status">
               {t(unchanged ? 'pblV3.decisionSaved' : 'pblV3.decisionUnsaved')}
             </span>
           )}
         </div>
+      )}
+      {!hasForm && (selected || pendingChosen !== undefined) && (
+        <span
+          role="status"
+          aria-busy={pendingChosen !== undefined}
+          className="inline-flex items-center gap-2 text-xs text-muted-foreground"
+        >
+          {pendingChosen !== undefined ? (
+            <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />
+          ) : (
+            <Check size={14} aria-hidden="true" />
+          )}
+          {t(pendingChosen !== undefined ? 'pblV3.submitting' : 'pblV3.submitted')}
+        </span>
       )}
       {!isDecisionResponseWithinLimits(value) && (
         <p role="alert" className="text-xs text-destructive">

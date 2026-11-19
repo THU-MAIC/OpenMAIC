@@ -252,7 +252,7 @@
     8px 8px 32px rgb(67 192 217 / 0.2);
 }
 @container pbl-overview (min-width: 34rem) {
-  .pbl-overview-roadmap {
+  .pbl-overview-roadmap:not([data-single='true']) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

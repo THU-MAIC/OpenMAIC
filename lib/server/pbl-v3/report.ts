@@ -594,6 +594,7 @@ async function readReportSnapshot(
     return {
       report: {
         ...saved.document,
+        summary: projectReportSummary(projectFor(row).definition, row.state),
         milestones: projectReportMilestones(projectFor(row).definition, row.state),
       },
       completionRevision,

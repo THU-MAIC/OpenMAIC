@@ -675,3 +675,623 @@ it.each([false, true])(
     expect(editor.buffer?.changes).toEqual([]);
   },
 );
+
+it('refreshes verified tabs without blocking and rereads new revisions and remounted drafts', async () => {
+  const value = view('verified-tabs');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  expect(read).toHaveBeenCalledTimes(2);
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.loading).toBe(false);
+  expect(read).toHaveBeenCalledTimes(3);
+  await act(async () => root!.render(createElement(Editor, { value: { ...value, revision: 2 } })));
+  expect(read).toHaveBeenCalledTimes(4);
+  await act(async () => editor.select('main.py'));
+  expect(read).toHaveBeenCalledTimes(5);
+  await act(async () => editor.reload());
+  expect(read).toHaveBeenCalledTimes(6);
+  await leave();
+  read.mockResolvedValueOnce({ text: 'Changed while away', hash: 'c'.repeat(64) });
+  await mount(createElement(Editor, { value: { ...value, revision: 2 } }));
+  expect(read).toHaveBeenCalledTimes(7);
+  expect(editor.buffer?.text).toBe('Changed while away');
+});
+
+it('invalidates verified reads after environment loss or a failed refresh', async () => {
+  const value = view('verified-recovery');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  await act(async () =>
+    root!.render(
+      createElement(Editor, {
+        value: { ...value, environment: { ...value.environment!, ready: false } },
+      }),
+    ),
+  );
+  await act(async () => root!.render(createElement(Editor, { value })));
+  expect(read).toHaveBeenCalledTimes(3);
+  await act(async () => editor.select('PLAN.md'));
+  expect(read).toHaveBeenCalledTimes(4);
+  read.mockRejectedValueOnce(new Error('Refresh unavailable'));
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('Refresh unavailable');
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.select('PLAN.md'));
+  expect(read).toHaveBeenCalledTimes(7);
+  expect(editor.readError).toBe('');
+});
+
+// Terminal writes can change a file without changing the study revision.
+it('shows the verified buffer immediately and then receives same-revision file changes', async () => {
+  const value = view('background-refresh');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.select('main.py'));
+  let finish!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.loading).toBe(false);
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.refreshing).toBe(true);
+  await act(async () => editor.edit('Typing into the old copy'));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => finish({ text: 'Changed in the terminal', hash: 'c'.repeat(64) }));
+  expect(editor.buffer?.text).toBe('Changed in the terminal');
+  expect(editor.buffer?.hash).toBe('c'.repeat(64));
+  expect(editor.refreshing).toBe(false);
+  await act(async () => editor.edit('Editing the refreshed copy'));
+  expect(editor.buffer?.text).toBe('Editing the refreshed copy');
+});
+
+it('keeps an acknowledged save when an older background read returns afterward', async () => {
+  vi.useFakeTimers();
+  let acknowledge!: (value: { hash: string }) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  await mount(createElement(Editor, { value: view('background-save-race') }));
+  await act(async () => editor.edit('Newer saved answer'));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  // An already submitted save can settle while a clean reverted tab is revalidated.
+  await act(async () => editor.edit('Saved source'));
+  await act(async () => editor.select('main.py'));
+  let finish!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  await act(async () => acknowledge({ hash: 'b'.repeat(64) }));
+  await act(async () => finish({ text: 'Saved source', hash: 'a'.repeat(64) }));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.buffer?.hash).toBe('b'.repeat(64));
+  expect(editor.refreshing).toBe(false);
+});
+
+it('does not let a late refresh unlock the newly selected file', async () => {
+  await mount(createElement(Editor, { value: view('refresh-tab-switch') }));
+  await act(async () => editor.select('main.py'));
+  let finishPlan!: (value: { text: string; hash: string }) => void;
+  let finishCode!: (value: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishPlan = resolve;
+      }),
+  );
+  await act(async () => editor.select('PLAN.md'));
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishCode = resolve;
+      }),
+  );
+  await act(async () => editor.select('main.py'));
+  await act(async () => finishPlan({ text: 'Late plan', hash: 'late-plan' }));
+  expect(editor.refreshing).toBe(true);
+  await act(async () => editor.edit('Blocked until this file settles'));
+  expect(editor.buffer?.text).toBe('Saved source');
+  await act(async () => finishCode({ text: 'Current code', hash: 'current-code' }));
+  expect(editor.refreshing).toBe(false);
+  expect(editor.buffer?.text).toBe('Current code');
+});
+
+it('keeps a failed cached refresh read-only until a reload succeeds', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('refresh-failure') }));
+  await act(async () => editor.select('main.py'));
+  read.mockRejectedValueOnce(new Error('Refresh unavailable'));
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.refreshing).toBe(false);
+  expect(editor.readError).toBe('Refresh unavailable');
+  expect(editor.buffer?.text).toBe('Saved source');
+  await act(async () => editor.edit('Must not edit the stale copy'));
+  expect(editor.buffer?.text).toBe('Saved source');
+  await act(async () => editor.save());
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).not.toHaveBeenCalled();
+  read.mockRejectedValueOnce(new Error('Still unavailable'));
+  await act(async () => editor.reload());
+  await act(async () => editor.edit('Still blocked'));
+  expect(editor.buffer?.text).toBe('Saved source');
+  expect(editor.readError).toBe('Still unavailable');
+  read.mockResolvedValueOnce({ text: 'Fresh source', hash: 'c'.repeat(64) });
+  await act(async () => editor.reload());
+  expect(editor.readError).toBe('');
+  expect(editor.refreshing).toBe(false);
+  expect(editor.buffer?.text).toBe('Fresh source');
+  await act(async () => editor.edit('Recovered edit'));
+  expect(editor.buffer?.text).toBe('Recovered edit');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledWith(
+    'PLAN.md',
+    'Recovered edit',
+    'c'.repeat(64),
+    expect.objectContaining({ id: expect.any(String) }),
+  );
+});
+
+it('retains a dirty file after a failed read without blocking saves of another file', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('failed-dirty-read') }));
+  await act(async () => editor.edit('Retained plan draft'));
+  read.mockRejectedValueOnce(new Error('PLAN unavailable'));
+  await act(async () => editor.reload());
+  await act(async () => editor.save());
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).not.toHaveBeenCalled();
+  expect(editor.buffer?.text).toBe('Retained plan draft');
+  await act(async () => editor.select('main.py'));
+  expect(editor.readError).toBe('');
+  await act(async () => editor.edit('Healthy code edit'));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toBe('main.py');
+  expect(editor.dirty('main.py')).toBe(false);
+  expect(editor.saving).toBe(false);
+  expect(editor.hasReadBlockedDraft).toBe(true);
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.readError).toBe('PLAN unavailable');
+  expect(editor.buffer?.text).toBe('Retained plan draft');
+  await act(async () => editor.edit('Must not replace retained draft'));
+  await act(async () => editor.save());
+  expect(editor.buffer?.text).toBe('Retained plan draft');
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => editor.reload());
+  expect(editor.hasReadBlockedDraft).toBe(false);
+});
+
+it('does not replay an uncertain save while that file has an unresolved read error', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('failed-read-save-retry') }));
+  save.mockRejectedValueOnce(new SandboxRequestError('Response lost', 503, 'SANDBOX_UNAVAILABLE'));
+  await act(async () => editor.edit('Submitted draft'));
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(1);
+  read.mockRejectedValueOnce(new Error('Read unavailable'));
+  await act(async () => editor.reload());
+  await act(async () => editor.save());
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(editor.buffer?.text).toBe('Submitted draft');
+  expect(editor.readError).toBe('Read unavailable');
+});
+
+it('retries a failed read without discarding unsent edits and resumes autosave on the same base', async () => {
+  vi.useFakeTimers();
+  const value = view('retry-read-preserves-draft');
+  await mount(createElement(Editor, { value }));
+  await act(async () => editor.edit('Unsent draft'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockRejectedValueOnce(new Error('Read still failed'));
+  await act(async () => editor.retryRead());
+  expect(editor.buffer?.text).toBe('Unsent draft');
+  expect(readEditorDraft(value.id).buffers['PLAN.md']?.text).toBe('Unsent draft');
+  expect(editor.readError).toBe('Read still failed');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).not.toHaveBeenCalled();
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  expect(editor.buffer?.text).toBe('Unsent draft');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledWith(
+    'PLAN.md',
+    'Unsent draft',
+    'a'.repeat(64),
+    expect.objectContaining({ id: expect.any(String) }),
+  );
+  expect(editor.anyDirty).toBe(false);
+});
+
+it('keeps a draft read-only when retry read discovers a changed server base', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('retry-read-conflict') }));
+  await act(async () => editor.edit('Unsent local edit'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockResolvedValueOnce({ text: 'Another writer changed this', hash: 'c'.repeat(64) });
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  expect(editor.recoveryConflict).toBe(true);
+  expect(editor.stale).toBe(true);
+  expect(editor.buffer?.text).toBe('Unsent local edit');
+  await act(async () => editor.save());
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).not.toHaveBeenCalled();
+});
+
+it('retains an uncertain write and its explicit retry requirement after retry read sees the old base', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('retry-read-uncertain-write') }));
+  save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+  await act(async () => editor.edit('Uncertain submission'));
+  await act(async () => editor.save());
+  const request = save.mock.calls[0]![3];
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  expect(editor.saveError).toBe('Acknowledgement lost');
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]![3]).toBe(request);
+});
+
+it('acknowledges an observed submission on retry read without losing newer local edits', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('retry-read-observed-write') }));
+  save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+  await act(async () => editor.edit('Submitted text'));
+  await act(async () => editor.save());
+  await act(async () => editor.edit('Newer local text'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockResolvedValueOnce({ text: 'Submitted text', hash: 'c'.repeat(64) });
+  await act(async () => editor.retryRead());
+  expect(editor.buffer?.text).toBe('Newer local text');
+  expect(editor.buffer?.saved).toBe('Submitted text');
+  expect(editor.saveError).toBe('');
+  expect(editor.recoveryConflict).toBe(false);
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]?.slice(0, 3)).toEqual(['PLAN.md', 'Newer local text', 'c'.repeat(64)]);
+});
+
+it('blocks a dirty failed file when another save completes in the same React batch', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-batched-read-save') }));
+  await act(async () => editor.edit('Unsaved plan'));
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Unsaved code'));
+  let acknowledge!: (value: { hash: string }) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  await act(async () => {
+    void editor.save();
+  });
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toBe('main.py');
+  await act(async () => editor.select('PLAN.md'));
+  let rejectRead!: (error: Error) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, reject) => {
+        rejectRead = reject;
+      }),
+  );
+  await act(async () => {
+    void editor.reload();
+  });
+  await act(async () => {
+    rejectRead(new Error('Plan read failed'));
+    // The read failure has been handled, but React has not rendered the batch.
+    await Promise.resolve();
+    acknowledge({ hash: 'c'.repeat(64) });
+  });
+  expect(editor.readError).toBe('Plan read failed');
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(editor.buffer?.text).toBe('Unsaved plan');
+  expect(editor.dirty('PLAN.md')).toBe(true);
+});
+
+it.each(['reload', 'close'] as const)(
+  'saves healthy files past a read-blocked retry and retains it after %s of another file',
+  async (action) => {
+    vi.useFakeTimers();
+    const value = view(`blocked-retry-${action}`);
+    await mount(createElement(Editor, { value }));
+    save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+    await act(async () => editor.edit('Submitted plan'));
+    await act(async () => editor.save());
+    await act(async () => editor.edit('Newer plan'));
+    read.mockRejectedValueOnce(new Error('Plan read failed'));
+    await act(async () => editor.reload());
+    await act(async () => editor.select('main.py'));
+    await act(async () => editor.edit('Healthy code'));
+    // Preserve the existing explicit retry requirement after a failed write.
+    await act(async () => vi.advanceTimersByTimeAsync(1500));
+    expect(save).toHaveBeenCalledTimes(1);
+    await act(async () => editor.save());
+    expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+      ['PLAN.md', 'Submitted plan'],
+      ['main.py', 'Healthy code'],
+    ]);
+    await act(async () => editor.edit('Later healthy code'));
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save.mock.calls[2]?.slice(0, 2)).toEqual(['main.py', 'Later healthy code']);
+    if (action === 'reload') await act(async () => editor.reload());
+    else await act(async () => editor.close('main.py'));
+    // The restored file confirms the earlier submission, not the newer local text.
+    read.mockImplementationOnce(async () => ({ text: 'Submitted plan', hash: 'c'.repeat(64) }));
+    if (action === 'reload') await act(async () => editor.select('PLAN.md'));
+    await act(async () =>
+      root!.render(createElement(Editor, { value: view(value.id, 'environment-two') })),
+    );
+    expect(editor.buffer?.text).toBe('Newer plan');
+    expect(editor.buffer?.saved).toBe('Submitted plan');
+    expect(editor.recoveryConflict).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(750));
+    expect(save.mock.calls[3]?.slice(0, 3)).toEqual(['PLAN.md', 'Newer plan', 'c'.repeat(64)]);
+    expect(editor.anyDirty).toBe(false);
+  },
+);
+
+it('retains multiple uncertain submissions until each file is explicitly retried', async () => {
+  vi.useFakeTimers();
+  await mount(
+    createElement(Editor, {
+      value: { ...view('multiple-uncertain-saves'), files: ['PLAN.md', 'main.py', 'other.py'] },
+    }),
+  );
+  save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+  await act(async () => editor.edit('Submitted plan'));
+  await act(async () => editor.save());
+  read.mockRejectedValueOnce(new Error('Plan read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Submitted code'));
+  save.mockRejectedValueOnce(new Error('Code acknowledgement lost'));
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(2);
+  const codeRequest = save.mock.calls[1]![3];
+  await act(async () => editor.edit('Newer code'));
+  await act(async () => editor.select('other.py'));
+  await act(async () => editor.edit('Other code'));
+  await act(async () => editor.save());
+  expect(save.mock.calls.slice(2).map((call) => call.slice(0, 3))).toEqual([
+    ['other.py', 'Other code', 'a'.repeat(64)],
+  ]);
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(save).toHaveBeenCalledTimes(3);
+  await act(async () => editor.select('main.py'));
+  expect(editor.saveError).toBe('Code acknowledgement lost');
+  await act(async () => editor.save());
+  expect(save.mock.calls.slice(2).map((call) => call.slice(0, 3))).toEqual([
+    ['other.py', 'Other code', 'a'.repeat(64)],
+    ['main.py', 'Submitted code', 'a'.repeat(64)],
+    ['main.py', 'Newer code', 'b'.repeat(64)],
+  ]);
+  expect(save.mock.calls[3]![3]).toBe(codeRequest);
+  expect(save.mock.calls.filter((call) => call[0] === 'PLAN.md')).toHaveLength(1);
+  await act(async () => editor.select('PLAN.md'));
+  expect(editor.buffer?.text).toBe('Submitted plan');
+  expect(editor.readError).toBe('Plan read failed');
+});
+
+it.each(['reload', 'close'] as const)(
+  'preserves another file save failure after %s of a read-blocked retry',
+  async (action) => {
+    vi.useFakeTimers();
+    await mount(createElement(Editor, { value: view(`remaining-failure-${action}`) }));
+    save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+    await act(async () => editor.edit('Submitted plan'));
+    await act(async () => editor.save());
+    read.mockRejectedValueOnce(new Error('Plan read failed'));
+    await act(async () => editor.reload());
+    await act(async () => editor.select('main.py'));
+    await act(async () => editor.edit('Submitted code'));
+    save.mockRejectedValueOnce(new Error('Code acknowledgement lost'));
+    await act(async () => editor.save());
+    const codeRequest = save.mock.calls[1]![3];
+    await act(async () => editor.select('PLAN.md'));
+    if (action === 'reload') await act(async () => editor.reload());
+    else await act(async () => editor.close('PLAN.md'));
+    await act(async () => editor.select('main.py'));
+    await act(async () => vi.advanceTimersByTimeAsync(1500));
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(editor.saveError).toBe('Code acknowledgement lost');
+    await act(async () => editor.save());
+    expect(save).toHaveBeenCalledTimes(3);
+    expect(save.mock.calls[2]?.slice(0, 3)).toEqual(['main.py', 'Submitted code', 'a'.repeat(64)]);
+    expect(save.mock.calls[2]![3]).toBe(codeRequest);
+    expect(editor.saveError).toBe('');
+    expect(editor.anyDirty).toBe(false);
+  },
+);
+
+it('a retry-read conflict blocks the queue before another save receipt drains it', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-retry-conflict-batch') }));
+  await act(async () => editor.edit('Retained plan'));
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Healthy code'));
+  await act(async () => editor.select('PLAN.md'));
+  let finishRead!: (result: { text: string; hash: string }) => void;
+  read.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishRead = resolve;
+      }),
+  );
+  await act(async () => {
+    void editor.retryRead();
+  });
+  let acknowledge!: (receipt: { hash: string }) => void;
+  save.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save.mock.calls[0][0]).toBe('main.py');
+  await act(async () => {
+    finishRead({ text: 'Changed by another writer', hash: 'c'.repeat(64) });
+    await Promise.resolve();
+    acknowledge({ hash: 'b'.repeat(64) });
+  });
+  expect(editor.recoveryConflict).toBe(true);
+  expect(editor.stale).toBe(true);
+  expect(editor.buffer?.text).toBe('Retained plan');
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+it('a retry-read conflict must not block explicit saves of healthy files', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-conflict-healthy-save') }));
+  save.mockRejectedValueOnce(new Error('Acknowledgement lost'));
+  await act(async () => editor.edit('Uncertain plan'));
+  await act(async () => editor.save());
+  read.mockRejectedValueOnce(new Error('Read failed'));
+  await act(async () => editor.reload());
+  read.mockResolvedValueOnce({ text: 'Another writer changed this', hash: 'c'.repeat(64) });
+  await act(async () => editor.retryRead());
+  expect(editor.recoveryConflict).toBe(true);
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Healthy edit'));
+  await act(async () => editor.save());
+  expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+    ['PLAN.md', 'Uncertain plan'],
+    ['main.py', 'Healthy edit'],
+  ]);
+});
+
+it('saving a healthy file does not authorize a blocked uncertain write after retry read', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('review-file-specific-retry') }));
+  save.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
+  await act(async () => editor.edit('Uncertain plan'));
+  await act(async () => editor.save());
+  const planRequest = save.mock.calls[0]![3];
+  read.mockRejectedValueOnce(new Error('Plan read failed'));
+  await act(async () => editor.reload());
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Healthy code'));
+  await act(async () => editor.save());
+  expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+    ['PLAN.md', 'Uncertain plan'],
+    ['main.py', 'Healthy code'],
+  ]);
+  await act(async () => editor.select('PLAN.md'));
+  await act(async () => editor.retryRead());
+  expect(editor.readError).toBe('');
+  await act(async () => vi.advanceTimersByTimeAsync(1500));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(editor.saveError).toBe('Plan acknowledgement lost');
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledTimes(3);
+  expect(save.mock.calls[2]![3]).toBe(planRequest);
+  expect(editor.saveError).toBe('');
+});
+
+it('does not treat an inherited property name as a file save failure', async () => {
+  await mount(
+    createElement(Editor, {
+      value: { ...view('save-error-file-name'), files: ['PLAN.md', 'constructor'] },
+    }),
+  );
+  await act(async () => editor.select('constructor'));
+  expect(editor.saveError).toBe('');
+  await act(async () => editor.edit('Edited source'));
+  await act(async () => editor.save());
+  expect(save).toHaveBeenCalledWith(
+    'constructor',
+    'Edited source',
+    'a'.repeat(64),
+    expect.any(Object),
+  );
+  expect(editor.saveError).toBe('');
+});
+
+it('clears only the closed file failure after a confirmed write rejection', async () => {
+  vi.useFakeTimers();
+  await mount(createElement(Editor, { value: view('close-rejected-file') }));
+  await act(async () => editor.select('main.py'));
+  await act(async () => editor.edit('Rejected draft'));
+  save.mockRejectedValueOnce(
+    new SandboxRequestError('Progress changed', 409, 'PBL_ERROR', 'PROGRESS_CHANGED'),
+  );
+  await act(async () => editor.save());
+  expect(editor.saveError).toBe('Progress changed');
+  await act(async () => editor.close('main.py'));
+  expect(editor.saveError).toBe('');
+  await act(async () => editor.select('main.py'));
+  expect(editor.saveError).toBe('');
+  await act(async () => editor.edit('New draft'));
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(save).toHaveBeenCalledTimes(2);
+  expect(save.mock.calls[1]?.slice(0, 3)).toEqual(['main.py', 'New draft', 'a'.repeat(64)]);
+});
+
+it.each(['ENVIRONMENT_UNAVAILABLE', 'ENVIRONMENT_CHANGED'] as const)(
+  'preserves another file recovery-read marker after a healthy save (%s)',
+  async (reason) => {
+    vi.useFakeTimers();
+    await mount(createElement(Editor, { value: view(`unavailable-read-marker-${reason}`) }));
+    await act(async () => editor.edit('Retained plan draft'));
+    save.mockRejectedValueOnce(
+      new SandboxRequestError('Environment temporarily unavailable', 409, 'PBL_ERROR', reason),
+    );
+    await act(async () => editor.save());
+    let finishPlanRead!: (value: { text: string; hash: string }) => void;
+    const pendingPlanRead = new Promise<{ text: string; hash: string }>((resolve) => {
+      finishPlanRead = resolve;
+    });
+    const originalRead = read.getMockImplementation()!;
+    read.mockImplementation((path) =>
+      path === 'PLAN.md'
+        ? pendingPlanRead
+        : Promise.resolve({ text: 'Saved source', hash: 'a'.repeat(64) }),
+    );
+    try {
+      await act(async () => editor.select('main.py'));
+      await act(async () => editor.edit('Healthy code'));
+      await act(async () => editor.save());
+      expect(save.mock.calls.map((call) => call.slice(0, 2))).toEqual([
+        ['PLAN.md', 'Retained plan draft'],
+        ['main.py', 'Healthy code'],
+      ]);
+      await act(async () =>
+        finishPlanRead({ text: 'Changed while unavailable', hash: 'c'.repeat(64) }),
+      );
+      await act(async () => editor.select('PLAN.md'));
+      expect(editor.buffer?.text).toBe('Retained plan draft');
+      expect(editor.recoveryConflict).toBe(true);
+      expect(editor.stale).toBe(true);
+      await act(async () => editor.save());
+      expect(save).toHaveBeenCalledTimes(2);
+    } finally {
+      read.mockImplementation(originalRead);
+    }
+  },
+);

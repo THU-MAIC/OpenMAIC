@@ -34,10 +34,16 @@
     "placeholder": "Viết câu trả lời của bạn",
     "confirm": "Xác nhận",
     "submit": "Gửi",
-    "dismiss": "Bỏ qua",
+    "dismiss": "Thu gọn",
     "inFormBelow": "Hãy trả lời trong biểu mẫu bên dưới",
     "inPreview": "Trả lời trong bản xem trước",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Đề xuất",
+    "autoConfirm": "Tự động xác nhận",
+    "autoConfirmed": "Đã tự chọn phương án đề xuất — bạn có thể đổi bất cứ lúc nào",
+    "showDetails": "Xem thêm",
+    "hideDetails": "Thu gọn",
+    "orAnswerInChat": "Bạn cũng có thể trả lời ngay trong cuộc trò chuyện"
   },
   "material": {
     "maxSelected": "Mỗi lần chỉ chọn được tối đa {{count}} tài liệu",
@@ -131,6 +137,8 @@
     "steerQueued": "Agent sẽ trả lời sau khi xong bước hiện tại",
     "runFailed": "Lượt dựng này đã thất bại",
     "retryHint": "Gửi thêm một tin nhắn để thử lại",
+    "contextLengthLimit": "Cuộc trò chuyện này đã đạt độ dài tối đa. Hãy bắt đầu cuộc trò chuyện mới để tiếp tục.",
+    "contextBudgetInvalid": "Ngân sách ngữ cảnh của mô hình hiện tại bị cấu hình sai. Lượt này đã dừng.",
     "stopped": "Lượt dựng này đã dừng",
     "workerInterrupted": "Bị ngắt do worker khởi động lại. Lần gọi này không có kết quả; agent sẽ gọi lại nếu cần.",
     "userStopped": "Bị ngắt do dừng. Lần gọi này không có kết quả."

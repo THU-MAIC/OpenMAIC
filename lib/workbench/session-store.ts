@@ -24,6 +24,7 @@
 import { create } from 'zustand';
 import i18n from 'i18next';
 import { supportedLocaleOf } from '@/lib/i18n/types';
+import { contextBudgetCopyKey } from '@/lib/agent/runtime/context-budget-error';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -103,6 +104,12 @@ export type SystemTone = 'info' | 'success' | 'error';
 export interface QuestionOption {
   id: string;
   label: string;
+  /**
+   * The agent's recommended choice, at most one per question. The answer form
+   * may auto-confirm it (`question-auto-confirm-state.ts`); absent on every
+   * envelope written before the field existed.
+   */
+  recommended?: true;
 }
 
 export interface ChatNode {
@@ -203,6 +210,12 @@ export interface ChatNode {
    * question (the composer below the card is the answer box).
    */
   questionOptions?: QuestionOption[];
+  /**
+   * Question cards only: supporting material the agent attached (a proposed
+   * plan), shown collapsed under the one-line question. Absent on older
+   * envelopes, whose whole text is in `text`.
+   */
+  questionDetails?: string;
   /** Question cards only: several options may be picked at once. */
   questionMultiSelect?: boolean;
   /**
@@ -840,11 +853,12 @@ function answerOpenQuestions(chat: ChatNode[], answerText: unknown): ChatNode[] 
 function questionOptionsOf(value: unknown): QuestionOption[] {
   if (!Array.isArray(value)) return [];
   return (value as unknown[])
-    .map((raw) => {
-      const option = raw as { id?: unknown; label?: unknown } | null;
+    .map((raw): QuestionOption => {
+      const option = raw as { id?: unknown; label?: unknown; recommended?: unknown } | null;
       return {
         id: String(option?.id ?? '').trim(),
         label: String(option?.label ?? '').trim(),
+        ...(option?.recommended === true ? { recommended: true as const } : {}),
       };
     })
     .filter((option) => option.id && option.label);
@@ -1227,6 +1241,9 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         text: question,
         at: event.ts,
         ...(options.length > 0 ? { questionOptions: options } : {}),
+        ...(typeof data.details === 'string' && data.details.trim()
+          ? { questionDetails: data.details.trim() }
+          : {}),
         // Multi-select only means something when there is a set to pick from.
         ...(data.multiSelect && options.length > 0 ? { questionMultiSelect: true } : {}),
       };
@@ -1738,17 +1755,25 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         // sentence, which read as a log line and — because every auto-retry
         // appends its own marker — stacked N identical copies of it.
         const cause = data.error ? String(data.error).trim() : '';
+        // A context-budget block is final for this conversation: say so in
+        // plain words and point to a new chat, not to a retry that would hit
+        // the same limit.
+        const budgetCopyKey = contextBudgetCopyKey(cause);
         next.chat = [
           ...settled,
           {
             key,
             kind: 'system',
             tone: 'error',
-            text: defaultWorkbenchTranslator('workbench.system.runFailed'),
-            copyKey: 'workbench.system.runFailed',
-            hint: defaultWorkbenchTranslator('workbench.system.retryHint'),
-            hintCopyKey: 'workbench.system.retryHint',
-            ...(cause ? { detail: cause } : {}),
+            text: defaultWorkbenchTranslator(budgetCopyKey ?? 'workbench.system.runFailed'),
+            copyKey: budgetCopyKey ?? 'workbench.system.runFailed',
+            ...(!budgetCopyKey
+              ? {
+                  hint: defaultWorkbenchTranslator('workbench.system.retryHint'),
+                  hintCopyKey: 'workbench.system.retryHint',
+                  ...(cause ? { detail: cause } : {}),
+                }
+              : {}),
           },
         ];
         break;

@@ -43,7 +43,7 @@
 
 ## 🗞️ 动态
 
-- **2026-11-12** — [v1.5.0-rc.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.2)：**全新首页，体验全面升级**（候选版本）——首页就是工作台：课程在对话旁边长出来，一个全屏课堂里既能学也能改。默认不开启（`NEXT_PUBLIC_WORKBENCH_ENABLED`）。
+- **2026-11-17** — [v1.5.0-rc.3](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.5.0-rc.3)：**全新首页，体验全面升级**（候选版本）——首页就是工作台：课程在对话旁边长出来，一个全屏课堂里既能学也能改。默认不开启（`NEXT_PUBLIC_WORKBENCH_ENABLED`）。
 - **2026-11-09** — [v1.4.2](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.2)：**课程级撤销**，覆盖手动编辑和 agent 修改；沙箱对所有准入用户开放。
 - **2026-11-05** — [v1.4.1](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.1)：后台同步不再丢失编辑和学习进度；慢速网络下课程打开更快。
 - **2026-11-04** — [v1.4.0](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v1.4.0)：**PBL v3**——在 AI 导师带领下按里程碑做出一个能跑的项目。升级不可回退。
@@ -445,6 +445,22 @@ slots:
 ```
 
 没有 `openmaic.yml` 时，在 `.env.local` 中设置旧版变量 `PDF_MINERU_CLOUD_API_KEY` 或 `PDF_MINERU_BASE_URL` 仍然有效。
+
+### 可选：MiniCPM-OCR（文档解析）
+
+[MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) 是 OpenBMB 推出的轻量开源 OCR 模型，支持文字、表格、公式和版面解析。可以使用托管 API（需要 API Key），也可以把 `baseUrl` 指向官方 SDK 提供的 MiniCPM-OCR Web Demo（路由位于 `/api` 下）。
+
+```yaml
+providers:
+  minicpm-ocr:
+    preset: minicpm-ocr
+    apiKey: ${PDF_MINICPM_OCR_API_KEY}
+
+slots:
+  document: minicpm-ocr
+```
+
+没有 `openmaic.yml` 时，在 `.env.local` 中设置 `PDF_MINICPM_OCR_API_KEY`（托管）或 `PDF_MINICPM_OCR_BASE_URL`（自托管）即可。
 
 ### 可选：VoxCPM2（自托管 TTS，支持音色克隆）
 

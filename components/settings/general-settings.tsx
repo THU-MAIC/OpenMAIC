@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { UsageDashboard } from './usage-dashboard';
 import {
   AlertDialog,
@@ -52,6 +53,8 @@ async function clearPersistedStore(persistApi: PersistApi, fallbackName: string)
 
 export function GeneralSettings() {
   const { t } = useI18n();
+  const autoConfirm = useSettingsStore((s) => s.autoConfirmRecommendedAnswer);
+  const setAutoConfirm = useSettingsStore((s) => s.setAutoConfirmRecommendedAnswer);
 
   // Clear cache state
   const [showClearDialog, setShowClearDialog] = useState(false);
@@ -103,6 +106,24 @@ export function GeneralSettings() {
     <div className="flex flex-col gap-8">
       {/* Usage statistics dashboard */}
       <UsageDashboard />
+
+      {/* The workbench agent's questions: auto-confirm a recommended option. */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <Label htmlFor="settings-auto-confirm" className="text-sm font-medium">
+            {t('settings.autoConfirmRecommended')}
+          </Label>
+          <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+            {t('settings.autoConfirmRecommendedDesc')}
+          </p>
+        </div>
+        <Switch
+          id="settings-auto-confirm"
+          data-testid="settings-auto-confirm"
+          checked={autoConfirm}
+          onCheckedChange={setAutoConfirm}
+        />
+      </div>
 
       {/* Danger Zone - Clear Cache */}
       <div className="relative rounded-xl border border-destructive/30 bg-destructive/[0.03] dark:bg-destructive/[0.06] overflow-hidden">

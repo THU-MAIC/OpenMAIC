@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 
 let root: string | undefined;
@@ -39,5 +39,9 @@ it('defaults to the existing classroom directory', async () => {
   vi.stubEnv('OPENMAIC_CLASSROOM_SKILLS_DIR', undefined);
   vi.resetModules();
   const { agentRuntimeConfig } = await import('@/lib/server/agent-runtime/config');
-  expect(agentRuntimeConfig.classroomSkillsDir).toBe(join(process.cwd(), 'skills/classroom'));
+  // The default is written with `/`; compare directories, not their spelling,
+  // so the separator of the platform does not matter.
+  expect(resolve(agentRuntimeConfig.classroomSkillsDir)).toBe(
+    resolve(process.cwd(), 'skills/classroom'),
+  );
 });

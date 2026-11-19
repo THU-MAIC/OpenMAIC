@@ -11,6 +11,7 @@ import { db } from '@/lib/device-storage/database';
 import type { FolderRecord } from '@/lib/types/folder';
 import { FolderNameError } from './folder-name-validation';
 export { FolderNameError } from './folder-name-validation';
+import type { CourseThumbnail } from './course-cover';
 import {
   ChatStorageLockUnavailableError,
   saveChatSessions,
@@ -26,6 +27,7 @@ import {
   loadCurrentScene,
   mutateDocument,
   saveCurrentScene,
+  type AppDocument,
   type AppDocumentOutline,
 } from '@/lib/document-store';
 import { clearAllForScene } from '@/lib/quiz/persistence';
@@ -1138,6 +1140,18 @@ export async function loadFirstSlideThumbnail(
 ): Promise<{ slide: ThumbnailSlide | null; complete: boolean }> {
   const document = (await accessDocument(stageId)).document;
   signal?.throwIfAborted();
+  return slideCoverFromDocument(stageId, document, signal);
+}
+
+/**
+ * {@link loadFirstSlideThumbnail}'s slide pipeline over an already-loaded
+ * document, so {@link loadCourseCover} reads a course only once.
+ */
+async function slideCoverFromDocument(
+  stageId: string,
+  document: AppDocument | null,
+  signal?: AbortSignal,
+): Promise<{ slide: ThumbnailSlide | null; complete: boolean }> {
   const firstSlide = document?.scenes.find((s) => s.content?.type === 'slide');
   if (!firstSlide || firstSlide.content.type !== 'slide') return { slide: null, complete: true };
   const slide = structuredClone(firstSlide.content.canvas);
@@ -1304,6 +1318,32 @@ export async function loadFirstSlideThumbnail(
   }
 
   return { slide, complete };
+}
+
+/**
+ * A course's cover: its first slide ({@link loadFirstSlideThumbnail}), or —
+ * only when the course has no slide at all — its first interactive scene,
+ * which the surfaces render live in a sandboxed thumbnail iframe. A course
+ * with neither has no cover (`null`).
+ *
+ * Interactive covers read only the already-loaded document, so they are
+ * always complete.
+ */
+export async function loadCourseCover(
+  stageId: string,
+  signal?: AbortSignal,
+): Promise<{ cover: CourseThumbnail | null; complete: boolean }> {
+  const document = (await accessDocument(stageId)).document;
+  signal?.throwIfAborted();
+  const slideCover = await slideCoverFromDocument(stageId, document, signal);
+  if (slideCover.slide) {
+    return { cover: { kind: 'slide', slide: slideCover.slide }, complete: slideCover.complete };
+  }
+  const interactive = document?.scenes.find((scene) => scene.content?.type === 'interactive');
+  return {
+    cover: interactive ? { kind: 'interactive', scene: interactive } : null,
+    complete: true,
+  };
 }
 
 /**

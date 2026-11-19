@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (local)",
     "providerBrowserNativeTTS": "TTS nativo del navegador",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "Subir",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "Es necesario volver a clonar esta voz guardada. Sube el audio de referencia en los ajustes de voz.",
+    "qwenCloneNeedsReclone": "Requiere reclonación",
+    "qwenCloneRecloneRequired": "Esta voz guardada no es compatible con el modelo de clonación actual. Vuelve a subir su audio de referencia para clonarla de nuevo.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "Generación de video",
       "capWebSearch": "Búsqueda web",
       "capWebFetch": "Obtener páginas web",
+      "capAsr": "Reconocimiento de voz",
+      "capDocument": "Análisis de documentos",
       "saved": "Ajustes de conexión guardados",
       "stageInteractive": "Interactivo",
       "stageSlide": "Diapositivas",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "Obtener páginas web",
           "desc": "Permite al agente leer páginas web autorizadas en la sesión."
+        },
+        "materialChapters": {
+          "name": "Reconocimiento de capítulos",
+          "desc": "Identifica capítulos y secciones en documentos largos."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "Búsqueda",
           "fetch": "Lectura",
           "image": "Imagen",
-          "video": "Video"
+          "video": "Video",
+          "parse": "Análisis",
+          "chapters": "Capítulos"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "Obtener páginas web",
     "webFetchHint": "Elige cómo leer las páginas web. Los servicios alojados reciben URL públicas autorizadas en la sesión. Los resultados siguen siendo datos no confiables y los errores no cambian el lector.",
     "webFetchApiKey": "Clave de API",
-    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat."
+    "webFetchSharedKeyHint": "Esta clave también se usa para chatear con este proveedor. Cambiarla o eliminarla afecta al chat.",
+    "autoConfirmRecommended": "Confirmar automáticamente las respuestas recomendadas",
+    "autoConfirmRecommendedDesc": "Cuando el agente hace una pregunta con una opción recomendada, la elige tras una breve cuenta regresiva si no respondes. Cualquier interacción la detiene."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "Análisis sin completar",
           "description": "No se pudo completar el análisis. Puedes volver a intentarlo más tarde."
+        },
+        "pages_failed": {
+          "label": "Error al analizar páginas del PDF",
+          "description": "No se pudieron analizar las páginas {{firstPage}}–{{lastPage}} del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde.",
+          "descriptionWithoutCount": "No se pudieron analizar algunas páginas del PDF, por lo que este material aún no se puede leer. Intenta analizarlo de nuevo más tarde."
         },
         "too_many_pages": {
           "label": "Demasiadas páginas",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "Empezar a editar"
+    },
+    "mobile": {
+      "openMenu": "Abrir navegación",
+      "closeMenu": "Cerrar navegación"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "Enviando…",
+    "submitted": "Enviado",
+    "resubmit": "Enviar cambios",
     "quizPassed": "Cuestionario aprobado: {{score}}/{{total}} respuestas correctas. Puedes continuar.",
     "quizRetry": "{{score}}/{{total}} respuestas correctas. Revisa tus respuestas e inténtalo de nuevo.",
     "quizCorrect": "Último envío: correcto",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "Empezar a aprender",
       "title": "Resumen del proyecto",
       "expand": "Expandir",
       "collapse": "Contraer",
@@ -3034,7 +3061,21 @@
       "eachStage": "Pasos de cada etapa",
       "yourRole": "Tú decides y revisas; la IA ayuda a escribir el plan y el código.",
       "preview": "Prueba tu aplicación en la vista previa y comprueba lo que construiste.",
-      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar."
+      "advance": "El botón morado sobre el campo de entrada aparece solo cuando puedes avanzar desde el paso actual. Cuando aparezca, haz clic para continuar.",
+      "startBlocked": {
+        "guide": "Termina o cierra la guía del espacio de trabajo para comenzar a aprender.",
+        "connecting": "Conectando las actualizaciones en vivo antes de comenzar…",
+        "retrying": "Reconectando las actualizaciones en vivo. Espera a que se restablezca la conexión antes de comenzar.",
+        "unavailable": "Las actualizaciones en vivo no están disponibles. Actualiza la página para reconectarte antes de comenzar.",
+        "pending": "Hay una acción en curso. Espera a que termine antes de comenzar.",
+        "busy": "El asistente aún está respondiendo. Espera a que termine antes de comenzar.",
+        "environment": "Espera a que el entorno de aprendizaje esté listo antes de comenzar. Si la preparación falló, vuelve a intentarlo arriba.",
+        "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de comenzar.",
+        "preparing": "Preparando el espacio de trabajo. Espera antes de comenzar."
+      },
+      "singleFlow": "Proceso del proyecto",
+      "concepts": "Conceptos de ingeniería",
+      "deliverables": "Resultados funcionales"
     },
     "journey": {
       "currentMilestone": "Etapa actual",
@@ -3171,13 +3212,14 @@
       "readOnly": "Read-only",
       "saved": "Guardado",
       "saveFailed": "Error al guardar · Reintentar",
-      "draftRetained": "Cambios conservados en este navegador"
+      "draftRetained": "Cambios conservados en este navegador",
+      "retryRead": "Reintentar lectura"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "Los archivos del proyecto tienen cambios sin guardar. Guárdalos o descártalos antes de enviar; tu mensaje permanece aquí.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3375,6 +3417,8 @@
       "waiting": "La guía estará disponible cuando el entorno esté listo.",
       "loading": "Cargando el espacio de trabajo",
       "loadingDetail": "Conectando el entorno de aprendizaje y preparando los archivos. Espera un momento.",
+      "loadingSlowDetail": "La preparación está tardando más. Puedes volver a la presentación del proyecto; la preparación ya iniciada continuará en segundo plano.",
+      "loadingReturn": "Volver a la presentación del proyecto",
       "steps": {
         "progress": {
           "title": "Consulta el progreso y la tarea actual",

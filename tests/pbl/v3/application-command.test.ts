@@ -10,6 +10,10 @@ import {
   applicationProbeCommand,
 } from '@/lib/server/pbl-v3/application-command';
 
+// This exercises a cold JDK on shared CI runners, not compilation performance.
+// Keep each real compile/run bounded, with room for both launches in the test.
+const JAVA_LAUNCH_TIMEOUT_MS = 30_000;
+
 it('checks the final UTF-8 shell command, preserving accepted quoted arguments', () => {
   expect(applicationLaunchCommand(['python3', "a'b.py", '你好'])).toBe(
     "exec 'python3' 'a'\\''b.py' '你好'",
@@ -58,7 +62,7 @@ public class Main {
         cwd: root,
         env: { ...process.env, TMPDIR: root },
         encoding: 'utf8',
-        timeout: 30_000,
+        timeout: JAVA_LAUNCH_TIMEOUT_MS,
       });
     expect(run([...sources, 'src/demo/Added.java'])).toBe('current-source:hello:present');
     writeFileSync(
@@ -70,7 +74,7 @@ public class Main {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-}, 45_000);
+}, 65_000);
 
 it('rejects Java launch flags, missing entry sources and escaped paths', () => {
   const good = ['java', '-cp', '/tmp/pbl-project-build', 'demo.Main'];

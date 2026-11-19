@@ -1,3 +1,5 @@
+import { HOST_STATE_START, HOST_STATE_END } from '@/lib/ai/request-state-tail';
+import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -542,6 +544,18 @@ async function runTools(
     expectedAttempt: meta!.attempt,
   });
 }
+function requestHostState(messages: readonly ModelMessage[]): string {
+  const tail = messages.at(-1);
+  expect(tail?.role).toBe('user');
+  if (!tail || typeof tail.content !== 'string') throw new Error('Missing wire-only host state');
+  expect(tail.content.startsWith(HOST_STATE_START + '\n')).toBe(true);
+  expect(tail.content.endsWith('\n' + HOST_STATE_END)).toBe(true);
+  return tail.content;
+}
+function retainedRequestMessages(messages: readonly ModelMessage[]): ModelMessage[] {
+  requestHostState(messages);
+  return messages.slice(0, -1);
+}
 async function invoke(
   config: Awaited<ReturnType<typeof teachingRunnerConfig>>,
   name: string,
@@ -550,6 +564,25 @@ async function invoke(
   const tool = config.tools.find((t) => t.name === name)!;
   expect(tool).toBeDefined();
   return tool.execute(randomUUID(), name === 'request_skill_review' ? reviewInput(args) : args);
+}
+function assertInitialPlanPreload(
+  config: Pick<Awaited<ReturnType<typeof teachingRunnerConfig>>, 'preloadMessages'>,
+  learnerText: string,
+  planText: string,
+) {
+  const user = { role: 'user' as const, content: learnerText, timestamp: Date.now() };
+  const model = { api: 'openai-completions' as const, provider: 'openai', id: 'test-model' };
+  const frames = config.preloadMessages([user], model);
+  expect(frames.map((frame) => frame.role)).toEqual(['assistant', 'toolResult']);
+  const receipt = frames[1]!;
+  if (receipt.role !== 'toolResult' || receipt.content[0]?.type !== 'text')
+    throw new Error('Missing file read');
+  expect(JSON.parse(receipt.content[0].text)).toMatchObject({
+    path: 'PLAN.md',
+    text: planText,
+    hash: digest(planText),
+  });
+  expect(config.preloadMessages([user, ...frames], model)).toEqual([]);
 }
 async function guided(role: 'teaching' | 'plan' | 'code') {
   const current = await store.get(studyId, principal.ownerId);
@@ -697,7 +730,7 @@ async function guided(role: 'teaching' | 'plan' | 'code') {
     attempt: meta!.attempt,
     signal: new AbortController().signal,
   });
-  expect(followUp.systemPrompt).toContain('"completionRecorded":true');
+  expect(followUp.initialContext).toContain('"completionRecorded":true');
   await agents.finishSession(binding.session_id, 'direct-worker', {
     status: 'succeeded',
     expectedAttempt: meta!.attempt,
@@ -1673,14 +1706,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect(await agents.listUserMessages(queued.sessionId)).toEqual(realInputs);
         const request = mocked.modelRequests.at(-1)!;
         expect(request.at(-1)?.role).not.toBe('assistant');
-        expect(mocked.modelSystems.at(-1)).toContain('Runtime continuation:');
+        expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain('Runtime continuation:');
         const approved = await learningView(principal, id);
         if (approved.state.status === 'completed') return;
         expect(approved.actions).toContain('next');
         const completedPosition = approved.state.position;
         // A normal follow-up is not a request to revoke an already recorded review.
         await roleTurn('What should I do next?', async (config) => {
-          expect(config.systemPrompt).toContain('"completionRecorded":true');
+          expect(config.initialContext).toContain('"completionRecorded":true');
           expect(config.systemPrompt).toContain('ALREADY complete');
           expect(config.isTurnComplete()).toBe(false); // Answer the new question normally.
         });
@@ -1714,7 +1747,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             expect(config.allowedToolNames.has('request_skill_review')).toBe(false);
             expect(config.allowedToolNames.has('complete_stage')).toBe(false);
           }
-          expect(config.systemPrompt).toContain('"automatic":true');
+          expect(config.initialContext).toContain('"automatic":true');
           expect(config.systemPrompt).toContain(
             `"currentStep":"${entered.milestones![entered.state.position.milestoneIndex]!.stages[entered.state.position.stageIndex]}"`,
           );
@@ -2032,7 +2065,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         await invoke(config, 'request_skill_review', { question: 'Compare return and print.' });
       });
       await runTools(answer, async (config) => {
-        expect(config.systemPrompt).toContain('"studentResponseCount":1');
+        expect(config.initialContext).toContain('"studentResponseCount":1');
         expect(config.systemPrompt).not.toContain(answer);
         await invoke(config, 'read_next_skill', { studentFeedback: `Student reply: "${answer}"` });
         await invoke(config, 'request_skill_review', {
@@ -2043,14 +2076,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         ).rejects.toThrow();
       });
       await runTools(first, async (config) => {
-        expect(config.systemPrompt).toContain('"studentResponseCount":1');
+        expect(config.initialContext).toContain('"studentResponseCount":1');
         expect(config.systemPrompt).not.toContain(first);
         expect(config.systemPrompt).not.toContain(answer);
         // A clarification turn does not replace the pending review or discard its first reply.
         await invoke(config, 'read_next_skill');
       });
       await runTools(second, async (config) => {
-        expect(config.systemPrompt).toContain('"studentResponseCount":2');
+        expect(config.initialContext).toContain('"studentResponseCount":2');
         expect(config.systemPrompt).not.toContain(first);
         expect(config.systemPrompt).not.toContain(second);
         expect(config.systemPrompt).not.toContain(answer);
@@ -2151,7 +2184,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       attempt: meta!.attempt,
       signal: new AbortController().signal,
     });
-    expect(config.systemPrompt).toContain('"automatic":true');
+    expect(config.initialContext).toContain('"automatic":true');
     await invoke(config, 'read_next_skill');
     await invoke(config, 'request_skill_review', { question: 'What will the project do?' });
     await expect(
@@ -2177,8 +2210,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       attempt: reply!.attempt,
       signal: new AbortController().signal,
     });
-    expect(replyConfig.systemPrompt).toContain('"automatic":false');
-    expect(replyConfig.systemPrompt).toContain('"studentResponseCount":1');
+    expect(replyConfig.initialContext).toContain('"automatic":false');
+    expect(replyConfig.initialContext).toContain('"studentResponseCount":1');
     await agents.finishSession(started.sessionId, 'reply-worker', {
       status: 'succeeded',
       expectedAttempt: reply!.attempt,
@@ -3557,8 +3590,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     await stream({} as never, { messages: [] });
     expect(project).toHaveBeenCalledTimes(2);
     expect(modelCall).toHaveBeenCalledOnce();
-    expect(modelCall.mock.calls[0]![1].systemPrompt).toContain('"revision":2');
-    expect(modelCall.mock.calls[0]![1].systemPrompt).not.toContain('"revision":1');
+    expect(requestStateTail(modelCall.mock.calls[0]![1])).toContain('"revision":2');
+    expect(requestStateTail(modelCall.mock.calls[0]![1])).not.toContain('"revision":1');
     const churn = vi.fn(async (context) => {
       revision++;
       return context;
@@ -5524,7 +5557,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       // Reflection has its own disclosure and completion receipt.
       const mentor = (await store.roles(studyId)).find((binding) => binding.role === 'mentor')!;
       expect(mentor.stage_key).toBe('greeting:6');
-      expect(config.systemPrompt).toContain(
+      expect(config.initialContext).toContain(
         '"teachingContext":{"stageKey":"greeting:6","completionRecorded":false,',
       );
       expect(config.systemPrompt).toContain('"recordedEvidence"');
@@ -5719,12 +5752,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect(settled?.status, settled?.error).toBe('succeeded');
     expect((await store.binding(queued.sessionId))?.guided?.activeFile).toBe('A-teach.md');
     expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
-    expect(mocked.modelRequests[retryRequestIndex]?.at(-1)).toMatchObject({
+    expect(retainedRequestMessages(mocked.modelRequests[retryRequestIndex]!).at(-1)).toMatchObject({
       role: 'user',
       content: reply,
     });
-    expect(mocked.modelSystems.at(-1)).toContain('\"activeSection\":\"A-teach.md\"');
-    expect(mocked.modelSystems.at(-1)).toContain('Authoritative live teaching state');
+    expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
+      '\"activeSection\":\"A-teach.md\"',
+    );
+    expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
+      'Authoritative live teaching state',
+    );
     expect((await learningView(principal, study.id)).actions).not.toContain('next');
     studyId = original;
   }, 30000);
@@ -5767,9 +5804,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         { ...meta!, ...(await agents.getSession(queued.sessionId))! },
       );
       expect(mocked.modelCalls - callsBefore).toBe(3);
-      expect(mocked.modelSystems.at(-1)).toContain(JSON.stringify(delivered));
-      expect(mocked.modelSystems.at(-1)).toContain('record that SAME reply');
-      expect(mocked.modelSystems.at(-1)).toContain('verbatim into response');
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(JSON.stringify(delivered));
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain('record that SAME reply');
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain('verbatim into response');
       expect((await agents.getSession(queued.sessionId))?.status).toBe('succeeded');
       expect(await agents.listUserMessages(queued.sessionId)).toEqual(inputs);
       expect((await store.binding(queued.sessionId))?.guided?.pending?.question).toBe(question);
@@ -5936,7 +5973,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(mocked.modelCalls - calls).toBe(crash ? 1 : 2);
       expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
       expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
-      expect(mocked.modelSystems.at(-1)).toContain(
+      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
         'For an assistance-only answer or product clarification',
       );
       if (crash)
@@ -6179,7 +6216,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           (m) => m.role === 'assistant' && Array.isArray(m.content) && m.content.length === 0,
         ),
       ).toEqual([]);
-      expect(request.at(-1)).toMatchObject({ role: 'user', content: reply });
+      expect(retainedRequestMessages(request).at(-1)).toMatchObject({
+        role: 'user',
+        content: reply,
+      });
       const assistantParts = request.flatMap((m) =>
         m.role === 'assistant' && Array.isArray(m.content) ? m.content : [],
       );
@@ -8224,6 +8264,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             await writeFile(path, 'Learner plan '.repeat(4000));
             const expanded = await teachingRunnerConfig(request);
             expect(expanded.systemPrompt).toContain('Learner plan '.repeat(4000));
+            if (active.kind === 'produce' && active.writes === 'plan')
+              assertInitialPlanPreload(expanded, text, 'Learner plan '.repeat(4000));
             expect(mocked.modelCalls).toBe(calls);
             oversizedPlanChecked = true;
           } finally {

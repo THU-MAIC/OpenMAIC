@@ -40,11 +40,13 @@
  * set, which is view state and nothing more.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, MoreHorizontal } from 'lucide-react';
+import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
+import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import { cn } from '@/lib/utils/cn';
 import { useWorkbenchCourseNavigation } from '@/lib/workbench/panel-context';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
@@ -67,20 +69,33 @@ function CourseCover({
   readonly version: number | null;
 }) {
   const { thumbnails, requestThumbnail } = useCourseThumbnails();
+  // A transcript keeps its earlier cards mounted, so both the cover's data
+  // load and its live rendering wait until this chip is near the viewport.
+  const thumbRef = useRef<HTMLSpanElement>(null);
+  const nearViewport = useNearViewport(thumbRef);
   useEffect(() => {
-    if (version === null) return;
+    if (version === null || !nearViewport) return;
     return requestThumbnail(courseId, version);
-  }, [courseId, version, requestThumbnail]);
-  const slide = version === null ? null : thumbnails[courseId];
+  }, [courseId, version, nearViewport, requestThumbnail]);
+  const cover = version === null ? null : thumbnails[courseId];
   return (
-    <span className={styles.courseLink.thumb} aria-hidden="true">
-      {slide ? (
-        <SlideThumbnail
-          slide={slide}
-          size={COVER_WIDTH}
-          viewportSize={slide.viewportSize ?? 1000}
-          viewportRatio={slide.viewportRatio ?? 0.5625}
-        />
+    <span ref={thumbRef} className={styles.courseLink.thumb} aria-hidden="true">
+      {cover ? (
+        cover.kind === 'slide' ? (
+          <SlideThumbnail
+            slide={cover.slide}
+            size={COVER_WIDTH}
+            viewportSize={cover.slide.viewportSize ?? 1000}
+            viewportRatio={cover.slide.viewportRatio ?? 0.5625}
+          />
+        ) : (
+          <LiveInteractiveCover
+            scene={cover.scene}
+            size={COVER_WIDTH}
+            compact
+            visible={nearViewport}
+          />
+        )
       ) : (
         <BookOpen className={styles.courseLink.glyph} />
       )}

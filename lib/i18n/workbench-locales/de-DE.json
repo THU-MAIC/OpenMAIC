@@ -34,10 +34,16 @@
     "placeholder": "Schreibe deine Antwort",
     "confirm": "Bestätigen",
     "submit": "Absenden",
-    "dismiss": "Verwerfen",
+    "dismiss": "Einklappen",
     "inFormBelow": "Antworte im Formular unten",
     "inPreview": "In der Vorschau beantworten",
-    "multiAnswerSeparator": ", "
+    "multiAnswerSeparator": ", ",
+    "recommended": "Empfohlen",
+    "autoConfirm": "Automatisch bestätigen",
+    "autoConfirmed": "Empfohlene Option automatisch gewählt – jederzeit änderbar",
+    "showDetails": "Mehr anzeigen",
+    "hideDetails": "Weniger anzeigen",
+    "orAnswerInChat": "Du kannst auch direkt im Chat antworten"
   },
   "material": {
     "maxSelected": "Du kannst höchstens {{count}} Materialien gleichzeitig auswählen",
@@ -131,6 +137,8 @@
     "steerQueued": "Der Agent antwortet, sobald der aktuelle Schritt fertig ist",
     "runFailed": "Dieser Aufbau ist fehlgeschlagen",
     "retryHint": "Sende noch eine Nachricht, um es erneut zu versuchen",
+    "contextLengthLimit": "Diese Unterhaltung hat ihre maximale Länge erreicht. Starte einen neuen Chat, um weiterzumachen.",
+    "contextBudgetInvalid": "Das Kontextbudget des aktuellen Modells ist falsch konfiguriert. Dieser Durchlauf wurde gestoppt.",
     "stopped": "Dieser Aufbau wurde gestoppt",
     "workerInterrupted": "Durch einen Worker-Neustart unterbrochen. Dieser Aufruf hat kein Ergebnis geliefert; der Agent wiederholt ihn bei Bedarf.",
     "userStopped": "Durch Stoppen unterbrochen. Dieser Aufruf hat kein Ergebnis geliefert."

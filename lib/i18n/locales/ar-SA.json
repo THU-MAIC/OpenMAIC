@@ -1446,6 +1446,8 @@
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerXiaomiTTS": "Xiaomi MiMo TTS",
     "providerXiaomiASR": "Xiaomi MiMo ASR",
+    "providerDeepSeekTTS": "DeepSeek TTS",
+    "providerDeepSeekASR": "DeepSeek ASR",
     "providerGoogleTTS": "Google Gemini TTS",
     "providerLemonadeTTS": "Lemonade TTS (محلي)",
     "providerBrowserNativeTTS": "تحويل النص إلى كلام المدمج في المتصفح",
@@ -1491,6 +1493,8 @@
     "qwenCloneUploadShort": "تحميل",
     "qwenCloneRefAudioHint": "Use a clean 5–60 second voice sample (10–20 seconds recommended). Audio is converted to 24 kHz mono PCM WAV.",
     "qwenCloneMigrationHint": "يجب استنساخ هذا الصوت المحفوظ من جديد. ارفع التسجيل الصوتي المرجعي في إعدادات الصوت.",
+    "qwenCloneNeedsReclone": "يلزم إعادة الاستنساخ",
+    "qwenCloneRecloneRequired": "هذا الصوت المحفوظ غير متوافق مع نموذج الاستنساخ الحالي. ارفع التسجيل الصوتي المرجعي مرة أخرى لاستنساخه من جديد.",
     "qwenCloneSaved": "Qwen cloned voice registered and saved",
     "qwenCloneSaveFailed": "Failed to register the Qwen cloned voice",
     "qwenCloneUnsupported": "Recording is not supported in this browser; upload an audio file instead.",
@@ -1857,6 +1861,8 @@
       "capVideo": "توليد الفيديو",
       "capWebSearch": "البحث في الويب",
       "capWebFetch": "جلب صفحات الويب",
+      "capAsr": "التعرف على الكلام",
+      "capDocument": "تحليل المستندات",
       "saved": "تم حفظ إعدادات الربط",
       "stageInteractive": "تفاعلي",
       "stageSlide": "شرائح الدرس",
@@ -2187,6 +2193,10 @@
         "webFetch": {
           "name": "جلب صفحات الويب",
           "desc": "يتيح للوكيل قراءة صفحات الويب المسموح بها في الجلسة."
+        },
+        "materialChapters": {
+          "name": "التعرف على الفصول",
+          "desc": "يتعرف على الفصول والأقسام في المستندات الطويلة."
         }
       },
       "source": {
@@ -2202,7 +2212,9 @@
           "search": "البحث",
           "fetch": "الجلب",
           "image": "صورة",
-          "video": "فيديو"
+          "video": "فيديو",
+          "parse": "تحليل",
+          "chapters": "الفصول"
         }
       },
       "empty": {
@@ -2237,7 +2249,9 @@
     "webFetchSettings": "جلب صفحات الويب",
     "webFetchHint": "اختر طريقة قراءة صفحات الويب. تتلقى الخدمات المستضافة روابط عامة مسموحًا بها في الجلسة. تظل النتائج غير موثوقة، ولا يؤدي الفشل إلى تبديل القارئ.",
     "webFetchApiKey": "مفتاح API",
-    "webFetchSharedKeyHint": "يُستخدم هذا المفتاح أيضًا للدردشة مع هذا المزوّد. تغييره أو حذفه يؤثر في الدردشة."
+    "webFetchSharedKeyHint": "يُستخدم هذا المفتاح أيضًا للدردشة مع هذا المزوّد. تغييره أو حذفه يؤثر في الدردشة.",
+    "autoConfirmRecommended": "تأكيد الإجابات الموصى بها تلقائيًا",
+    "autoConfirmRecommendedDesc": "عندما يطرح الوكيل سؤالًا مع خيار موصى به، يتم اختياره بعد عد تنازلي قصير إذا لم تستجب. أي تفاعل يوقف العد التنازلي."
   },
   "workspace": {
     "knowledgeBase": {
@@ -2273,6 +2287,11 @@
         "processing_interrupted": {
           "label": "لم يكتمل التحليل",
           "description": "تعذّر إكمال التحليل. يمكنك المحاولة مجددًا لاحقًا."
+        },
+        "pages_failed": {
+          "label": "تعذّر تحليل صفحات PDF",
+          "description": "تعذّر تحليل الصفحات {{firstPage}}–{{lastPage}} من ملف PDF، لذا لا يمكن قراءة هذه المادة حاليًا. حاول تحليلها مرة أخرى لاحقًا.",
+          "descriptionWithoutCount": "تعذّر تحليل بعض صفحات ملف PDF، لذا لا يمكن قراءة هذه المادة حاليًا. حاول تحليلها مرة أخرى لاحقًا."
         },
         "too_many_pages": {
           "label": "عدد الصفحات كبير جدًا",
@@ -2655,6 +2674,10 @@
         }
       },
       "editDone": "ابدأ التحرير"
+    },
+    "mobile": {
+      "openMenu": "فتح التنقل",
+      "closeMenu": "إغلاق التنقل"
     }
   },
   "profile": {
@@ -2910,6 +2933,9 @@
     "message": "Your message",
     "send": "Send",
     "submitQuiz": "Submit answers",
+    "submitting": "جارٍ الإرسال…",
+    "submitted": "تم الإرسال",
+    "resubmit": "إرسال التغييرات",
     "quizPassed": "اجتزت الاختبار: {{score}}/{{total}} إجابات صحيحة. يمكنك المتابعة.",
     "quizRetry": "{{score}}/{{total}} إجابات صحيحة. راجع إجاباتك وحاول مجددًا.",
     "quizCorrect": "الإجابة السابقة: صحيحة",
@@ -3022,6 +3048,7 @@
       "workspace-run": "Workspace run"
     },
     "overview": {
+      "startLearning": "ابدأ التعلم",
       "title": "نظرة عامة على المشروع",
       "expand": "توسيع",
       "collapse": "طي",
@@ -3034,7 +3061,21 @@
       "eachStage": "خطوات كل مرحلة",
       "yourRole": "أنت تتخذ القرارات وتراجع؛ ويساعدك الذكاء الاصطناعي في كتابة الخطة والكود.",
       "preview": "جرّب تطبيقك في منطقة المعاينة وتحقق مما بنيته.",
-      "advance": "لا يظهر الزر البنفسجي فوق حقل الإدخال إلا عندما تصبح الخطوة الحالية جاهزة للتقدّم. عند ظهوره، اضغط عليه للمتابعة."
+      "advance": "لا يظهر الزر البنفسجي فوق حقل الإدخال إلا عندما تصبح الخطوة الحالية جاهزة للتقدّم. عند ظهوره، اضغط عليه للمتابعة.",
+      "startBlocked": {
+        "guide": "أكمل دليل مساحة العمل أو أغلقه لبدء التعلّم.",
+        "connecting": "جارٍ الاتصال بالتحديثات المباشرة قبل بدء التعلّم…",
+        "retrying": "جارٍ إعادة الاتصال بالتحديثات المباشرة. انتظر عودة الاتصال قبل البدء.",
+        "unavailable": "التحديثات المباشرة غير متاحة. حدّث الصفحة لإعادة الاتصال قبل البدء.",
+        "pending": "هناك إجراء قيد التنفيذ. انتظر اكتماله قبل البدء.",
+        "busy": "المساعد ما زال يرد. انتظر انتهاء الرد قبل البدء.",
+        "environment": "انتظر حتى تصبح بيئة التعلّم جاهزة قبل البدء. إذا فشل الإعداد، فأعد المحاولة من الأعلى.",
+        "unsaved": "توجد تغييرات غير محفوظة في ملفات المشروع. احفظها أو تجاهلها قبل البدء.",
+        "preparing": "جارٍ تجهيز مساحة العمل. يُرجى الانتظار قبل البدء."
+      },
+      "singleFlow": "سير عمل المشروع",
+      "concepts": "مفاهيم هندسية",
+      "deliverables": "النتائج الوظيفية"
     },
     "journey": {
       "currentMilestone": "المرحلة الحالية",
@@ -3171,13 +3212,14 @@
       "readOnly": "Read-only",
       "saved": "تم الحفظ",
       "saveFailed": "فشل الحفظ · إعادة المحاولة",
-      "draftRetained": "التغييرات محفوظة في هذا المتصفح"
+      "draftRetained": "التغييرات محفوظة في هذا المتصفح",
+      "retryRead": "إعادة محاولة القراءة"
     },
     "inputBlocked": {
       "pending": "Processing your action. Your draft is kept.",
       "busy": "The assistant is replying. Stop the reply before sending another message.",
       "environment": "The project environment is not ready. If setup failed, retry above; your draft is kept.",
-      "unsaved": "Saving project files. You can send once saving finishes; your message stays here.",
+      "unsaved": "توجد تغييرات غير محفوظة في ملفات المشروع. احفظها أو تجاهلها قبل الإرسال؛ ستبقى رسالتك هنا.",
       "opening": "The assistant has not opened this step yet. Retry the opening; your draft is kept."
     },
     "recoverEnvironment": "Restore learning environment",
@@ -3375,6 +3417,8 @@
       "waiting": "يتاح الدليل عندما تصبح بيئة التعلم جاهزة.",
       "loading": "جارٍ تحميل مساحة العمل",
       "loadingDetail": "جارٍ الاتصال ببيئة التعلم وتجهيز ملفات المشروع. يُرجى الانتظار.",
+      "loadingSlowDetail": "يستغرق التجهيز وقتًا أطول. يمكنك العودة إلى مقدمة المشروع؛ وسيستمر تجهيز البيئة الذي بدأ بالفعل في الخلفية.",
+      "loadingReturn": "العودة إلى مقدمة المشروع",
       "steps": {
         "progress": {
           "title": "اطّلع على التقدم والمهمة الحالية",

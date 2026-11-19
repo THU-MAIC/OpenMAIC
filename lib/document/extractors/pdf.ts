@@ -37,8 +37,9 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
         signal: input.config.signal,
       };
       let parsed;
-      if (id === 'alidocmind') {
-        // AliDocMind handles pdf/docx/pptx/xlsx/images through one flow.
+      if (id === 'alidocmind' || id === 'deepseek-ocr') {
+        // AliDocMind and DeepSeek OCR handle every type they accept (PDF,
+        // Office documents, images) through one flow.
         parsed = await parsePDF(config, input.buffer, {
           fileName: input.fileName,
           mimeType: input.mimeType,
@@ -49,6 +50,12 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
         // Self-host MinerU routes every type (incl. pdf) through /file_parse.
         parsed = await parseWithMinerUDocument(config, input.buffer, {
           fileName: input.fileName || 'document.pdf',
+          mimeType: input.mimeType,
+        });
+      } else if (id === 'minicpm-ocr') {
+        // PDFs and images share one document-parse job on this provider.
+        parsed = await parsePDF(config, input.buffer, {
+          fileName: input.fileName,
           mimeType: input.mimeType,
         });
       } else if (input.mimeType === DOCUMENT_MIME_TYPES.pdf) {

@@ -1,0 +1,60 @@
+name: Maintainer Sweep Digest
+
+# Once a week (Monday), list what the maintainer sweep in MAINTAINING.md looks
+# at: untriaged issues, `status:blocked` issues, needs-info issues whose author
+# replied, pull requests ready for review and provider pull requests awaiting
+# an accept/decline decision. The digest goes to the job summary and to a
+# single "Maintainer sweep" issue, which is updated in place. Logic and tests
+# live in .github/scripts/maintainer-digest.mjs.
+#
+# Scheduled runs only update the issue when the repository variable
+# MAINTAINER_DIGEST_MODE is `apply`; otherwise they write the job summary only.
+# Manual runs are dry runs unless dry_run is unchecked.
+
+on:
+  schedule:
+    - cron: '7 1 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only write the job summary; do not update the digest issue'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: maintainer-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    if: github.repository == 'THU-MAIC/OpenMAIC'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      checks: read
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Build the maintainer sweep digest
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
+          DIGEST_MODE: ${{ vars.MAINTAINER_DIGEST_MODE }}
+        with:
+          script: |
+            const { pathToFileURL } = require('node:url');
+            const digest = await import(pathToFileURL(`${process.cwd()}/.github/scripts/maintainer-digest.mjs`));
+            const dryRun = digest.isDryRun(context.eventName, process.env.DRY_RUN_INPUT, process.env.DIGEST_MODE);
+            const result = await digest.run({ client: github, repo: context.repo, dryRun, log: core.info });
+            const issue = result.issue
+              ? `Digest issue ${result.issue.action}: ${result.issue.url}`
+              : 'Dry run: the digest issue was not changed.';
+            await core.summary.addRaw(`${issue}\n\n`).addRaw(result.body).write();

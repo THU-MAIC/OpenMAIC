@@ -48,6 +48,53 @@ function fixture(index: number) {
 }
 
 describe('authoritative product guidance', () => {
+  it.each([0, 2, 3])(
+    'keeps instructions stable while preserving deferred and live review facts in stage %i',
+    (index) => {
+      const base = { ...fixture(index), welcome: 'ready' as const, automaticEntry: true };
+      const changed = {
+        ...base,
+        automaticEntry: false,
+        activeSection: base.skill.progression[2],
+        welcomePresented: true,
+        reviewedSectionCount: 1,
+        feedbackSource: 'pending_review_reply' as const,
+        priorArtifactApproval: { studentSeq: 17, revalidateCurrentVersion: true as const },
+        pendingReview: {
+          question: 'CURRENT_REVIEW_SENTINEL',
+          approval: true,
+          studentResponses: [{ seq: 18, text: 'PRIVATE_LEARNER_REPLY' }],
+        },
+      };
+      const before = renderTeachingPrompt(base);
+      const after = renderTeachingPrompt(changed);
+      const marker = '\nInitial teaching state: ';
+      expect(before.systemPrompt).toBe(after.systemPrompt);
+      expect(after.systemPrompt).not.toContain('CURRENT_REVIEW_SENTINEL');
+      const snapshot = JSON.parse(after.initialContext.slice(marker.length));
+      expect(snapshot).toMatchObject({
+        stageEntry: { automatic: false },
+        learningRoadmap: { completionRecorded: false },
+        teachingContext: {
+          activeSection: changed.activeSection,
+          feedbackSource: 'pending_review_reply',
+        },
+        currentReview: { question: 'CURRENT_REVIEW_SENTINEL', studentResponseCount: 1 },
+      });
+      const live = JSON.parse(teachingLiveContext(changed));
+      expect(live).toMatchObject({
+        activeSection: changed.activeSection,
+        feedbackSource: 'pending_review_reply',
+        currentReview: { question: 'CURRENT_REVIEW_SENTINEL', studentResponseCount: 1 },
+      });
+      expect(live.activeInstruction.section).toBe(changed.activeSection);
+      expect(live.activeInstruction.instruction).toBe(base.skill.content[changed.activeSection!]);
+      if (index > 0) expect(live.priorArtifactApproval).toEqual(changed.priorArtifactApproval);
+      expect(teachingLiveContext(changed)).not.toContain('PRIVATE_LEARNER_REPLY');
+      expect(snapshot.stageEntry.automatic).toBe(false);
+    },
+  );
+
   it('restores exact active-section instructions independently of old tool history', () => {
     const input = fixture(2);
     const section = input.skill.progression[1]!;

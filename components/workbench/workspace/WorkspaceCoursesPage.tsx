@@ -64,11 +64,12 @@ import {
 } from 'lucide-react';
 import { FOLDER_TILE_FRAME, FolderTileCover } from '@/components/discovery/folder-card';
 import { toast } from 'sonner';
-import type { Slide } from '@openmaic/dsl';
+import type { CourseThumbnail } from '@/lib/utils/course-cover';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { useHomeDiscovery } from '@/lib/hooks/use-home-discovery';
 import { useCourseThumbnails } from '@/lib/hooks/use-course-thumbnails';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
+import { LiveInteractiveCover } from '@/components/discovery/live-interactive-cover';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailSkeleton } from '@/components/discovery/thumbnail-skeleton';
 import {
@@ -114,6 +115,8 @@ import {
 } from './workspace-folder-seam';
 import { WorkspaceRowMenu } from './workspace-row-controls';
 import { InlineName, newFolderName, type CommitCause } from './inline-name';
+import { RenameNameDialog } from './RenameNameDialog';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { useTreeDrag, type DragKind } from './use-tree-drag';
 import {
   COURSE_ORDER_STORAGE_KEY,
@@ -187,6 +190,16 @@ export function WorkspaceCoursesPage({
    * → new folder" asked for the draft; it is filed there once it exists.
    */
   const [edit, setEdit] = useState<NameEdit | null>(null);
+  /*
+   * A phone renames in a dialog, not in place: a course card's name sits under
+   * its thumbnail, which covered the inline field and left nothing to type in.
+   * A NEW folder keeps the inline draft row — that one is drawn in the grid's
+   * own flow with no thumbnail above it.
+   */
+  const mobile = useMobileLayout();
+  const renameInDialog = mobile && edit !== null && edit.kind !== 'newFolder';
+  const inlineField = (current: NameEdit, testId: string, label: string) =>
+    renameInDialog ? null : nameField(current, testId, label);
   const editSeq = useRef(0);
   const startEdit = (
     kind: NameEdit['kind'],
@@ -470,19 +483,19 @@ export function WorkspaceCoursesPage({
    * Each folder's cover: up to three member covers, newest first, as the
    * classic home's folder tile shows them. The members that fill (or, not
    * loaded yet, may fill) those slots are the card's candidates; a member
-   * without a slide gives its slot to the next.
+   * without a cover gives its slot to the next.
    */
   const folderCovers = useMemo(() => {
-    const byFolder = new Map<string, { slides: Slide[]; candidates: Course[] }>();
+    const byFolder = new Map<string, { covers: CourseThumbnail[]; candidates: Course[] }>();
     for (const course of [...courses.classrooms].sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (!course.folderId) continue;
-      const covers = byFolder.get(course.folderId) ?? { slides: [], candidates: [] };
-      byFolder.set(course.folderId, covers);
-      if (covers.candidates.length >= 3) continue;
-      const slide = thumbnails[course.id];
-      if (slide === null) continue;
-      covers.candidates.push(course);
-      if (slide) covers.slides.push(slide);
+      const entry = byFolder.get(course.folderId) ?? { covers: [], candidates: [] };
+      byFolder.set(course.folderId, entry);
+      if (entry.candidates.length >= 3) continue;
+      const cover = thumbnails[course.id];
+      if (cover === null) continue;
+      entry.candidates.push(course);
+      if (cover) entry.covers.push(cover);
     }
     return byFolder;
   }, [courses.classrooms, thumbnails]);
@@ -583,7 +596,7 @@ export function WorkspaceCoursesPage({
           openTestId={`workspace-courses-folder-${item.id}`}
           name={item.name}
           courseCount={counts.get(item.id) ?? 0}
-          covers={covers?.slides ?? NO_COVERS}
+          covers={covers?.covers ?? NO_COVERS}
           candidates={covers?.candidates}
           requestThumbnail={requestThumbnail}
           onOpen={() => {
@@ -602,7 +615,7 @@ export function WorkspaceCoursesPage({
           dropEdge={cardDropEdge(entry.id)}
           nameField={
             renaming
-              ? nameField(
+              ? inlineField(
                   edit,
                   `workspace-courses-folder-rename-${item.id}`,
                   t('classroom.folderNameLabel'),
@@ -639,7 +652,7 @@ export function WorkspaceCoursesPage({
         key={entry.id}
         course={course}
         run={courseRuns.get(course.id)}
-        slide={thumbnails[course.id]}
+        cover={thumbnails[course.id]}
         requestThumbnail={requestThumbnail}
         onOpen={() => onOpenCourse(course.id)}
         folders={foldersAvailable ? courses.folders : null}
@@ -647,7 +660,7 @@ export function WorkspaceCoursesPage({
         onCreateAndMove={() => startNewFolder(course.id)}
         nameField={
           edit?.kind === 'course' && edit.targetId === course.id
-            ? nameField(edit, `workspace-courses-rename-${course.id}`, t('classroom.rename'))
+            ? inlineField(edit, `workspace-courses-rename-${course.id}`, t('classroom.rename'))
             : null
         }
         // While its name is a field, or a folder is being drafted for
@@ -674,11 +687,16 @@ export function WorkspaceCoursesPage({
       aria-label={t('workspace.nav.myCourses')}
       className="ws-canvas ws-page relative flex min-w-0 flex-1 flex-col overflow-y-auto"
     >
-      <div className="mx-auto w-full max-w-[1120px] px-6 pb-16 pt-10 lg:px-10">
+      <div className="mx-auto w-full max-w-[1120px] px-4 pb-16 pt-4 sm:px-6 md:pt-10 lg:px-10">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="ws-page-title min-w-0">{t('workspace.nav.myCourses')}</h1>
-          <div className="flex items-center gap-2">
-            <label className="ws-page-search">
+          {/* A phone stacks the toolbar under the title: the actions on one row and
+              the search alone on the next, full width. From `md` it is one row. */}
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
+            <label
+              data-testid="workspace-courses-search-field"
+              className="ws-page-search order-last md:order-none"
+            >
               <Search className="size-4 shrink-0" aria-hidden="true" />
               <input
                 data-testid="workspace-courses-search"
@@ -876,13 +894,26 @@ export function WorkspaceCoursesPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {renameInDialog && edit ? (
+        <RenameNameDialog
+          open
+          title={t('classroom.rename')}
+          label={t(edit.kind === 'folder' ? 'classroom.folderNameLabel' : 'classroom.rename')}
+          initialName={edit.name}
+          maxLength={edit.kind === 'course' ? STAGE_NAME_MAX_LENGTH : 80}
+          busy={edit.busy}
+          error={edit.error}
+          onCommit={(name) => void commitEdit(edit, name, 'enter')}
+          onCancel={() => ownEdit(edit.id, () => null)}
+        />
+      ) : null}
     </main>
   );
 }
 
 /** Course cards per scroll page: a few rows of the grid at any width. */
 const COURSE_PAGE_SIZE = 24;
-const NO_COVERS: Slide[] = [];
+const NO_COVERS: CourseThumbnail[] = [];
 const NO_ORDER: readonly string[] = [];
 const NO_FOLDERS: Discovery['folders'] = [];
 /** The middle share of a folder card that files a course into it. */
@@ -979,7 +1010,7 @@ function FolderTile({
   readonly dropActive?: boolean;
   readonly name: string;
   readonly courseCount: number;
-  readonly covers: Slide[];
+  readonly covers: CourseThumbnail[];
   /** The members whose thumbnails fill (or may fill) the cover. */
   readonly candidates?: readonly Course[];
   readonly requestThumbnail?: (stageId: string, version: number) => () => void;
@@ -1013,7 +1044,7 @@ function FolderTile({
         dropActive && 'scale-[1.03]',
       )}
     >
-      <FolderTileCover covers={covers} courseCount={courseCount} />
+      <FolderTileCover covers={covers} courseCount={courseCount} live={near} />
       {dropActive ? (
         // The classic tile's drop state: the whole card lights up.
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-violet-500/20">
@@ -1077,7 +1108,7 @@ function FolderTile({
 function CourseCard({
   course,
   run,
-  slide,
+  cover,
   requestThumbnail,
   onOpen,
   folders,
@@ -1095,8 +1126,8 @@ function CourseCard({
 }: {
   readonly course: Course;
   readonly run: RunSnapshot | undefined;
-  /** The first slide; null when the course has none, undefined until loaded. */
-  readonly slide: Slide | null | undefined;
+  /** The course's cover; null when it has none, undefined until loaded. */
+  readonly cover: CourseThumbnail | null | undefined;
   readonly requestThumbnail: (stageId: string, version: number) => () => void;
   readonly onOpen: () => void;
   /** The folders a course can be filed into; null when folders are unavailable. */
@@ -1166,14 +1197,18 @@ function CourseCard({
         className="ws-course-card w-full text-left"
       >
         <div ref={thumbRef} className="ws-course-card-thumb relative">
-          {slide && width > 0 ? (
-            <SlideThumbnail
-              slide={slide}
-              size={width}
-              viewportSize={slide.viewportSize ?? 1000}
-              viewportRatio={slide.viewportRatio ?? 0.5625}
-            />
-          ) : slide === undefined ? (
+          {cover && (cover.kind === 'interactive' || width > 0) ? (
+            cover.kind === 'slide' ? (
+              <SlideThumbnail
+                slide={cover.slide}
+                size={width}
+                viewportSize={cover.slide.viewportSize ?? 1000}
+                viewportRatio={cover.slide.viewportRatio ?? 0.5625}
+              />
+            ) : (
+              <LiveInteractiveCover scene={cover.scene} size={width} visible={near && width > 0} />
+            )
+          ) : cover === undefined ? (
             <ThumbnailSkeleton />
           ) : (
             <div className="ws-course-card-blank" aria-hidden="true" />

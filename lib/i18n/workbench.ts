@@ -65,7 +65,13 @@ export const workbenchEn = {
     placeholder: 'Write your answer',
     confirm: 'Confirm',
     submit: 'Submit',
-    dismiss: 'Dismiss',
+    dismiss: 'Collapse',
+    recommended: 'Recommended',
+    autoConfirm: 'Auto-confirm',
+    autoConfirmed: 'Auto-selected the recommended option — you can change it anytime',
+    showDetails: 'Show more',
+    hideDetails: 'Show less',
+    orAnswerInChat: 'You can also answer in the chat',
     /**
      * The transcript row while this question owns the composer: the form below
      * already shows the question and its options, so the row says where the
@@ -200,6 +206,10 @@ export const workbenchEn = {
     steerQueued: 'The agent will respond after finishing the current step',
     runFailed: 'This build failed',
     retryHint: 'Send another message to retry',
+    contextLengthLimit:
+      "You've reached the maximum length for this conversation, but you can keep talking by starting a new chat.",
+    contextBudgetInvalid:
+      "The current model's context budget is misconfigured. This turn has been stopped.",
     stopped: 'This build was stopped',
     workerInterrupted:
       'Interrupted by a worker restart. This call produced no result; the agent will retry it if needed.',
@@ -453,7 +463,13 @@ export const workbenchZh = {
     placeholder: '写下你的回答',
     confirm: '确认',
     submit: '提交',
-    dismiss: '放弃',
+    dismiss: '收起',
+    recommended: '推荐',
+    autoConfirm: '自动确认',
+    autoConfirmed: '已自动选择推荐项，随时可以修改',
+    showDetails: '展开',
+    hideDetails: '收起',
+    orAnswerInChat: '也可以直接在对话里回答',
     inFormBelow: '在下方表单里回答',
     inPreview: '在右侧预览中回答',
     multiAnswerSeparator: '、',
@@ -561,6 +577,8 @@ export const workbenchZh = {
     steerQueued: 'agent 会在当前这一步做完后回应你',
     runFailed: '本轮生成失败',
     retryHint: '可以再说一句让它重试',
+    contextLengthLimit: '您已达到此会话的长度上限，可以开始新聊天以继续对话。',
+    contextBudgetInvalid: '当前模型的上下文预算配置异常，本轮已停止。',
     stopped: '本轮生成已停止',
     workerInterrupted: '被 worker 重启打断，这次调用没有产生结果；agent 会在新一次尝试里按需重发。',
     userStopped: '已被停止打断，这次调用没有产生结果。',

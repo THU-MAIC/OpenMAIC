@@ -12,6 +12,9 @@
 import { OwnerMaterialBytesUnavailableError } from '@/lib/server/materials/owner-material-bytes';
 import { MaterialExtractionError } from '@/lib/server/material-extraction/errors';
 import { selfHostedMinerUFailure } from '@/lib/pdf/pdf-providers';
+import { parseMinerUPdfChunks } from '@/lib/pdf/mineru-chunks';
+import { PDFDocument } from 'pdf-lib';
+import { runClaimedOwnerMaterialExtraction } from '@/lib/server/materials/extraction';
 import { createHash, randomUUID } from 'node:crypto';
 
 import { ensureAgentSessionSchema } from '@openmaic/storage/agent-session/pg';
@@ -47,6 +50,9 @@ import {
   publicMaterial,
   publishOwnerMaterialUpload,
   registerOwnerMaterial,
+  finalizeOwnerMaterial,
+  claimOwnerMaterialExtraction,
+  getOwnerMaterial,
 } from '@/lib/persistence/owner-materials';
 import {
   getServerPersistenceProvider,
@@ -1656,6 +1662,93 @@ export async function lostClaimStopsProvidersScenario(h: ExtractionHarness): Pro
 }
 
 /**
+ * The run's signal reaches the provider it runs, on the document and on the
+ * media path: a stopped runner or a claim found lost aborts the provider's
+ * config, so an asynchronous job or a local transcription is stopped instead
+ * of running to its own deadline. Nothing is settled.
+ */
+export async function providerSeesRunSignalScenario(h: ExtractionHarness): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expectStopped = async (run: Promise<unknown>): Promise<void> => {
+    try {
+      await expect(
+        Promise.race([
+          run,
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('the run did not stop within 3 s')), 3_000);
+          }),
+        ]),
+      ).rejects.toThrow('runner stopped');
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const abortable = (
+    onStart: (signal: AbortSignal | undefined) => void,
+  ): ReturnType<typeof vi.fn> =>
+    vi.fn((input: { config: { signal?: AbortSignal } }) => {
+      onStart(input.config.signal);
+      return new Promise<never>((_, reject) => {
+        input.config.signal?.addEventListener(
+          'abort',
+          () => reject(input.config.signal!.reason ?? new Error('aborted')),
+          { once: true },
+        );
+      });
+    });
+
+  const documentController = new AbortController();
+  let started!: () => void;
+  const documentStarted = new Promise<void>((resolve) => (started = resolve));
+  let documentSignal: AbortSignal | undefined;
+  const documentExtract = abortable((signal) => {
+    documentSignal = signal;
+    started();
+  });
+  await seedSource(h, 'doc-signal');
+  await ensure(h, 'doc-signal');
+  const documentRun = runClaimedOwnerExtraction(
+    (await claim(h))!,
+    h.deps({ providers: () => [documentProvider(documentExtract)] }),
+    { lost: false, signal: documentController.signal },
+  );
+  await documentStarted;
+  documentController.abort(new Error('runner stopped'));
+  await expectStopped(documentRun);
+  expect(documentSignal).toBe(documentController.signal);
+  expect(await stateOf(h, 'doc-signal')).toMatchObject({
+    status: 'running',
+    extraction_error: null,
+    extraction_result: null,
+  });
+
+  const mediaController = new AbortController();
+  let mediaStarted!: () => void;
+  const mediaStartedPromise = new Promise<void>((resolve) => (mediaStarted = resolve));
+  let mediaSignal: AbortSignal | undefined;
+  const mediaExtract = abortable((signal) => {
+    mediaSignal = signal;
+    mediaStarted();
+  });
+  await seedSource(h, 'vid-signal', { mime: 'video/mp4', bytes: Buffer.from('mp4-signal') });
+  await ensure(h, 'vid-signal');
+  const mediaRun = runClaimedOwnerExtraction(
+    (await claim(h))!,
+    h.deps({ mediaProviders: () => [mediaProvider(mediaExtract)] }),
+    { lost: false, signal: mediaController.signal },
+  );
+  await mediaStartedPromise;
+  mediaController.abort(new Error('runner stopped'));
+  await expectStopped(mediaRun);
+  expect(mediaSignal).toBe(mediaController.signal);
+  expect(await stateOf(h, 'vid-signal')).toMatchObject({
+    status: 'running',
+    extraction_error: null,
+    extraction_result: null,
+  });
+}
+
+/**
  * A claim found lost while the cache lookup waits on the database, the
  * lookup then a miss: the run stops there and calls no provider, on the
  * document and on the media path.
@@ -1866,6 +1959,111 @@ export async function tooManyPagesScenario(h: ExtractionHarness): Promise<void> 
   expect((await stored()).extraction).toEqual({ status: 'pending' });
 }
 
+/** A failed chunk's physical page range survives both persistence paths without stopping fallback. */
+export async function failedPagesScenario(h: ExtractionHarness): Promise<void> {
+  vi.stubEnv('PDF_MINERU_CHUNK_PAGES', '2');
+  vi.stubEnv('PDF_MINERU_MAX_PAGES', '1000');
+  vi.stubEnv('PDF_MINERU_CHUNK_CONCURRENCY', '1');
+  const document = await PDFDocument.create();
+  for (let page = 0; page < 5; page++) document.addPage();
+  const bytes = Buffer.from(await document.save());
+  const request = vi.fn(async (_bytes: Buffer, name: string) => {
+    if (name === 'pages-1-2.pdf') return { md_content: 'first chunk succeeded' };
+    throw new Error('MinerU API error (503)');
+  });
+  const parse = vi.fn(async () => {
+    await parseMinerUPdfChunks(bytes, request);
+    throw new Error('Expected the failed chunk to reject the entire document');
+  });
+  const { provider, run, failing } = documentCandidates(h);
+  const pdf = ['application/pdf'];
+  const failedFallback = failing('Invalid PDF structure');
+  expect(
+    await run(
+      'pages-failed',
+      'application/pdf',
+      [provider('mineru', pdf, parse), provider('unpdf', pdf, failedFallback)],
+      ['mineru'],
+    ),
+  ).toMatchObject({
+    status: 'failed',
+    reason_code: 'pages_failed',
+    extraction_claims: 1,
+    extraction_result: null,
+  });
+  expect(request).toHaveBeenCalledTimes(3);
+  expect(failedFallback).toHaveBeenCalledTimes(1);
+  const stored = (
+    await h.pool.query<{ extraction: Record<string, unknown> }>(
+      'SELECT extraction FROM owner_material WHERE id = $1',
+      ['pages-failed'],
+    )
+  ).rows[0].extraction;
+  expect(stored).toEqual({
+    status: 'failed',
+    reasonCode: 'pages_failed',
+    reasonValues: { firstPage: 3, lastPage: 4 },
+  });
+
+  // An ordinary chunk failure must still allow a successful fallback.
+  expect(
+    await run(
+      'pages-fallback',
+      'application/pdf',
+      [provider('mineru', pdf, parse), provider('unpdf', pdf, h.documentExtract)],
+      ['mineru'],
+    ),
+  ).toMatchObject({ status: 'done', reason_code: null });
+  expect(h.documentExtract).toHaveBeenCalledTimes(1);
+
+  // The classic worker publishes the same safe fields in its existing JSON shape.
+  const id = 'classic-pages-failed';
+  await registerOwnerMaterial(
+    h.provider.pool,
+    {
+      id,
+      ownerId: ACCOUNT,
+      kind: 'source',
+      mime: 'application/pdf',
+      bytes: bytes.length,
+      originalName: 'pages.pdf',
+      ossKey: `objects/${id}`,
+    },
+    { maxCount: 100, maxTotalBytes: 1_000_000_000 },
+  );
+  await finalizeOwnerMaterial(h.provider.pool, id, bytes.length, 'classic-digest', {
+    extract: true,
+  });
+  const claim = await claimOwnerMaterialExtraction(h.provider.pool, 'worker', {
+    leaseTtlMs: TTL,
+    perOwnerLimit: 10,
+  });
+  expect(claim?.material.id).toBe(id);
+  const put = vi.fn();
+  await runClaimedOwnerMaterialExtraction(claim!, {
+    heartbeatIntervalMs: 60_000,
+    services: async () => ({ document: null }),
+    analyze: parse,
+    byteStore: {
+      get: async () => bytes,
+      put,
+      delete: vi.fn(),
+      deletePrefix: vi.fn(),
+      list: async () => [],
+    },
+  });
+  const classic = await getOwnerMaterial(h.provider.pool, ACCOUNT, id);
+  expect(classic?.extraction).toMatchObject({
+    status: 'failed',
+    errorCode: 'EXTRACTION_FAILED',
+    retryable: false,
+    reasonCode: 'pages_failed',
+    reasonValues: { firstPage: 3, lastPage: 4 },
+  });
+  expect(classic?.extraction?.error).toContain('PDF pages 3–4');
+  expect(put).not.toHaveBeenCalled();
+}
+
 /** Public failure reasons survive only a terminal, current claim. */
 export async function failureReasonScenario(h: ExtractionHarness): Promise<void> {
   await seedSource(h, 'src-unavailable');
@@ -1972,4 +2170,192 @@ export async function failureReasonScenario(h: ExtractionHarness): Promise<void>
   );
   await drain(h);
   expect(await stateOf(h, 'doc-failed')).toMatchObject({ status: 'failed', reason_code: null });
+}
+
+/** Optional chapter failures cannot undo extraction or enter provider fallback. */
+export async function chapterRecognitionScenario(
+  h: ExtractionHarness,
+  mode: string,
+): Promise<void> {
+  const llm = await import('@/lib/ai/llm');
+  const models = await import('@/lib/server/model-config/llm');
+  const runtime = await import('@/lib/server/model-config/runtime');
+  const { extractMinerUResult } = await import('@/lib/pdf/mineru-parser');
+  const { getChapterSource, withChapterSource } = await import('@/lib/document/chapter-source');
+  const { parsedPdfToDocumentArtifact } = await import('@/lib/document/pdf-compat');
+  const { readMaterialExtractionResult } = await import('@/lib/server/materials/extraction');
+  const recognition = await import('@/lib/server/material-extraction/chapters');
+  const recognize = vi.spyOn(recognition, 'recognizeMaterialChapters');
+  const chapters = [
+    { title: 'First', startPage: 1, sections: [{ title: 'Section', startPage: 2 }] },
+  ];
+  const parsed = () => {
+    const result = extractMinerUResult({
+      md_content: '# First\n\nBook text',
+      content_list: Array.from({ length: 50 }, (_, page_idx) => ({
+        type: 'text',
+        text: page_idx ? 'Body' : 'First',
+        page_idx,
+        ...(page_idx ? {} : { text_level: 1 }),
+      })),
+    });
+    return withChapterSource(result, { ...getChapterSource(result)!, physicalPageCount: 100 });
+  };
+  const controller = new AbortController();
+  const resolve = vi.spyOn(models, 'resolveStageModel').mockResolvedValue({ model: {} } as never);
+  const workspace = vi.spyOn(runtime, 'backgroundWorkspaceId').mockResolvedValue(ACCOUNT);
+  if (['disabled', 'unassigned'].includes(mode)) resolve.mockRejectedValue(new Error(mode));
+  const call = vi.spyOn(llm, 'callLLM').mockImplementation(async (params) => {
+    if (mode === 'cancel') {
+      controller.abort(new Error('runner stopped'));
+      throw controller.signal.reason;
+    }
+    if (mode === 'error') throw new Error('provider unavailable');
+    if (mode === 'timeout')
+      return await new Promise((_resolve, reject) => {
+        params.abortSignal?.addEventListener('abort', () => reject(params.abortSignal?.reason), {
+          once: true,
+        });
+      });
+    return {
+      text:
+        mode === 'json'
+          ? 'not json'
+          : mode === 'invalid'
+            ? '{"chapters":[{}]}'
+            : JSON.stringify({
+                chapters: [
+                  { title: 'First', start: 1, sections: [{ title: 'Section', start: 2 }] },
+                ],
+              }),
+    } as never;
+  });
+  const nativeTimeout = globalThis.setTimeout;
+  const timer =
+    mode === 'timeout'
+      ? vi
+          .spyOn(globalThis, 'setTimeout')
+          .mockImplementation(((...args: Parameters<typeof setTimeout>) =>
+            nativeTimeout(
+              args[0],
+              args[1] === 120_000 ? 10 : args[1],
+              ...args.slice(2),
+            )) as typeof setTimeout)
+      : undefined;
+  try {
+    const extract = vi.fn(async () =>
+      parsedPdfToDocumentArtifact(parsed(), {
+        buffer: Buffer.alloc(0),
+        mimeType: 'application/pdf',
+        config: { providerId: 'mineru' },
+      }),
+    );
+    const fallback = vi.fn(h.documentExtract.getMockImplementation()!);
+    const providers = () => [
+      { ...documentProvider(extract), id: 'mineru' },
+      documentProvider(fallback),
+    ];
+    const id = `chapters-${mode}`;
+    await seedSource(h, id);
+    await ensure(h, id);
+    if (mode === 'cancel') {
+      await expect(
+        runClaimedOwnerExtraction((await claim(h))!, h.deps({ providers }), {
+          lost: false,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('runner stopped');
+      expect((await stateOf(h, id)).extraction_result).toBeNull();
+    } else {
+      await runNextOwnerExtraction(h.deps({ providers }));
+      const stored = await stateOf(h, id);
+      expect(stored.status).toBe('done');
+      expect(stored.extraction_result?.chapters).toEqual(mode === 'success' ? chapters : undefined);
+      expect(stored.extraction_result?.chapterPageCount).toBe(mode === 'success' ? 100 : undefined);
+      expect(stored.extraction_result?.stats.pages).toBe(50);
+      expect(JSON.stringify(stored.extraction_result)).not.toContain('frontPages');
+      if (mode === 'success') {
+        await seedSource(h, 'chapters-reused', { bytes: h.sources.get(id)! });
+        await ensure(h, 'chapters-reused');
+        await runNextOwnerExtraction(h.deps({ providers }));
+        expect((await stateOf(h, 'chapters-reused')).extraction_result).toMatchObject({
+          chapters,
+          chapterPageCount: 100,
+          stats: { pages: 50 },
+          reusedFrom: id,
+        });
+        const { readOwnerMaterialText } =
+          await import('@/lib/server/materials/owner-material-text');
+        const reused = (await stateOf(h, 'chapters-reused')).extraction_result!;
+        expect(
+          await readOwnerMaterialText({
+            id: 'chapters-reused',
+            ownerId: ACCOUNT,
+            extractionResult: reused,
+          }),
+        ).toEqual({
+          text: '# First\n\nBook text',
+          revision: reused.revision,
+          chapters,
+          pageCount: 100,
+        });
+        expect(call).toHaveBeenCalledTimes(1);
+      }
+    }
+    expect(fallback).not.toHaveBeenCalled();
+
+    // Classic uploads keep their entire budget for parsing and image inlining.
+    recognize.mockClear();
+    call.mockClear();
+    const classicId = `classic-${id}`;
+    await registerOwnerMaterial(
+      h.provider.pool,
+      {
+        id: classicId,
+        ownerId: ACCOUNT,
+        kind: 'source',
+        mime: 'application/pdf',
+        bytes: 4,
+        originalName: 'book.pdf',
+        ossKey: `objects/${classicId}`,
+      },
+      { maxCount: 100, maxTotalBytes: 1_000_000_000 },
+    );
+    await finalizeOwnerMaterial(h.provider.pool, classicId, 4, `digest-${mode}`, { extract: true });
+    const current = await claimOwnerMaterialExtraction(h.provider.pool, 'worker', {
+      leaseTtlMs: TTL,
+      perOwnerLimit: 10,
+    });
+    expect(current?.material.id).toBe(classicId);
+    const saved = new Map<string, Buffer>();
+    const byteStore = {
+      get: async (key: string) => saved.get(key) ?? Buffer.from('book'),
+      put: vi.fn(async (key: string, data: Buffer) => {
+        saved.set(key, data);
+      }),
+      delete: vi.fn(),
+      deletePrefix: vi.fn(),
+      list: async () => [],
+    };
+    await runClaimedOwnerMaterialExtraction(current!, {
+      heartbeatIntervalMs: 60_000,
+      services: async () => ({ document: null }),
+      analyze: async () => parsed(),
+      byteStore,
+    });
+    const storedClassic = await getOwnerMaterial(h.provider.pool, ACCOUNT, classicId);
+    expect(recognize).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+    expect(storedClassic?.extraction?.status).toBe('ready');
+    const result = await readMaterialExtractionResult(storedClassic!, byteStore);
+    expect(result).not.toHaveProperty('chapters');
+    expect(JSON.stringify(result)).not.toContain('frontPages');
+    expect(result.text).toContain('Book text');
+  } finally {
+    recognize.mockRestore();
+    call.mockRestore();
+    resolve.mockRestore();
+    workspace.mockRestore();
+    timer?.mockRestore();
+  }
 }
