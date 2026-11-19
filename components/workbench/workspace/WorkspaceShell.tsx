@@ -713,6 +713,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const openSession = useCallback(
     (sessionId: string) => {
       setNewConversationRequested(false);
+      setNarrowFocus('chat');
       collapse.expandChat();
       setMaterialSeed(null);
       goTo(withView(withSession(panes, sessionId), null));
@@ -1125,6 +1126,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     draftVisit.current += 1;
     setNewConversationRequested(true);
     setDraftNamesCourse(false);
+    setNarrowFocus('chat');
     collapse.expandChat();
     setMaterialSeed(null);
     // The teacher's own choice, so it also leaves the knowledge base page.
@@ -1150,7 +1152,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       // strip opens an ordinary new one, naming nothing.
       if (readOnlyCourse) {
         startNewConversation();
-        setNarrowFocus('chat');
       } else {
         talkAboutCourse();
       }
@@ -1168,7 +1169,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const talkAboutCourse = () => {
     startNewConversation();
     setDraftNamesCourse(true);
-    setNarrowFocus('chat');
   };
   // Stable for the memoised classroom pane; always runs the latest render's.
   const talkAboutCourseRef = useRef(talkAboutCourse);
