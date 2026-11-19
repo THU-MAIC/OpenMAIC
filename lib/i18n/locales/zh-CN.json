@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "开始编辑"
+    },
+    "mobile": {
+      "openMenu": "打开导航",
+      "closeMenu": "关闭导航"
     }
   },
   "profile": {

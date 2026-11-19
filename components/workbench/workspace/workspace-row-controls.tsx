@@ -190,6 +190,11 @@ export function WorkspaceRowMenu({
   return (
     <DropdownMenu
       open={open}
+      // Non-modal: a modal menu sets `pointer-events: none` on the page while it
+      // is open, and on a touch screen the release that follows the opening
+      // press then lands on whatever is under the trigger — for a course card,
+      // the card itself, which opened the course instead of the menu.
+      modal={false}
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) setConfirming(false);

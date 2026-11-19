@@ -2674,6 +2674,10 @@
         }
       },
       "editDone": "편집 시작"
+    },
+    "mobile": {
+      "openMenu": "탐색 열기",
+      "closeMenu": "탐색 닫기"
     }
   },
   "profile": {
