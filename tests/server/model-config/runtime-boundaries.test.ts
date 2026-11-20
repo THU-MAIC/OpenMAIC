@@ -93,6 +93,7 @@ describe('workspaceLayer', () => {
     expect(await runtime.workspaceLayer('user:alice')).toEqual({
       source: 'workspace',
       config: { slots: { video: null } },
+      revision: 1,
     });
   });
 
