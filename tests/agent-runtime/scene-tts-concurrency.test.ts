@@ -101,7 +101,7 @@ describe('agent TTS in-flight cap', () => {
     mocks.persist.mockResolvedValue('/api/classroom-media/stage-a/media/tts.mp3');
   });
 
-  it('synthesizes at most 16 MOSS clips per page and keeps each clip with its speech', async () => {
+  it('defaults to 16 concurrent MOSS clips per page and keeps each clip with its speech', async () => {
     mocks.providers.mockResolvedValue({
       ...connection,
       providerId: 'openai-tts',
@@ -110,7 +110,7 @@ describe('agent TTS in-flight cap', () => {
       options: { backend: 'moss', defaultVoice: 'teacher' },
       voices: [{ id: 'teacher', name: 'Teacher', gender: 'female' }],
     });
-    vi.stubEnv('MOSS_TTS_CONCURRENCY', '16');
+    vi.stubEnv('MOSS_TTS_CONCURRENCY', undefined);
     vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', undefined);
     vi.stubEnv('OPENMAIC_AGENT_TTS_CONCURRENCY', undefined);
     const page = scene('moss');

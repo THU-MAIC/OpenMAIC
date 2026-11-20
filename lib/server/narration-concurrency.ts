@@ -18,15 +18,14 @@ export function getParallelSceneConcurrency(): number {
 
 const MOSS_MAX_CONCURRENCY = 16;
 
-/** An explicit general limit applies to MOSS too. With no settings, generation is serial. */
+/** Managed MOSS defaults to 16 concurrent requests and honors an explicit scene limit. */
 export function getMossTtsConcurrency(sceneLimit = getParallelSceneConcurrency()): number {
   const raw = process.env.MOSS_TTS_CONCURRENCY?.trim();
-  const requested = raw ? Number(raw) : undefined;
-  const specific = Number.isInteger(requested) && requested! > 0 ? requested! : undefined;
+  const requested = raw ? Number(raw) : MOSS_MAX_CONCURRENCY;
   const general = Math.max(1, sceneLimit);
-  if (specific === undefined) return Math.min(general, MOSS_MAX_CONCURRENCY);
+  const mossLimit = Number.isInteger(requested) && requested > 0 ? requested : general;
   const hasGeneralLimit = sceneLimit > 0 || !!process.env.PARALLEL_SCENE_CONCURRENCY?.trim();
-  return Math.min(specific, MOSS_MAX_CONCURRENCY, hasGeneralLimit ? general : MOSS_MAX_CONCURRENCY);
+  return Math.min(mossLimit, MOSS_MAX_CONCURRENCY, hasGeneralLimit ? general : Infinity);
 }
 
 type MossGate = { semaphore: ReturnType<typeof createSemaphore>; callers: number };

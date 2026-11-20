@@ -161,16 +161,31 @@ it('shares the operator ceiling across concurrent requests and cancels a queued 
   expect(mockFetch).toHaveBeenCalledTimes(5);
 });
 
-it('respects the explicit serial setting and caps a dedicated deployment at 16', () => {
+it.each([
+  [undefined, undefined, 16],
+  ['0', undefined, 1],
+  ['0', '32', 1],
+  ['4', undefined, 4],
+  ['4', '8', 4],
+  [undefined, '8', 8],
+  [undefined, '32', 16],
+  [undefined, '0', 1],
+] as const)('resolves scene limit %s and MOSS limit %s to %i', (scene, moss, expected) => {
   try {
-    vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', '0');
-    vi.stubEnv('MOSS_TTS_CONCURRENCY', '32');
-    expect(getMossTtsConcurrency()).toBe(1);
+    vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', scene);
+    vi.stubEnv('MOSS_TTS_CONCURRENCY', moss);
+    expect(getMossTtsConcurrency()).toBe(expected);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it('honors a positive scene limit supplied by the generation service', () => {
+  try {
     vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', undefined);
-    expect(getMossTtsConcurrency()).toBe(16);
     vi.stubEnv('MOSS_TTS_CONCURRENCY', undefined);
     expect(getMossTtsConcurrency(4)).toBe(4);
-    expect(getMossTtsConcurrency(0)).toBe(1);
+    expect(getMossTtsConcurrency(0)).toBe(16);
   } finally {
     vi.unstubAllEnvs();
   }
