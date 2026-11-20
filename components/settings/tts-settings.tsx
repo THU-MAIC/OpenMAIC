@@ -163,7 +163,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
-  const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
+  const { previewing: testingTTS, previewingVoiceId, startPreview, stopPreview } = useTTSPreview();
   const previewRequest = useRef(0);
 
   // Keep the sample text in sync with locale changes.
@@ -193,8 +193,13 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   const regionalEndpoint = regionalEndpointTemplate('tts', providerId);
 
   const handleTestTTS = async (voice = effectiveVoice) => {
-    if (!testText.trim()) return;
     const request = ++previewRequest.current;
+    if (previewingVoiceId === voice) {
+      stopPreview();
+      setTestMessage('');
+      return;
+    }
+    if (!testText.trim()) return;
     setTestStatus('testing');
     setTestMessage('');
     try {
@@ -408,7 +413,8 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
           selectedVoice={effectiveVoice}
           configuredVoices={entry.provider?.voices}
           onPreview={handleTestTTS}
-          canPreview={!testingTTS && !!testText.trim()}
+          previewingVoiceId={previewingVoiceId}
+          canPreview={!!testText.trim()}
         />
       )}
     </div>

@@ -1,15 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  BookmarkMinus,
-  Loader2,
-  MoreHorizontal,
-  Plus,
-  Trash2,
-  Upload,
-  Volume2,
-} from 'lucide-react';
+import { BookmarkMinus, Loader2, MoreHorizontal, Plus, Trash2, Upload } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +32,8 @@ import {
 } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { cn } from '@/lib/utils';
+import { VoicePreviewButton } from './voice-preview-button';
 
 const providerId = 'minimax-tts';
 
@@ -50,6 +44,7 @@ interface MiniMaxVoiceManagerProps {
   selectedVoice: string;
   configuredVoices?: ConfiguredTTSVoice[];
   onPreview: (id: string) => Promise<void>;
+  previewingVoiceId: string | null;
   canPreview: boolean;
 }
 
@@ -64,6 +59,7 @@ function MiniMaxVoiceEditor({
   selectedVoice,
   configuredVoices,
   onPreview,
+  previewingVoiceId,
   canPreview,
   local,
   account,
@@ -99,6 +95,8 @@ function MiniMaxVoiceEditor({
     if (existing) existing.kind = voice.kind;
     else if (voice.kind !== 'system') rows.set(voice.id, { ...voice, local: false });
   }
+  const nameCounts = new Map<string, number>();
+  for (const { name } of rows.values()) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
   const confirming = account.canDeleteRemote && confirmId ? rows.get(confirmId) : undefined;
   useEffect(() => {
     if (confirmId && (!confirming || confirming.kind === 'system')) setConfirmId(null);
@@ -246,31 +244,33 @@ function MiniMaxVoiceEditor({
           {[...rows.values()].map((row) => (
             <li
               key={row.id}
-              className="flex min-h-16 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 hover:bg-muted/35"
+              className={cn(
+                'group flex min-h-16 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2',
+                selectedVoice === row.id ? 'bg-primary/10' : 'hover:bg-muted/35',
+              )}
             >
               <div className="min-w-32 flex-1">
-                <div title={row.name} className="truncate text-sm font-medium">
+                <div
+                  title={row.name === row.id ? row.name : `${row.name} · ${row.id}`}
+                  className={cn(
+                    'truncate text-sm font-medium',
+                    selectedVoice === row.id && 'text-primary',
+                  )}
+                >
                   {row.name}
                 </div>
-                {row.name !== row.id && (
+                {row.name !== row.id && (nameCounts.get(row.name) ?? 0) > 1 && (
                   <div title={row.id} className="truncate text-xs text-muted-foreground">
                     {row.id}
                   </div>
                 )}
               </div>
               <div className="ms-auto flex max-w-full items-center gap-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 text-muted-foreground hover:text-foreground"
-                  aria-label={t('settings.voxcpmPreviewVoice')}
-                  title={t('settings.voxcpmPreviewVoice')}
-                  disabled={!canPreview || busy}
+                <VoicePreviewButton
+                  previewing={previewingVoiceId === row.id}
+                  disabled={previewingVoiceId !== row.id && (!canPreview || busy)}
                   onClick={() => void onPreview(row.id)}
-                >
-                  <Volume2 className="size-4" />
-                </Button>
+                />
                 <Button
                   type="button"
                   variant={selectedVoice === row.id ? 'secondary' : 'outline'}

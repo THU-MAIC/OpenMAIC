@@ -33,6 +33,7 @@ const deleteLabel = 'settings.minimaxDeleteRemote';
 const unsaveLabel = 'settings.minimaxRemoveLocal';
 const fetchRequest = vi.fn<typeof fetch>();
 const play = vi.fn(async () => {});
+const pause = vi.fn();
 let duration = 10;
 let learnerKey = 'anonymous-owner-secret';
 let host: HTMLDivElement;
@@ -44,6 +45,7 @@ beforeEach(async () => {
   learnerKey = 'anonymous-owner-secret';
   fetchRequest.mockReset();
   play.mockClear();
+  pause.mockClear();
   account.voices = [];
   account.loading = false;
   account.canDeleteRemote = true;
@@ -75,7 +77,7 @@ beforeEach(async () => {
     'Audio',
     class {
       play = play;
-      pause() {}
+      pause = pause;
     },
   );
   vi.stubGlobal(
@@ -234,6 +236,66 @@ it('shows the manager only for the active configured MiniMax service and lists o
   expect(host.textContent).not.toContain('Public system voice');
   expect(row('Private designed voice').textContent).toContain('Private designed voice');
   expect(fetchRequest).not.toHaveBeenCalled();
+});
+
+it('switches and stops row previews independently of the selected narrator', async () => {
+  account.voices = [
+    { id: 'teacher', name: 'Class narrator', kind: 'clone' },
+    { id: 'guide', name: 'Museum guide', kind: 'designed' },
+  ];
+  fetchRequest.mockImplementation(async () => Response.json({ base64: 'AQI=', format: 'mp3' }));
+  await render();
+  await waitForUI(() => expect(host.querySelector('#minimax-reference:enabled')).not.toBeNull());
+  const narrator = row('Class narrator');
+  const guide = row('Museum guide');
+  const preview = 'settings.voxcpmPreviewVoice';
+  const stop = 'settings.voxcpmStopPreview';
+  await click('settings.serverConfig.useForNarration', narrator);
+  await click(preview, narrator);
+  await waitForUI(() => expect(play).toHaveBeenCalledTimes(1));
+  expect(button(stop, narrator).disabled).toBe(false);
+  expect(button(preview, guide).disabled).toBe(false);
+
+  await click(preview, guide);
+  await waitForUI(() => expect(play).toHaveBeenCalledTimes(2));
+  expect(pause).toHaveBeenCalledTimes(1);
+  expect(button(preview, narrator).disabled).toBe(false);
+  expect(button('settings.serverConfig.inUse', narrator).getAttribute('aria-pressed')).toBe('true');
+  await click(stop, guide);
+
+  expect(pause).toHaveBeenCalledTimes(2);
+  expect(button(preview, guide).disabled).toBe(false);
+  expect(
+    fetchRequest.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).ttsVoice),
+  ).toEqual(['teacher', 'guide']);
+  expect(useSettingsStore.getState().ttsVoice).toBe('teacher');
+});
+
+it('discards a preview stopped while audio is still being generated', async () => {
+  account.voices = [{ id: 'guide', name: 'Museum guide', kind: 'clone' }];
+  let finish!: (response: Response) => void;
+  fetchRequest.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+  await render();
+  await click('settings.voxcpmPreviewVoice', row('Museum guide'));
+  await click('settings.voxcpmStopPreview', row('Museum guide'));
+  await act(async () => finish(Response.json({ base64: 'AQI=', format: 'mp3' })));
+  expect(play).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain('settings.ttsTestSuccess');
+  expect(fetchRequest).toHaveBeenCalledTimes(1);
+});
+
+it('shows IDs in the list when voices share a name or only have an ID', async () => {
+  account.voices = [
+    { id: 'custom-01', name: 'Museum guide', kind: 'designed' },
+    { id: 'custom-02', name: 'Tutor', kind: 'clone' },
+    { id: 'custom-03', name: 'Tutor', kind: 'clone' },
+    { id: 'unnamed-04', name: 'unnamed-04', kind: 'clone' },
+  ];
+  await render();
+  expect(row('Museum guide').textContent).not.toContain('custom-01');
+  expect(row('custom-02').textContent).toContain('Tutor');
+  expect(row('custom-03').textContent).toContain('Tutor');
+  expect(row('unnamed-04')).toBeDefined();
 });
 
 it('saves the returned ID with the typed name and previews it only when requested', async () => {
