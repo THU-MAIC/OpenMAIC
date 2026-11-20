@@ -366,3 +366,62 @@ describe('course rows', () => {
     expect(markup).toContain('stage-second');
   });
 });
+
+describe('the compaction divider', () => {
+  const divider = (key: string, summary: string): ChatNode => ({
+    key,
+    kind: 'compaction',
+    text: '',
+    copyKey: 'workbench.system.contextCompacted',
+    compactionSummary: summary,
+    compactionTokensBefore: 100_000,
+    compactionTokensAfter: 12_000,
+    compactionMessagesBefore: 40,
+    compactionMessagesAfter: 6,
+  });
+
+  it('renders as its own row, collapsed, with the summary one click away', () => {
+    const markup = renderToStaticMarkup(
+      createElement(
+        I18nProvider,
+        null,
+        createElement(ChatTimeline, {
+          chat: [
+            { key: 'u', kind: 'user', text: '长对话' },
+            divider('e9', 'The learner asked about light refraction.'),
+            { key: 'a', kind: 'assistant', text: '接着说' },
+          ],
+          plan: [],
+        }),
+      ),
+    );
+    expect(markup).toContain('workbench-compaction-divider');
+    expect(markup).toContain('aria-expanded="false"');
+    // Collapsed by default: the summary is behind the toggle, never spliced
+    // into the caption row.
+    expect(markup).not.toContain('refraction');
+  });
+
+  it('never joins an action cluster, and two dividers keep their own rows', () => {
+    // A mid-run compaction lands between tool cards; the divider is a fact
+    // about the conversation, not an action, so it must break the cluster
+    // rather than ride inside it. Two dividers back to back are two facts with
+    // different summaries — the notice-count collapse must not eat one.
+    const rows = groupChat([
+      { key: 'u', kind: 'user', text: 'p' },
+      tool('generate_scene', 'g1'),
+      divider('e9', 'first summary'),
+      tool('generate_scene', 'g2'),
+      divider('e10', 'second summary'),
+      { key: 'a', kind: 'assistant', text: 'done' },
+    ]);
+    expect(kindsOf(rows)).toEqual([
+      'user',
+      'generate_scene',
+      'compaction',
+      'generate_scene',
+      'compaction',
+      'assistant',
+    ]);
+  });
+});

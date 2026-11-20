@@ -18,6 +18,22 @@ export interface StageLinkLifecycleData {
 }
 
 /**
+ * Payload of the `context_compacted` lifecycle event: the run's context
+ * compaction replaced earlier messages with a summary before the next model
+ * call. The summary is already durable in the session's entry tree; carrying
+ * it here too is what lets the chat fold paint the compaction divider from
+ * the event log alone, identically live and on replay.
+ */
+export interface ContextCompactedLifecycleData {
+  /** The summary the compaction generated, verbatim. */
+  summary: string;
+  tokensBefore: number;
+  tokensAfter: number;
+  messagesBefore: number;
+  messagesAfter: number;
+}
+
+/**
  * Payload of the `media_ready` lifecycle event: an asynchronous media
  * generation job (started by the `generate_video` tool) settled.
  */
@@ -56,6 +72,16 @@ export const HOST_AGENT_LIFECYCLE = {
   userMessage: 'user_message',
   /** Sub-step progress inside one long tool call (per-LLM-round-trip). */
   trace: 'trace',
+  /**
+   * The run's context compaction replaced earlier messages with a summary
+   * before the next model call. `data` is {@link ContextCompactedLifecycleData}.
+   * Durable on purpose: a conversation that silently forgets its own past is a
+   * bug report, and the fold renders a divider ("earlier messages were
+   * summarized") that must survive refresh and replay. An old frontend that
+   * does not know the type ignores it (the chat fold's default case) and loses
+   * nothing but the explanation.
+   */
+  contextCompacted: 'context_compacted',
   /**
    * The run's reasoning handed over to visible text: the first update of the
    * current message that carries text after carrying thinking. The chat fold

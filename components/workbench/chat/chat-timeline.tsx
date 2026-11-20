@@ -22,8 +22,8 @@
  * question card: it is a hand-over, so it gets its own line and the host's send
  * path (`onAnswer`).
  */
-import { useMemo } from 'react';
-import { CircleSlash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Archive, ChevronDown, ChevronRight, CircleSlash2 } from 'lucide-react';
 import { courseCardExclusions } from '@/lib/workbench/course-link';
 import type { ChatNode, PlannedPage } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
@@ -174,6 +174,62 @@ function RunBoundary({
   );
 }
 
+/**
+ * The compaction divider: everything above this row the agent now knows only
+ * through the summary behind it. A centered caption like the cancel boundary's
+ * (a fact, not a warning), with a chevron because — unlike a boundary — there
+ * is something to open: the summary itself, as prose. Open state is render
+ * state only; the transcript records the fact, not the reader's curiosity.
+ */
+function CompactionDivider({ node, t }: { node: ChatNode; t: WorkbenchTranslator }) {
+  const [open, setOpen] = useState(false);
+  const caption = node.copyKey ? t(node.copyKey) : node.text;
+  const {
+    compactionMessagesBefore: messagesBefore,
+    compactionMessagesAfter: messagesAfter,
+    compactionTokensBefore: tokensBefore,
+    compactionTokensAfter: tokensAfter,
+  } = node;
+  // Only rendered once opened (never server-side), so the browser's own
+  // grouping cannot cause a hydration mismatch.
+  const meta =
+    messagesBefore !== undefined &&
+    messagesAfter !== undefined &&
+    tokensBefore !== undefined &&
+    tokensAfter !== undefined
+      ? t('workbench.system.contextCompactedMeta', {
+          messagesBefore,
+          messagesAfter,
+          tokensBefore: tokensBefore.toLocaleString(),
+          tokensAfter: tokensAfter.toLocaleString(),
+        })
+      : '';
+  return (
+    <div className={styles.compaction.row} data-testid="workbench-compaction-divider">
+      <button
+        type="button"
+        className={styles.compaction.toggle}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={styles.compaction.icon} aria-hidden="true">
+          <Archive size={11} />
+        </span>
+        <span>{caption}</span>
+        <span className={styles.compaction.car} aria-hidden="true">
+          {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </span>
+      </button>
+      {open ? (
+        <div className={styles.compaction.body}>
+          {meta ? <p className={styles.compaction.meta}>{meta}</p> : null}
+          <p className={styles.compaction.summary}>{node.compactionSummary}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ChatNodeView({
   node,
   plan,
@@ -224,6 +280,8 @@ function ChatNodeView({
       );
     case 'boundary':
       return <RunBoundary node={node} repeat={repeat} t={t} />;
+    case 'compaction':
+      return <CompactionDivider node={node} t={t} />;
     case 'course':
       // The tail of one exchange (question → answer): the classrooms it
       // produced or was pointed at, one card each, the rest behind a `+N`. The
