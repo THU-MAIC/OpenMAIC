@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { collectCourseIssues, type CourseIssueScene } from '../src/course-issues.js';
+import {
+  collectCourseIssues,
+  COURSE_ISSUE_DETAIL_MAX_LENGTH,
+  type CourseIssueScene,
+} from '../src/course-issues.js';
 import type { Action } from '../src/action.js';
 import type { Slide } from '../src/slides.js';
 const scene = (actions: Action[], elements: Slide['elements'] = []): CourseIssueScene => ({
@@ -246,4 +250,58 @@ it('keeps valid action content clear and reports lint once per offending action 
     { kind: 'unbound-cue', actionId: 'cue' },
     { kind: 'empty-discussion', actionId: 'discussion' },
   ]);
+});
+
+describe('interactive runtime errors', () => {
+  const observed = (errors: Record<string, readonly string[]>) => (sceneId: string) =>
+    errors[sceneId];
+
+  it('reports one error-severity issue per observed scene with joined bounded detail', () => {
+    const s = scene([{ ...speech, audioId: 'audio' }]);
+    const [issue] = collectCourseIssues(
+      { scenes: [s] },
+      {
+        runtimeErrors: observed({
+          s: ['Uncaught ReferenceError: graphY is not defined', '[console] second'],
+        }),
+      },
+    );
+    expect(issue).toMatchObject({
+      kind: 'interactive-runtime-error',
+      sceneId: 's',
+      severity: 'error',
+      source: 'runtime',
+      detail: 'Uncaught ReferenceError: graphY is not defined\n[console] second',
+    });
+  });
+
+  it('clears when no errors are observed and never invents issues for absent scenes', () => {
+    const s = scene([{ ...speech, audioId: 'audio' }]);
+    expect(collectCourseIssues({ scenes: [s] }, { runtimeErrors: observed({ s: [] }) })).toEqual(
+      [],
+    );
+    expect(
+      collectCourseIssues({ scenes: [s] }, { runtimeErrors: observed({ gone: ['boom'] }) }),
+    ).toEqual([]);
+  });
+
+  it('truncates detail to the shared bound and keeps ids stable and scene-scoped', () => {
+    const long = 'x'.repeat(COURSE_ISSUE_DETAIL_MAX_LENGTH + 40);
+    const s = scene([{ ...speech, audioId: 'audio' }]);
+    const other = { ...scene([{ ...speech, audioId: 'audio' }]), id: 'other' };
+    const context = { runtimeErrors: observed({ s: [long], other: ['boom'] }) };
+    const first = collectCourseIssues({ scenes: [s, other] }, context);
+    expect(first.map(({ kind, sceneId }) => ({ kind, sceneId }))).toEqual([
+      { kind: 'interactive-runtime-error', sceneId: 's' },
+      { kind: 'interactive-runtime-error', sceneId: 'other' },
+    ]);
+    expect(first[0].detail?.length).toBe(COURSE_ISSUE_DETAIL_MAX_LENGTH);
+    expect(first[0].detail?.endsWith('…')).toBe(true);
+    expect(first[1].detail).toBe('boom');
+    expect(
+      collectCourseIssues({ scenes: [other, s] }, context)
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual(first.map((i) => i.id).sort());
+  });
 });

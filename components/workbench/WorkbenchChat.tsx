@@ -119,6 +119,7 @@ import {
   WorkbenchChatEmptyState,
 } from './chat/empty-state';
 import { invalidateAgentSkills } from '@/lib/workbench/agent-skills';
+import type { AgentFixDraftSeed } from '@/lib/workbench/agent-fix-handoff';
 import { settleSentElementRefs } from '@/lib/workbench/element-ref-send-result';
 import { settleSentCourseRefs } from '@/lib/workbench/course-ref-send-result';
 
@@ -133,6 +134,8 @@ export function WorkbenchChat({
   covered = false,
   materialSeed,
   onMaterialSeedConsumed,
+  agentFixSeed,
+  onAgentFixSeedConsumed,
   newConversation = 0,
   conversation,
 }: {
@@ -158,6 +161,12 @@ export function WorkbenchChat({
   /** A knowledge base hand-over; this composer takes the ones for its own owner key. */
   materialSeed?: MaterialSeed | null;
   onMaterialSeedConsumed?: (key: number) => void;
+  /**
+   * A "Fix with agent" hand-off: draft text for one composer. Like the
+   * material seed it is an event, not state — applied once, never sent.
+   */
+  agentFixSeed?: AgentFixDraftSeed | null;
+  onAgentFixSeedConsumed?: (key: number) => void;
   /**
    * Bumped each time a new chat is asked for. On a draft that is already
    * empty the owner key stays the same, but it is still another conversation.
@@ -643,6 +652,63 @@ export function WorkbenchChat({
     // list, named by its document once loaded): an untouched mention is rewritten.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedCourse?.stageId, seedCourse?.title, composerOwnerId, newConversation]);
+  /**
+   * A "Fix with agent" hand-off (`lib/workbench/agent-fix-handoff`): the issue
+   * arrives as draft text for the empty conversation opened for its course. It
+   * opens the way "Edit with AI" does — the course named first — and the
+   * prefill follows the mention, the caret at its end. What was typed before is
+   * replaced (with the mentions it carried); it is never sent: the owner
+   * reviews it and sends it themselves.
+   *
+   * Declared after the course mention above and applied only once that course
+   * is the one this composer names, so the mention's own seeding never lands
+   * on top of the prefill.
+   */
+  const fixSeed =
+    agentFixSeed &&
+    agentFixSeed.ownerKey === composerOwnerId &&
+    seedCourse?.stageId === agentFixSeed.courseId
+      ? agentFixSeed
+      : null;
+  const fixSeedFocus = useRef<(() => void) | null>(null);
+  useEffect(() => () => fixSeedFocus.current?.(), []);
+  useEffect(() => {
+    if (!fixSeed || !seedCourse) return;
+    const courses = useCourseRefsStore.getState();
+    if (courses.ownerSessionId !== composerOwnerId) return;
+    const ref = makeCourseRef(seedCourse.stageId, seedCourse.title);
+    if (!ref) return;
+    onAgentFixSeedConsumed?.(fixSeed.key);
+    courses.clear();
+    inlineMentions.reset();
+    materials.startOver();
+    const elementRefs = useElementRefsStore.getState();
+    if (elementRefs.ownerSessionId === composerOwnerId) elementRefs.clear();
+    courses.add(ref);
+    const written = inlineMentions.add('', 0, 0, {
+      kind: 'course',
+      id: ref.stageId,
+      name: ref.title,
+    });
+    if (!written) return;
+    // The mention alone is what was seeded: with the prefill after it the
+    // draft counts as the owner's, so nothing rewrites it from here on.
+    seededCourse.current = { stageId: ref.stageId, text: written.draft };
+    const text = `${written.draft}${fixSeed.text}`;
+    pendingCaret.current = text.length;
+    replaceDraft(text);
+    // Nothing in the prefill opens a menu it happens to resemble.
+    setMentionDismissed(text);
+    setSlashDismissed(text);
+    // Not this effect's cleanup: dropping the consumed seed re-runs it, and
+    // must not cancel the focus the hand-off asked for.
+    fixSeedFocus.current?.();
+    fixSeedFocus.current = focusComposerWhenShown(composerRef, 'workbench-chat-composer');
+    // Once per hand-off key, with no guard of its own: when development
+    // replays effects, the course mention above is replayed from the same
+    // render and rewritten bare, and this must land after it again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixSeed?.key]);
   const refreshedCreateCalls = useRef(new Set<string>());
 
   // The durable completed tool node is the source of truth: replay and a live

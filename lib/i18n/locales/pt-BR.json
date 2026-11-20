@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "Esta atividade interativa não pôde ser executada",
-      "dismiss": "Fechar"
+      "dismiss": "Fechar",
+      "ownerDescription": "Partes desta página podem não funcionar. Você pode pedir à IA para corrigi-la.",
+      "technicalDetails": "Detalhes técnicos",
+      "fixWithAgent": "Corrigir com IA",
+      "neutralTitle": "Esta página não está disponível no momento",
+      "neutralDescription": "Algumas partes podem não funcionar como esperado.",
+      "fixPrefill": "A página interativa \"{{page}}\" apresenta um erro ao ser executada. Encontre a causa e corrija. O que o navegador registrou:"
     },
     "interactiveMoreBelow": "Há mais abaixo",
     "tabs": {
@@ -484,6 +490,30 @@
       "addPage": "Adicionar página",
       "nextPage": "Próxima página",
       "prevPage": "Página anterior"
+    },
+    "issues": {
+      "buttonLabel": "Problemas do curso",
+      "buttonLabelWithCount": "Problemas do curso ({{count}})",
+      "summary": "{{count}} problemas",
+      "summary_one": "{{count}} problema",
+      "summary_other": "{{count}} problemas",
+      "empty": "Nenhum problema encontrado neste curso.",
+      "goTo": "Ver",
+      "fixWithAgent": "Corrigir com IA",
+      "pageLabel": "Página {{index}} · {{title}}",
+      "untitledPage": "Página sem título",
+      "fixPrefillIssue": "Corrija este problema em \"{{page}}\": {{issue}}.",
+      "fixPrefillCourse": "Verifique os problemas deste curso e corrija-os.",
+      "kind": {
+        "speechWithoutAudio": "A narração não tem áudio",
+        "mediaNotGenerated": "A imagem ou o vídeo não foi gerado",
+        "danglingCue": "Uma ação aponta para um elemento que não existe mais",
+        "interactiveRuntimeError": "Erro em uma página interativa",
+        "emptyActions": "A página não tem ações",
+        "emptySpeech": "O texto da narração está vazio",
+        "unboundCue": "Uma ação não está vinculada a nenhum elemento",
+        "emptyDiscussion": "A discussão não tem tópico"
+      }
     },
     "zorder": {
       "toFront": "Trazer para a frente",

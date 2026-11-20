@@ -366,17 +366,38 @@ MIT, matching the rest of the family (`@openmaic/dsl`, `@openmaic/importer`,
 `@openmaic/renderer`) and the OpenMAIC root, so the license policy is uniform
 across the SDK.
 
-### Current course issues
+### Current course issues (0.14.0, RFC #1899 phase 2)
 
 `collectCourseIssues({ scenes }, context?)` is a pure, read-only inspection of the
 current course. It reports `speech-without-audio`, `media-not-generated`,
-`dangling-cue`, and the existing empty-action/speech/discussion and unbound-cue
-lint. Each issue has a stable, opaque `id` derived from its kind and document
-target (scene, action/element, and containing slide for media). IDs survive text
-edits and reordering; fixing the cause removes the issue when recomputed. No
-issue list is persisted. Phase 1 reports these document-derived issues as warnings:
-a placeholder alone cannot tell whether generation is still pending or failed.
+`dangling-cue`, `interactive-runtime-error`, and the existing
+empty-action/speech/discussion and unbound-cue lint. Each issue has a stable,
+opaque `id` derived from its kind and document target (scene, action/element, and
+containing slide for media). IDs survive text edits and reordering; fixing the
+cause removes the issue when recomputed. No issue list is persisted.
 Structural `validateScene` validation remains separate.
+
+**`interactive-runtime-error`** (added in 0.14.0): reported when
+`context.runtimeErrors(sceneId)` returns a non-empty array for a scene. Severity
+is `'error'`; source is `'runtime'`. The errors are joined and stored in
+`issue.detail` (up to `COURSE_ISSUE_DETAIL_MAX_LENGTH` characters; excess is
+truncated with `'…'`). Runtime errors are browser-session observations, not
+document state: they are not persisted and disappear when the page remounts.
+
+**`CourseIssue.detail`** (added in 0.14.0): an optional bounded string carrying
+untrusted page output (currently only runtime-error text). Consumers must fence
+it before inserting it into prompts or displaying it to non-owners.
+
+**`CourseIssueContext.runtimeErrors`** (added in 0.14.0): `(sceneId: string) =>
+readonly string[] | undefined`. The collector calls it once per scene; `undefined`
+or an empty array means no errors for that scene.
+
+**`COURSE_ISSUE_DETAIL_MAX_LENGTH`** (added in 0.14.0): the byte cap for
+`issue.detail`; exported so UI and agent tooling can apply the same bound.
+
+> **Minor-version note**: adding `'interactive-runtime-error'` to `CourseIssueKind`
+> is a minor bump (0.13.0 → 0.14.0) under the pre-1.0 policy in CONTRIBUTING.md.
+> Consumers that handle every kind exhaustively will need to add a case for it.
 
 A valid speech `audioId` or non-invalidated legacy `audioUrl` counts as audio.
 Pass `context.narrationEnabled: false` when the workspace cannot generate server
@@ -392,8 +413,8 @@ can localize it; it is not a user-facing English message. Confirmed missing or
 ineligible legacy audio carries no such evidence. These checks inspect
 references, not asset availability or provider health.
 
-Phase 1 of RFC #1899 deliberately adds no persisted silence marker: current
+Phase 1 of RFC #1899 deliberately added no persisted silence marker: current
 course documents cannot distinguish deliberately silent speech from missing
 narration. When server narration is enabled, such speech remains a warning
-pending the RFC decision. Runtime failures, run-derived reasons, the issues list
-and agent repair entry point are later phases.
+pending the RFC decision. Run-derived reasons (media-failure cause, scene
+generation failure) and the phase-3 playback-sidebar entry point are later phases.

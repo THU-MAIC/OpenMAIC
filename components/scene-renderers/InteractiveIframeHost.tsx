@@ -14,6 +14,11 @@ import {
   type IframePoolEntry,
 } from '@/lib/store/interactive-iframe-pool';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
+import {
+  agentFixPageLabel,
+  runtimeErrorPrefill,
+  useAgentFix,
+} from '@/lib/workbench/agent-fix-handoff';
 import { GENUI_LOGICAL_HEIGHT, GENUI_LOGICAL_WIDTH } from '@/lib/interactive/logical-viewport';
 import {
   GENUI_FIT_REPORT_REQUEST,
@@ -177,6 +182,29 @@ export function InteractiveIframeHost({
   // render the previous one's stale iframes.
   useEffect(() => reset, [reset]);
 
+  // Who is looking at a failing page, and whether they can hand it to the
+  // agent — resolved once by `Stage` for its classroom (see `AgentFixContext`).
+  // Read here and handed to each iframe as props, so a pooled iframe needs
+  // nothing beyond what it is given.
+  const { t } = useI18n();
+  const { repairable, fixRuntimeError } = useAgentFix();
+  const fixRuntimeErrors = useMemo(
+    () =>
+      fixRuntimeError
+        ? (sceneId: string, errors: readonly string[]) =>
+            // The raw errors are untrusted page output: they ride along fenced,
+            // for the owner to review before anything is sent.
+            fixRuntimeError(sceneId, (page) =>
+              runtimeErrorPrefill(
+                t,
+                agentFixPageLabel(t, page.index, page.title),
+                errors.join('\n'),
+              ),
+            )
+        : undefined,
+    [fixRuntimeError, t],
+  );
+
   if (!portalTarget) return null;
 
   return createPortal(
@@ -194,6 +222,8 @@ export function InteractiveIframeHost({
           }
           onPlaybackPick={onPlaybackPick}
           onPlaybackCancel={onPlaybackCancel}
+          runtimeErrorRepairable={repairable}
+          onFixRuntimeErrors={fixRuntimeErrors}
         />
       ))}
     </>,
@@ -210,6 +240,10 @@ interface PooledIframeProps {
   readonly playbackSelectedSelector?: string;
   readonly onPlaybackPick?: (pick: PlaybackInteractiveComponentPick) => void;
   readonly onPlaybackCancel?: () => void;
+  /** The viewer may repair the course, so a raw runtime error is theirs to see. */
+  readonly runtimeErrorRepairable?: boolean;
+  /** "Fix with agent" for this page's observed runtime errors; absent offers none. */
+  readonly onFixRuntimeErrors?: (sceneId: string, errors: readonly string[]) => void;
 }
 
 /**
@@ -238,6 +272,8 @@ function PooledIframe({
   playbackSelectedSelector,
   onPlaybackPick,
   onPlaybackCancel,
+  runtimeErrorRepairable = false,
+  onFixRuntimeErrors,
 }: PooledIframeProps) {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -448,11 +484,9 @@ function PooledIframe({
     visibleViewport.height > 0 &&
     rect.width > 0 &&
     rect.height > 0;
-  const latestRuntimeError = runtimeErrors?.[runtimeErrors.length - 1];
+  const hasRuntimeError = !!runtimeErrors?.length;
   const showRuntimeError =
-    shown &&
-    typeof latestRuntimeError === 'string' &&
-    dismissedRuntimeSignature !== runtimeErrorSignature;
+    shown && hasRuntimeError && dismissedRuntimeSignature !== runtimeErrorSignature;
   const wrapStyle: CSSProperties = {
     position: 'fixed',
     left: visibleViewport?.left ?? 0,
@@ -494,9 +528,12 @@ function PooledIframe({
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
-      {showRuntimeError && latestRuntimeError ? (
+      {showRuntimeError && runtimeErrors?.length ? (
         <InteractiveRuntimeErrorBanner
-          message={latestRuntimeError}
+          errors={runtimeErrors}
+          repairable={runtimeErrorRepairable}
+          fixEnabled={onFixRuntimeErrors !== undefined}
+          onFix={() => onFixRuntimeErrors?.(sceneId, runtimeErrors)}
           onDismiss={() => setDismissedRuntimeSignature(runtimeErrorSignature)}
         />
       ) : null}

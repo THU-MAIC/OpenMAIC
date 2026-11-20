@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "Esta actividad interactiva no se pudo ejecutar",
-      "dismiss": "Cerrar"
+      "dismiss": "Cerrar",
+      "ownerDescription": "Es posible que partes de esta página no funcionen. Puedes pedirle a la IA que la corrija.",
+      "technicalDetails": "Detalles técnicos",
+      "fixWithAgent": "Corregir con IA",
+      "neutralTitle": "Esta página no está disponible en este momento",
+      "neutralDescription": "Es posible que algunas partes no funcionen como se espera.",
+      "fixPrefill": "La página interactiva \"{{page}}\" muestra un error al ejecutarse. Encuentra la causa y corrígela. Lo que registró el navegador:"
     },
     "interactiveMoreBelow": "Hay más abajo",
     "tabs": {
@@ -513,6 +519,30 @@
       "addPage": "Agregar página",
       "nextPage": "Página siguiente",
       "prevPage": "Página anterior"
+    },
+    "issues": {
+      "buttonLabel": "Problemas del curso",
+      "buttonLabelWithCount": "Problemas del curso ({{count}})",
+      "summary": "{{count}} problemas",
+      "summary_one": "{{count}} problema",
+      "summary_other": "{{count}} problemas",
+      "empty": "No se encontraron problemas en este curso.",
+      "goTo": "Ver",
+      "fixWithAgent": "Corregir con IA",
+      "pageLabel": "Página {{index}} · {{title}}",
+      "untitledPage": "Página sin título",
+      "fixPrefillIssue": "Corrige este problema en \"{{page}}\": {{issue}}.",
+      "fixPrefillCourse": "Revisa los problemas de este curso y corrígelos.",
+      "kind": {
+        "speechWithoutAudio": "La narración no tiene audio",
+        "mediaNotGenerated": "La imagen o el video no se generó",
+        "danglingCue": "Una acción apunta a un elemento que ya no existe",
+        "interactiveRuntimeError": "Error en una página interactiva",
+        "emptyActions": "La página no tiene acciones",
+        "emptySpeech": "El texto de la narración está vacío",
+        "unboundCue": "Una acción no está vinculada a ningún elemento",
+        "emptyDiscussion": "La discusión no tiene tema"
+      }
     },
     "zorder": {
       "toFront": "Traer al frente",

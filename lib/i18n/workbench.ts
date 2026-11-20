@@ -302,6 +302,7 @@ export const workbenchEn = {
       createStage: 'Create classroom',
       renameStage: 'Rename classroom',
       readStageOutline: 'Read classroom outline',
+      listCourseIssues: 'Check classroom issues',
     },
     chip: {
       seconds: '{{count}} sec',
@@ -394,6 +395,7 @@ export const workbenchEn = {
       createStage: 'Could not create the classroom',
       renameStage: 'Could not rename the classroom',
       readStageOutline: 'Could not read the classroom outline',
+      listCourseIssues: 'Could not check the classroom for issues',
       generic: 'Tool call failed',
     },
     progress: {
@@ -664,6 +666,7 @@ export const workbenchZh = {
       createStage: '新建课堂',
       renameStage: '重命名课堂',
       readStageOutline: '读取课堂大纲',
+      listCourseIssues: '检查课堂问题',
     },
     chip: {
       seconds: '{{count}} 秒',
@@ -756,6 +759,7 @@ export const workbenchZh = {
       createStage: '课堂没能建好',
       renameStage: '课堂没能改名',
       readStageOutline: '课堂大纲没能读出来',
+      listCourseIssues: '课堂问题没能查出来',
       generic: '调用失败',
     },
     progress: {
