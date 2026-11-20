@@ -1,7 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { db, type VoiceProfileRecord } from '@/lib/device-storage/database';
+import { deviceOwnerKey } from '@/lib/device-storage/owner-key';
+import { voiceAccountScope } from '@/lib/audio/voice-account';
+import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import type { TTSVoiceInfo } from '@/lib/audio/types';
 import {
   VOXCPM_AUTO_VOICE,
@@ -22,6 +25,8 @@ import {
 } from '@/lib/audio/voice-registration-client';
 import {
   InvalidReferenceAudioError,
+  MIN_REFERENCE_DURATION_SECONDS,
+  MINIMAX_MIN_REFERENCE_DURATION_SECONDS,
   QWEN_MIN_REFERENCE_DURATION_SECONDS,
   validateReferenceAudio,
 } from '@/lib/audio/wav-validate';
@@ -85,6 +90,7 @@ function writeAscii(view: DataView, offset: number, value: string): void {
 export function audioBufferToMonoWav(
   audioBuffer: AudioBuffer,
   sampleRate = audioBuffer.sampleRate,
+  minDurationSeconds = MIN_REFERENCE_DURATION_SECONDS,
 ): ArrayBuffer {
   // Tolerate only small decoder padding. Truncating a genuinely long upload
   // would silently pair a partial recording with the full transcript.
@@ -92,7 +98,7 @@ export function audioBufferToMonoWav(
     audioBuffer.duration >
     VOXCPM_REFERENCE_AUDIO_MAX_SECONDS + QWEN_DECODER_PADDING_TOLERANCE_SECONDS
   ) {
-    throw new InvalidReferenceAudioError();
+    throw new InvalidReferenceAudioError(minDurationSeconds);
   }
   const sampleCount = Math.min(Math.round(audioBuffer.duration * sampleRate), 60 * sampleRate);
   const dataSize = sampleCount * 2;
@@ -159,21 +165,27 @@ async function audioBlobToWav(blob: Blob): Promise<Blob> {
   return new Blob([audioBufferToMonoWav(audioBuffer)], { type: 'audio/wav' });
 }
 
-export async function normalizeQwenReferenceAudio(
+async function normalizeCloneReferenceAudio(
   blob: Blob,
-  fileName?: string,
+  fileName: string | undefined,
+  minDurationSeconds: number,
 ): Promise<{ blob: Blob; name: string; mimeType: string }> {
   const audioBuffer = await decodeAudioBlob(blob);
-  const wav = new Blob([audioBufferToMonoWav(audioBuffer, 24_000)], { type: 'audio/wav' });
-  validateReferenceAudio(
-    new Uint8Array(await wav.arrayBuffer()),
-    QWEN_MIN_REFERENCE_DURATION_SECONDS,
-  );
+  const pcm = audioBufferToMonoWav(audioBuffer, 24_000, minDurationSeconds);
+  validateReferenceAudio(new Uint8Array(pcm), minDurationSeconds);
   return {
-    blob: wav,
+    blob: new Blob([pcm], { type: 'audio/wav' }),
     name: replaceFileExtension(fileName, 'wav'),
     mimeType: 'audio/wav',
   };
+}
+
+export function normalizeQwenReferenceAudio(blob: Blob, fileName?: string) {
+  return normalizeCloneReferenceAudio(blob, fileName, QWEN_MIN_REFERENCE_DURATION_SECONDS);
+}
+
+export function normalizeMiniMaxReferenceAudio(file: File) {
+  return normalizeCloneReferenceAudio(file, file.name, MINIMAX_MIN_REFERENCE_DURATION_SECONDS);
 }
 
 export async function validateVoxCPMReferenceAudio(blob: Blob): Promise<void> {
@@ -324,27 +336,91 @@ export function useVoxCPMVoiceProfiles() {
 }
 
 export function useAllVoiceProfiles() {
-  const [profiles, setProfiles] = useState<VoiceProfileRecord[]>([]);
+  const account = voiceAccountScope(useModelSettingsView(), 'minimax-tts');
+  const [result, setResult] = useState<{
+    account?: string;
+    scope?: string;
+    profiles: VoiceProfileRecord[];
+    error?: string;
+  }>();
   const [loading, setLoading] = useState(true);
+  const read = useRef(0);
 
   const refresh = useCallback(async () => {
+    const request = ++read.current;
     setLoading(true);
     try {
-      const rows = await db.voiceProfiles.toArray();
-      rows.sort((a, b) => b.updatedAt - a.updatedAt);
-      setProfiles(rows);
+      const [rows, ownerKey] = await Promise.all([
+        db.voiceProfiles.toArray(),
+        account ? deviceOwnerKey() : undefined,
+      ]);
+      if (request !== read.current) return;
+      const scope = ownerKey ? `${ownerKey}:${account}` : undefined;
+      const profiles = rows.filter(
+        (row) => row.providerId !== 'minimax-tts' || (!!scope && row.accountScope === scope),
+      );
+      profiles.sort((a, b) => b.updatedAt - a.updatedAt);
+      setResult({ account, scope, profiles });
+    } catch (error) {
+      if (request === read.current) {
+        setResult({
+          account,
+          profiles: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     } finally {
-      setLoading(false);
+      if (request === read.current) setLoading(false);
     }
-  }, []);
+  }, [account]);
 
   useEffect(() => {
     void refresh();
+    const onOwnerChange = () => {
+      setResult(undefined);
+      void refresh();
+    };
     window.addEventListener(VOICE_PROFILES_CHANGED, refresh);
-    return () => window.removeEventListener(VOICE_PROFILES_CHANGED, refresh);
+    window.addEventListener('auth-change', onOwnerChange);
+    return () => {
+      read.current += 1;
+      window.removeEventListener(VOICE_PROFILES_CHANGED, refresh);
+      window.removeEventListener('auth-change', onOwnerChange);
+    };
   }, [refresh]);
 
-  return { profiles, loading, refresh };
+  // A new provider must never render the preceding account's rows while IndexedDB is read.
+  const current = result?.account === account ? result : undefined;
+  return {
+    profiles: current?.profiles ?? [],
+    loading: loading || !current,
+    refresh,
+    miniMaxAccountScope: current?.scope,
+    error: current?.error,
+  };
+}
+
+export async function saveMiniMaxVoice(id: string, name: string, accountScope: string) {
+  const now = Date.now();
+  await db.voiceProfiles.put({
+    id,
+    name: name.trim(),
+    providerId: 'minimax-tts',
+    kind: 'clone',
+    accountScope,
+    createdAt: now,
+    updatedAt: now,
+  });
+  notifyVoiceProfilesChanged();
+}
+
+export async function removeLocalMiniMaxVoice(id: string, accountScope: string) {
+  await db.voiceProfiles
+    .where('id')
+    .equals(id)
+    .and((row) => row.providerId === 'minimax-tts' && row.accountScope === accountScope)
+    .delete();
+  notifyVoiceProfilesChanged();
 }
 
 export function useQwenVoiceProfiles() {

@@ -23,6 +23,7 @@
  * components and server-side tool code can share it.
  */
 
+import uniqBy from 'lodash/uniqBy';
 import type { TTSVoiceInfo } from '@/lib/audio/types';
 
 /** A voice that was registered at runtime (session `register_voice` results). */
@@ -133,5 +134,5 @@ export function buildVoiceCatalog(
     );
   }
 
-  return result;
+  return uniqBy(result, 'binding');
 }

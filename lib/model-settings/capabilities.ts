@@ -7,6 +7,8 @@
  * what to ask for (browser speech runs in the browser, for instance).
  */
 import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
+import { voiceAccountFor, type VoiceAccount } from '@/lib/audio/voice-account';
+import { deviceOwnerKey } from '@/lib/device-storage/owner-key';
 
 import {
   findSlot,
@@ -31,6 +33,8 @@ export interface ModelCapabilities {
   known: boolean;
   llm: EffectiveTarget | null;
   tts: EffectiveTarget | null;
+  /** The service behind private voice preferences, including a discovered unavailable pick. */
+  ttsVoiceAccount?: VoiceAccount;
   asr: EffectiveTarget | null;
   image: EffectiveTarget | null;
   video: EffectiveTarget | null;
@@ -84,10 +88,12 @@ function speechInput(view: ModelSettingsView | null | undefined): EffectiveTarge
 }
 
 export function modelCapabilities(view: ModelSettingsView | null | undefined): ModelCapabilities {
+  const ttsVoiceAccount = voiceAccountFor(view);
   return {
     known: !!view,
     llm: effectiveTarget(view, 'llm'),
     tts: effectiveTarget(view, 'tts'),
+    ...(ttsVoiceAccount ? { ttsVoiceAccount } : {}),
     asr: speechInput(view),
     image: effectiveTarget(view, 'image'),
     video: effectiveTarget(view, 'video'),
@@ -165,6 +171,16 @@ export function currentModelCapabilities(
   return modelCapabilities(viewOf(client.getState()));
 }
 
+async function readyCapabilities(view: ModelSettingsView | null) {
+  const capabilities = modelCapabilities(view);
+  if (capabilities.ttsVoiceAccount && typeof window !== 'undefined') {
+    // A request can use a saved private pick once the current owner is known.
+    // If identity is unavailable, the service's public default stays usable.
+    await deviceOwnerKey().catch(() => undefined);
+  }
+  return capabilities;
+}
+
 /**
  * The capabilities once the view has been read: reads it when nothing was
  * read yet, and waits for a read in flight.
@@ -178,9 +194,9 @@ export async function loadModelCapabilities(
     state.phase === 'loading' ||
     (!state.view && state.phase === 'error')
   ) {
-    return modelCapabilities(viewOf(await client.load()));
+    return readyCapabilities(viewOf(await client.load()));
   }
-  return modelCapabilities(viewOf(state));
+  return readyCapabilities(viewOf(state));
 }
 
 /** Delays between reads after a failed one: a transient failure is not the page's last word. */
@@ -230,6 +246,6 @@ export async function requireModelCapabilities(
 ): Promise<ModelCapabilities | null> {
   const first = await loadModelCapabilities(client);
   if (first.known) return first;
-  const again = modelCapabilities((await client.load()).view);
+  const again = await readyCapabilities((await client.load()).view);
   return again.known ? again : null;
 }

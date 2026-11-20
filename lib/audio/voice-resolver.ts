@@ -1,4 +1,5 @@
-import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
+import uniqBy from 'lodash/uniqBy';
+import type { AccountVoice, TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
@@ -399,6 +400,7 @@ export function getEnabledProvidersWithVoices(
       providerOptions?: Record<string, unknown>;
       customName?: string;
       voices?: ConfiguredTTSVoice[];
+      accountVoices?: AccountVoice[];
     }
   >,
   voiceProfiles: UserVoiceProfile[] = [],
@@ -459,7 +461,10 @@ export function getEnabledProvidersWithVoices(
           {
             modelId,
             modelName: modelId || config.name,
-            voices: providerId === VOXCPM_TTS_PROVIDER_ID ? allVoices : voices,
+            voices:
+              providerId === VOXCPM_TTS_PROVIDER_ID || config.supportsAccountVoices
+                ? allVoices
+                : voices,
           },
           ...(providerId === 'qwen-tts' && extraVoices.length
             ? [
@@ -476,6 +481,18 @@ export function getEnabledProvidersWithVoices(
     }
 
     {
+      // A browser-saved clone keeps its friendly name when the account lists
+      // the same ID. Registry voices retain their model compatibility metadata.
+      const additionalVoices = uniqBy(
+        [
+          ...userVoices,
+          ...(providerConfig?.accountVoices ?? []).map((voice) => ({
+            ...voice,
+            language: voice.language ?? 'auto',
+          })),
+        ],
+        'id',
+      ).filter((voice) => !config.voices.some((preset) => preset.id === voice.id));
       const allVoices = [
         ...config.voices.map((v) => ({
           id: v.id,
@@ -483,7 +500,7 @@ export function getEnabledProvidersWithVoices(
           language: v.language,
           ...(v.gender ? { gender: v.gender } : {}),
         })),
-        ...userVoices,
+        ...additionalVoices,
       ];
 
       // Build model groups
@@ -496,10 +513,8 @@ export function getEnabledProvidersWithVoices(
               : config.voices
                   .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
                   .map((v) => ({ id: v.id, name: v.name, language: v.language }));
-          if (providerId === VOXCPM_TTS_PROVIDER_ID) {
-            compatibleVoices.push(...userVoices);
-          } else if (providerId !== 'qwen-tts' || isQwenVoiceCloneModel(model.id)) {
-            compatibleVoices.push(...userVoices);
+          if (providerId !== 'qwen-tts' || isQwenVoiceCloneModel(model.id)) {
+            compatibleVoices.push(...additionalVoices);
           }
           modelGroups.push({
             modelId: model.id,
@@ -586,14 +601,7 @@ export interface BrowserVoiceLike {
  * client layer; server-side generation uses getEnabledProvidersWithVoices).
  */
 export function getSelectableProvidersWithVoices(
-  ttsProvidersConfig: Record<
-    string,
-    TTSEnablementConfig & {
-      modelId?: string;
-      providerOptions?: Record<string, unknown>;
-      customName?: string;
-    }
-  >,
+  ttsProvidersConfig: Parameters<typeof getEnabledProvidersWithVoices>[0],
   voiceProfiles: UserVoiceProfile[] = [],
   browserVoices: BrowserVoiceLike[] = [],
 ): ProviderWithVoices[] {

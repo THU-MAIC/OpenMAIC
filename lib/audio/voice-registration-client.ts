@@ -28,6 +28,8 @@ export interface VoiceRegistrationRequestConfig {
 export interface UserVoiceRegistrationParams {
   name: string;
   referenceAudio: Blob;
+  expectedServiceId?: string;
+  expectedRevision?: number;
   /** Optional metadata; current enrollment APIs do not require a transcript. */
   refText?: string;
 }
@@ -67,6 +69,9 @@ export async function registerVoiceFromReference(
     headers: { 'Content-Type': 'application/json' },
     // The tts slot names the provider on the server.
     body: JSON.stringify({
+      expectedProviderId: providerId,
+      expectedServiceId: params.expectedServiceId,
+      expectedRevision: params.expectedRevision,
       voiceId: params.name.trim(),
       referenceAudioBase64,
       mimeType: params.referenceAudio.type || 'audio/wav',

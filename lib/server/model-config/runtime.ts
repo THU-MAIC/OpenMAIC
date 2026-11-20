@@ -116,7 +116,7 @@ export async function workspaceLayer(ownerId: string): Promise<ModelConfigLayer 
       `Workspace keys for ${stored.unreadableSecrets.length} provider(s) cannot be read with the current instance secret; they have to be entered again`,
     );
   }
-  return { source: 'workspace', config: stored.config };
+  return { source: 'workspace', config: stored.config, revision: stored.revision };
 }
 
 /**
@@ -220,11 +220,19 @@ export function lookupFromLayers(
 export async function lookupSlot(
   slot: SlotId,
   workspaceId: string | null,
+  expectedRevision?: number,
 ): Promise<SlotResolution> {
   const { layer } = deploymentConfig();
   const workspace = workspaceId ? await (loadWorkspace ?? workspaceLayer)(workspaceId) : null;
+  if (expectedRevision !== undefined && expectedRevision !== (workspace?.revision ?? 0)) {
+    throw new StaleWorkspaceSettingsError(
+      'The model settings have changed. Reopen the settings and try again.',
+    );
+  }
   return lookupFromLayers(slot, { deployment: layer, workspace });
 }
+
+export class StaleWorkspaceSettingsError extends Error {}
 
 /** {@link lookupSlot} for a call site that knows its stage key. */
 export function lookupStage(stage: LlmStage, workspaceId: string | null): Promise<SlotResolution> {

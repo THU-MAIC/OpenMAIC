@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -16,13 +16,15 @@ import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-rea
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { useAccountVoices } from '@/lib/audio/use-account-voices';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import { defaultVoiceFor, slotVoxCPMBackend, ttsSelection } from '@/lib/audio/tts-selection';
 import { modelCapabilities } from '@/lib/model-settings/capabilities';
-import { assignService } from '@/lib/model-settings/services';
+import { assignService, entryConfigured } from '@/lib/model-settings/services';
 import { regionalEndpointTemplate } from '@/lib/config/official-endpoints';
 import { QwenVoiceCloneManager, VoxCPMVoiceManager } from './tts-voice-managers';
+import { MiniMaxVoiceManager } from './minimax-voice-manager';
 import { TTSSpeedField } from './tts-speed-field';
 import {
   ApiKeyField,
@@ -104,6 +106,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsVoiceProviderId = useSettingsStore((state) => state.ttsVoiceProviderId);
+  const ttsVoiceAccount = useSettingsStore((state) => state.ttsVoiceAccount);
 
   const providerId = entry.registryId;
   const ttsProvider = TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
@@ -115,6 +118,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
     !isBrowser &&
     !!ttsProvider?.requiresApiKey;
   const use = rootUse(view, 'tts', entry.id);
+  const account = useAccountVoices(use.inUse && entryConfigured(entry));
   const manuallySelectableModels = getManuallySelectableTTSModels(
     providerId as BuiltInTTSProviderId,
   );
@@ -124,12 +128,17 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   const capabilities = useMemo(() => modelCapabilities(view), [view]);
   const selection = useMemo(
     () =>
-      ttsSelection(capabilities, {
-        voice: ttsVoice,
-        providerId: ttsVoiceProviderId,
-        speed: ttsSpeed,
-      }),
-    [capabilities, ttsVoice, ttsVoiceProviderId, ttsSpeed],
+      ttsSelection(
+        capabilities,
+        {
+          voice: ttsVoice,
+          providerId: ttsVoiceProviderId,
+          account: ttsVoiceAccount,
+          speed: ttsSpeed,
+        },
+        account.voices,
+      ),
+    [capabilities, ttsVoice, ttsVoiceProviderId, ttsVoiceAccount, ttsSpeed, account.voices],
   );
   const effectiveVoice =
     use.inUse && selection
@@ -155,35 +164,52 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
+  const previewRequest = useRef(0);
 
   // Keep the sample text in sync with locale changes.
   useEffect(() => {
     setTestText(t('settings.ttsTestTextDefault'));
   }, [t]);
 
-  // Stop a preview when the panel goes away.
-  useEffect(() => stopPreview, [stopPreview]);
+  useEffect(() => {
+    setTestMessage('');
+    const cancel = () => {
+      previewRequest.current += 1;
+      stopPreview();
+    };
+    const onOwnerChange = () => {
+      cancel();
+      setTestMessage('');
+    };
+    window.addEventListener('auth-change', onOwnerChange);
+    return () => {
+      window.removeEventListener('auth-change', onOwnerChange);
+      cancel();
+    };
+  }, [entry.id, view.revision, stopPreview]);
 
   const save = (apiKey: string) => saveServiceProvider(view, apply, entry, { apiKey }, t);
   // Azure Speech takes its official endpoint for the region the key belongs to.
   const regionalEndpoint = regionalEndpointTemplate('tts', providerId);
 
-  const handleTestTTS = async () => {
+  const handleTestTTS = async (voice = effectiveVoice) => {
     if (!testText.trim()) return;
+    const request = ++previewRequest.current;
     setTestStatus('testing');
     setTestMessage('');
     try {
       const providerOptions = isVoxCPM
-        ? await getVoxCPMProviderOptions(effectiveVoice, {
+        ? await getVoxCPMProviderOptions(voice, {
             role: 'teacher',
             locale,
             backend: slotVoxCPMBackend(capabilities.tts),
           })
         : undefined;
+      if (request !== previewRequest.current) return;
       await startPreview({
         text: testText,
         providerId,
-        voice: effectiveVoice,
+        voice,
         speed: ttsSpeed,
         providerOptions,
         // The service as the server saved it, not necessarily the one in use.
@@ -191,9 +217,18 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
           ? {}
           : { previewProvider: entry.id, ...(use.modelId ? { previewModel: use.modelId } : {}) }),
       });
+      if (request !== previewRequest.current) return;
       setTestStatus('success');
       setTestMessage(t('settings.ttsTestSuccess'));
+      // A pending clone appears in the account catalogue after its first synthesis.
+      if (
+        account.canDeleteRemote &&
+        !entry.provider?.voices?.length &&
+        !account.voices.some((listed) => listed.id === voice)
+      )
+        account.refresh();
     } catch (error) {
+      if (request !== previewRequest.current) return;
       log.error('TTS test failed:', error);
       setTestStatus('error');
       setTestMessage(
@@ -363,6 +398,18 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
       {isVoxCPM && use.inUse && <VoxCPMVoiceManager />}
       {providerId === 'qwen-tts' && use.inUse && (
         <QwenVoiceCloneManager cloneTarget={entry.provider?.cloneTarget} />
+      )}
+      {providerId === 'minimax-tts' && use.inUse && entryConfigured(entry) && (
+        <MiniMaxVoiceManager
+          key={JSON.stringify([entry.id, view.revision])}
+          serviceId={entry.id}
+          settingsRevision={view.revision ?? 0}
+          account={account}
+          selectedVoice={effectiveVoice}
+          configuredVoices={entry.provider?.voices}
+          onPreview={handleTestTTS}
+          canPreview={!testingTTS && !!testText.trim()}
+        />
       )}
     </div>
   );

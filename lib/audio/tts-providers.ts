@@ -121,6 +121,7 @@ import {
 import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
 import { pcmS16leMonoToWav } from './pcm-wav';
+import { minimaxEndpoint, minimaxStatusCode } from './minimax';
 import {
   DEEPSEEK_TOOLS_DEFAULT_BASE_URL,
   deepseekToolsEndpoint,
@@ -1091,15 +1092,6 @@ const MINIMAX_RATE_LIMIT_STATUS_CODES = new Set([1002, 1039, 1041, 2045]);
  */
 const MINIMAX_QUOTA_STATUS_CODES = new Set([1008, 2056]);
 
-function minimaxStatusCode(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return undefined;
-}
-
 /** The `base_resp.status_code` of a MiniMax error response body, if it has one. */
 function minimaxBodyStatusCode(body: string): number | undefined {
   try {
@@ -1153,11 +1145,8 @@ async function generateMiniMaxTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = (config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '').replace(
-    /\/$/,
-    '',
-  );
-  const response = await ttsFetch(config, `${baseUrl}/v1/t2a_v2`, {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '';
+  const response = await ttsFetch(config, minimaxEndpoint(baseUrl, 't2a_v2').href, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
