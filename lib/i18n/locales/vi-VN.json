@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "Tương tác này không chạy được",
-      "dismiss": "Đóng"
+      "dismiss": "Đóng",
+      "ownerDescription": "Một số phần của trang này có thể không hoạt động. Bạn có thể nhờ AI sửa.",
+      "technicalDetails": "Chi tiết kỹ thuật",
+      "fixWithAgent": "Sửa lỗi bằng AI",
+      "neutralTitle": "Trang này hiện không khả dụng",
+      "neutralDescription": "Một số phần có thể không hoạt động như mong đợi.",
+      "fixPrefill": "Trang tương tác \"{{page}}\" báo lỗi khi chạy. Hãy tìm nguyên nhân và sửa. Lỗi trình duyệt ghi lại:"
     },
     "interactiveMoreBelow": "Còn nội dung bên dưới",
     "tabs": {
@@ -788,6 +794,30 @@
     "dock": {
       "elementRefHint": "Tham chiếu phần tử — chọn phần tử để gửi kèm tin nhắn tiếp theo",
       "globalTools": "Công cụ chung"
+    },
+    "issues": {
+      "buttonLabel": "Vấn đề của bài học",
+      "buttonLabelWithCount": "Vấn đề của bài học ({{count}})",
+      "summary": "{{count}} vấn đề",
+      "summary_one": "{{count}} vấn đề",
+      "summary_other": "{{count}} vấn đề",
+      "empty": "Không tìm thấy vấn đề nào trong bài học này.",
+      "goTo": "Đi tới",
+      "fixWithAgent": "Sửa lỗi bằng AI",
+      "pageLabel": "Trang {{index}} · {{title}}",
+      "untitledPage": "Trang chưa có tiêu đề",
+      "fixPrefillIssue": "Hãy sửa vấn đề này ở \"{{page}}\": {{issue}}.",
+      "fixPrefillCourse": "Hãy kiểm tra các vấn đề trong bài học này và sửa chúng.",
+      "kind": {
+        "speechWithoutAudio": "Lời giảng chưa có âm thanh",
+        "mediaNotGenerated": "Ảnh hoặc video chưa được tạo",
+        "danglingCue": "Một hành động trỏ tới đối tượng không còn tồn tại",
+        "interactiveRuntimeError": "Lỗi trang tương tác",
+        "emptyActions": "Trang không có hành động nào",
+        "emptySpeech": "Lời giảng đang trống",
+        "unboundCue": "Một hành động chưa được gắn với đối tượng",
+        "emptyDiscussion": "Thảo luận chưa có chủ đề"
+      }
     }
   },
   "whiteboard": {

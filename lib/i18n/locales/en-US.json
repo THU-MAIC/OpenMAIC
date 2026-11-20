@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "This interactive failed to run",
-      "dismiss": "Dismiss"
+      "dismiss": "Dismiss",
+      "ownerDescription": "Parts of this page may not work. You can ask AI to fix it.",
+      "technicalDetails": "Technical details",
+      "fixWithAgent": "Fix with AI",
+      "neutralTitle": "This page isn't available right now",
+      "neutralDescription": "Some parts of it may not work as expected.",
+      "fixPrefill": "The interactive page “{{page}}” shows an error when it runs. Please find the cause and fix it. What the browser recorded:"
     },
     "interactiveMoreBelow": "More below",
     "tabs": {
@@ -788,6 +794,30 @@
     "dock": {
       "elementRefHint": "Element references — pick elements to send with your next message",
       "globalTools": "Global tools"
+    },
+    "issues": {
+      "buttonLabel": "Course issues",
+      "buttonLabelWithCount": "Course issues ({{count}})",
+      "summary": "{{count}} issues",
+      "summary_one": "{{count}} issue",
+      "summary_other": "{{count}} issues",
+      "empty": "No issues found in this course.",
+      "goTo": "Go to",
+      "fixWithAgent": "Fix with AI",
+      "pageLabel": "Page {{index}} · {{title}}",
+      "untitledPage": "Untitled page",
+      "fixPrefillIssue": "Please fix this issue on “{{page}}”: {{issue}}.",
+      "fixPrefillCourse": "Please check this course for issues and fix them.",
+      "kind": {
+        "speechWithoutAudio": "Narration has no audio",
+        "mediaNotGenerated": "Image or video was not generated",
+        "danglingCue": "An action points at an element that no longer exists",
+        "interactiveRuntimeError": "Interactive page error",
+        "emptyActions": "Page has no actions",
+        "emptySpeech": "Narration text is empty",
+        "unboundCue": "An action is not bound to an element",
+        "emptyDiscussion": "Discussion has no topic"
+      }
     }
   },
   "whiteboard": {

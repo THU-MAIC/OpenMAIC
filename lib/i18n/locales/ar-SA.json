@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "تعذر تشغيل هذا التفاعل",
-      "dismiss": "إغلاق"
+      "dismiss": "إغلاق",
+      "ownerDescription": "قد لا تعمل بعض أجزاء هذه الصفحة. يمكنك أن تطلب من الذكاء الاصطناعي إصلاحها.",
+      "technicalDetails": "التفاصيل التقنية",
+      "fixWithAgent": "الإصلاح باستخدام الذكاء الاصطناعي",
+      "neutralTitle": "هذه الصفحة غير متاحة حاليًا",
+      "neutralDescription": "قد لا تعمل بعض أجزائها كما هو متوقع.",
+      "fixPrefill": "تعرض الصفحة التفاعلية \"{{page}}\" خطأً عند تشغيلها. يرجى العثور على السبب وإصلاحه. ما سجّله المتصفح:"
     },
     "interactiveMoreBelow": "يوجد المزيد بالأسفل",
     "tabs": {
@@ -788,6 +794,30 @@
     "dock": {
       "elementRefHint": "مراجع العناصر — اختر عناصر لإرسالها مع رسالتك التالية",
       "globalTools": "أدوات عامة"
+    },
+    "issues": {
+      "buttonLabel": "مشكلات الدورة",
+      "buttonLabelWithCount": "مشكلات الدورة ({{count}})",
+      "summary": "عدد المشكلات: {{count}}",
+      "summary_one": "عدد المشكلات: {{count}}",
+      "summary_other": "عدد المشكلات: {{count}}",
+      "empty": "لم يتم العثور على مشكلات في هذه الدورة.",
+      "goTo": "انتقال",
+      "fixWithAgent": "الإصلاح باستخدام الذكاء الاصطناعي",
+      "pageLabel": "الصفحة {{index}} · {{title}}",
+      "untitledPage": "صفحة بدون عنوان",
+      "fixPrefillIssue": "يرجى إصلاح هذه المشكلة في \"{{page}}\": {{issue}}.",
+      "fixPrefillCourse": "يرجى التحقق من مشكلات هذه الدورة وإصلاحها.",
+      "kind": {
+        "speechWithoutAudio": "السرد بلا صوت",
+        "mediaNotGenerated": "لم يتم إنشاء الصورة أو الفيديو",
+        "danglingCue": "إجراء يشير إلى عنصر لم يعد موجودًا",
+        "interactiveRuntimeError": "خطأ في صفحة تفاعلية",
+        "emptyActions": "لا تحتوي الصفحة على أي إجراءات",
+        "emptySpeech": "نص السرد فارغ",
+        "unboundCue": "إجراء غير مرتبط بأي عنصر",
+        "emptyDiscussion": "المناقشة بلا موضوع"
+      }
     }
   },
   "whiteboard": {

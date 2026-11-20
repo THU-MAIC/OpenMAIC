@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "这个互动未能运行",
-      "dismiss": "关闭"
+      "dismiss": "关闭",
+      "ownerDescription": "页面的部分功能可能无法使用，可以让 AI 来修复。",
+      "technicalDetails": "技术细节",
+      "fixWithAgent": "用 AI 修复",
+      "neutralTitle": "此页面暂时无法使用",
+      "neutralDescription": "页面的部分内容可能无法正常显示或互动。",
+      "fixPrefill": "互动页面「{{page}}」运行时出错了，请找出原因并修复。浏览器记录到的错误如下："
     },
     "interactiveMoreBelow": "下方还有内容",
     "tabs": {
@@ -788,6 +794,30 @@
     "dock": {
       "elementRefHint": "元素引用 —— 选中元素随下一条消息发给 Agent",
       "globalTools": "全局工具"
+    },
+    "issues": {
+      "buttonLabel": "课程问题",
+      "buttonLabelWithCount": "课程问题（{{count}}）",
+      "summary": "{{count}} 个问题",
+      "summary_one": "{{count}} 个问题",
+      "summary_other": "{{count}} 个问题",
+      "empty": "这门课程暂未发现问题。",
+      "goTo": "前往",
+      "fixWithAgent": "用 AI 修复",
+      "pageLabel": "第 {{index}} 页 · {{title}}",
+      "untitledPage": "未命名页面",
+      "fixPrefillIssue": "请修复「{{page}}」的问题：{{issue}}。",
+      "fixPrefillCourse": "请检查这门课程中的问题并修复。",
+      "kind": {
+        "speechWithoutAudio": "讲解缺少音频",
+        "mediaNotGenerated": "图片或视频未生成",
+        "danglingCue": "动作指向的元素已不存在",
+        "interactiveRuntimeError": "互动页面运行出错",
+        "emptyActions": "本页没有任何动作",
+        "emptySpeech": "讲解文字为空",
+        "unboundCue": "动作未绑定元素",
+        "emptyDiscussion": "讨论缺少主题"
+      }
     }
   },
   "whiteboard": {

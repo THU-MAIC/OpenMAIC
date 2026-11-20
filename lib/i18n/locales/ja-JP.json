@@ -270,7 +270,13 @@
     },
     "interactiveRuntimeError": {
       "title": "このインタラクティブは実行できませんでした",
-      "dismiss": "閉じる"
+      "dismiss": "閉じる",
+      "ownerDescription": "このページの一部が動作しない可能性があります。AIに修正を依頼できます。",
+      "technicalDetails": "技術的な詳細",
+      "fixWithAgent": "AIで修正",
+      "neutralTitle": "このページは現在利用できません",
+      "neutralDescription": "一部の内容が正しく表示・動作しない可能性があります。",
+      "fixPrefill": "インタラクティブページ「{{page}}」の実行中にエラーが発生しています。原因を調べて修正してください。ブラウザが記録したエラー："
     },
     "interactiveMoreBelow": "下に続きがあります",
     "tabs": {
@@ -788,6 +794,30 @@
     "dock": {
       "elementRefHint": "要素参照 — 次のメッセージと一緒に送る要素を選ぶ",
       "globalTools": "全体ツール"
+    },
+    "issues": {
+      "buttonLabel": "コースの問題",
+      "buttonLabelWithCount": "コースの問題（{{count}}）",
+      "summary": "{{count}} 件の問題",
+      "summary_one": "{{count}} 件の問題",
+      "summary_other": "{{count}} 件の問題",
+      "empty": "このコースに問題は見つかりませんでした。",
+      "goTo": "移動",
+      "fixWithAgent": "AIで修正",
+      "pageLabel": "ページ {{index}} · {{title}}",
+      "untitledPage": "無題のページ",
+      "fixPrefillIssue": "「{{page}}」の問題を修正してください：{{issue}}。",
+      "fixPrefillCourse": "このコースの問題を確認して修正してください。",
+      "kind": {
+        "speechWithoutAudio": "ナレーションの音声がありません",
+        "mediaNotGenerated": "画像または動画が生成されていません",
+        "danglingCue": "アクションの対象要素が存在しません",
+        "interactiveRuntimeError": "インタラクティブページのエラー",
+        "emptyActions": "このページにアクションがありません",
+        "emptySpeech": "ナレーションのテキストが空です",
+        "unboundCue": "アクションに要素が紐付けられていません",
+        "emptyDiscussion": "ディスカッションの主題がありません"
+      }
     }
   },
   "whiteboard": {

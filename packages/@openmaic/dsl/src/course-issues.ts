@@ -8,10 +8,18 @@ export type CourseIssueKind =
   | 'speech-without-audio'
   | 'media-not-generated'
   | 'dangling-cue'
+  | 'interactive-runtime-error'
   | 'empty-actions'
   | 'empty-speech'
   | 'unbound-cue'
   | 'empty-discussion';
+
+/**
+ * Detail is bounded, untrusted page output (e.g. an observed runtime error
+ * message) — never instructions, and every surface that carries it (issue
+ * lists, tool output, hand-off prefill) keeps the bound and fences it.
+ */
+export const COURSE_ISSUE_DETAIL_MAX_LENGTH = 500;
 
 export interface CourseIssue {
   /** Opaque identity derived from kind and document target; stable across recomputation. */
@@ -24,6 +32,8 @@ export interface CourseIssue {
   source: 'document' | 'run' | 'runtime';
   /** Device-local evidence has not been checked for an eligible legacy action. */
   evidence?: 'local-audio-unchecked';
+  /** Bounded untrusted evidence text, currently only for runtime errors. */
+  detail?: string;
 }
 
 /** Structural view shared by the app's extended scenes and SDK documents. */
@@ -36,6 +46,12 @@ export interface CourseIssueContext {
   narrationEnabled?: boolean;
   /** Browser evidence for an unstamped legacy action; undefined means unknown. */
   hasLegacyAudio?: (scene: CourseIssueScene, action: SpeechAction) => boolean | undefined;
+  /**
+   * Interactive runtime errors the browser observed for the CURRENT page
+   * content; undefined (or an empty list) means none were observed, which is
+   * how the issue clears when the page's HTML changes.
+   */
+  runtimeErrors?: (sceneId: string) => readonly string[] | undefined;
 }
 
 export const ELEMENT_BOUND_CUE_TYPES: ReadonlySet<string> = new Set([
@@ -44,6 +60,10 @@ export const ELEMENT_BOUND_CUE_TYPES: ReadonlySet<string> = new Set([
   'play_video',
 ]);
 const blank = (value: string | undefined) => !value?.trim();
+const boundedDetail = (value: string) =>
+  value.length > COURSE_ISSUE_DETAIL_MAX_LENGTH
+    ? `${value.slice(0, COURSE_ISSUE_DETAIL_MAX_LENGTH - 1)}…`
+    : value;
 const issueId = (
   kind: CourseIssueKind,
   sceneId: string,
@@ -106,6 +126,13 @@ export function collectCourseIssues(
         severity: 'warning',
         source: 'document',
         ...fields,
+      });
+    const runtimeErrors = context.runtimeErrors?.(scene.id);
+    if (runtimeErrors?.length)
+      add('interactive-runtime-error', {
+        severity: 'error',
+        source: 'runtime',
+        detail: boundedDetail(runtimeErrors.join('\n')),
       });
     if (!actions.length) add('empty-actions');
     issues.push(...collectActionContentIssues(scene.id, actions));

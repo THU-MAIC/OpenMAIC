@@ -8,6 +8,7 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { WorkbenchMaterial } from './session-store';
 import type { ElementRef } from './element-refs';
 import type { CourseRef } from './course-refs';
+import type { AgentFixRequest } from './agent-fix-handoff';
 
 export interface WorkbenchPanelState {
   readonly hosted: boolean;
@@ -19,6 +20,19 @@ export interface WorkbenchPanelState {
   readonly editPinned: boolean;
   /** The pane header's element that hosts the editor's undo/redo buttons. */
   readonly historySlot: HTMLElement | null;
+  /**
+   * Whether this viewer may repair the hosted course. The pane resolves it
+   * from the access the workspace shell already computed — the stage store's
+   * `isOwner` is standalone-only knowledge and always its optimistic default
+   * in here.
+   */
+  readonly canRepair: boolean;
+  /**
+   * "Fix with agent" while hosted: hand an observed course issue to the shell,
+   * which opens an empty conversation beside the course with the issue
+   * pre-filled. Absent outside a pane that offers it.
+   */
+  readonly requestAgentFix: ((request: AgentFixRequest) => void) | null;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
@@ -27,6 +41,8 @@ const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   editPinned: false,
   learning: false,
   historySlot: null,
+  canRepair: false,
+  requestAgentFix: null,
 };
 
 const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBENCH);
@@ -36,11 +52,15 @@ export function WorkbenchPanelProvider({
   visible = true,
   learning = true,
   historySlot = null,
+  canRepair = false,
+  onAgentFix = null,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly learning?: boolean;
   readonly historySlot?: HTMLElement | null;
+  readonly canRepair?: boolean;
+  readonly onAgentFix?: ((request: AgentFixRequest) => void) | null;
 }) {
   // The pane's size (split or full screen) is not part of this: the hosted
   // classroom renders the same chrome at either size, and the pane draws the
@@ -52,8 +72,10 @@ export function WorkbenchPanelProvider({
       learning,
       editPinned: visible && !learning,
       historySlot,
+      canRepair,
+      requestAgentFix: onAgentFix,
     }),
-    [visible, learning, historySlot],
+    [visible, learning, historySlot, canRepair, onAgentFix],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

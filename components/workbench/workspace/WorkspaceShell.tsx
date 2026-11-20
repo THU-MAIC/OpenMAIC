@@ -1,6 +1,5 @@
 'use client';
 
-import { useVisualViewport } from '@/lib/hooks/use-visual-viewport';
 import { useMediaQuery } from '@/lib/hooks/use-media-query';
 import { WORKSPACE_NARROW_QUERY } from '@/lib/adaptive/media-queries';
 
@@ -51,15 +50,7 @@ import { WORKSPACE_NARROW_QUERY } from '@/lib/adaptive/media-queries';
  * under `.ws-root` and imported from this file so it never reaches `/`.
  */
 
-import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 // The workspace's visual layer. Imported HERE rather than from `globals.css`
@@ -150,7 +141,6 @@ import { useOwnerRuns } from '@/lib/generation-run-client/use-owner-runs';
 import { discardGenerationRun } from '@/lib/generation-run-client/api';
 import { pendingCourseRuns, runsByCourse } from '@/lib/generation-run-client/course-card';
 import { WorkspaceRail } from './WorkspaceRail';
-import { WorkspaceMobileBar, WorkspaceMobileDrawer } from './WorkspaceMobileBar';
 import { WorkspaceHome } from './WorkspaceHome';
 import { WorkspaceChatPane } from './WorkspaceChatPane';
 import { WorkspaceClassroomPane } from './WorkspaceClassroomPane';
@@ -175,6 +165,13 @@ import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbe
 import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
+import {
+  dropStagedAgentFix,
+  nextAgentFixSeedKey,
+  peekStagedAgentFix,
+  type AgentFixDraftSeed,
+  type AgentFixRequest,
+} from '@/lib/workbench/agent-fix-handoff';
 import { pendingQuestion } from '@/components/workbench/chat/question-card-state';
 import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
@@ -300,12 +297,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * it drops it, so it can never land in a conversation they went to instead.
    */
   const [materialSeed, setMaterialSeed] = useState<MaterialSeed | null>(null);
+  /**
+   * "Fix with agent" from a course: the issue on its way to an empty
+   * conversation beside that course, as draft text the owner reviews. Held
+   * until the composer it names takes it, then dropped — like the material
+   * seed, an event, never a conversation's remembered state.
+   */
+  const [agentFixSeed, setAgentFixSeed] = useState<AgentFixDraftSeed | null>(null);
   // Back and Forward are the teacher's navigation too. Nothing in the
   // workspace raises `popstate` itself, so this is never the hand-over's own
   // navigation (a push) or a background change (a replace).
   useEffect(() => {
     const dropMaterialSeed = () => {
       setMaterialSeed(null);
+      setAgentFixSeed(null);
+      dropStagedAgentFix();
       setNewConversationRequested(false);
     };
     window.addEventListener('popstate', dropMaterialSeed);
@@ -315,6 +321,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const materialSeedKeys = useRef(0);
   const consumeMaterialSeed = useCallback((key: number) => {
     setMaterialSeed((current) => (current?.key === key ? null : current));
+  }, []);
+  const consumeAgentFixSeed = useCallback((key: number) => {
+    setAgentFixSeed((current) => (current?.key === key ? null : current));
   }, []);
   const ownerSessionClient = useRef<OwnerSessionClient | null>(null);
   const shellGeneration = useRef(0);
@@ -402,7 +411,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   useLayoutEffect(() => {
     courseTabsRef.current = courseTabs;
   }, [courseTabs]);
-  const viewport = useVisualViewport();
   const narrow = useMediaQuery(WORKSPACE_NARROW_QUERY);
   // Which of the two content panes has the column, on a window too narrow for
   // both. Not persisted: it is a consequence of the window, not a preference.
@@ -653,6 +661,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       collapse.expandClassroom();
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       goTo(withView(withCourse(panes, next.activeCourseId), null));
     },
     [collapse, courseTabs, goTo, panes, persistCourseTabs],
@@ -674,6 +683,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       collapse.expandClassroom();
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       setNewConversationRequested(startConversation);
       setDraftNamesCourse(startConversation);
       if (startConversation) {
@@ -713,9 +723,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const openSession = useCallback(
     (sessionId: string) => {
       setNewConversationRequested(false);
-      setNarrowFocus('chat');
       collapse.expandChat();
       setMaterialSeed(null);
+      setAgentFixSeed(null);
+      dropStagedAgentFix();
       goTo(withView(withSession(panes, sessionId), null));
     },
     [collapse, goTo, panes],
@@ -784,6 +795,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       const next = activateCourseTab(courseTabs, courseId);
       if (next === courseTabs) return;
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       setCourseTabs(next);
       persistCourseTabs(next);
       goTo(withCourse(panes, next.activeCourseId));
@@ -832,6 +844,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const openView = useCallback(
     (view: string) => {
       setMaterialSeed(null);
+      setAgentFixSeed(null);
+      dropStagedAgentFix();
       goTo(withView(panes, view));
     },
     [goTo, panes],
@@ -845,8 +859,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * search's Settings action both open it.
    */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  /** The phone's navigation sheet (`WorkspaceMobileDrawer`): the rail, below `md`. */
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   useEffect(() => {
     const mac = isMacPlatform();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -886,6 +898,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const leaveView = useCallback(() => {
     setMaterialSeed(null);
+    setAgentFixSeed(null);
+    dropStagedAgentFix();
     goTo(withView(panes, null));
   }, [goTo, panes]);
 
@@ -1059,6 +1073,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     persistCourseTabs(NO_COURSE_TABS);
     setNewConversationRequested(false);
     setMaterialSeed(null);
+    setAgentFixSeed(null);
     setComposerReset((value) => value + 1);
   };
 
@@ -1126,9 +1141,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     draftVisit.current += 1;
     setNewConversationRequested(true);
     setDraftNamesCourse(false);
-    setNarrowFocus('chat');
     collapse.expandChat();
     setMaterialSeed(null);
+    setAgentFixSeed(null);
+    dropStagedAgentFix();
     // The teacher's own choice, so it also leaves the knowledge base page.
     if (panes.courseId) {
       if (panes.sessionId || panes.view) {
@@ -1152,6 +1168,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       // strip opens an ordinary new one, naming nothing.
       if (readOnlyCourse) {
         startNewConversation();
+        setNarrowFocus('chat');
       } else {
         talkAboutCourse();
       }
@@ -1169,7 +1186,44 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const talkAboutCourse = () => {
     startNewConversation();
     setDraftNamesCourse(true);
+    setNarrowFocus('chat');
   };
+  /**
+   * "Fix with agent" (issue #2329): "Edit with AI" for one observed problem —
+   * an empty conversation beside the course, naming it, with the problem
+   * pre-filled for the owner to review and send. Set only AFTER
+   * `startNewConversation`, which drops any earlier hand-over. Only for the
+   * course on screen: a request from anywhere else is stale.
+   *
+   * Unlike "Edit with AI", its entries (the issues list, the runtime notice)
+   * are reachable while the classroom is full screen, where every other pane
+   * steps aside: the conversation it opens would be there but hidden, so full
+   * screen ends first — exactly the pane's own "exit full screen", which keeps
+   * the classroom mounted.
+   */
+  const startAgentFix = (request: AgentFixRequest) => {
+    if (request.courseId !== panes.courseId) return;
+    useWorkbenchStore.getState().setPlaybackOn(false);
+    // Browser fullscreen (presentation mode inside the pane) hides the chat
+    // behind the stage and captures keyboard focus; exit it first so the
+    // prefilled composer is immediately visible and no key goes to the stage.
+    if (document.fullscreenElement) void document.exitFullscreen();
+    talkAboutCourse();
+    setAgentFixSeed({
+      key: nextAgentFixSeedKey(),
+      ownerKey: `draft:${request.courseId}`,
+      courseId: request.courseId,
+      text: request.prefill,
+    });
+  };
+  // Stable for the memoised classroom pane; always runs the latest render's.
+  const startAgentFixRef = useRef(startAgentFix);
+  useLayoutEffect(() => {
+    startAgentFixRef.current = startAgentFix;
+  });
+  const [startAgentFixStable] = useState(
+    () => (request: AgentFixRequest) => startAgentFixRef.current(request),
+  );
   // Stable for the memoised classroom pane; always runs the latest render's.
   const talkAboutCourseRef = useRef(talkAboutCourse);
   useLayoutEffect(() => {
@@ -1748,6 +1802,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     access: courseAccess,
     generating: courseGenerating,
   });
+  // "Fix with agent" from the standalone classroom arrives staged in this tab
+  // (see `lib/workbench/agent-fix-handoff`): taken once the course it names is
+  // the one open here and the viewer's access to it is known. Only a course a
+  // conversation could change gets one; any other answer drops it.
+  useEffect(() => {
+    const staged = peekStagedAgentFix();
+    if (!staged) return;
+    if (staged.courseId !== panes.courseId) {
+      dropStagedAgentFix();
+      return;
+    }
+    if (courseAccess === 'unknown') return;
+    // A run-generated course's owner arrives while `useRunCourse` is still
+    // reading the manifest and scenes (2-3 round trips after the access answer).
+    // Keep the request staged; `readOnlyCourse` changes when the run read
+    // completes and re-triggers this effect. The 2-minute TTL bounds the wait.
+    if (courseAccess === 'owner' && courseGenerating) return;
+    dropStagedAgentFix();
+    if (!readOnlyCourse) startAgentFixRef.current(staged);
+  }, [panes.courseId, courseAccess, readOnlyCourse, courseGenerating]);
   // The names of courses that are not in the list (someone else's), as their
   // documents loaded here: a tab says what it is, not "untitled".
   const loadedStageId = useStageStore((s) => s.stage?.id ?? null);
@@ -1836,6 +1910,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       // The teacher closing a tab; `closeCourse` alone is also the end of a
       // course deletion, which is not a navigation of theirs.
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       closeCourse(courseId);
     },
     [closeCourse, closePreview, previewTab.requestKey],
@@ -1981,14 +2056,10 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     fold.toggleRail();
   }, []);
 
-  const homeKeyboardOpen =
-    render.home && viewport?.scale === 1 && window.innerHeight - viewport.height > 100;
-
   return (
     <div
       ref={rootRef}
       data-testid="pro-workspace"
-      data-home-keyboard={homeKeyboardOpen || undefined}
       data-ws-layout={
         render.view
           ? `view:${render.view}`
@@ -1997,316 +2068,247 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             : `${chatOpen ? 'chat' : ''}${classroomOpen ? 'classroom' : ''}`
       }
       data-ws-pane-steady={paneSteady || undefined}
-      // A column, so the phone's bar (`md:hidden`) sits over the panes; the panes
-      // keep their own row underneath, exactly as before on wider screens.
-      className="ws-root flex h-[100dvh] w-full flex-col overflow-hidden"
+      className="ws-root flex h-[100dvh] w-full overflow-hidden"
       // The default only — the persisted width is applied to this same
       // variable in a layout effect, so server and client markup agree.
-      style={
-        {
-          '--ws-rail-w': `${RAIL_WIDTH_DEFAULT}px`,
-          ...(homeKeyboardOpen && {
-            '--ws-visible-top': `${viewport.offsetTop}px`,
-            '--ws-visible-height': `${viewport.height}px`,
-          }),
-        } as CSSProperties
-      }
+      style={{ ['--ws-rail-w' as string]: `${RAIL_WIDTH_DEFAULT}px` }}
     >
+      {courses.importInput}
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+
+      {/* Mounted only while open, so every opening starts from an empty query. */}
+      {searchOpen ? (
+        <WorkspaceSearchPalette
+          open
+          onOpenChange={setSearchOpen}
+          sessions={visibleSessions}
+          courses={courses.classrooms}
+          folders={courses.folders}
+          onOpenSession={openSession}
+          onOpenCourse={browseCourse}
+          onOpenMaterial={openMaterial}
+          onNewSession={startNewConversation}
+          onOpenView={openView}
+          onOpenSettings={() => setSettingsOpen(true)}
+          coursesView={WORKSPACE_COURSES_VIEW}
+          libraryView={WORKSPACE_LIBRARY_VIEW}
+        />
+      ) : null}
+
       {classroomOpen && playbackOn ? null : (
-        <>
-          <WorkspaceMobileBar
-            isHome={render.home}
-            onOpenMenu={() => setMobileNavOpen(true)}
-            onGoHome={goHome}
-            onNewSession={startNewConversation}
-          />
-          <WorkspaceMobileDrawer open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-            <WorkspaceRail
-              variant="drawer"
-              // The sheet slides in on its own; the rail's fade on top would double it.
-              fadeIn={false}
-              onCloseDrawer={() => setMobileNavOpen(false)}
-              sessions={visibleSessions}
-              sessionState={sessionState}
-              onReloadSessions={() => {
-                loadSessions(true);
-              }}
-              activeSessionId={panes.sessionId}
-              collapsed={false}
-              onToggleCollapsed={() => setMobileNavOpen(false)}
-              // Every way out of the sheet goes somewhere, so each one also closes it.
-              // Rename and delete stay in place: they edit the list, not leave it.
-              onOpenSession={(id) => {
-                setMobileNavOpen(false);
-                openSession(id);
-              }}
-              onNewSession={() => {
-                setMobileNavOpen(false);
-                startNewConversation();
-              }}
-              onGoHome={() => {
-                setMobileNavOpen(false);
-                goHome();
-              }}
-              onSessionDeleted={handleSessionDeleted}
-              onRenameSession={renameSession}
-              onOpenSearch={() => {
-                setMobileNavOpen(false);
-                setSearchOpen(true);
-              }}
-              onOpenSettings={() => {
-                setMobileNavOpen(false);
-                setSettingsOpen(true);
-              }}
-              onOpenGuide={() => {
-                setMobileNavOpen(false);
-                resetOnboarding('home');
-                goHome();
-              }}
-              activeView={render.view}
-              onOpenView={(view) => {
-                setMobileNavOpen(false);
-                openView(view);
-              }}
-              resizeHandle={null}
+        <WorkspaceRail
+          sessions={visibleSessions}
+          sessionState={sessionState}
+          onReloadSessions={() => {
+            loadSessions(true);
+          }}
+          activeSessionId={panes.sessionId}
+          collapsed={navCollapsed}
+          onToggleCollapsed={toggleRail}
+          fadeIn={!railUnfoldedByDrag}
+          onOpenSession={openSession}
+          onNewSession={startNewConversation}
+          onGoHome={goHome}
+          onSessionDeleted={handleSessionDeleted}
+          onRenameSession={renameSession}
+          onOpenSearch={() => setSearchOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenGuide={() => {
+            resetOnboarding('home');
+            goHome();
+          }}
+          activeView={render.view}
+          onOpenView={openView}
+          resizeHandle={
+            <ResizeHandle
+              testId="pro-rail-resize-handle"
+              label={t('workspace.resizeAria')}
+              edge="right"
+              current={railWidth.current}
+              clamp={clampRailWidth}
+              onPreview={railWidth.preview}
+              onCommit={railWidth.commit}
+              onReset={railWidth.reset}
+              collapseBelow={RAIL_COLLAPSE_THRESHOLD}
+              onCollapse={collapseRail}
+              onExpand={expandRail}
+              drag={railDrag}
             />
-          </WorkspaceMobileDrawer>
-        </>
+          }
+          miniResizeHandle={
+            <ResizeHandle
+              testId="pro-rail-mini-resize-handle"
+              label={t('workspace.expandNav')}
+              edge="right"
+              current={railWidth.current}
+              clamp={clampRailWidth}
+              onPreview={railWidth.preview}
+              onCommit={railWidth.commit}
+              onReset={() => {}}
+              folded
+              collapseBelow={RAIL_COLLAPSE_THRESHOLD}
+              onCollapse={collapseRail}
+              onExpand={expandRail}
+              drag={railDrag}
+            />
+          }
+        />
       )}
-      <div className="ws-pane-row flex min-h-0 w-full flex-1 overflow-hidden">
-        {courses.importInput}
 
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {chatTab ? (
+        <PaneTab
+          testId="workspace-chat-reopen"
+          label={t('workspace.expandChat')}
+          onClick={focusChat}
+        />
+      ) : null}
 
-        {/* Mounted only while open, so every opening starts from an empty query. */}
-        {searchOpen ? (
-          <WorkspaceSearchPalette
-            open
-            onOpenChange={setSearchOpen}
-            sessions={visibleSessions}
-            courses={courses.classrooms}
-            folders={courses.folders}
-            onOpenSession={openSession}
-            onOpenCourse={browseCourse}
-            onOpenMaterial={openMaterial}
-            onNewSession={startNewConversation}
-            onOpenView={openView}
-            onOpenSettings={() => setSettingsOpen(true)}
-            coursesView={WORKSPACE_COURSES_VIEW}
-            libraryView={WORKSPACE_LIBRARY_VIEW}
-          />
-        ) : null}
-
-        {classroomOpen && playbackOn ? null : (
-          <WorkspaceRail
-            sessions={visibleSessions}
-            sessionState={sessionState}
-            onReloadSessions={() => {
-              loadSessions(true);
-            }}
-            activeSessionId={panes.sessionId}
-            collapsed={navCollapsed}
-            onToggleCollapsed={toggleRail}
-            fadeIn={!railUnfoldedByDrag}
-            onOpenSession={openSession}
-            onNewSession={startNewConversation}
-            onGoHome={goHome}
-            onSessionDeleted={handleSessionDeleted}
-            onRenameSession={renameSession}
-            onOpenSearch={() => setSearchOpen(true)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenGuide={() => {
-              resetOnboarding('home');
-              goHome();
-            }}
-            activeView={render.view}
-            onOpenView={openView}
-            resizeHandle={
+      {chatOpen || chatMounted ? (
+        <WorkspaceChatPane
+          hidden={!chatOpen}
+          covered={render.view !== null}
+          fill={chatFills && !previewPaneOpen}
+          width={chatWidth.value}
+          navigation={courseNavigation}
+          materialSeed={materialSeed}
+          onMaterialSeedConsumed={consumeMaterialSeed}
+          agentFixSeed={agentFixSeed}
+          onAgentFixSeedConsumed={consumeAgentFixSeed}
+          newConversation={composerReset}
+          conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
+          draftConversation={draftConversation}
+          onRename={
+            // Only a conversation that exists can be named. A draft one has no
+            // id to PATCH — its first message mints the session, and the title
+            // it derives from that message is nameable from then on.
+            attachedSessionId
+              ? (title: string) => renameSession(attachedSessionId, title)
+              : undefined
+          }
+          // Folding is offered only while the classroom is there to take the
+          // column: see `resolveWorkspaceRender`, which refuses to fold the last
+          // visible pane anyway.
+          onCollapse={bothPanesOnScreen ? collapse.collapseChat : undefined}
+          resizeHandle={
+            bothPanesOnScreen || previewPaneOpen ? (
               <ResizeHandle
-                testId="pro-rail-resize-handle"
-                label={t('workspace.resizeAria')}
+                testId="workspace-chat-resize-handle"
+                label={t('workspace.resizeChatAria')}
                 edge="right"
-                current={railWidth.current}
-                clamp={clampRailWidth}
-                onPreview={railWidth.preview}
-                onCommit={railWidth.commit}
-                onReset={railWidth.reset}
-                collapseBelow={RAIL_COLLAPSE_THRESHOLD}
-                onCollapse={collapseRail}
-                onExpand={expandRail}
-                drag={railDrag}
+                current={chatWidth.current}
+                clamp={clampChatWidth}
+                onPreview={chatWidth.preview}
+                onCommit={chatWidth.commit}
+                onReset={chatWidth.reset}
               />
-            }
-            miniResizeHandle={
-              <ResizeHandle
-                testId="pro-rail-mini-resize-handle"
-                label={t('workspace.expandNav')}
-                edge="right"
-                current={railWidth.current}
-                clamp={clampRailWidth}
-                onPreview={railWidth.preview}
-                onCommit={railWidth.commit}
-                onReset={() => {}}
-                folded
-                collapseBelow={RAIL_COLLAPSE_THRESHOLD}
-                onCollapse={collapseRail}
-                onExpand={expandRail}
-                drag={railDrag}
-              />
-            }
-          />
-        )}
+            ) : undefined
+          }
+        />
+      ) : null}
 
-        {chatTab ? (
-          <PaneTab
-            testId="workspace-chat-reopen"
-            label={t('workspace.expandChat')}
-            onClick={focusChat}
-          />
-        ) : null}
+      {previewEligible ? (
+        <WorkspaceRequestActivity
+          onStateChange={setPreviewTab}
+          hidden={!previewShowing || collapse.value.classroom}
+          onCollapse={collapse.collapseClassroom}
+          closedKey={closedPreviewKey}
+          onClose={closePreview}
+          strip={previewStrip}
+        />
+      ) : null}
 
-        {chatOpen || chatMounted ? (
-          <WorkspaceChatPane
-            hidden={!chatOpen}
-            covered={render.view !== null}
-            fill={chatFills && !previewPaneOpen}
-            width={chatWidth.value}
-            navigation={courseNavigation}
-            materialSeed={materialSeed}
-            onMaterialSeedConsumed={consumeMaterialSeed}
-            newConversation={composerReset}
-            conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
-            draftConversation={draftConversation}
-            onRename={
-              // Only a conversation that exists can be named. A draft one has no
-              // id to PATCH — its first message mints the session, and the title
-              // it derives from that message is nameable from then on.
-              attachedSessionId
-                ? (title: string) => renameSession(attachedSessionId, title)
-                : undefined
-            }
-            // Folding is offered only while the classroom is there to take the
-            // column: see `resolveWorkspaceRender`, which refuses to fold the last
-            // visible pane anyway.
-            onCollapse={bothPanesOnScreen ? collapse.collapseChat : undefined}
-            resizeHandle={
-              bothPanesOnScreen || previewPaneOpen ? (
-                <ResizeHandle
-                  testId="workspace-chat-resize-handle"
-                  label={t('workspace.resizeChatAria')}
-                  edge="right"
-                  current={chatWidth.current}
-                  clamp={clampChatWidth}
-                  onPreview={chatWidth.preview}
-                  onCommit={chatWidth.commit}
-                  onReset={chatWidth.reset}
-                />
-              ) : undefined
-            }
-          />
-        ) : null}
+      {previewTabOpen && !panes.courseId && collapse.value.classroom ? (
+        <PaneTab
+          testId="workspace-preview-reopen"
+          label={t('workspace.expandClassroom')}
+          side="right"
+          onClick={collapse.expandClassroom}
+        />
+      ) : null}
 
-        {previewEligible ? (
-          <WorkspaceRequestActivity
-            onStateChange={setPreviewTab}
-            hidden={!previewShowing || collapse.value.classroom}
-            onCollapse={collapse.collapseClassroom}
-            closedKey={closedPreviewKey}
-            onClose={closePreview}
-            strip={previewStrip}
-          />
-        ) : null}
+      {panes.courseId ? (
+        <WorkspaceClassroomPane
+          browser={classroomBrowser}
+          hidden={!classroomOpen || previewShowing}
+          readOnly={readOnlyCourse}
+          // Not known yet is read-only too, but says nothing until it is known.
+          readOnlyKnown={courseAccess !== 'unknown'}
+          fullscreen={playbackOn}
+          // Symmetric with the conversation's fold: offered only while both
+          // panes are on screen (the last visible pane cannot fold — see
+          // `resolveWorkspaceRender`). Its button lives in the pane's own header.
+          onCollapse={bothPanesOnScreen ? collapse.collapseClassroom : undefined}
+          onTalkAboutCourse={browsingCourse && !readOnlyCourse ? talkAboutCourseStable : undefined}
+          // Whoever owns the course may see its raw problems; a conversation
+          // can only take them on while it could change the course.
+          canRepair={courseAccess === 'owner'}
+          onAgentFix={readOnlyCourse ? undefined : startAgentFixStable}
+        />
+      ) : null}
 
-        {previewTabOpen && !panes.courseId && collapse.value.classroom ? (
-          <PaneTab
-            testId="workspace-preview-reopen"
-            label={t('workspace.expandClassroom')}
-            side="right"
-            onClick={collapse.expandClassroom}
-          />
-        ) : null}
+      {classroomTab ? (
+        <PaneTab
+          testId="workspace-classroom-reopen"
+          label={t('workspace.expandClassroom')}
+          side="right"
+          onClick={focusClassroom}
+        />
+      ) : null}
 
-        {panes.courseId ? (
-          <WorkspaceClassroomPane
-            browser={classroomBrowser}
-            hidden={!classroomOpen || previewShowing}
-            readOnly={readOnlyCourse}
-            // Not known yet is read-only too, but says nothing until it is known.
-            readOnlyKnown={courseAccess !== 'unknown'}
-            fullscreen={playbackOn}
-            // Symmetric with the conversation's fold: offered only while both
-            // panes are on screen (the last visible pane cannot fold — see
-            // `resolveWorkspaceRender`). Its button lives in the pane's own header.
-            onCollapse={bothPanesOnScreen ? collapse.collapseClassroom : undefined}
-            onTalkAboutCourse={
-              browsingCourse && !readOnlyCourse ? talkAboutCourseStable : undefined
-            }
-          />
-        ) : null}
+      {render.home ? (
+        <WorkspaceHome
+          composerReset={composerReset}
+          // The home composer's `@` picker names courses from the same one list
+          // the rail and the conversation composer use.
+          courseOptions={courseOptions}
+          onOpenSession={openCreatedSession}
+          onOpenSessionAfterLeaving={openCreatedSessionAfterLeaving}
+          materialSeed={materialSeed}
+          onMaterialSeedConsumed={consumeMaterialSeed}
+          promptSeed={promptSeeds.seed}
+          onPromptSeedConsumed={promptSeeds.consume}
+        />
+      ) : null}
 
-        {classroomTab ? (
-          <PaneTab
-            testId="workspace-classroom-reopen"
-            label={t('workspace.expandClassroom')}
-            side="right"
-            onClick={focusClassroom}
-          />
-        ) : null}
-
-        {render.home ? (
-          <WorkspaceHome
-            composerReset={composerReset}
-            // The home composer's `@` picker names courses from the same one list
-            // the rail and the conversation composer use.
-            courseOptions={courseOptions}
-            onOpenSession={openCreatedSession}
-            onOpenSessionAfterLeaving={openCreatedSessionAfterLeaving}
-            materialSeed={materialSeed}
-            onMaterialSeedConsumed={consumeMaterialSeed}
-            promptSeed={promptSeeds.seed}
-            onPromptSeedConsumed={promptSeeds.consume}
-          />
-        ) : null}
-
-        {/* A page covers the main area: the knowledge base, my courses, or a
+      {/* A page covers the main area: the knowledge base, my courses, or a
           host page. The conversation and classroom panes above stay mounted,
           hidden (`render` turns both off), so leaving the page finds them as
           they were and the run's stream is never detached. */}
-        {render.view === WORKSPACE_LIBRARY_VIEW ? (
-          <MaterialLibraryPage
-            onChatWithMaterial={chatWithMaterial}
-            onLeave={leaveView}
-            locate={locatedMaterial}
-          />
-        ) : render.view === WORKSPACE_COURSES_VIEW ? (
-          <WorkspaceCoursesPage
-            courses={courses}
-            courseRuns={courseRuns}
-            pendingRuns={pendingRuns}
-            onOpenCourse={browseCourse}
-            onDeleteCourse={handleCourseDeleted}
-            onMakeCourse={goHome}
-            onDiscardRun={discardPendingRun}
-          />
-        ) : render.view ? (
-          <main
-            data-testid={`workspace-host-view-${render.view}`}
-            className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
-          >
-            {hostPages.get(render.view)?.render?.()}
-          </main>
-        ) : null}
+      {render.view === WORKSPACE_LIBRARY_VIEW ? (
+        <MaterialLibraryPage
+          onChatWithMaterial={chatWithMaterial}
+          onLeave={leaveView}
+          locate={locatedMaterial}
+        />
+      ) : render.view === WORKSPACE_COURSES_VIEW ? (
+        <WorkspaceCoursesPage
+          courses={courses}
+          courseRuns={courseRuns}
+          pendingRuns={pendingRuns}
+          onOpenCourse={browseCourse}
+          onDeleteCourse={handleCourseDeleted}
+          onMakeCourse={goHome}
+          onDiscardRun={discardPendingRun}
+        />
+      ) : render.view ? (
+        <main
+          data-testid={`workspace-host-view-${render.view}`}
+          className="ws-canvas relative flex min-w-0 flex-1 flex-col overflow-y-auto"
+        >
+          {hostPages.get(render.view)?.render?.()}
+        </main>
+      ) : null}
 
-        {showTour && tourSteps.length > 0 ? (
-          <WorkspaceTour
-            steps={tourSteps}
-            onNavigate={tourNavigate}
-            onEnd={endTour}
-            onSendExample={sendTourExample}
-            onStart={() => setTourRunning(true)}
-          />
-        ) : null}
-      </div>
+      {showTour && tourSteps.length > 0 ? (
+        <WorkspaceTour
+          steps={tourSteps}
+          onNavigate={tourNavigate}
+          onEnd={endTour}
+          onSendExample={sendTourExample}
+          onStart={() => setTourRunning(true)}
+        />
+      ) : null}
     </div>
   );
 }

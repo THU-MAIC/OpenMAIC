@@ -36,6 +36,7 @@ import { ClassroomSurface } from '@/components/classroom/ClassroomSurface';
 import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
+import type { AgentFixRequest } from '@/lib/workbench/agent-fix-handoff';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
 import { useEditorWarmup, warmEditor } from '@/lib/edit/use-editor-warmup';
 import { shouldCollapseFullscreenOnEscape } from '@/lib/workbench/classroom-fullscreen';
@@ -63,6 +64,8 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   hidden,
   onCollapse,
   onTalkAboutCourse,
+  canRepair = false,
+  onAgentFix,
 }: {
   /**
    * The tab strip's state and callbacks. The pane owns no tab state: the
@@ -118,6 +121,17 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
    * one about it ("Edit with AI"). Absent otherwise.
    */
   readonly onTalkAboutCourse?: () => void;
+  /**
+   * The viewer owns the course, so its raw problems (a page's runtime error)
+   * are theirs to see. Resolved by the shell: in here the stage store's
+   * `isOwner` is never asked.
+   */
+  readonly canRepair?: boolean;
+  /**
+   * "Fix with agent": hand an observed problem to an empty conversation about
+   * this course. Absent while a conversation could not change it.
+   */
+  readonly onAgentFix?: (request: AgentFixRequest) => void;
 }) {
   const courseId = browser.activeCourseId;
   const { t } = useI18n();
@@ -386,7 +400,13 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           gates override remembered editing without overwriting the course's
           preference. */}
       <div className="ws-classroom-body relative flex min-h-0 flex-1">
-        <WorkbenchPanelProvider visible={!hidden} learning={learning} historySlot={historySlot}>
+        <WorkbenchPanelProvider
+          visible={!hidden}
+          learning={learning}
+          historySlot={historySlot}
+          canRepair={canRepair}
+          onAgentFix={onAgentFix ?? null}
+        >
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>
       </div>

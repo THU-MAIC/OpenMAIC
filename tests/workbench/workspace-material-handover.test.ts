@@ -21,6 +21,11 @@ import {
 } from './_composer-driver';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  dropStagedAgentFix,
+  peekStagedAgentFix,
+  stageAgentFixForWorkspace,
+} from '@/lib/workbench/agent-fix-handoff';
 
 interface MockSessionRow {
   readonly id: string;
@@ -71,6 +76,7 @@ const mocks = vi.hoisted(() => ({
   coursesPageProps: null as Record<string, unknown> | null,
   homeProps: null as Record<string, unknown> | null,
   libraryProps: null as Record<string, unknown> | null,
+  stageStore: { isOwner: true, courseGenerating: false } as Record<string, unknown>,
   store: {
     playbackOn: false,
     sessionId: null as string | null,
@@ -134,7 +140,7 @@ vi.mock('@/lib/workbench/session-store', async (importOriginal) => {
 });
 vi.mock('@/lib/store/stage', () => ({
   useStageStore: (selector: (state: Record<string, unknown>) => unknown) =>
-    selector({ isOwner: true }),
+    selector(mocks.stageStore),
 }));
 vi.mock('@/lib/workbench/use-workbench-session', () => ({
   useStageFreshnessSync: vi.fn(),
@@ -341,6 +347,7 @@ beforeEach(() => {
   mocks.store.stageLinkStageIds = [];
   mocks.store.replayedStageLinkCount = 0;
   mocks.store.touchedStageIds = [];
+  mocks.stageStore = { isOwner: true, courseGenerating: false };
   mocks.routerPush.mockClear();
   mocks.routerReplace.mockClear();
   mocks.requestFullFetch.mockClear();
@@ -1245,5 +1252,106 @@ describe('an empty conversation opened for a course', () => {
     await render();
     await act(async () => (mocks.railProps!.onNewSession as () => void)());
     expect(composerText(textarea())).toBe('');
+  });
+});
+
+describe('fix with agent while the classroom is full screen', () => {
+  const chatPane = () => container!.querySelector('[data-testid="workspace-chat-pane"]');
+  const fixWithAgent = (prefill: string) =>
+    act(async () =>
+      (
+        mocks.classroomProps!.onAgentFix as (request: { courseId: string; prefill: string }) => void
+      )({ courseId: 'stage-1', prefill }),
+    );
+
+  beforeEach(() => {
+    serve();
+    mocks.store.playbackOn = true;
+    // The real store re-renders the shell; this one is read on its next render.
+    mocks.setPlaybackOn.mockReset();
+    mocks.setPlaybackOn.mockImplementation((on: boolean) => {
+      mocks.store.playbackOn = on;
+    });
+  });
+
+  afterEach(() => {
+    mocks.store.playbackOn = false;
+    mocks.setPlaybackOn.mockReset();
+  });
+
+  it('ends full screen, so the conversation it opens is on screen, pre-filled and unsent', async () => {
+    await render();
+    expect(mocks.classroomProps!.fullscreen).toBe(true);
+
+    await fixWithAgent('Please fix page 3.');
+    await act(async () => {});
+
+    // Exactly the pane's own "exit full screen": the classroom stays mounted.
+    expect(mocks.setPlaybackOn).toHaveBeenCalledWith(false);
+    expect(mocks.classroomProps!.fullscreen).toBe(false);
+    expect(mocks.classroomMounts).toBe(1);
+    expect(chatPane()).not.toBeNull();
+    expect(chatPane()!.getAttribute('aria-hidden')).toBeNull();
+    expect(composerText(container!.querySelector<HTMLElement>(COMPOSER_INPUT)!)).toBe(
+      '@stage-1 name Please fix page 3.',
+    );
+    expect(mocks.startFirstMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe('fix with agent: standalone classroom arrival while course is generating', () => {
+  afterEach(() => {
+    dropStagedAgentFix();
+    mocks.stageStore = { isOwner: true, courseGenerating: false };
+  });
+
+  it('holds the staged request until courseGenerating clears, then applies it', async () => {
+    // Simulate: access is owner, but the run-course read hasn't finished yet.
+    mocks.stageStore = { isOwner: true, courseGenerating: true };
+    stageAgentFixForWorkspace({ courseId: 'stage-1', prefill: 'Fix page 3.' }, Date.now());
+    serve();
+    await render();
+    await act(async () => {});
+
+    // The request must still be in sessionStorage: not consumed yet.
+    expect(peekStagedAgentFix()).not.toBeNull();
+    // Composer must be empty.
+    const input = container!.querySelector<HTMLElement>(COMPOSER_INPUT);
+    expect(input ? composerText(input) : '').not.toContain('Fix page 3.');
+
+    // Run finishes: courseGenerating → false. Shell re-renders and re-runs the effect.
+    await act(async () => {
+      mocks.stageStore = { isOwner: true, courseGenerating: false };
+    });
+    await render();
+    await act(async () => {});
+
+    // Now the request is consumed and the prefill appears in the composer.
+    expect(peekStagedAgentFix()).toBeNull();
+    const inputAfter = container!.querySelector<HTMLElement>(COMPOSER_INPUT);
+    expect(inputAfter ? composerText(inputAfter) : '').toContain('Fix page 3.');
+    expect(mocks.startFirstMessage).not.toHaveBeenCalled();
+  });
+
+  it('drops the staged request when the viewer is not the owner', async () => {
+    mocks.courses = {
+      classrooms: [],
+      folders: [],
+      state: 'ready',
+      reload: vi.fn(() => Promise.resolve()),
+      importInput: null,
+      moveCourse: vi.fn(),
+      deleteCourse: vi.fn(),
+    };
+    stageAgentFixForWorkspace({ courseId: 'stage-1', prefill: 'Fix page 3.' }, Date.now());
+    serve();
+    await render();
+    await act(async () => {});
+
+    // No owner in course list → courseAccess resolves to 'viewer' (or 'unknown'
+    // from meta probe). The important thing: nothing is applied.
+    const input = container!.querySelector<HTMLElement>(COMPOSER_INPUT);
+    expect(input ? composerText(input) : '').not.toContain('Fix page 3.');
+    expect(mocks.startFirstMessage).not.toHaveBeenCalled();
   });
 });

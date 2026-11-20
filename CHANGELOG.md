@@ -6,10 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Bug Fixes
+### Features
 
-- Generated interactive pages: the page-writing prompts now require an element marked `hidden` to stay hidden under an author `display` rule and to be shown by removing the attribute, a canvas to sit out of the layout flow of the container it is sized from and to draw in CSS pixels on high-density screens, and reset to rerender every readout through the same render path as startup. The simulation, game and reveal examples follow these rules. This prevents a false "canvas unavailable" message, a canvas that grows until it is blank, and readouts left from the previous run. Scenes generated before this change keep their HTML. [#2019](https://github.com/THU-MAIC/OpenMAIC/issues/2019)
-- Roundtable discussion: browser-native speech is spoken one sentence at a time, as in lecture playback. A sentence that fails or never finishes is skipped instead of leaving every later speaker silent, pause and resume restart the current sentence, and the speech speed, playback speed, volume and mute settings now apply, from the next sentence on. Browser speech in lectures and discussions no longer splits decimals, version numbers, domains or abbreviations such as "e.g." into separate sentences. [#875](https://github.com/THU-MAIC/OpenMAIC/issues/875)
+- Editor: a course's problems are listed in one place, an issues list in the edit dock grouped by page. It is derived from the course itself (plus the runtime errors this browser saw on interactive pages), so an entry disappears once its cause is fixed. "Fix with AI" hands one issue, or the whole list, to an empty conversation beside the course with the problem pre-filled; nothing is sent until the owner sends it. The Pro agent can list the same issues with `list_course_issues`. [#2329](https://github.com/THU-MAIC/OpenMAIC/issues/2329)
+
+### Behavior Changes
+
+- Interactive pages: a page that throws no longer shows its raw error to everyone. The course's owner sees a plain notice with the error folded into "Technical details" and a "Fix with AI" action; learners and other viewers see a neutral notice with no raw error and no repair action. [#2329](https://github.com/THU-MAIC/OpenMAIC/issues/2329)
+
+### Packages
+
+- `@openmaic/dsl` 0.14.0: `collectCourseIssues` reports an `interactive-runtime-error` issue per page from the runtime errors a caller passes in (`CourseIssueContext.runtimeErrors`), with the messages in a bounded `detail`. [#2329](https://github.com/THU-MAIC/OpenMAIC/issues/2329)
 
 ## [1.5.0-rc.3] - 2026-11-17
 
