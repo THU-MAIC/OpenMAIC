@@ -27,6 +27,7 @@ import {
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import { personalVoiceAccount } from '@/lib/server/audio/account-voices';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 
 import type { GenerationRunInput } from './types';
@@ -155,13 +156,25 @@ export function advertisedVoices(target: RunNarrationTarget) {
 export function narratorVoiceForGeneration(
   target: RunNarrationTarget,
   preference: GenerationRunInput['voice'],
-): ResolvedVoice | undefined {
+) {
   const { voice } = slotVoice(target, preference);
-  return resolveNarratorVoiceForGeneration(
+  const narrator = resolveNarratorVoiceForGeneration(
     target.providerId,
     voice,
     providersConfig(target)[target.providerId],
   );
+  // A personal account may use its selected voice without advertising the
+  // private catalogue to the model. An explicit catalogue takes precedence.
+  if (
+    narrator &&
+    preference?.providerId === narrator.providerId &&
+    preference.voiceId === narrator.voiceId &&
+    !target.connection.voices?.length &&
+    personalVoiceAccount(target.connection)
+  ) {
+    return { ...narrator, allowAccountVoice: true };
+  }
+  return narrator;
 }
 
 /**

@@ -4,16 +4,17 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { TTSSelection } from '@/lib/audio/tts-selection';
 import type { UseBrowserTTSOptions } from '@/lib/hooks/use-browser-tts';
 
 const mocks = vi.hoisted(() => ({
   settings: {
     ttsProvidersConfig: {
-      'openai-tts': { enabled: true, apiKey: 'test-key', modelId: 'tts-1' },
-      'browser-native-tts': { enabled: true },
-      'qwen-tts': { enabled: true, apiKey: 'test-key' },
+      'openai-tts': { enabled: true, apiKey: 'test-key', baseUrl: '', modelId: 'tts-1' },
+      'browser-native-tts': { enabled: true, apiKey: '', baseUrl: '' },
+      'qwen-tts': { enabled: true, apiKey: 'test-key', baseUrl: '' },
     },
-    ttsProviderId: 'openai-tts',
+    ttsProviderId: 'openai-tts' as const,
     ttsVoice: 'alloy',
     ttsSpeed: 1,
     ttsMuted: false,
@@ -37,12 +38,13 @@ vi.mock('@/lib/store/settings', () => ({
 // The providers the voices may come from. The workspace's tts slot names one;
 // the queue logic under test is the same for any set, so these tests offer
 // several (a browser and two server providers) to exercise the ordering.
-const selection = {
+const defaultSelection = {
   providerId: mocks.settings.ttsProviderId,
   voice: mocks.settings.ttsVoice,
   speed: 1,
   providersConfig: mocks.settings.ttsProvidersConfig,
 };
+let selection: TTSSelection = defaultSelection;
 vi.mock('@/lib/audio/use-tts-selection', () => ({
   useTTSSelection: () => selection,
 }));
@@ -188,6 +190,8 @@ beforeEach(() => {
   mocks.settings.ttsSpeed = 1;
   mocks.settings.ttsVolume = 0.7;
   mocks.settings.playbackSpeed = 1;
+  mocks.settings.agentVoiceOverrides = {};
+  selection = defaultSelection;
   requests.length = 0;
   FakeAudio.instances = [];
   enabled = true;
@@ -216,6 +220,30 @@ afterEach(() => {
 });
 
 describe('discussion TTS synthesis lookahead', () => {
+  const registeredVoice = 'openmaic-a6d84a34-0503-45d1-9da7-845f0e83f2df';
+  it.each([
+    [registeredVoice, registeredVoice],
+    ['openmaic-not-a-registered-id', 'female-yujie'],
+  ])('resolves a student roster voice %s without a browser profile', async (voiceId, expected) => {
+    const providerId = 'minimax-tts';
+    selection = {
+      providerId,
+      voice: 'female-yujie',
+      speed: 1,
+      providersConfig: {
+        [providerId]: { enabled: true, isServerConfigured: true, apiKey: '', baseUrl: '' },
+      },
+    };
+    agents = [{ ...teacher, id: 'student', role: 'student', voiceConfig: { providerId, voiceId } }];
+    // A local override from a different account is absent from this browser's list.
+    mocks.settings.agentVoiceOverrides = {
+      student: { providerId, voiceId: 'openmaic-16f1b811-866f-447e-8c21-06a09aca6250' },
+    };
+    act(() => root.render(createElement(Probe)));
+    await seal('line', 'student');
+    expect(requests[0].body.ttsVoice).toBe(expected);
+  });
+
   it('requests B during A playback and consumes the prepared result exactly once', async () => {
     await seal('A');
     await seal('B');

@@ -4,6 +4,7 @@ import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   QWEN_VOICE_CLONE_GROUP_ID,
+  isProviderCloneVoice,
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
@@ -188,7 +189,11 @@ export function resolveAgentVoice(
       configuredLegacyVoice ||
       !declaredVoice ||
       fromEnabled.voices.some((voice) => voice.id === choice.voiceId);
-    if (allVoiceIds.has(choice.voiceId) && modelCompatible && offered) {
+    // The roster may bind a clone registered in its server session. A device
+    // override still has to belong to the current account's selectable voices.
+    const rosterClone =
+      choice === agent.voiceConfig && isProviderCloneVoice(choice.providerId, choice.voiceId);
+    if (rosterClone || (allVoiceIds.has(choice.voiceId) && modelCompatible && offered)) {
       return {
         providerId: choice.providerId,
         ...(matchingModelGroup ? { modelId: choice.modelId } : {}),

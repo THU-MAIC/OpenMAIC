@@ -154,20 +154,18 @@ export function resolveTTSModelForVoice(
     : TTS_PROVIDERS['qwen-tts'].defaultModelId;
 }
 
-/** IDs that can represent a user voice outside a provider catalogue. */
-export function isUserVoiceId(
+/** Provider-hosted clones can be used by ID without a browser-local profile. */
+export function isProviderCloneVoice(
   providerId: string,
   voiceId: string,
   configuredVoices?: readonly { id: string }[],
 ): boolean {
   if (providerId === 'qwen-tts') return isQwenCloneVoice(voiceId, configuredVoices);
-  if (providerId === 'minimax-tts') {
-    return (
-      voiceId.startsWith(MINIMAX_CLONE_VOICE_PREFIX) &&
-      UUID_V4.test(voiceId.slice(MINIMAX_CLONE_VOICE_PREFIX.length))
-    );
-  }
-  return providerId === VOXCPM_TTS_PROVIDER_ID && !!getVoxCPMProfileIdFromVoiceId(voiceId);
+  return (
+    providerId === 'minimax-tts' &&
+    voiceId.startsWith(MINIMAX_CLONE_VOICE_PREFIX) &&
+    UUID_V4.test(voiceId.slice(MINIMAX_CLONE_VOICE_PREFIX.length))
+  );
 }
 
 /** Replacement catalogues restrict presets while retaining provider-specific user voices. */
@@ -179,7 +177,8 @@ export function voiceAllowedByConfiguredCatalogue(
   return (
     !configuredVoices ||
     configuredVoices.some((voice) => voice.id === voiceId) ||
-    isUserVoiceId(providerId, voiceId, configuredVoices)
+    isProviderCloneVoice(providerId, voiceId, configuredVoices) ||
+    (providerId === VOXCPM_TTS_PROVIDER_ID && !!getVoxCPMProfileIdFromVoiceId(voiceId))
   );
 }
 

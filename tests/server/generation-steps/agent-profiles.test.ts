@@ -127,3 +127,55 @@ it('preserves a catalogue-backed provider default through profile generation and
   ).toBe('vivian');
   expect(advertisedVoices(target).map((voice) => voice.voiceId)).toEqual(['vivian']);
 });
+
+const savedClone = 'openmaic-a6d84a34-0503-45d1-9da7-845f0e83f2df';
+const studioVoice = 'studio-narrator';
+
+it.each([
+  { managed: true, curated: true, selected: savedClone, expected: savedClone },
+  { managed: false, curated: false, selected: studioVoice, expected: studioVoice },
+  { managed: true, curated: false, selected: studioVoice, expected: 'female-yujie' },
+  { managed: false, curated: true, selected: studioVoice, expected: 'female-yujie' },
+])(
+  'narrates with $expected for a $selected pick (managed=$managed, curated=$curated)',
+  async ({ managed, curated, selected, expected }) => {
+    const { advertisedVoices, narratorVoiceForGeneration, clipVoice } =
+      await import('@/lib/server/generation/run/narration-voice');
+    const providerId = 'minimax-tts' as const;
+    const target = {
+      providerId,
+      connection: {
+        providerId,
+        apiKey: 'test-key',
+        managed,
+        origin: 'configuration' as const,
+        userEndpoint: !managed,
+        ...(curated ? { voices: [{ id: 'female-yujie', name: 'Preset' }] } : {}),
+      },
+    };
+    const preference = { providerId, voiceId: selected };
+    answer([
+      { ...classroom[0], voice: 'minimax-tts::female-yujie' },
+      { ...classroom[1], voice: `minimax-tts::${selected}` },
+    ]);
+    const [teacher, student] = await generateAgentProfiles(
+      {
+        ...request,
+        model,
+        availableVoices: advertisedVoices(target),
+        narratorVoice: narratorVoiceForGeneration(target, preference),
+      },
+      { log: testLogger() },
+    );
+    expect(teacher.voiceConfig).toEqual({ providerId, voiceId: expected });
+    expect(
+      clipVoice({
+        target,
+        preference,
+        bound: { ...teacher.voiceConfig!, providerId },
+        unavailable: new Set(),
+      })?.voice.voiceId,
+    ).toBe(expected);
+    expect(student.voiceConfig).toBeUndefined();
+  },
+);
