@@ -303,6 +303,8 @@ describe('Token Plan → mainland and international sides', () => {
     expect(byText('settings.providerLinks.international').getAttribute('aria-pressed')).toBe(
       'true',
     );
+    expect(document.body.textContent).toContain('settings.tokenPlan.region');
+    expect(document.body.textContent).toContain('settings.tokenPlan.regionHintInternational');
     expect(
       document.body
         .querySelector('[aria-label="settings.tokenPlan.apiKey"]')
@@ -313,8 +315,11 @@ describe('Token Plan → mainland and international sides', () => {
   it('opens on the mainland side in Simplified Chinese and switches sides', () => {
     mountPanel(null);
     expect(planNames()).toEqual(['TokenDance', 'MiniMax', 'Seed', 'Kimi', 'DeepSeek']);
+    expect(document.body.textContent).toContain('settings.tokenPlan.regionHintDomestic');
     act(() => byText('settings.providerLinks.international').click());
     expect(planNames()).toEqual(['MiniMax', 'Kimi', 'DeepSeek']);
+    expect(document.body.textContent).toContain('settings.tokenPlan.regionHintInternational');
+    expect(document.body.textContent).not.toContain('settings.tokenPlan.regionHintDomestic');
     expect(
       document.body.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
     ).toContain('MiniMax');
