@@ -1308,26 +1308,59 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * has moved on from — another conversation, a new chat, a later click —
    * opens nothing. The workspace's own background moves (the conversation's
    * course opening in an empty right pane) are not the teacher moving on.
+   *
+   * `existingCourse` starts null and is set by the session-detail fetch (the
+   * same fetch that sets `stageId`). If the teacher clicks before that fetch
+   * settles, fetch it now so `requestCourse` can return the real course.
    */
   const startChatOutOfBlockedConversation = () => {
-    const courseId = blockedConversationNewChatCourse(
-      thisRequestCourse,
-      // A course the blocked request created before its first page landed.
-      requestCreatedCourses(useWorkbenchStore.getState().chat),
-    );
-    const listed = courseId
-      ? courses.classrooms.find((course) => course.id === courseId)
-      : undefined;
+    const state = useWorkbenchStore.getState();
     const sessionAtClick = panes.sessionId;
     const ask = ++newChatAsk.current;
-    void ownedCourseForNewChat({
-      courseId,
-      listedIsOwner: listed ? listed.isOwner !== false : undefined,
-      fetchMeta: fetchStageMeta,
-    }).then((owned) => {
+    // Resolve the course from whatever metadata we have; if the ownership flag
+    // is not yet known, fetch it first so `requestCourse` can be exact.
+    const resolveAndOpen = (existingCourse: boolean | null, stageId: string | null) => {
       if (ask !== newChatAsk.current || shownSessionRef.current !== sessionAtClick) return;
-      openChatOutOfBlockedRef.current(owned);
-    });
+      const chat = useWorkbenchStore.getState().chat;
+      const resolvedRequest =
+        existingCourse !== null
+          ? requestCourse(chat, existingCourse, stageId)
+          : thisRequestCourse;
+      const courseId = blockedConversationNewChatCourse(
+        resolvedRequest,
+        // A course the blocked request created before its first page landed.
+        requestCreatedCourses(chat),
+      );
+      const listed = courseId
+        ? courses.classrooms.find((course) => course.id === courseId)
+        : undefined;
+      void ownedCourseForNewChat({
+        courseId,
+        listedIsOwner: listed ? listed.isOwner !== false : undefined,
+        fetchMeta: fetchStageMeta,
+      }).then((owned) => {
+        if (ask !== newChatAsk.current || shownSessionRef.current !== sessionAtClick) return;
+        openChatOutOfBlockedRef.current(owned);
+      });
+    };
+    if (state.existingCourse !== null || !sessionAtClick) {
+      // Flag already known, or no session to fetch — resolve immediately.
+      // With no session, resolveAndOpen falls through to an ordinary new chat.
+      resolveAndOpen(state.existingCourse, state.stageId);
+    } else {
+      // The session-detail fetch has not settled yet: fetch it now. On failure
+      // open an ordinary new chat (null existingCourse is treated as no course).
+      fetch(`/api/agent/sessions/${encodeURIComponent(sessionAtClick)}`)
+        .then((r) => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : null))
+        .then((meta) => {
+          const existingCourse =
+            meta && typeof meta.existingCourse === 'boolean' ? meta.existingCourse : null;
+          const stageId =
+            meta && typeof meta.stageId === 'string' && meta.stageId ? meta.stageId : null;
+          resolveAndOpen(existingCourse, stageId);
+        })
+        .catch(() => resolveAndOpen(null, null));
+    }
   };
   /** Opens the new chat with the workspace as it is when ownership is known. */
   const openChatOutOfBlockedConversation = (courseId: string | null) => {
