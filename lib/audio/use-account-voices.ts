@@ -57,8 +57,10 @@ async function fetchAccountList(target: TargetView, revision: number, signal: Ab
     expectedRevision: String(revision),
   });
   const response = await fetch(`/api/generate/voice?${query}`, { cache: 'no-store', signal });
-  const body = await response.json();
-  if (!response.ok || !body.success) throw new Error(body.error || `HTTP ${response.status}`);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || !body.success) {
+    throw new Error(body.error || `HTTP ${response.status}`, { cause: response.status });
+  }
   return body as Pick<AccountVoiceList, 'voices' | 'canDeleteRemote'>;
 }
 
@@ -73,12 +75,13 @@ function createVoiceList(view?: ModelSettingsView, target?: TargetView, canList 
   }
 
   async function refresh() {
-    if (!view || !target || listeners.size === 0) return;
+    if (!view || !target || listeners.size === 0 || modelSettingsClient.getState().view !== view)
+      return;
     request?.abort();
     const controller = (request = new AbortController());
     const current = () =>
       !controller.signal.aborted && modelSettingsClient.getState().view === view;
-    publish({ ...empty, loading: true });
+    publish({ ...empty, voices: snapshot.voices, loading: true });
     try {
       const [body] = await Promise.all([
         canList
@@ -99,7 +102,15 @@ function createVoiceList(view?: ModelSettingsView, target?: TargetView, canList 
       return voices;
     } catch (error) {
       if (current()) {
-        publish({ ...empty, error: error instanceof Error ? error.message : String(error) });
+        // A transient outage can leave a voice playing. A refused or changed account drops its rows.
+        const status = error instanceof Error ? error.cause : undefined;
+        const temporary =
+          typeof status !== 'number' || status >= 500 || status === 408 || status === 429;
+        publish({
+          ...empty,
+          voices: temporary ? snapshot.voices : [],
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }

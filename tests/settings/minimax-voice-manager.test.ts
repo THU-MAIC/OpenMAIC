@@ -9,17 +9,17 @@ import { modelSettingsClient } from '@/lib/model-settings/client';
 import type { ServiceEntry } from '@/lib/model-settings/services';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTSSettings } from '@/components/settings/tts-settings';
+import * as accountVoices from '@/lib/audio/use-account-voices';
 import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 import { makeView, withSlots, workspaceProvider } from '../model-settings/fixtures';
 
-const account = vi.hoisted(() => ({
+const account = {
   voices: [] as { id: string; name: string; kind: 'system' | 'clone' | 'designed' }[],
   canDeleteRemote: true,
   loading: false,
   error: null,
   refresh: vi.fn(),
-}));
-vi.mock('@/lib/audio/use-account-voices', () => ({ useAccountVoices: () => account }));
+};
 vi.mock('@/lib/hooks/use-i18n', () => {
   const t = (key: string, values?: Record<string, unknown>) =>
     values ? [key, ...Object.values(values)].join(' ') : key;
@@ -50,6 +50,7 @@ beforeEach(async () => {
   account.loading = false;
   account.canDeleteRemote = true;
   account.refresh.mockReset();
+  vi.spyOn(accountVoices, 'useAccountVoices').mockReturnValue(account);
   useSettingsStore.getState().setTTSVoice('female-yujie', providerId);
   await db.voiceProfiles.clear();
   vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) =>
@@ -96,6 +97,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   modelSettingsClient.adopt(null);
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -282,6 +284,47 @@ it('discards a preview stopped while audio is still being generated', async () =
   expect(play).not.toHaveBeenCalled();
   expect(host.textContent).not.toContain('settings.ttsTestSuccess');
   expect(fetchRequest).toHaveBeenCalledTimes(1);
+});
+
+it('rediscovers an activated clone after its pending preview is stopped and the local label is removed', async () => {
+  vi.mocked(accountVoices.useAccountVoices).mockRestore();
+  let activated = false;
+  let holdNextList = false;
+  let finishList!: () => void;
+  let finish!: () => void;
+  fetchRequest.mockImplementation(async (input, init) => {
+    if (String(input).startsWith('/api/generate/voice?')) {
+      if (holdNextList) {
+        holdNextList = false;
+        await new Promise<void>((resolve) => (finishList = resolve));
+      }
+      const voices = activated ? [{ id: voiceId, name: 'Cloud narrator', kind: 'clone' }] : [];
+      return Response.json({ success: true, voices, canDeleteRemote: true });
+    }
+    if (input === '/api/generate/voice' && init?.method === 'POST') {
+      holdNextList = true;
+      return registered();
+    }
+    if (input === '/api/generate/tts') {
+      await new Promise<void>((resolve) => (finish = resolve));
+      activated = true;
+      return Response.json({ base64: 'AQI=', format: 'mp3' });
+    }
+    throw new Error(`Unexpected request: ${input}`);
+  });
+  await render();
+  await createVoice();
+  await waitForUI(() => row(friendlyName));
+  await waitForUI(() => expect(finishList).toBeTypeOf('function'));
+  await click('settings.voxcpmPreviewVoice', row(friendlyName));
+  await click('settings.voxcpmStopPreview', row(friendlyName));
+  await act(async () => finishList());
+  await chooseVoiceAction(unsaveLabel, row(friendlyName));
+  await waitForUI(() => expect(host.textContent).not.toContain(friendlyName));
+  await act(async () => finish());
+  await waitForUI(() => row('Cloud narrator'));
+  expect(play).not.toHaveBeenCalled();
+  expect(await db.voiceProfiles.get(voiceId)).toBeUndefined();
 });
 
 it('shows IDs in the list when voices share a name or only have an ID', async () => {

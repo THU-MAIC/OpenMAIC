@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, createElement } from 'react';
+import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
@@ -67,7 +67,7 @@ function Pickers() {
 }
 
 function mount(
-  content = createElement('div', null, createElement(Pickers), createElement(Pickers)),
+  content: ReactNode = createElement('div', null, createElement(Pickers), createElement(Pickers)),
 ) {
   const host = document.createElement('div');
   const mounted = createRoot(host);
@@ -133,6 +133,38 @@ it('shares an account list across pickers, keeps the default, and drops late res
   expect(host.textContent).toContain('new-account');
 });
 
+it.each([
+  { status: 200, visible: 'refreshed-voice' },
+  { status: 503, visible: 'playing-voice' },
+  { status: 403, visible: '' },
+  { status: 409, visible: '' },
+])(
+  'keeps playback controls while refreshing and reconciles the catalogue on HTTP $status',
+  async ({ status, visible }) => {
+    let finish!: (response: Response) => void;
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(reply('playing-voice'));
+    fetch.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)));
+    vi.stubGlobal('fetch', fetch);
+    modelSettingsClient.adopt(settings(1));
+    function VoiceList() {
+      const { voices, refresh } = useAccountVoices();
+      return createElement(
+        'button',
+        { onClick: () => void refresh() },
+        voices.map((v) => v.id).join(','),
+      );
+    }
+    const host = mount(createElement(VoiceList));
+    await act(async () => {});
+    expect(host.textContent).toBe('playing-voice');
+    await act(async () => host.querySelector('button')!.click());
+    expect(host.textContent).toBe('playing-voice');
+    const response = status === 200 ? reply('refreshed-voice') : new Response(null, { status });
+    await act(async () => finish(response));
+    expect(host.textContent).toBe(visible);
+  },
+);
+
 it('forgets voices on sign-in even when the incoming owner uses the same provider and revision', async () => {
   const view = settings(1);
   modelSettingsClient.adopt(view);
@@ -158,12 +190,21 @@ it('forgets voices on sign-in even when the incoming owner uses the same provide
   expect(host.textContent).toContain('new-owner');
 });
 
-it('asks for the exact service after a switch between two MiniMax services', async () => {
+it('asks only for the new service when an old preview refreshes after a switch', async () => {
   const fetch = vi.fn(async (_input: string) => reply('studio'));
   vi.stubGlobal('fetch', fetch);
   modelSettingsClient.adopt(settings(1));
-  mount();
-  await act(async () => modelSettingsClient.adopt(settings(1, { serviceId: 'personal' })));
+  function SwitchService() {
+    const { refresh } = useAccountVoices();
+    return createElement('button', {
+      onClick() {
+        modelSettingsClient.adopt(settings(1, { serviceId: 'personal' }));
+        void refresh();
+      },
+    });
+  }
+  const host = mount(createElement(SwitchService));
+  await act(async () => host.querySelector('button')!.click());
   expect(fetch.mock.calls.map(([input]) => input)).toEqual([
     url,
     '/api/generate/voice?providerId=minimax-tts&expectedServiceId=personal&expectedRevision=1',

@@ -222,16 +222,17 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
           ? {}
           : { previewProvider: entry.id, ...(use.modelId ? { previewModel: use.modelId } : {}) }),
       });
-      if (request !== previewRequest.current) return;
-      setTestStatus('success');
-      setTestMessage(t('settings.ttsTestSuccess'));
-      // A pending clone appears in the account catalogue after its first synthesis.
+      // First synthesis can activate a clone even if the user stopped playback.
       if (
-        account.canDeleteRemote &&
+        ttsProvider?.supportsAccountVoices &&
+        entry.state === 'workspace' &&
         !entry.provider?.voices?.length &&
         !account.voices.some((listed) => listed.id === voice)
       )
-        account.refresh();
+        void account.refresh();
+      if (request !== previewRequest.current) return;
+      setTestStatus('success');
+      setTestMessage(t('settings.ttsTestSuccess'));
     } catch (error) {
       if (request !== previewRequest.current) return;
       log.error('TTS test failed:', error);
