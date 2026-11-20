@@ -125,6 +125,10 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
     fallback?.catalogue !== false && fallback?.modelId
       ? getModelInfo(fallback.registryId as ProviderId, fallback.modelId)
       : undefined;
+  // A context window declared for the fallback covers one the catalogue does
+  // not describe. A fallback on an endpoint that distrusts the catalogue is
+  // never looked up there, so its declaration also wins a name collision.
+  const fallbackContextWindow = fallbackInfo?.contextWindow ?? fallback?.declaredContextWindow;
   const primaryOutput = capacity(wireMaxOutputTokens);
   const fallbackOutput = capacity(fallbackInfo?.outputWindow);
   // Do not copy a primary-only allowance/window to a smaller fallback. Unknown
@@ -136,7 +140,7 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
           ...piModel,
           contextWindow: Math.min(
             capacity(piModel.contextWindow) ?? 128_000,
-            capacity(fallbackInfo?.contextWindow) ?? 128_000,
+            capacity(fallbackContextWindow) ?? 128_000,
           ),
           maxTokens: Math.min(
             primaryOutput ?? UNKNOWN_MODEL_RESERVED_OUTPUT_TOKENS,

@@ -325,4 +325,44 @@ describe('agent driver model', () => {
     expect(resolved.teaching.wireMaxOutputTokens).toBeUndefined();
     expect(resolved.wireMaxOutputTokens).toBeUndefined();
   });
+
+  it('plans teaching with a context window declared for the fallback', async () => {
+    const resolved = await (
+      await configure(undefined, {
+        workspace: {
+          source: 'workspace',
+          config: {
+            providers: {
+              relay: {
+                preset: 'openai-compatible',
+                apiKey: 'sk',
+                modelContextWindows: { m2: 50_000 },
+              },
+            },
+            slots: { agent: { model: 'relay:m1', fallback: 'relay:m2' } },
+          },
+        },
+      })
+    )('user:alice');
+    expect(resolved.piModel.contextWindow).toBe(200_000);
+    // The fallback sits on an endpoint the catalogue does not describe: its
+    // declared window, not the 128k estimate, caps the shared teaching budget.
+    expect(resolved.teaching.piModel.contextWindow).toBe(50_000);
+  });
+
+  it('keeps the 128k planning estimate for a fallback without a declaration', async () => {
+    const resolved = await (
+      await configure(undefined, {
+        workspace: {
+          source: 'workspace',
+          config: {
+            providers: { relay: { preset: 'openai-compatible', apiKey: 'sk' } },
+            slots: { agent: { model: 'relay:m1', fallback: 'relay:m2' } },
+          },
+        },
+      })
+    )('user:alice');
+    expect(resolved.piModel.contextWindow).toBe(200_000);
+    expect(resolved.teaching.piModel.contextWindow).toBe(128_000);
+  });
 });

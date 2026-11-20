@@ -377,3 +377,51 @@ describe('loadModelConfigFile', () => {
     );
   });
 });
+
+describe('declared context windows', () => {
+  const endpoint = 'preset: openai-compatible\n    baseUrl: http://host/v1\n';
+
+  it('accepts a declared window per listed model', () => {
+    const config = parseModelConfig(
+      `providers:\n  local:\n    ${endpoint}    models: [m1, m2]\n    modelContextWindows:\n      m1: 1000000\n`,
+      { env: {} },
+    );
+    expect(config.providers?.local.modelContextWindows).toEqual({ m1: 1000000 });
+  });
+
+  it('accepts a declared window for a model a slot references without a list', () => {
+    const config = parseModelConfig(
+      `providers:\n  local:\n    ${endpoint}    modelContextWindows:\n      m1: 1000000\nslots:\n  llm: local:m1\n`,
+      { env: {} },
+    );
+    expect(config.providers?.local.modelContextWindows).toEqual({ m1: 1000000 });
+  });
+
+  it('refuses windows that are not positive integers', () => {
+    for (const value of ['1.5', '0', '-1000']) {
+      expect(
+        issuesOf(
+          `providers:\n  local:\n    ${endpoint}    models: [m1]\n    modelContextWindows:\n      m1: ${value}\n`,
+        ),
+      ).toContainEqual(expect.stringContaining('providers.local.modelContextWindows'));
+    }
+  });
+
+  it('refuses a window for a model the provider does not serve', () => {
+    expect(
+      issuesOf(
+        `providers:\n  local:\n    ${endpoint}    models: [m1]\n    modelContextWindows:\n      m2: 1000000\n`,
+      ),
+    ).toContainEqual(expect.stringContaining('is not a chat model this provider serves'));
+  });
+
+  it('refuses declared windows on a provider without chat', () => {
+    expect(
+      issuesOf(
+        'providers:\n  fc:\n    preset: firecrawl\n    apiKey: k\n    modelContextWindows:\n      m1: 1000000\n',
+      ),
+    ).toContainEqual(
+      'providers.fc.modelContextWindows: only chat providers support declared context windows',
+    );
+  });
+});
