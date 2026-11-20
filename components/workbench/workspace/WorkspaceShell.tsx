@@ -2307,6 +2307,15 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           />
         ) : null}
 
+        {previewTabOpen && !panes.courseId && collapse.value.classroom ? (
+          <PaneTab
+            testId="workspace-preview-reopen"
+            label={t('workspace.expandClassroom')}
+            side="right"
+            onClick={collapse.expandClassroom}
+          />
+        ) : null}
+
         {panes.courseId ? (
           <WorkspaceClassroomPane
             browser={classroomBrowser}

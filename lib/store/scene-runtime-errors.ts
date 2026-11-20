@@ -12,6 +12,8 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 
 const MAX_PER_SCENE = 8;
+/** Bound on each stored message; prevents a single error string from allocating megabytes. */
+const MAX_MESSAGE_LENGTH = 500;
 
 interface SceneRuntimeErrorsState {
   errors: Record<string, string[]>;
@@ -31,7 +33,7 @@ export const useSceneRuntimeErrors = create<SceneRuntimeErrorsState>((set) => ({
   errors: {},
   addError: (sceneId, message) =>
     set((s) => {
-      const trimmed = message.trim();
+      const trimmed = message.trim().slice(0, MAX_MESSAGE_LENGTH);
       if (!trimmed) return s;
       const cur = s.errors[sceneId] ?? [];
       if (cur.includes(trimmed)) return s; // dedup
