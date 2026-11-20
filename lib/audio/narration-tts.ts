@@ -23,7 +23,6 @@ import {
   isVoiceBindingUnavailable,
   markVoiceBindingNoticeShown,
   markVoiceBindingUnavailable,
-  voiceBindingKey,
 } from '@/lib/audio/unavailable-voice-bindings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { commitToPool } from '@/lib/media/commit-to-pool';
@@ -71,14 +70,6 @@ interface TTSApiResponse {
   details?: string;
 }
 
-// A dead narrator voice is retried at most once against a DIFFERENT voice (the
-// global voice when the binding differs from it, or the deterministic
-// enabled-provider pick when bound == global). This bounds the total
-// /api/generate/tts attempts to 2 per call and guarantees the
-// QWEN_VC_VOICE_NOT_FOUND retry cannot loop a chain of dead voices
-// (bound-dead → global-dead → deterministic-dead → …) forever.
-const MAX_NARRATOR_VOICE_FALLBACK_HOPS = 1;
-
 /** Generate TTS for one speech action and return its allocated asset reference. */
 export async function generateAndStoreTTS(
   requestId: string,
@@ -87,14 +78,8 @@ export async function generateAndStoreTTS(
   signal?: AbortSignal,
   retryOptions?: ClientRetryOptions<TTSApiResponse>,
   stageId?: string,
-  // Internal: an explicit voice that bypasses narrator binding resolution — used
-  // to retry narration against the deterministic enabled-provider pick when the
-  // pinned narrator voice (bound == global) turns out to be unusable.
+  // A retry supplies its chosen voice explicitly and cannot trigger another voice retry.
   overrideVoice?: ResolvedVoice,
-  // Internal: number of narrator voice-fallback hops already taken. Guards the
-  // QWEN_VC_VOICE_NOT_FOUND retry so a chain of dead voices can never loop
-  // /api/generate/tts beyond a single fallback hop.
-  fallbackHops = 0,
 ): Promise<string | null> {
   // The `tts` slot's provider, and the user's voice for it.
   const selection = ttsSelection(await loadModelCapabilities());
@@ -104,29 +89,14 @@ export async function generateAndStoreTTS(
   // Global settings remain the fallback for classrooms without a binding.
   const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
   const boundVoice = teacher?.voiceConfig;
-  const boundKey = boundVoice ? voiceBindingKey(boundVoice) : undefined;
-  // The narrator pin makes boundVoice == the global voice. That equality must
-  // not defeat the unavailable-binding fallbacks: when the pinned voice is
-  // unusable (provider disabled, or the clone deleted server-side), fall back
-  // to the deterministic enabled-provider pick with a single non-fatal notice
-  // instead of throwing (QWEN_VC_VOICE_NOT_FOUND) or silently skipping.
   const globalVoice: ResolvedVoice = {
     providerId: selection.providerId,
     modelId: selection.modelId,
     voiceId: selection.voice,
   };
-  const globalDiffers = narratorBindingDiffers(boundVoice, globalVoice);
-  const fallbackForUnusablePin = (): ResolvedVoice | null => {
-    if (!boundVoice) return null;
-    const key = markVoiceBindingUnavailable(boundVoice, selection.accountScope);
-    if (markVoiceBindingNoticeShown(key)) {
-      toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
-    }
-    return deterministicNarratorVoice(providersConfig, boundVoice);
-  };
-
-  const boundUnavailable =
-    boundVoice && isVoiceBindingUnavailable(boundVoice, selection.accountScope);
+  const isUnavailable = (voice: ResolvedVoice) =>
+    isVoiceBindingUnavailable(voice, selection.accountScope);
+  const boundUnavailable = boundVoice && isUnavailable(boundVoice);
   let resolvedVoice =
     overrideVoice ??
     resolveNarratorVoiceBinding(
@@ -135,15 +105,20 @@ export async function generateAndStoreTTS(
       providersConfig,
     );
 
-  // A pinned narrator is also the global selection. If that voice or its
-  // provider is unavailable, pick a different enabled voice.
   if (
+    !overrideVoice &&
     boundVoice &&
-    !globalDiffers &&
-    ((!overrideVoice && boundUnavailable) ||
-      !isTTSProviderEnabled(resolvedVoice.providerId, providersConfig[resolvedVoice.providerId]))
+    (isUnavailable(resolvedVoice) ||
+      (!narratorBindingDiffers(boundVoice, globalVoice) &&
+        !isTTSProviderEnabled(resolvedVoice.providerId, providersConfig[resolvedVoice.providerId])))
   ) {
-    resolvedVoice = fallbackForUnusablePin() ?? resolvedVoice;
+    const key = markVoiceBindingUnavailable(resolvedVoice, selection.accountScope);
+    if (markVoiceBindingNoticeShown(key)) {
+      toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
+    }
+    const alternative = deterministicNarratorVoice(providersConfig, isUnavailable);
+    if (!alternative) return null;
+    resolvedVoice = alternative;
   }
 
   const ttsProviderId = resolvedVoice.providerId;
@@ -205,46 +180,29 @@ export async function generateAndStoreTTS(
       error && typeof error === 'object' && 'errorCode' in error
         ? (error as { errorCode?: unknown }).errorCode
         : undefined;
-    // Recover from a missing clone only when the attempt that just failed used
-    // the bound binding itself: marking it unavailable makes the resolver fall
-    // back to the global voice, a DIFFERENT voice. When the failure is already
-    // on the global voice (or on the deterministic pick), retrying would hit
-    // the same dead voice — fall through and surface the error instead of
-    // hot-looping /api/generate/tts (bound-dead → global-dead → …). The
-    // fallbackHops bound keeps even pathological chains at a single hop.
-    if (
-      isVoiceUnavailableCode(errorCode) &&
-      boundKey &&
-      boundVoice &&
-      fallbackHops < MAX_NARRATOR_VOICE_FALLBACK_HOPS
-    ) {
-      if (voiceBindingKey(resolvedVoice) === boundKey) {
-        const key = markVoiceBindingUnavailable(boundVoice, selection.accountScope);
+    if (isVoiceUnavailableCode(errorCode) && boundVoice) {
+      const key = markVoiceBindingUnavailable(resolvedVoice, selection.accountScope);
+      const retryVoice = narratorVoiceAfterMissingClone({
+        bound: boundVoice,
+        globalVoice,
+        failed: resolvedVoice,
+        providerConfigs: providersConfig,
+        usedFallbackVoice: !!overrideVoice,
+        isUnavailable,
+      });
+      if (retryVoice) {
         if (markVoiceBindingNoticeShown(key)) {
           toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
         }
-        // One retry with a different voice: the global one when the binding
-        // differs from it (the resolver now skips the marked binding), else the
-        // deterministic enabled-provider pick for a pinned narrator.
-        const retryVoice = narratorVoiceAfterMissingClone({
-          bound: boundVoice,
-          globalVoice,
-          failed: resolvedVoice,
-          providerConfigs: providersConfig,
-          usedFallbackVoice: !!overrideVoice,
-        });
-        if (retryVoice) {
-          return generateAndStoreTTS(
-            requestId,
-            text,
-            language,
-            signal,
-            retryOptions,
-            stageId,
-            globalDiffers ? undefined : retryVoice,
-            fallbackHops + 1,
-          );
-        }
+        return generateAndStoreTTS(
+          requestId,
+          text,
+          language,
+          signal,
+          retryOptions,
+          stageId,
+          retryVoice,
+        );
       }
     }
     throw error;

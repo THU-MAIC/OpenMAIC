@@ -221,6 +221,76 @@ afterEach(() => {
 
 describe('discussion TTS synthesis lookahead', () => {
   const registeredVoice = 'openmaic-a6d84a34-0503-45d1-9da7-845f0e83f2df';
+  const studentVoice = 'openmaic-16f1b811-866f-447e-8c21-06a09aca6250';
+
+  function selectVoices(narrator: string) {
+    const providerId = 'minimax-tts';
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    selection = {
+      providerId,
+      voice: narrator,
+      speed: 1,
+      accountScope: 'owner',
+      providersConfig: {
+        [providerId]: { enabled: true, isServerConfigured: true, apiKey: '', baseUrl: '' },
+      },
+    };
+    agents = [
+      { ...teacher, voiceConfig: { providerId, voiceId: narrator } },
+      {
+        ...teacher,
+        id: 'student',
+        role: 'student',
+        voiceConfig: { providerId, voiceId: studentVoice },
+      },
+    ];
+    act(() => root.render(createElement(Probe)));
+  }
+
+  async function rejectVoice(index: number) {
+    await act(async () =>
+      requests[index].response.resolve(
+        Response.json({ errorCode: 'TTS_VOICE_UNAVAILABLE' }, { status: 404 }),
+      ),
+    );
+  }
+
+  it('attributes a queued line to the account that actually synthesized it', async () => {
+    selectVoices('female-yujie');
+    act(() => hook.pause());
+    await seal('queued', 'student');
+    expect(requests).toHaveLength(0);
+    selection = { ...selection, accountScope: 'guest' };
+    act(() => root.render(createElement(Probe)));
+    await act(async () => hook.resume());
+    expect(requests[0].body.ttsVoice).toBe(studentVoice);
+    await rejectVoice(0);
+    expect(requests[1].body.ttsVoice).toBe('female-yujie');
+    await respond(1);
+    await act(async () => FakeAudio.instances.at(-1)!.end());
+    selection = { ...selection, accountScope: 'owner' };
+    act(() => root.render(createElement(Probe)));
+    await seal('next', 'student');
+    expect(requests[2].body.ttsVoice).toBe(studentVoice);
+  });
+
+  it('skips the rejected narrator when a student also needs a fallback', async () => {
+    selectVoices(registeredVoice);
+    await seal('teacher-line', 'teacher');
+    await rejectVoice(0);
+    expect(requests[1].body.ttsVoice).toBe('female-yujie');
+    await respond(1);
+    await act(async () => FakeAudio.instances.at(-1)!.end());
+    await seal('student-line', 'student');
+    expect(requests[2].body.ttsVoice).toBe(studentVoice);
+    await rejectVoice(2);
+    expect(requests[3].body.ttsVoice).toBe('female-yujie');
+    await respond(3);
+    await act(async () => FakeAudio.instances.at(-1)!.end());
+    await seal('next', 'student');
+    expect(requests[4].body.ttsVoice).toBe('female-yujie');
+  });
+
   it.each([
     [registeredVoice, registeredVoice],
     ['openmaic-not-a-registered-id', 'female-yujie'],

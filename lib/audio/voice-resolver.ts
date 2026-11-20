@@ -266,20 +266,15 @@ export function narratorBindingDiffers(
 /** The deterministic last-resort narrator voice among the enabled providers, or null. */
 export function deterministicNarratorVoice(
   providerConfigs: ProviderConfigMap,
-  unavailable?: ResolvedVoice,
+  isUnavailable: (voice: ResolvedVoice) => boolean,
 ): ResolvedVoice | null {
   const providers = getEnabledProvidersWithVoices(
     providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
   );
-  if (unavailable) {
-    const failedProvider = providers.find(
-      (provider) => provider.providerId === unavailable.providerId,
+  for (const provider of providers) {
+    provider.voices = provider.voices.filter(
+      (voice) => !isUnavailable({ providerId: provider.providerId, voiceId: voice.id }),
     );
-    if (failedProvider) {
-      failedProvider.voices = failedProvider.voices.filter(
-        (voice) => voice.id !== unavailable.voiceId,
-      );
-    }
   }
   return resolveDeterministicFallbackVoice(
     providers.filter((provider) => provider.voices.length),
@@ -291,9 +286,8 @@ export function deterministicNarratorVoice(
  * The one voice a narration clip is retried with after the provider said the
  * voice it used is unavailable for the account, or null when
  * no retry applies. Only a clip that used the bound narrator voice is
- * retried: with the global voice when the binding differs from it, else (a
- * pinned narrator, bound == global) with the deterministic enabled-provider
- * pick — unless the clip already used an explicit fallback voice.
+ * retried. Prefer the global voice, then a voice from the enabled catalogue,
+ * skipping any voice the account already rejected.
  */
 export function narratorVoiceAfterMissingClone(input: {
   bound: AgentConfig['voiceConfig'] | undefined;
@@ -301,16 +295,21 @@ export function narratorVoiceAfterMissingClone(input: {
   failed: ResolvedVoice;
   providerConfigs: ProviderConfigMap;
   usedFallbackVoice: boolean;
+  isUnavailable?: (voice: ResolvedVoice) => boolean;
 }): ResolvedVoice | null {
   const { bound, globalVoice, failed } = input;
-  if (!bound || bound.providerId !== failed.providerId || bound.voiceId !== failed.voiceId) {
+  if (input.usedFallbackVoice || !bound || narratorBindingDiffers(bound, failed)) {
     return null;
   }
-  if (narratorBindingDiffers(bound, globalVoice)) {
+  const isUnavailable = (voice: ResolvedVoice) =>
+    !narratorBindingDiffers(failed, voice) || !!input.isUnavailable?.(voice);
+  if (
+    !isUnavailable(globalVoice) &&
+    isTTSProviderEnabled(globalVoice.providerId, input.providerConfigs[globalVoice.providerId])
+  ) {
     return resolveNarratorVoiceBinding(undefined, globalVoice, input.providerConfigs);
   }
-  if (input.usedFallbackVoice) return null;
-  return deterministicNarratorVoice(input.providerConfigs, failed);
+  return deterministicNarratorVoice(input.providerConfigs, isUnavailable);
 }
 
 /**

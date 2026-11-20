@@ -1008,7 +1008,6 @@ async function executeClaimedRun(
     const narrate = async (
       action: SpeechAction,
       override?: ResolvedVoice,
-      hops = 0,
     ): Promise<string | null> => {
       const chosen = clipVoice({
         target,
@@ -1049,21 +1048,17 @@ async function executeClaimedRun(
         );
       } catch (error) {
         // The bound voice's clone is gone: one retry with a different voice.
-        if (
-          isVoiceUnavailableCode(errorCode(error)) &&
-          bound &&
-          hops < 1 &&
-          voiceBindingKey(voice) === voiceBindingKey(bound)
-        ) {
-          unavailableBindings.add(voiceBindingKey(bound));
+        if (isVoiceUnavailableCode(errorCode(error)) && bound) {
+          unavailableBindings.add(voiceBindingKey(voice));
           const retryVoice = clipVoiceAfterMissingClone({
             target,
             bound,
             globalVoice,
             failed: voice,
             usedFallbackVoice: !!override,
+            unavailable: unavailableBindings,
           });
-          if (retryVoice) return narrate(action, retryVoice, hops + 1);
+          if (retryVoice) return narrate(action, retryVoice);
         }
         throw error;
       }

@@ -201,17 +201,21 @@ export function clipVoice(input: {
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
     voiceId: slotVoice(target, input.preference).voice,
   };
-  const boundUnavailable = bound && input.unavailable.has(voiceBindingKey(bound));
+  const isUnavailable = (voice: ResolvedVoice) => input.unavailable.has(voiceBindingKey(voice));
+  const boundUnavailable = bound && isUnavailable(bound);
   let voice =
     input.override ??
     resolveNarratorVoiceBinding(boundUnavailable ? undefined : bound, globalVoice, configs);
   if (
+    !input.override &&
     bound &&
-    !narratorBindingDiffers(bound, globalVoice) &&
-    ((!input.override && boundUnavailable) ||
-      !isTTSProviderEnabled(voice.providerId, configs[voice.providerId]))
+    (isUnavailable(voice) ||
+      (!narratorBindingDiffers(bound, globalVoice) &&
+        !isTTSProviderEnabled(voice.providerId, configs[voice.providerId])))
   ) {
-    voice = deterministicNarratorVoice(configs, bound) ?? voice;
+    const alternative = deterministicNarratorVoice(configs, isUnavailable);
+    if (!alternative) return null;
+    voice = alternative;
   }
   if (!isTTSProviderEnabled(voice.providerId, configs[voice.providerId])) return null;
   return { voice, globalVoice };
@@ -224,6 +228,7 @@ export function clipVoiceAfterMissingClone(input: {
   globalVoice: ResolvedVoice;
   failed: ResolvedVoice;
   usedFallbackVoice: boolean;
+  unavailable?: ReadonlySet<string>;
 }): ResolvedVoice | null {
   return narratorVoiceAfterMissingClone({
     bound: input.bound,
@@ -231,6 +236,7 @@ export function clipVoiceAfterMissingClone(input: {
     failed: input.failed,
     providerConfigs: providersConfig(input.target),
     usedFallbackVoice: input.usedFallbackVoice,
+    isUnavailable: (voice) => input.unavailable?.has(voiceBindingKey(voice)) ?? false,
   });
 }
 

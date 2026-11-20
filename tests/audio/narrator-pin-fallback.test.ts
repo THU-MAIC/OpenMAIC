@@ -284,5 +284,14 @@ describe('generateAndStoreTTS — bound clone dead, global clone dead (review fi
       ttsVoice: 'clone-global-dead',
     });
     expect(mocks.toastWarning).toHaveBeenCalledOnce();
+
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse(200, { success: true, base64: btoa('next line'), format: 'wav' }),
+    );
+    await expect(generateAndStoreTTS('next-line', 'Next sentence')).resolves.toBe(
+      'ast_audio_allocated',
+    );
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+    expect(JSON.parse(String(mockFetch.mock.calls[2][1]?.body)).ttsVoice).toBe('marin');
   });
 });

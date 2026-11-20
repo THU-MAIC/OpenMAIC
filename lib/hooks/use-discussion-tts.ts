@@ -9,8 +9,6 @@ import { useBrowserVoices } from '@/lib/audio/use-browser-voices';
 import {
   resolveAgentVoice,
   resolveNarratorVoiceBinding,
-  deterministicNarratorVoice,
-  narratorBindingDiffers,
   narratorVoiceAfterMissingClone,
   getSelectableProvidersWithVoices,
   type ResolvedVoice,
@@ -52,7 +50,6 @@ interface QueueItem {
   modelId?: string;
   voiceId: string;
   usedFallbackVoice?: boolean;
-  accountScope?: string;
 }
 
 interface PreparedSegment {
@@ -76,8 +73,9 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
   const playbackSpeed = useSettingsStore((s) => s.playbackSpeed);
-  const playbackSettingsRef = useRef({ playbackSpeed, ttsMuted, ttsVolume, ttsSpeed, locale });
-  playbackSettingsRef.current = { playbackSpeed, ttsMuted, ttsVolume, ttsSpeed, locale };
+  const playbackSettings = { playbackSpeed, ttsMuted, ttsVolume, ttsSpeed, locale, accountScope };
+  const playbackSettingsRef = useRef(playbackSettings);
+  playbackSettingsRef.current = playbackSettings;
   // Global lecture voice — used as fallback for teacher agent
   const globalTtsProviderId = (ttsSelectionValue?.providerId ??
     'browser-native-tts') as TTSProviderId;
@@ -217,35 +215,36 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         )
           ? resolved
           : firstVoice();
-        return applyUnavailableBindingFallback(agent.id, preferred, globalVoice, firstVoice);
+        return applyUnavailableBindingFallback(agent.id, preferred);
       }
 
       const index = agentIndexMap.current.get(agentId!) ?? 0;
       return applyUnavailableBindingFallback(
         agent.id,
         resolveAgentVoice(agent, index, providers, agentVoiceOverrides),
-        globalVoice,
-        firstVoice,
       );
 
       function applyUnavailableBindingFallback(
         id: string,
         preferred: ResolvedVoice | null,
-        fallback: ResolvedVoice,
-        getFirstVoice: () => ResolvedVoice | null,
       ): ResolvedVoice | null {
         if (!preferred) return null;
         const previousKey = agentBindingKeysRef.current.get(id);
         const key = trackAssignedVoiceBinding(previousKey, preferred);
         agentBindingKeysRef.current.set(id, key);
-        if (!isVoiceBindingUnavailable(preferred, accountScope)) return preferred;
-        if (
-          narratorBindingDiffers(preferred, fallback) &&
-          isTTSProviderEnabled(fallback.providerId, ttsProvidersConfig[fallback.providerId])
-        ) {
-          return fallback;
-        }
-        return deterministicNarratorVoice(ttsProvidersConfig, preferred) ?? getFirstVoice();
+        const isUnavailable = (voice: ResolvedVoice) =>
+          isVoiceBindingUnavailable(voice, accountScope);
+        if (!isUnavailable(preferred)) return preferred;
+        const alternative =
+          narratorVoiceAfterMissingClone({
+            bound: preferred,
+            failed: preferred,
+            globalVoice,
+            providerConfigs: ttsProvidersConfig,
+            usedFallbackVoice: false,
+            isUnavailable,
+          }) ?? firstVoice();
+        return alternative && !isUnavailable(alternative) ? alternative : null;
       }
     },
     [
@@ -271,6 +270,8 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         language: locale,
       });
       controller.signal.throwIfAborted();
+      // A queued line can resume under a different account.
+      const requestScope = playbackSettingsRef.current.accountScope;
       const res = await fetch('/api/generate/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -287,11 +288,10 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
       const data = await res.json();
       if (!res.ok) {
-        const error = new Error(
-          typeof data.error === 'string' ? data.error : `TTS API error: ${res.status}`,
-        ) as Error & { errorCode?: string };
-        if (typeof data.errorCode === 'string') error.errorCode = data.errorCode;
-        throw error;
+        throw Object.assign(
+          new Error(typeof data.error === 'string' ? data.error : `TTS API error: ${res.status}`),
+          { errorCode: data.errorCode, accountScope: requestScope },
+        );
       }
       if (!data.base64) throw new Error('No audio in response');
 
@@ -414,33 +414,34 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         return;
       }
       abortControllerRef.current = null;
+      const failure = err as { errorCode?: unknown; accountScope?: string } | undefined;
       if (
-        (err as { errorCode?: unknown })?.errorCode === 'QWEN_VC_RECLONE_REQUIRED' &&
+        failure?.errorCode === 'QWEN_VC_RECLONE_REQUIRED' &&
         markVoiceBindingNoticeShown(voiceBindingKey(item))
       ) {
         toast.warning(t('settings.qwenCloneMigrationHint'));
       }
-      const fallbackVoice =
-        item.agentId &&
-        !item.usedFallbackVoice &&
-        isVoiceUnavailableCode((err as { errorCode?: unknown })?.errorCode)
-          ? narratorVoiceAfterMissingClone({
-              bound: item,
-              failed: item,
-              globalVoice: {
-                providerId: globalTtsProviderId,
-                voiceId: globalTtsVoice,
-                modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
-              },
-              providerConfigs: ttsProvidersConfig,
-              usedFallbackVoice: false,
-            })
-          : null;
-      if (fallbackVoice) {
-        const unavailableKey = markVoiceBindingUnavailable(item, item.accountScope);
-        if (markVoiceBindingNoticeShown(unavailableKey)) {
+      let fallbackVoice: ResolvedVoice | null = null;
+      if (item.agentId && isVoiceUnavailableCode(failure?.errorCode)) {
+        const unavailableKey = markVoiceBindingUnavailable(item, failure?.accountScope);
+        fallbackVoice = narratorVoiceAfterMissingClone({
+          bound: item,
+          failed: item,
+          globalVoice: {
+            providerId: globalTtsProviderId,
+            voiceId: globalTtsVoice,
+            modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+          },
+          providerConfigs: ttsProvidersConfig,
+          usedFallbackVoice: !!item.usedFallbackVoice,
+          isUnavailable: (voice) =>
+            isVoiceBindingUnavailable(voice, playbackSettingsRef.current.accountScope),
+        });
+        if (fallbackVoice && markVoiceBindingNoticeShown(unavailableKey)) {
           toast.warning(t('settings.qwenCloneDiscussionUnavailable'));
         }
+      }
+      if (fallbackVoice) {
         queueRef.current.unshift({
           ...item,
           providerId: fallbackVoice.providerId,
@@ -498,7 +499,6 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         providerId,
         modelId: effectiveModelId,
         voiceId,
-        accountScope,
       });
 
       if (!isPlayingRef.current) {
@@ -507,7 +507,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         prefetchNextRef.current();
       }
     },
-    [enabled, accountScope, resolveVoiceForAgent, ttsMuted, ttsProvidersConfig],
+    [enabled, resolveVoiceForAgent, ttsMuted, ttsProvidersConfig],
   );
 
   const cleanup = useCallback(() => {
