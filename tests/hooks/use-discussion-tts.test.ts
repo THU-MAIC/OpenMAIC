@@ -48,6 +48,9 @@ let selection: TTSSelection = defaultSelection;
 vi.mock('@/lib/audio/use-tts-selection', () => ({
   useTTSSelection: () => selection,
 }));
+vi.mock('@/lib/audio/use-account-voices', () => ({
+  useAccountVoices: () => ({ unverifiedProviderId: undefined }),
+}));
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({ locale: 'en', t: (key: string) => key }),
 }));

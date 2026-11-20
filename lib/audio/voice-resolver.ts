@@ -97,7 +97,8 @@ export function resolveNarratorVoiceBinding(
  *
  * 1. If the user picked a voice for this agent (persisted `overrides`, keyed by
  *    agent id) whose provider is in `enabledProviders` (and the voiceId is
- *    known), use it; the agent's own voiceConfig is validated the same way next.
+ *    known), use it. Next try the saved roster voice, including a registered
+ *    clone or a custom voice whose personal catalogue is temporarily unavailable.
  * 2. Otherwise, deterministically pick the first provider in the given list.
  *    When the agent's gender is male or female and the catalogue lists that
  *    gender, the index is taken inside that subset. A catalogue with no
@@ -115,11 +116,11 @@ export function resolveAgentVoice(
   agentIndex: number,
   enabledProviders: ProviderWithVoices[],
   overrides?: AgentVoiceOverrides,
+  unverifiedProviderId?: string,
 ): ResolvedVoice | null {
   // Candidates in priority order: the user's persisted per-agent override
   // (settings store — survives reloads; registry records for default/generated
-  // agents do not), then the agent's own voiceConfig. Each is honored only
-  // when its provider is still enabled and the voice is known.
+  // agents do not), then the agent's own voiceConfig.
   const candidates = [overrides?.[agent.id], agent.voiceConfig];
   for (const choice of candidates) {
     if (!choice) continue;
@@ -189,11 +190,13 @@ export function resolveAgentVoice(
       configuredLegacyVoice ||
       !declaredVoice ||
       fromEnabled.voices.some((voice) => voice.id === choice.voiceId);
-    // The roster may bind a clone registered in its server session. A device
-    // override still has to belong to the current account's selectable voices.
-    const rosterClone =
-      choice === agent.voiceConfig && isProviderCloneVoice(choice.providerId, choice.voiceId);
-    if (rosterClone || (allVoiceIds.has(choice.voiceId) && modelCompatible && offered)) {
+    // The server validated the roster when it was saved. A personal catalogue
+    // can be offline while synthesis still accepts that voice.
+    const rosterBinding =
+      choice === agent.voiceConfig &&
+      (isProviderCloneVoice(choice.providerId, choice.voiceId) ||
+        (!declaredVoice && choice.providerId === unverifiedProviderId && !!choice.voiceId.trim()));
+    if (rosterBinding || (allVoiceIds.has(choice.voiceId) && modelCompatible && offered)) {
       return {
         providerId: choice.providerId,
         ...(matchingModelGroup ? { modelId: choice.modelId } : {}),

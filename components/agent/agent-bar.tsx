@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useSlotTTSProvidersConfig, useTTSSelection } from '@/lib/audio/use-tts-selection';
+import { useAccountVoices } from '@/lib/audio/use-account-voices';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { resolveAgentVoice, getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
@@ -80,9 +81,16 @@ function AgentVoicePill({
 }) {
   const { t, locale } = useI18n();
   const ttsProvidersConfig = useSlotTTSProvidersConfig();
+  const { unverifiedProviderId } = useAccountVoices();
   const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
   const setAgentVoiceOverride = useSettingsStore((s) => s.setAgentVoiceOverride);
-  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders, agentVoiceOverrides);
+  const resolved = resolveAgentVoice(
+    agent,
+    agentIndex,
+    availableProviders,
+    agentVoiceOverrides,
+    unverifiedProviderId,
+  );
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);

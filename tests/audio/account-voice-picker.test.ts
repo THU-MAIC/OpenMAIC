@@ -11,13 +11,20 @@ import { getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import type { VoiceProfileRecord } from '@/lib/device-storage/database';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
+import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { modelSettingsViewFor } from '../helpers/model-settings-view';
 
 const owner = vi.hoisted(() => ({ key: 'test-owner-A' }));
 const readProfile = vi.hoisted(() =>
   vi.fn<(id: string) => Promise<VoiceProfileRecord | undefined>>(),
 );
-vi.mock('@/lib/device-storage/database', () => ({ db: { voiceProfiles: { get: readProfile } } }));
+vi.mock('@/lib/device-storage/database', () => ({
+  db: { voiceProfiles: { get: readProfile, toArray: async () => [] } },
+}));
+vi.mock('@/lib/hooks/use-i18n', () => ({
+  useI18n: () => ({ locale: 'en-US', t: (key: string) => key }),
+}));
 vi.mock('@/lib/device-storage/owner-key', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/device-storage/owner-key')>()),
   deviceOwnerKey: () => Promise.resolve(owner.key),
@@ -112,6 +119,7 @@ afterEach(() => {
   root = undefined;
   modelSettingsClient.adopt(null);
   useSettingsStore.getState().setTTSVoice('default', '');
+  useSettingsStore.getState().setAgentVoiceOverride('student', undefined);
   vi.unstubAllGlobals();
 });
 
@@ -133,6 +141,66 @@ it('shares an account list across pickers, keeps the default, and drops late res
   expect(host.textContent).not.toContain('old-account');
   expect(host.textContent).toContain('new-account');
 });
+
+it.each([
+  { lookup: 'pending', options: {}, expected: 'studio-guide' },
+  {
+    lookup: 'outage',
+    response: new Response(null, { status: 503 }),
+    options: {},
+    expected: 'studio-guide',
+  },
+  { lookup: 'found', response: reply('studio-guide'), options: {}, expected: 'studio-guide' },
+  {
+    lookup: 'missing',
+    response: reply('another-live-voice'),
+    options: {},
+    expected: 'female-yujie',
+  },
+  {
+    lookup: 'forbidden',
+    response: new Response(null, { status: 403 }),
+    options: {},
+    expected: 'female-yujie',
+  },
+  { lookup: 'pending', options: { managed: true }, expected: 'female-yujie' },
+  { lookup: 'pending', options: { configured: true }, expected: 'curated' },
+])(
+  'speaks a saved student binding with a $lookup account catalogue ($options)',
+  async ({ response, options, expected }) => {
+    modelSettingsClient.adopt(settings(1, options));
+    const student = {
+      id: 'student',
+      role: 'student',
+      voiceConfig: { providerId: 'minimax-tts', voiceId: 'studio-guide' },
+    } as AgentConfig;
+    const store = useSettingsStore.getState();
+    store.setAgentVoiceOverride(student.id, {
+      providerId: 'minimax-tts',
+      voiceId: 'other-account-override',
+    });
+    const catalogue = Promise.withResolvers<Response>();
+    const spoken: string[] = [];
+    vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
+      if (input === url) return catalogue.promise;
+      if (input !== '/api/generate/tts') throw new Error('Unexpected request: ' + input);
+      spoken.push(JSON.parse(String(init?.body)).ttsVoice);
+      return new Promise<Response>((_, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true }),
+      );
+    });
+    function Discussion() {
+      const { handleSegmentSealed } = useDiscussionTTS({ enabled: true, agents: [student] });
+      return createElement('button', {
+        onClick: () => handleSegmentSealed('msg', 'line', 'Hello', student.id),
+      });
+    }
+    const host = mount(createElement(Discussion));
+    if (response) await act(async () => catalogue.resolve(response));
+    await act(async () => host.querySelector('button')!.click());
+    expect(spoken).toEqual([expected]);
+  },
+);
 
 it.each([
   { status: 200, visible: 'refreshed-voice' },

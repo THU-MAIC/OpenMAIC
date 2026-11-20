@@ -17,6 +17,8 @@ import { useSettingsStore } from '@/lib/store/settings';
 
 interface AccountVoiceList {
   voices: AccountVoice[];
+  /** A personal catalogue that has not yet confirmed which roster voices it contains. */
+  unverifiedProviderId?: string;
   canDeleteRemote: boolean;
   loading: boolean;
   error: string | null;
@@ -65,7 +67,11 @@ async function fetchAccountList(target: TargetView, revision: number, signal: Ab
 }
 
 function createVoiceList(view?: ModelSettingsView, target?: TargetView, canList = false) {
-  let snapshot = empty;
+  const initial =
+    canList && target && !target.voices?.length
+      ? { ...empty, unverifiedProviderId: target.registryId }
+      : empty;
+  let snapshot: AccountVoiceList = initial;
   let request: AbortController | undefined;
   const listeners = new Set<() => void>();
 
@@ -81,7 +87,7 @@ function createVoiceList(view?: ModelSettingsView, target?: TargetView, canList 
     const controller = (request = new AbortController());
     const current = () =>
       !controller.signal.aborted && modelSettingsClient.getState().view === view;
-    publish({ ...empty, voices: snapshot.voices, loading: true });
+    publish({ ...snapshot, canDeleteRemote: false, loading: true, error: null });
     try {
       const [body] = await Promise.all([
         canList
@@ -107,8 +113,9 @@ function createVoiceList(view?: ModelSettingsView, target?: TargetView, canList 
         const temporary =
           typeof status !== 'number' || status >= 500 || status === 408 || status === 429;
         publish({
-          ...empty,
-          voices: temporary ? snapshot.voices : [],
+          ...(temporary ? snapshot : empty),
+          canDeleteRemote: false,
+          loading: false,
           error: error instanceof Error ? error.message : String(error),
         });
       }
@@ -129,7 +136,7 @@ function createVoiceList(view?: ModelSettingsView, target?: TargetView, canList 
         if (listeners.size === 0) {
           if (--observedLists === 0) window.removeEventListener('auth-change', ownerChanged);
           request?.abort();
-          snapshot = empty;
+          snapshot = initial;
         }
       };
     },

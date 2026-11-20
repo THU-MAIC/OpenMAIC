@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useTTSSelection } from '@/lib/audio/use-tts-selection';
+import { useAccountVoices } from '@/lib/audio/use-account-voices';
 import { slotTTSProvidersConfig } from '@/lib/audio/tts-selection';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
 import { useBrowserVoices } from '@/lib/audio/use-browser-voices';
@@ -64,6 +65,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   // The tts slot's provider (the only one the server synthesizes with) and
   // the user's voice for it.
   const ttsSelectionValue = useTTSSelection();
+  const { unverifiedProviderId } = useAccountVoices();
   const accountScope = ttsSelectionValue?.accountScope;
   const ttsProvidersConfig = useMemo(
     () => ttsSelectionValue?.providersConfig ?? slotTTSProvidersConfig(null),
@@ -221,7 +223,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       const index = agentIndexMap.current.get(agentId!) ?? 0;
       return applyUnavailableBindingFallback(
         agent.id,
-        resolveAgentVoice(agent, index, providers, agentVoiceOverrides),
+        resolveAgentVoice(agent, index, providers, agentVoiceOverrides, unverifiedProviderId),
       );
 
       function applyUnavailableBindingFallback(
@@ -255,6 +257,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       globalTtsProviderId,
       globalTtsVoice,
       agentVoiceOverrides,
+      unverifiedProviderId,
       accountScope,
     ],
   );
