@@ -1319,8 +1319,17 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       if (!summary.trim()) break;
       const count = (value: unknown) =>
         typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+      // Compaction runs before a model call. If the turn's waiting (gap)
+      // node is already open, appending would put the divider below it, and
+      // the gap turns into the reply in place — so the new reasoning and
+      // tools would render above the divider, whose caption says the
+      // opposite. Insert before the gap so the divider stays above the reply
+      // it enabled.
+      const gapIdx = next.waitingKey
+        ? next.chat.findIndex((n) => n.key === next.waitingKey)
+        : -1;
       next.chat = [
-        ...next.chat,
+        ...(gapIdx >= 0 ? next.chat.slice(0, gapIdx) : next.chat),
         {
           key,
           kind: 'compaction' as const,
@@ -1340,6 +1349,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
             ? { compactionMessagesAfter: count(data.messagesAfter) }
             : {}),
         },
+        ...(gapIdx >= 0 ? next.chat.slice(gapIdx) : []),
       ];
       break;
     }

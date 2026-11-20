@@ -424,4 +424,27 @@ describe('the compaction divider', () => {
       'assistant',
     ]);
   });
+
+  it('keeps the tool stretch above a trailing divider live while the turn runs', () => {
+    // Compaction runs before every model call, including the one after a tool
+    // stretch, where the waiting dots are not reopened. A divider that becomes
+    // the last row must not flip that stretch to done mid-turn.
+    const chat: ChatNode[] = [
+      { key: 'u', kind: 'user', text: 'p' },
+      thinking('th1'),
+      tool('read_scene', 'r1'),
+      tool('read_scene', 'r2'),
+      divider('e9', 'summary'),
+      divider('e10', 'another summary'),
+    ];
+    const render = (turnActive: boolean) =>
+      renderToStaticMarkup(createElement(ChatTimeline, { chat, plan: [], turnActive }));
+    const live = render(true);
+    expect(live).toContain('workbench-activity-live');
+    expect(live).not.toContain('已完成');
+    // Once the turn is over the same stretch settles as before.
+    const settled = render(false);
+    expect(settled).not.toContain('workbench-activity-live');
+    expect(settled).toContain('已完成');
+  });
 });

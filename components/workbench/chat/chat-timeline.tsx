@@ -347,6 +347,11 @@ export function ChatTimeline({
 }) {
   const rows = rowsForRender(chat);
   const exclusions = useMemo(() => courseCardExclusions(chat), [chat]);
+  // The row the live turn is still on. A compaction divider is a fact about the
+  // conversation, not a step of the turn, and it lands before any model call —
+  // including one that follows a tool stretch, when the waiting dots are not
+  // reopened — so a trailing divider must not settle the stretch above it.
+  const liveIndex = rows.findLastIndex((row) => row.node?.kind !== 'compaction');
   return (
     <div className={styles.timeline.root}>
       {rows.map((row, index) =>
@@ -355,7 +360,7 @@ export function ChatTimeline({
             key={row.key}
             nodes={row.group ?? [row.node!]}
             plan={plan}
-            ongoing={turnActive && index === rows.length - 1}
+            ongoing={turnActive && index === liveIndex}
             t={t}
           />
         ) : (

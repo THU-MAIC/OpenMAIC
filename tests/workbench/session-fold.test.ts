@@ -1317,6 +1317,40 @@ describe('context_compacted (the compaction divider)', () => {
     expect({ ...state, lastEventId: 0 }).toEqual({ ...before, lastEventId: 0 });
     expect(state.lastEventId).toBe(before.lastEventId + 1);
   });
+
+  it('inserts the divider before the waiting node when compaction arrives mid-gap', () => {
+    // Compaction fires before the model call, so it can land while the
+    // waiting (gap) node is already open. The divider must sit above the
+    // gap — not below it — otherwise the reply that fills the gap would
+    // appear above the "earlier messages were summarized" caption.
+    let state = foldAll([ev('session_start', { prompt: 'p' })]);
+    expect(state.waitingKey).not.toBeNull();
+    state = foldEvent(
+      state,
+      compacted({ summary: 'The learner asked about waves.', tokensBefore: 50, tokensAfter: 10 }),
+    );
+    const divIdx = state.chat.findIndex((n) => n.kind === 'compaction');
+    const waitIdx = state.chat.findIndex((n) => n.kind === 'waiting');
+    expect(divIdx).toBeGreaterThanOrEqual(0);
+    expect(waitIdx).toBeGreaterThanOrEqual(0);
+    // Divider must come before the waiting node.
+    expect(divIdx).toBeLessThan(waitIdx);
+    // The gap is still open — the reply has not started yet.
+    expect(state.waitingKey).not.toBeNull();
+    // Once thinking arrives the waiting node becomes the thinking bar in
+    // place; the divider must remain above it.
+    state = foldEvent(
+      state,
+      ev('message_update', {
+        message: assistantMessage([{ type: 'thinking', thinking: '嗯' }]),
+      }),
+    );
+    const divIdx2 = state.chat.findIndex((n) => n.kind === 'compaction');
+    const thinkIdx = state.chat.findIndex((n) => n.kind === 'thinking');
+    expect(divIdx2).toBeGreaterThanOrEqual(0);
+    expect(thinkIdx).toBeGreaterThanOrEqual(0);
+    expect(divIdx2).toBeLessThan(thinkIdx);
+  });
 });
 
 describe('unknown event types are silently ignored', () => {
