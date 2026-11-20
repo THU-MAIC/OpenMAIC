@@ -133,8 +133,12 @@ export interface MockRunOptions {
   atRunLimit?: boolean;
   /** How long the run takes between its scripted steps (ms). */
   stepMs?: number;
+  /** Test-controlled barrier before the streamed outline becomes ready. */
+  beforeOutlineReady?: Promise<void>;
   /** Test-controlled barrier after the first scene, before generation completes. */
   afterFirstScene?: Promise<void>;
+  /** Test-controlled barrier after the last scene, before completion. */
+  beforeComplete?: Promise<void>;
   /** How long a `countdown` run's outline waits before the run confirms it (ms). */
   countdownMs?: number;
 }
@@ -327,7 +331,9 @@ export class MockGenerationRun {
         ...this.outlines.map((outline, index) => () => {
           this.push('outline_item', { index, outline });
         }),
-        () => {
+        async () => {
+          await this.options.beforeOutlineReady;
+          if (this.page.isClosed()) return;
           this.revision = 1;
           this.outline = {
             outlines: this.outlines,
@@ -478,7 +484,7 @@ export class MockGenerationRun {
         await this.storeCourse(2);
         this.push('scene_ready', { index: 1, sceneId: 'scene-1', order: 1 });
       },
-      () => new Promise((resolve) => setTimeout(resolve, 500)),
+      () => this.options.beforeComplete ?? new Promise((resolve) => setTimeout(resolve, 500)),
       () => {
         this.push('completed', { stageId: this.stageId });
         this.push('state', { state: 'completed', step: null });

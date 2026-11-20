@@ -49,6 +49,7 @@ const roots: Root[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   document.body.replaceChildren();
+  vi.restoreAllMocks();
   modelSettingsClient.adopt(null);
 });
 
@@ -127,6 +128,81 @@ const COURSE_STAGES = [
 ];
 
 describe('the home model picker', () => {
+  function allowSelection() {
+    return vi.spyOn(modelSettingsClient, 'apply').mockImplementation(async (change) => {
+      if (change.kind !== 'slots' || typeof change.set?.llm !== 'string') {
+        throw new Error('Expected a model assignment for llm');
+      }
+      const view = withLlm(modelSettingsClient.getState().view!, change.set.llm);
+      modelSettingsClient.adopt(view);
+      return { ok: true, view };
+    });
+  }
+
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const pill = () => document.querySelector<HTMLButtonElement>('button[aria-label*=" / "]')!;
+  const openPicker = () => {
+    click(pill());
+    expect(dialog()).not.toBeNull();
+  };
+  async function key(element: HTMLElement, value: string) {
+    await act(async () => {
+      element.focus();
+      element.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }));
+    });
+  }
+
+  it.each(['click', 'Enter', ' '])('selects and closes repeatedly with %s', async (method) => {
+    const apply = allowSelection();
+    mount(workspace());
+    for (let i = 0; i < 10; i++) {
+      openPicker();
+      const id = i % 2 === 0 ? 'acme-small' : 'acme-large';
+      const row = [...dialog()!.querySelectorAll<HTMLElement>('[role="button"]')].find((row) =>
+        row.textContent?.includes(id === 'acme-small' ? 'Acme Small' : 'Acme Large'),
+      )!;
+      if (method === 'click') await act(async () => row.click());
+      else await key(row, method);
+      expect(dialog()).toBeNull();
+      expect(pill().getAttribute('aria-label')).toBe(`Acme / ${id}`);
+      expect(apply).toHaveBeenLastCalledWith({ kind: 'slots', set: { llm: `acme:${id}` } });
+    }
+    expect(apply).toHaveBeenCalledTimes(10);
+  });
+
+  it('switches provider and remains usable after repeated keyboard dismissal', async () => {
+    const apply = allowSelection();
+    mount(workspace());
+    openPicker();
+    const row = [...dialog()!.querySelectorAll<HTMLElement>('[role="button"]')].find((row) =>
+      row.textContent?.includes('GPT-5'),
+    )!;
+    await act(async () => row.click());
+    expect(dialog()).toBeNull();
+    expect(pill().getAttribute('aria-label')).toBe('other / gpt-5');
+    for (let i = 0; i < 10; i++) {
+      openPicker();
+      await key(dialog()!, 'Escape');
+      expect(dialog()).toBeNull();
+    }
+    expect(apply).toHaveBeenCalledTimes(1);
+  });
+
+  it('dismisses on an outside pointer and restores trigger focus after Escape', async () => {
+    mount(workspace());
+    openPicker();
+    // Radix installs its outside-pointer listener on the next task.
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    });
+    expect(dialog()).toBeNull();
+    openPicker();
+    await key(dialog()!, 'Escape');
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(pill());
+  });
+
   it('shows the selected model alone, keeping its logo and accessible name', () => {
     const { host } = mount(workspace());
     const pill = host.querySelector<HTMLButtonElement>('[aria-label="acme / acme-large"]');
