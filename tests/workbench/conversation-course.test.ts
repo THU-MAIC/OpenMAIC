@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { requestCourse } from '@/lib/workbench/conversation-course';
+import {
+  blockedConversationNewChatCourse,
+  requestCourse,
+} from '@/lib/workbench/conversation-course';
 import {
   createInitialSessionState,
   foldEvent,
@@ -239,5 +242,33 @@ describe('rule 5: a conversation that @-names an existing course', () => {
     expect(
       requestCourse([named('u1', 'stage-a'), user('u2'), created('c', 'stage-new')], false),
     ).toEqual({ kind: 'new', ready: [] });
+  });
+});
+
+describe('the context-limit block carries the conversation own course', () => {
+  const owned = (id: string) => id.startsWith('mine-');
+  it('carries the course the conversation works on', () => {
+    expect(blockedConversationNewChatCourse({ kind: 'course', courseId: 'mine-a' }, owned)).toBe(
+      'mine-a',
+    );
+  });
+  it('carries the first ready page of a course the blocked request was making', () => {
+    expect(
+      blockedConversationNewChatCourse({ kind: 'new', ready: ['mine-new', 'mine-other'] }, owned),
+    ).toBe('mine-new');
+  });
+  it('names nothing when the conversation has no course to carry', () => {
+    expect(blockedConversationNewChatCourse({ kind: 'course', courseId: null }, owned)).toBeNull();
+    expect(blockedConversationNewChatCourse({ kind: 'new', ready: [] }, owned)).toBeNull();
+  });
+  it('names nothing for a course the viewer cannot change — the "Edit with AI" rule', () => {
+    // A course saved from Discover is not the viewer's; a conversation about
+    // it gets an ordinary new chat, not one bound to a read-only course.
+    expect(
+      blockedConversationNewChatCourse({ kind: 'course', courseId: 'theirs-a' }, owned),
+    ).toBeNull();
+    expect(
+      blockedConversationNewChatCourse({ kind: 'course', courseId: 'unknown' }, owned),
+    ).toBeNull();
   });
 });

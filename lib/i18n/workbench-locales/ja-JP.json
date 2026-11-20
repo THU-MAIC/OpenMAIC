@@ -15,6 +15,7 @@
     "jumpToBottom": "最下部へ",
     "interruptPlaceholder": "補足を入力し、Enter で送信",
     "continuePlaceholder": "次にしてほしいことを入力し、Enter で送信",
+    "contextBlockedPlaceholder": "この会話の長さの上限に達しました。新しいチャットを始めると会話を続けられます",
     "refsNeedInstruction": "選択した要素への指示を入力してください",
     "stopping": "停止中…",
     "stoppingAria": "停止中",
@@ -139,6 +140,7 @@
     "retryHint": "もう一度メッセージを送ると再試行します",
     "contextLengthLimit": "この会話の長さの上限に達しました。新しいチャットを始めると会話を続けられます。",
     "contextBudgetInvalid": "現在のモデルのコンテキスト予算の設定に問題があります。このターンは停止しました。",
+    "startNewChat": "新しいチャットを始める",
     "stopped": "この生成は停止されました",
     "workerInterrupted": "ワーカーの再起動により中断されました。この呼び出しは結果を返していません。必要に応じてエージェントが再実行します。",
     "userStopped": "停止により中断されました。この呼び出しは結果を返していません。"

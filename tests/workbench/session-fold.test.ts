@@ -32,6 +32,7 @@ function ev(type: string, data: unknown, ts = 1000 + seq): WorkbenchEvent {
 
 const blankFold: WorkbenchFold = {
   status: 'connecting',
+  contextBlocked: false,
   lastEventId: 0,
   error: null,
   courseTitle: null,
@@ -105,10 +106,52 @@ describe('lifecycle events', () => {
     }
     expect(state.status).toBe('failed');
     expect(state.generationOpen).toBe(false);
+    // Only a transcript that cannot fit even after compaction closes the
+    // conversation. A failed summary request is retried by the next message,
+    // and a misconfigured budget once the configuration is fixed, so the
+    // composer stays open for both.
+    const blocks = reason === 'still_oversized' || reason === 'no_compaction_boundary';
+    expect(state.contextBlocked).toBe(blocks);
+    // The new-chat exit rides every length-limit notice, including the
+    // retryable one: a new chat is always a valid way out.
+    expect(presentSystemNotice(node).action).toBe(invalid ? undefined : 'newChat');
     expect(state.chat).toContainEqual(
       expect.objectContaining({ kind: 'user', text: 'keep my request' }),
     );
     expect(foldAll(events).chat).toEqual(state.chat);
+    expect(foldAll(events).contextBlocked).toBe(blocks);
+  });
+
+  it('keeps a blocked conversation blocked across replay and lifts it on a later clean end', () => {
+    const error = new ContextBudgetError('still_oversized').message;
+    const blocked = [
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('session_end', { status: 'failed', error, errorCode: 'CONTEXT_BUDGET_EXCEEDED' }),
+    ];
+    // Same prefix, folded again: the block is part of the record, not a
+    // live-run artefact, so a cold replay blocks exactly the same way.
+    expect(foldAll(blocked).contextBlocked).toBe(true);
+    // Another client ran on after a model switch and the run succeeded: the
+    // conversation works again, and the fold says so rather than holding the
+    // block forever.
+    const recovered = foldAll([
+      ...blocked,
+      ev('user_message', { text: 'again', delivery: 'queued' }),
+      ev('session_resumed', {}),
+      ev('session_end', { status: 'succeeded' }),
+    ]);
+    expect(recovered.contextBlocked).toBe(false);
+    // An ordinary failure never blocks: the retry hint is the way out there.
+    const ordinary = foldAll([
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('session_end', { status: 'failed', error: 'provider 502' }),
+    ]);
+    expect(ordinary.contextBlocked).toBe(false);
+    const cancelled = foldAll([
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('session_end', { status: 'cancelled' }),
+    ]);
+    expect(cancelled.contextBlocked).toBe(false);
   });
 
   it('silently clears a deleted Skill binding without changing the conversation or course', () => {

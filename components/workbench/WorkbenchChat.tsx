@@ -111,6 +111,7 @@ import { type SeedCourseAsk, seedIsTitleOnlyChange } from '@/lib/workbench/draft
 import { pendingQuestion } from './chat/question-card-state';
 import { QuestionForm } from './chat/question-form';
 import { useQuestionHost } from '@/lib/workbench/question-host';
+import { useNewChatHost } from '@/lib/workbench/new-chat-host';
 import { sessionScopedKey } from '@/lib/workbench/request-scope';
 import { composerTakeover } from './chat/question-form-state';
 import {
@@ -135,6 +136,7 @@ export function WorkbenchChat({
   onMaterialSeedConsumed,
   newConversation = 0,
   conversation,
+  onStartNewChat,
 }: {
   /**
    * Rendered inside the workspace's conversation pane, which supplies the
@@ -170,6 +172,13 @@ export function WorkbenchChat({
    * Without it, the composer's own owner is the fence.
    */
   conversation?: string | null;
+  /**
+   * The workspace's way out of a context-limit block, offered on the terminal
+   * notice (see `new-chat-host`). It resolves which course the new
+   * conversation is for at click time, so the shell passes a ref-backed
+   * stable callback, and this component only republishes it.
+   */
+  onStartNewChat?: () => void;
 }) {
   const { t } = useI18n();
   const sessionId = useWorkbenchStore((s) => s.sessionId);
@@ -189,7 +198,16 @@ export function WorkbenchChat({
    * or a stop then would reach that one, so the composer waits, draft kept.
    */
   const ownerAttached = conversation === undefined || conversation === composerOwnerId;
-  const canSend = ownerAttached && (sessionId !== null || draftConversation !== null);
+  /**
+   * The conversation cannot fit the model's context even after compaction:
+   * no resend can fit, so the composer stays closed (`canSend`) with a
+   * placeholder that says why, and the way out is the notice's new-chat
+   * action. A failed summary request leaves it open (the next message retries
+   * the compaction), and a misconfigured budget is fixed in settings.
+   */
+  const contextBlocked = useWorkbenchStore((s) => s.contextBlocked);
+  const canSend =
+    ownerAttached && !contextBlocked && (sessionId !== null || draftConversation !== null);
   const chat = useWorkbenchStore((s) => s.chat);
   const replaying = useWorkbenchStore((s) => s.replaying);
   const status = useWorkbenchStore((s) => s.status);
@@ -1178,6 +1196,18 @@ export function WorkbenchChat({
     };
   }, [answerQuestion]);
 
+  // Publish the terminal notice's way out (the context-limit block's new
+  // chat). `undefined` unpublishes: a hosted chat with no workspace behind it
+  // keeps the notice's explanation and simply offers no action.
+  useEffect(() => {
+    useNewChatHost.getState().setStart(onStartNewChat ?? null);
+    return () => {
+      if (useNewChatHost.getState().start === (onStartNewChat ?? null)) {
+        useNewChatHost.getState().setStart(null);
+      }
+    };
+  }, [onStartNewChat]);
+
   async function send() {
     // What is in the box IS the message — skill handles included — with each
     // `@` mention written out in full; the references go beside it as before.
@@ -1409,12 +1439,21 @@ export function WorkbenchChat({
               <div
                 className={styles.composer.inputBox}
                 onDragOver={(event) => {
-                  if (!materials.enabled || !composerTransferHasImages(event.dataTransfer)) return;
+                  if (
+                    !canSend ||
+                    !materials.enabled ||
+                    !composerTransferHasImages(event.dataTransfer)
+                  ) {
+                    return;
+                  }
                   event.preventDefault();
                   event.dataTransfer.dropEffect = 'copy';
                 }}
                 onDrop={(event) => {
-                  if (!materials.enabled) return;
+                  // The drop seam sits on the wrapper, not the disabled box
+                  // inside it: without `canSend` a blocked conversation still
+                  // accepted images it could never send.
+                  if (!canSend || !materials.enabled) return;
                   const images = composerImagesFromDrop(event.dataTransfer);
                   if (images.length === 0) return;
                   event.preventDefault();
@@ -1510,16 +1549,18 @@ export function WorkbenchChat({
                   disabled={!canSend}
                   ariaKeyShortcuts={COMPOSER_SEND_ARIA_KEYSHORTCUTS}
                   placeholder={t(
-                    shouldPromptForRefInstruction({
-                      hasElementRefs: elementRefs.length > 0,
-                      hasText: !!draft.trim(),
-                    })
-                      ? 'workbench.chat.refsNeedInstruction'
-                      : queued
-                        ? 'workbench.chat.queuedPlaceholder'
-                        : live
-                          ? 'workbench.chat.interruptPlaceholder'
-                          : 'workbench.chat.continuePlaceholder',
+                    contextBlocked
+                      ? 'workbench.chat.contextBlockedPlaceholder'
+                      : shouldPromptForRefInstruction({
+                            hasElementRefs: elementRefs.length > 0,
+                            hasText: !!draft.trim(),
+                          })
+                        ? 'workbench.chat.refsNeedInstruction'
+                        : queued
+                          ? 'workbench.chat.queuedPlaceholder'
+                          : live
+                            ? 'workbench.chat.interruptPlaceholder'
+                            : 'workbench.chat.continuePlaceholder',
                   )}
                   className={styles.composer.input}
                 />

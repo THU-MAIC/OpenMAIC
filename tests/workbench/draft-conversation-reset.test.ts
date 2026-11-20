@@ -72,6 +72,20 @@ const assistant = (parts: { type: string; text?: string; thinking?: string }[]) 
 });
 
 /**
+ * An earlier request in the same conversation that hit the context limit. Its
+ * terminal end raised `contextBlocked`, and only the next terminal end lowers
+ * it — so when another client sends on and a run resumes, the block is still
+ * up while that run is live. Declared before `RUN` so its ids are lower (the
+ * fold skips anything at or below `lastEventId`), and folded only by
+ * `driveARunningSession`: the live-run replay below stays a plain running
+ * conversation.
+ */
+const EARLIER_BLOCK: readonly WorkbenchEvent[] = [
+  ev('session_start', { prompt: '先讲光的反射' }),
+  ev('session_end', { status: 'failed', error: 'CONTEXT_BUDGET_EXCEEDED:still_oversized' }),
+];
+
+/**
  * A run that touches EVERY field of the store.
  *
  * Not a minimal repro on purpose: the enumeration below is only meaningful if
@@ -122,6 +136,7 @@ const RUN: readonly WorkbenchEvent[] = [
 function driveARunningSession(): void {
   const store = useWorkbenchStore.getState();
   store.attach('session-1', 'stage-a', false);
+  store.applyEvents(EARLIER_BLOCK);
   store.applyEvents(RUN);
   store.finishReplay();
   // Keep both replay fields non-initial so the total-reset guard remains

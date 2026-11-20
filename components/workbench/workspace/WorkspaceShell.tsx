@@ -163,7 +163,11 @@ import {
 } from './WorkspaceRequestActivity';
 import { isPreviewClosed, rememberPreviewClosed } from '@/lib/workbench/preview-tab';
 import { QUEUED_REQUEST_KEY, requestEpisodeStart } from '@/lib/workbench/request-activity';
-import { requestCourse, type RequestCourse } from '@/lib/workbench/conversation-course';
+import {
+  blockedConversationNewChatCourse,
+  requestCourse,
+  type RequestCourse,
+} from '@/lib/workbench/conversation-course';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { useResizeDragOwner } from './resize-drag-owner';
@@ -1291,6 +1295,32 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const requestLive = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
   const pagedCourses = thisRequestCourse.kind === 'new' ? thisRequestCourse.ready : [];
   const workingCourseId = thisRequestCourse.kind === 'course' ? thisRequestCourse.courseId : null;
+  /**
+   * The context-limit notice's "Start a new chat" (`new-chat-host`): the new
+   * conversation is for THIS conversation's own course — the one the request
+   * works on, when the viewer owns it — and otherwise an ordinary new chat.
+   */
+  const startChatOutOfBlockedConversation = () => {
+    const courseId = blockedConversationNewChatCourse(thisRequestCourse, (id) =>
+      courses.classrooms.some((course) => course.id === id && course.isOwner !== false),
+    );
+    if (!courseId) {
+      startNewConversation();
+      return;
+    }
+    browseCourse(courseId, true);
+    // A new chat takes the column on a narrow window, as `startNewConversation`
+    // does: otherwise the course it opened would cover the chat asked for.
+    setNarrowFocus('chat');
+  };
+  // Stable for the pane: the notice publishes it through the host store once,
+  // so it must read the request's course and the owner's list as they are at
+  // CLICK time. Same ref shape as `talkAboutCourseStable` below.
+  const startChatOutOfBlockedRef = useRef(startChatOutOfBlockedConversation);
+  useLayoutEffect(() => {
+    startChatOutOfBlockedRef.current = startChatOutOfBlockedConversation;
+  });
+  const [startChatOutOfBlockedStable] = useState(() => () => startChatOutOfBlockedRef.current());
   // Closed by the user — now, or in the tab memory a session-only refresh
   // (which restores no tabs) leaves behind. The reader is SSR-safe.
   const rememberedTabs = pagedCourses.length > 0 || workingCourseId ? readCourseTabsMemory() : null;
@@ -2175,6 +2205,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             materialSeed={materialSeed}
             onMaterialSeedConsumed={consumeMaterialSeed}
             newConversation={composerReset}
+            onStartNewChat={startChatOutOfBlockedStable}
             conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
             draftConversation={draftConversation}
             onRename={

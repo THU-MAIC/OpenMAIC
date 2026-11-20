@@ -41,3 +41,16 @@ export function contextBudgetCopyKey(error: string): `workbench.${string}` | und
     ? 'workbench.system.contextBudgetInvalid'
     : 'workbench.system.contextLengthLimit';
 }
+
+/**
+ * Whether a context-budget failure is final for the conversation: the
+ * transcript itself cannot fit even after compaction, so no resend can
+ * succeed. Only `still_oversized` and `no_compaction_boundary` are.
+ * `summary_failed` means the summary request failed (a provider outage, a
+ * timeout), and the next message retries the compaction; `invalid_output_budget`
+ * is a model-configuration error, retried once the configuration is fixed.
+ */
+export function contextBudgetBlocksConversation(error: string): boolean {
+  const reason = contextBudgetReason(error);
+  return reason === 'still_oversized' || reason === 'no_compaction_boundary';
+}

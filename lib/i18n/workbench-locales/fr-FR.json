@@ -15,6 +15,7 @@
     "jumpToBottom": "Aller en bas",
     "interruptPlaceholder": "Ajoutez une précision, puis Entrée pour envoyer",
     "continuePlaceholder": "Dites la suite, puis Entrée pour envoyer",
+    "contextBlockedPlaceholder": "Cette conversation a atteint sa longueur maximale ; démarrez une nouvelle discussion pour continuer",
     "refsNeedInstruction": "Saisissez une instruction pour les éléments sélectionnés",
     "stopping": "Arrêt en cours…",
     "stoppingAria": "Arrêt en cours",
@@ -139,6 +140,7 @@
     "retryHint": "Envoyez un autre message pour réessayer",
     "contextLengthLimit": "Cette conversation a atteint sa longueur maximale. Démarrez une nouvelle discussion pour continuer.",
     "contextBudgetInvalid": "Le budget de contexte du modèle actuel est mal configuré. Ce tour a été arrêté.",
+    "startNewChat": "Démarrer une nouvelle discussion",
     "stopped": "Cette création a été arrêtée",
     "workerInterrupted": "Interrompu par un redémarrage du worker. Cet appel n'a produit aucun résultat ; l'agent le relancera si nécessaire.",
     "userStopped": "Interrompu par un arrêt. Cet appel n'a produit aucun résultat."

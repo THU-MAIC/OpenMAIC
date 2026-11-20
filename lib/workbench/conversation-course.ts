@@ -131,3 +131,19 @@ export function requestCourse(
   }
   return { kind: 'new', ready };
 }
+
+/**
+ * The course a context-limit block's "Start a new chat" carries, if any: the
+ * conversation's own course, but only one the viewer can change — the same
+ * rule that keeps "Edit with AI" off a read-only course (`isOwner === false`
+ * from Discover, or a course not in the viewer's list at all). Naming a
+ * read-only one would bind the new conversation to a course its agent cannot
+ * write; a course-less conversation (or an unownable one) starts ordinary.
+ */
+export function blockedConversationNewChatCourse(
+  request: RequestCourse,
+  isOwnedCourse: (courseId: string) => boolean,
+): string | null {
+  const courseId = request.kind === 'course' ? request.courseId : (request.ready[0] ?? null);
+  return courseId !== null && isOwnedCourse(courseId) ? courseId : null;
+}

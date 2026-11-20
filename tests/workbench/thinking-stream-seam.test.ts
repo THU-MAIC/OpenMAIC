@@ -33,6 +33,7 @@ function emptyPartial(): AssistantMessage {
 
 const blankFold: WorkbenchFold = {
   status: 'connecting',
+  contextBlocked: false,
   lastEventId: 0,
   error: null,
   courseTitle: null,

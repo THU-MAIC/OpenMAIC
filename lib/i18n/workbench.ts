@@ -43,6 +43,8 @@ export const workbenchEn = {
     jumpToBottom: 'Jump to bottom',
     interruptPlaceholder: 'Add a note, then press Enter to send',
     continuePlaceholder: 'Say what to do next, then press Enter to send',
+    contextBlockedPlaceholder:
+      'This conversation reached its length limit; start a new chat to continue',
     refsNeedInstruction: 'Type an instruction for the selected elements',
     stopping: 'Stopping…',
     stoppingAria: 'Stopping',
@@ -210,6 +212,7 @@ export const workbenchEn = {
       "You've reached the maximum length for this conversation, but you can keep talking by starting a new chat.",
     contextBudgetInvalid:
       "The current model's context budget is misconfigured. This turn has been stopped.",
+    startNewChat: 'Start a new chat',
     stopped: 'This build was stopped',
     workerInterrupted:
       'Interrupted by a worker restart. This call produced no result; the agent will retry it if needed.',
@@ -442,6 +445,7 @@ export const workbenchZh = {
     jumpToBottom: '回到底部',
     interruptPlaceholder: '可以插话，回车发送',
     continuePlaceholder: '继续说点什么，回车发送',
+    contextBlockedPlaceholder: '此会话已达长度上限，开始新聊天以继续',
     refsNeedInstruction: '输入对已选元素的指令后发送',
     stopping: '正在停止…',
     stoppingAria: '正在停止',
@@ -579,6 +583,7 @@ export const workbenchZh = {
     retryHint: '可以再说一句让它重试',
     contextLengthLimit: '您已达到此会话的长度上限，可以开始新聊天以继续对话。',
     contextBudgetInvalid: '当前模型的上下文预算配置异常，本轮已停止。',
+    startNewChat: '开始新聊天',
     stopped: '本轮生成已停止',
     workerInterrupted: '被 worker 重启打断，这次调用没有产生结果；agent 会在新一次尝试里按需重发。',
     userStopped: '已被停止打断，这次调用没有产生结果。',

@@ -15,6 +15,7 @@
     "jumpToBottom": "Nach unten springen",
     "interruptPlaceholder": "Hinweis ergänzen, dann Enter zum Senden",
     "continuePlaceholder": "Sag, was als Nächstes passieren soll, dann Enter zum Senden",
+    "contextBlockedPlaceholder": "Diese Unterhaltung hat ihre maximale Länge erreicht; starte einen neuen Chat, um weiterzumachen",
     "refsNeedInstruction": "Anweisung für die ausgewählten Elemente eingeben",
     "stopping": "Wird gestoppt …",
     "stoppingAria": "Wird gestoppt",
@@ -139,6 +140,7 @@
     "retryHint": "Sende noch eine Nachricht, um es erneut zu versuchen",
     "contextLengthLimit": "Diese Unterhaltung hat ihre maximale Länge erreicht. Starte einen neuen Chat, um weiterzumachen.",
     "contextBudgetInvalid": "Das Kontextbudget des aktuellen Modells ist falsch konfiguriert. Dieser Durchlauf wurde gestoppt.",
+    "startNewChat": "Neuen Chat starten",
     "stopped": "Dieser Aufbau wurde gestoppt",
     "workerInterrupted": "Durch einen Worker-Neustart unterbrochen. Dieser Aufruf hat kein Ergebnis geliefert; der Agent wiederholt ihn bei Bedarf.",
     "userStopped": "Durch Stoppen unterbrochen. Dieser Aufruf hat kein Ergebnis geliefert."
