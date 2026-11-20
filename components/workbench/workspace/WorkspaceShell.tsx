@@ -163,7 +163,13 @@ import {
 } from './WorkspaceRequestActivity';
 import { isPreviewClosed, rememberPreviewClosed } from '@/lib/workbench/preview-tab';
 import { QUEUED_REQUEST_KEY, requestEpisodeStart } from '@/lib/workbench/request-activity';
-import { requestCourse, type RequestCourse } from '@/lib/workbench/conversation-course';
+import {
+  blockedConversationNewChatCourse,
+  ownedCourseForNewChat,
+  requestCourse,
+  requestCreatedCourses,
+  type RequestCourse,
+} from '@/lib/workbench/conversation-course';
 import { PaneTab } from './PaneTab';
 import { ResizeHandle } from './ResizeHandle';
 import { useResizeDragOwner } from './resize-drag-owner';
@@ -1291,6 +1297,98 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const requestLive = ['running', 'queued', 'connecting'].includes(attachedSessionStatus);
   const pagedCourses = thisRequestCourse.kind === 'new' ? thisRequestCourse.ready : [];
   const workingCourseId = thisRequestCourse.kind === 'course' ? thisRequestCourse.courseId : null;
+  /**
+   * The context-limit notice's "Start a new chat" (`new-chat-host`): the new
+   * conversation is for THIS conversation's own course — the one the request
+   * works on, when the viewer owns it — and otherwise an ordinary new chat.
+   *
+   * Ownership may need the stage-meta sidecar (the course list not loaded yet,
+   * or a course created after it loaded; see `ownedCourseForNewChat`), so the
+   * new chat opens when the answer is in. An answer for a click the teacher
+   * has moved on from — another conversation, a new chat, a later click —
+   * opens nothing. The workspace's own background moves (the conversation's
+   * course opening in an empty right pane) are not the teacher moving on.
+   *
+   * `existingCourse` starts null and is set by the session-detail fetch (the
+   * same fetch that sets `stageId`). If the teacher clicks before that fetch
+   * settles, fetch it now so `requestCourse` can return the real course.
+   */
+  const startChatOutOfBlockedConversation = () => {
+    const state = useWorkbenchStore.getState();
+    const sessionAtClick = panes.sessionId;
+    const ask = ++newChatAsk.current;
+    // Resolve the course from whatever metadata we have; if the ownership flag
+    // is not yet known, fetch it first so `requestCourse` can be exact.
+    const resolveAndOpen = (existingCourse: boolean | null, stageId: string | null) => {
+      if (ask !== newChatAsk.current || shownSessionRef.current !== sessionAtClick) return;
+      const chat = useWorkbenchStore.getState().chat;
+      const resolvedRequest =
+        existingCourse !== null
+          ? requestCourse(chat, existingCourse, stageId)
+          : thisRequestCourse;
+      const courseId = blockedConversationNewChatCourse(
+        resolvedRequest,
+        // A course the blocked request created before its first page landed.
+        requestCreatedCourses(chat),
+      );
+      const listed = courseId
+        ? courses.classrooms.find((course) => course.id === courseId)
+        : undefined;
+      void ownedCourseForNewChat({
+        courseId,
+        listedIsOwner: listed ? listed.isOwner !== false : undefined,
+        fetchMeta: fetchStageMeta,
+      }).then((owned) => {
+        if (ask !== newChatAsk.current || shownSessionRef.current !== sessionAtClick) return;
+        openChatOutOfBlockedRef.current(owned);
+      });
+    };
+    if (state.existingCourse !== null || !sessionAtClick) {
+      // Flag already known, or no session to fetch — resolve immediately.
+      // With no session, resolveAndOpen falls through to an ordinary new chat.
+      resolveAndOpen(state.existingCourse, state.stageId);
+    } else {
+      // The session-detail fetch has not settled yet: fetch it now. On failure
+      // open an ordinary new chat (null existingCourse is treated as no course).
+      fetch(`/api/agent/sessions/${encodeURIComponent(sessionAtClick)}`)
+        .then((r) => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : null))
+        .then((meta) => {
+          const existingCourse =
+            meta && typeof meta.existingCourse === 'boolean' ? meta.existingCourse : null;
+          const stageId =
+            meta && typeof meta.stageId === 'string' && meta.stageId ? meta.stageId : null;
+          resolveAndOpen(existingCourse, stageId);
+        })
+        .catch(() => resolveAndOpen(null, null));
+    }
+  };
+  /** Opens the new chat with the workspace as it is when ownership is known. */
+  const openChatOutOfBlockedConversation = (courseId: string | null) => {
+    if (!courseId) {
+      startNewConversation();
+      return;
+    }
+    browseCourse(courseId, true);
+    // A new chat takes the column on a narrow window, as `startNewConversation`
+    // does: otherwise the course it opened would cover the chat asked for.
+    setNarrowFocus('chat');
+  };
+  // Stable for the pane: the notice publishes it through the host store once,
+  // so it must read the request's course and the owner's list as they are at
+  // CLICK time, and open with the workspace as it is when the answer lands.
+  // Same ref shape as `talkAboutCourseStable` below.
+  const startChatOutOfBlockedRef = useRef(startChatOutOfBlockedConversation);
+  const openChatOutOfBlockedRef = useRef(openChatOutOfBlockedConversation);
+  /** The last click's number: an earlier click's late answer opens nothing. */
+  const newChatAsk = useRef(0);
+  /** The conversation the middle column shows now, for an answer that lands later. */
+  const shownSessionRef = useRef(panes.sessionId);
+  useLayoutEffect(() => {
+    startChatOutOfBlockedRef.current = startChatOutOfBlockedConversation;
+    openChatOutOfBlockedRef.current = openChatOutOfBlockedConversation;
+    shownSessionRef.current = panes.sessionId;
+  });
+  const [startChatOutOfBlockedStable] = useState(() => () => startChatOutOfBlockedRef.current());
   // Closed by the user — now, or in the tab memory a session-only refresh
   // (which restores no tabs) leaves behind. The reader is SSR-safe.
   const rememberedTabs = pagedCourses.length > 0 || workingCourseId ? readCourseTabsMemory() : null;
@@ -2175,6 +2273,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             materialSeed={materialSeed}
             onMaterialSeedConsumed={consumeMaterialSeed}
             newConversation={composerReset}
+            onStartNewChat={startChatOutOfBlockedStable}
             conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
             draftConversation={draftConversation}
             onRename={

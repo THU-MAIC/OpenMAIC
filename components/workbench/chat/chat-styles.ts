@@ -64,6 +64,12 @@ export const wbStyles = {
     count:
       'shrink-0 rounded-[5px] border border-[var(--wb-line)] bg-[var(--wb-surface-sunken)] px-1 py-px text-[11px] leading-4 tabular-nums text-[var(--wb-text-muted)] data-[tone=error]:border-[var(--wb-danger-line)] data-[tone=error]:bg-transparent data-[tone=error]:text-[var(--wb-danger)]',
     hint: 'text-[11px] leading-[17px] text-[var(--wb-text-muted)]',
+    // The way out of a terminal notice, e.g. the context-limit block's new
+    // chat. The one notice affordance allowed to look like a button: on a
+    // blocked conversation the composer is closed, so this IS the primary
+    // action (the disclosure below stays metadata on purpose).
+    action:
+      'inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-[var(--wb-radius-sm)] border border-[var(--wb-line)] bg-[var(--wb-surface-raised)] px-2 py-1 text-[11px] leading-[17px] font-medium text-[var(--wb-text)] transition-colors duration-[var(--wb-duration-base)] hover:border-[var(--wb-text-muted)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
     // The technical cause, one click away. A text button in the metadata
     // register — no border, no chip: it must not look like the primary action
     // of a failed run (that is the composer).

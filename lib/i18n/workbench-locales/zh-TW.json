@@ -15,6 +15,7 @@
     "jumpToBottom": "回到底部",
     "interruptPlaceholder": "可以插話，Enter 傳送",
     "continuePlaceholder": "繼續說點什麼，Enter 傳送",
+    "contextBlockedPlaceholder": "此對話已達長度上限，開始新聊天以繼續",
     "refsNeedInstruction": "輸入對已選元素的指令後傳送",
     "stopping": "正在停止…",
     "stoppingAria": "正在停止",
@@ -145,6 +146,7 @@
     "retryHint": "可以再說一句讓它重試",
     "contextLengthLimit": "您已達到此對話的長度上限，可以開始新聊天以繼續對話。",
     "contextBudgetInvalid": "目前模型的上下文預算設定異常，本輪已停止。",
+    "startNewChat": "開始新聊天",
     "stopped": "本輪生成已停止",
     "workerInterrupted": "被 worker 重啟打斷，這次呼叫沒有產生結果；agent 會在新一次嘗試裡按需重發。",
     "userStopped": "已被停止打斷，這次呼叫沒有產生結果。"

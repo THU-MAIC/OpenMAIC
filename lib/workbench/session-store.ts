@@ -24,7 +24,10 @@
 import { create } from 'zustand';
 import i18n from 'i18next';
 import { supportedLocaleOf } from '@/lib/i18n/types';
-import { contextBudgetCopyKey } from '@/lib/agent/runtime/context-budget-error';
+import {
+  contextBudgetBlocksConversation,
+  contextBudgetCopyKey,
+} from '@/lib/agent/runtime/context-budget-error';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -297,6 +300,20 @@ export function sessionBuildsCourse(
 /** The fold's half of the store: everything `foldEvent` may read or write. */
 export interface WorkbenchFold {
   status: SessionStatus;
+  /**
+   * The conversation is over: a run ended because its history is too large
+   * even to be summarized (`CONTEXT_BUDGET_EXCEEDED:summary_input_too_large`
+   * — see `contextBudgetBlocksConversation`). Retrying in this conversation
+   * can never succeed, so the composer closes and the failure notice offers a
+   * new chat instead. The other context-budget failures are not this: the
+   * next message can still get through (it adds a cut point, or retries a
+   * failed summary request), so the composer stays open beside the same
+   * notice. Assigned on EVERY terminal `session_end` — a later end that is
+   * not the block (another client ran after a model switch, say) clears it —
+   * which is what keeps the flag a pure function of the applied event prefix,
+   * replaying exactly.
+   */
+  contextBlocked: boolean;
   lastEventId: number;
   error: string | null;
   courseTitle: string | null;
@@ -596,6 +613,7 @@ export function createInitialSessionState(): WorkbenchSessionState {
     // not arrived yet is presumed running, so the button does not flash SEND
     // before flipping to STOP.
     status: 'idle',
+    contextBlocked: false,
     lastEventId: 0,
     error: null,
     epoch: 0,
@@ -1737,6 +1755,12 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
     case 'session_end': {
       const status = (data.status as SessionStatus) ?? 'succeeded';
       next.status = status;
+      // Assigned for EVERY terminal end, not only the failure: the block is
+      // final for the conversation, so a later end that is not it (a run
+      // another client started after a model switch) must lift the block —
+      // see `WorkbenchFold.contextBlocked`.
+      const cause = data.error ? String(data.error).trim() : '';
+      next.contextBlocked = status === 'failed' && contextBudgetBlocksConversation(cause);
       // A run ending is not a conversation ending. Success leaves no mark:
       // the next user bubble is the break. Cancel is a small centered note.
       // Failure stays loud so it cannot be scrolled past.
@@ -1754,7 +1778,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         // English error text used to be spliced into the middle of the
         // sentence, which read as a log line and — because every auto-retry
         // appends its own marker — stacked N identical copies of it.
-        const cause = data.error ? String(data.error).trim() : '';
+        //
         // A context-budget block is final for this conversation: say so in
         // plain words and point to a new chat, not to a retry that would hit
         // the same limit.

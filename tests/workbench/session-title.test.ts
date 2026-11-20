@@ -224,6 +224,7 @@ function event(type: string, data: unknown): WorkbenchEvent {
 
 const BLANK: WorkbenchFold = {
   status: 'connecting',
+  contextBlocked: false,
   lastEventId: 0,
   error: null,
   courseTitle: null,

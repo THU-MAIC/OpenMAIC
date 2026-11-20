@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Features
+
+- Workbench: a conversation that hit the model's context limit offers "Start a new chat" on its terminal notice — the new conversation continues with the same course when the user owns it. When the history is too large even to be summarized, its composer also closes with a placeholder saying why, instead of accepting messages that would fail again. [#2338](https://github.com/THU-MAIC/OpenMAIC/issues/2338)
+
 ### Bug Fixes
 
 - Generated interactive pages: the page-writing prompts now require an element marked `hidden` to stay hidden under an author `display` rule and to be shown by removing the attribute, a canvas to sit out of the layout flow of the container it is sized from and to draw in CSS pixels on high-density screens, and reset to rerender every readout through the same render path as startup. The simulation, game and reveal examples follow these rules. This prevents a false "canvas unavailable" message, a canvas that grows until it is blank, and readouts left from the previous run. Scenes generated before this change keep their HTML. [#2019](https://github.com/THU-MAIC/OpenMAIC/issues/2019)

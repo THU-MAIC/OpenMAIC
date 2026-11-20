@@ -1,3 +1,5 @@
+import type { StageMetaResult } from '@/lib/classroom/stage-meta-client';
+import { resolveCourseAccess } from './course-read-only';
 import { requestEpisodeStart } from './request-activity';
 import type { ChatNode } from './session-store';
 
@@ -69,6 +71,23 @@ function pageStageId(node: ChatNode): string | null {
   return typeof stageId === 'string' && stageId ? stageId : null;
 }
 
+/** The courses a request's `create_stage` calls created, in creation order. */
+function createdInRequest(request: readonly ChatNode[]): string[] {
+  return request.flatMap((node) => {
+    const id = createdStageId(node);
+    return id ? [id] : [];
+  });
+}
+
+/**
+ * The courses the current request created, whether or not a page has landed
+ * in them yet. `create_stage` saves the (empty) course at once, so a request
+ * blocked before its first page still has a course to come back to.
+ */
+export function requestCreatedCourses(chat: readonly ChatNode[]): string[] {
+  return createdInRequest(chat.slice(Math.max(requestEpisodeStart(chat), 0)));
+}
+
 /**
  * What the current request is to the right pane.
  *
@@ -113,10 +132,7 @@ export function requestCourse(
   }
 
   // The courses this request created, so far, in creation order.
-  const created = request.flatMap((node) => {
-    const id = createdStageId(node);
-    return id ? [id] : [];
-  });
+  const created = createdInRequest(request);
   const ready: string[] = [];
   let lastCreated: string | null = null;
   for (const [index, node] of request.entries()) {
@@ -130,4 +146,44 @@ export function requestCourse(
     if (!ready.includes(stageId)) ready.push(stageId);
   }
   return { kind: 'new', ready };
+}
+
+/**
+ * The course a context-limit block's "Start a new chat" would carry: the
+ * conversation's own course. A request that is making a new course carries the
+ * first one with a page; blocked before any page landed, the first course it
+ * created (`requestCreatedCourses`) — that empty course is exactly what the new
+ * conversation has to finish. Whether the viewer may carry it is decided by
+ * `ownedCourseForNewChat`.
+ */
+export function blockedConversationNewChatCourse(
+  request: RequestCourse,
+  created: readonly string[] = [],
+): string | null {
+  return request.kind === 'course' ? request.courseId : (request.ready[0] ?? created[0] ?? null);
+}
+
+/**
+ * The course the new chat names, or null for an ordinary new chat: only one
+ * the viewer can change — the same rule that keeps "Edit with AI" off a
+ * read-only course. Naming a read-only one would bind the new conversation to a
+ * course its agent cannot write.
+ *
+ * Ownership is resolved the way the workspace resolves it for an open course
+ * (`resolveCourseAccess`): the viewer's own course list answers when the course
+ * is in it; otherwise — the list not loaded yet or failed, or a course created
+ * after it loaded — the stage-meta sidecar is asked. An unknown answer is not
+ * ownership: the chat starts ordinary rather than bound to a course it may not
+ * write.
+ */
+export async function ownedCourseForNewChat(input: {
+  readonly courseId: string | null;
+  /** `isOwner` from the viewer's course list; undefined when the course is not in it. */
+  readonly listedIsOwner: boolean | undefined;
+  readonly fetchMeta: (courseId: string) => Promise<StageMetaResult>;
+}): Promise<string | null> {
+  const { courseId, listedIsOwner, fetchMeta } = input;
+  if (!courseId) return null;
+  const meta = listedIsOwner === undefined ? await fetchMeta(courseId) : null;
+  return resolveCourseAccess({ listedIsOwner, meta }) === 'owner' ? courseId : null;
 }

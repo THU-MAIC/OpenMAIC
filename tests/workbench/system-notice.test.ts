@@ -80,6 +80,30 @@ describe('presentSystemNotice', () => {
     expect(notice.hint).toBeUndefined();
     expect(notice.detail).toBeUndefined();
   });
+
+  it('offers the new-chat action only on the conversation-length limit', () => {
+    // The length limit is final for the conversation: its notice is the one
+    // place the way out can be offered.
+    const blocked = presentSystemNotice({
+      key: 'x',
+      kind: 'system',
+      tone: 'error',
+      text: '您已达到此会话的长度上限，可以开始新聊天以继续对话。',
+      copyKey: 'workbench.system.contextLengthLimit',
+    });
+    expect(blocked.action).toBe('newChat');
+    // A misconfigured budget is fixed in settings and retried — no exit here.
+    const misconfigured = presentSystemNotice({
+      key: 'y',
+      kind: 'system',
+      tone: 'error',
+      text: '当前模型的上下文预算配置异常，本轮已停止。',
+      copyKey: 'workbench.system.contextBudgetInvalid',
+    });
+    expect(misconfigured.action).toBeUndefined();
+    // An ordinary failure points at the composer's retry, not at a new chat.
+    expect(presentSystemNotice(failure('e1')).action).toBeUndefined();
+  });
 });
 
 describe('isSameNotice', () => {

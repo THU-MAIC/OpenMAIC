@@ -27,6 +27,13 @@ import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n
  */
 export type NoticeTone = SystemTone | 'stopped';
 
+/**
+ * What the notice offers to DO. Derived, not persisted: the node's copyKey
+ * already names the situation, and an affordance is presentation — the fold
+ * stays a faithful record and a replayed log renders the same button.
+ */
+export type NoticeAction = 'newChat';
+
 export interface SystemNotice {
   tone: NoticeTone;
   /** One statement of what happened. Never carries the technical cause. */
@@ -35,6 +42,8 @@ export interface SystemNotice {
   hint?: string;
   /** The raw cause, verbatim, for the disclosure. */
   detail?: string;
+  /** The way out, when the notice itself is the only place it can be offered. */
+  action?: NoticeAction;
 }
 
 /** Notice-shaped nodes: everything the run says about itself. */
@@ -71,11 +80,21 @@ export function presentSystemNotice(
       ? oneLine(node.hint)
       : '';
   const detail = node.detail ? cleanDetail(node.detail) : '';
+  // The length-limit notice carries the way out (`contextBudgetCopyKey` maps
+  // `invalid_output_budget` elsewhere). Its conversation usually still
+  // accepts a resend (the next message adds a cut point, or retries a failed
+  // summary), but a new chat is always a valid exit. A misconfigured budget is
+  // fixed in settings, not by abandoning the chat.
+  const action: NoticeAction | undefined =
+    node.kind === 'system' && node.copyKey === 'workbench.system.contextLengthLimit'
+      ? 'newChat'
+      : undefined;
   return {
     tone,
     summary,
     ...(hint ? { hint } : {}),
     ...(detail ? { detail } : {}),
+    ...(action ? { action } : {}),
   };
 }
 

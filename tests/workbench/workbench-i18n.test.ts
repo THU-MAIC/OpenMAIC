@@ -162,6 +162,53 @@ describe('workbench copy covers every supported locale', () => {
       }
     }
   });
+
+  it('requires explicit context-limit copy in every supported locale', () => {
+    // Same gap as the material errors above: the merged-resource check cannot
+    // see a key an overlay dropped, and the blocked conversation's way out
+    // (the notice's action label and the closed composer's placeholder) must
+    // not silently fall back to English in any locale.
+    const requiredContextLimitKeys = [
+      'system.startNewChat',
+      'chat.contextBlockedPlaceholder',
+    ] as const;
+    const bases: Array<[string, Map<string, string>]> = [
+      ['en', flatten(workbenchEn)],
+      ['zh-CN', flatten(workbenchZh)],
+    ];
+    for (const [name, map] of bases) {
+      for (const key of requiredContextLimitKeys) {
+        const value = map.get(key);
+        expect(value, `${name} is missing ${key}`).toEqual(expect.any(String));
+        expect(value?.trim(), `${name}.${key} is empty`).not.toBe('');
+        expect(interpolations(value!), `${name}.${key}`).toEqual([]);
+      }
+    }
+
+    const overlayLocales = supportedLocales
+      .map((locale) => locale.code)
+      .filter((code) => code !== 'zh-CN' && code !== 'en-US');
+    expect(overlayLocales).toHaveLength(10);
+    for (const code of overlayLocales) {
+      const overlay = JSON.parse(
+        fs.readFileSync(
+          path.join(process.cwd(), 'lib/i18n/workbench-locales', `${code}.json`),
+          'utf8',
+        ),
+      ) as Record<string, unknown>;
+      const flat = flatten(overlay);
+      for (const key of requiredContextLimitKeys) {
+        const value = flat.get(key);
+        expect(value, `${code} overlay is missing ${key}`).toEqual(expect.any(String));
+        expect(value?.trim(), `${code}.${key} is empty`).not.toBe('');
+        expect(interpolations(value!), `${code}.${key} changed its interpolations`).toEqual([]);
+        const [section, leaf] = key.split('.');
+        expect(workbenchResourceFor(code), `${code} did not register its overlay`).toMatchObject({
+          [section]: { [leaf]: value },
+        });
+      }
+    }
+  });
 });
 
 /**
