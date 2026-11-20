@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, expect, it as vitestIt, vi } from 'vitest';
 import { mkdtemp, writeFile, readFile, mkdir, symlink, link, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,11 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 vi.mock('server-only', () => ({}));
 import { WORKSPACE_FILE_RUNNER } from '@/lib/server/sandbox/workspace-archive';
+
+// Every test here runs the sandbox's own Python script, which targets the Linux
+// sandbox. Windows has no `python3` to run it with, so the file is skipped there.
+const it = vitestIt.skipIf(process.platform === 'win32');
+
 const roots: string[] = [];
 afterEach(async () => {
   for (const path of roots.splice(0)) await rm(path, { recursive: true, force: true });
