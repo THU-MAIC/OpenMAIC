@@ -28,6 +28,7 @@ import {
   contextBudgetCopyKey,
   contextBudgetHintKey,
 } from '@/lib/agent/runtime/context-budget-error';
+import { SESSION_INTERRUPT_REASONS, SESSION_RESUME_REASONS } from '@/lib/agent-runtime/lifecycle';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -1094,7 +1095,13 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       // A follow-up-driven new run (continuous chat): the user's bubble is
       // already on the timeline from the `user_message` event and the header
       // carries the working state, so the run restart itself is not a row.
-      if (data.reason === 'follow_up') {
+      // A clean step-boundary handoff is the same shape: the previous run
+      // parked at a step boundary mid-answer, nothing failed, and the new
+      // instance simply continues generating — no "resumed" notice either.
+      if (
+        data.reason === SESSION_RESUME_REASONS.followUp ||
+        data.reason === SESSION_RESUME_REASONS.cleanHandoff
+      ) {
         // A new run: do not keep writing into the previous reply.
         next.thinkingKey = null;
         next.assistantKey = null;
@@ -1156,8 +1163,15 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       // handoff / lease lost). The row stays `running`; another instance will
       // claim it and append `session_resumed`. One quiet line is the right
       // register — the user did nothing and needs to do nothing.
+      //
+      // A clean step-boundary handoff is silent: the previous step finished
+      // normally, the next instance will continue seamlessly, and there is
+      // nothing for the user to notice or act on.
       closeWaiting(next);
       next.waitingArmed = false;
+      if ((data as { reason?: string }).reason === SESSION_INTERRUPT_REASONS.cleanHandoff) {
+        break;
+      }
       next.chat = [
         ...next.chat,
         {

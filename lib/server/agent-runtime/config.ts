@@ -1,6 +1,9 @@
 /** Server-only agent runtime configuration. */
 const numberFromEnv = (value: string | undefined, fallback: number) =>
   value ? Number(value) : fallback;
+/** Whole milliseconds; any other value (e.g. "25s", "0x10" or a blank) keeps the default. */
+const durationFromEnv = (value: string | undefined, fallback: number) =>
+  value && /^\s*\d+\s*$/.test(value) ? Number(value) : fallback;
 
 export const agentRuntimeConfig = {
   /** How often the runner scans for claimable sessions. */
@@ -17,6 +20,20 @@ export const agentRuntimeConfig = {
   maxConcurrent: numberFromEnv(process.env.OPENMAIC_AGENT_RUNTIME_MAX_CONCURRENT, 2),
   /** Maximum consecutive unattended starts or resumptions. */
   maxAttempts: numberFromEnv(process.env.OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS, 5),
+  /**
+   * Total budget stop() waits for running sessions on shutdown: first a drain
+   * window in which in-flight turns finish and settle normally, then a
+   * force-abort with the last 5 s (STOP_SETTLE_MARGIN_MS) reserved for the
+   * handoff writes (interrupted receipts, lease release). The platform's
+   * SIGTERM grace should be longer: k8s terminationGracePeriodSeconds defaults
+   * to 30 s, while docker stop_grace_period defaults to 10 s, which this
+   * default fills. `next dev` kills the server 100 ms after Ctrl+C, so there
+   * the default is the handoff margin alone: sessions are handed off at once.
+   */
+  stopTimeoutMs: durationFromEnv(
+    process.env.OPENMAIC_AGENT_RUNTIME_STOP_TIMEOUT_MS,
+    process.env.NODE_ENV === 'development' ? 5_000 : 10_000,
+  ),
   /**
    * Native conversation compaction is on by default; set
    * OPENMAIC_AGENT_COMPACTION_ENABLED=false to turn it off. The context budget

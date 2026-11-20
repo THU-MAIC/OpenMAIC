@@ -224,6 +224,30 @@ describe('lifecycle events', () => {
     expect(contentOf(state)[1]).toMatchObject({ kind: 'system', tone: 'info' });
   });
 
+  it('session_interrupted with reason clean handoff keeps status running and adds no row', () => {
+    const state = foldAll([
+      ev('session_start', { prompt: 'p' }),
+      ev('session_interrupted', { reason: 'clean handoff', attempt: 1 }),
+    ]);
+    expect(state.status).toBe('running');
+    // No recovering row: the step finished cleanly, the user sees nothing.
+    expect(contentOf(state)).toHaveLength(1);
+    expect(contentOf(state)[0]).toMatchObject({ kind: 'user' });
+  });
+
+  it('session_resumed with reason clean_handoff opens waiting silently like follow_up', () => {
+    const state = foldAll([
+      ev('session_start', { prompt: 'p' }),
+      ev('session_interrupted', { reason: 'clean handoff', attempt: 1 }),
+      ev('session_resumed', { reason: 'clean_handoff', attempt: 2, transcriptMessages: 3 }),
+    ]);
+    expect(state.status).toBe('running');
+    // No "recovered" system line: the handoff was clean.
+    const sys = contentOf(state).find((n) => n.kind === 'system');
+    expect(sys).toBeUndefined();
+    expect(state.generationOpen).toBe(true);
+  });
+
   it('session_end settles terminal status, tone and dangling streams', () => {
     const state = foldAll([
       ev('session_start', { prompt: 'p' }),

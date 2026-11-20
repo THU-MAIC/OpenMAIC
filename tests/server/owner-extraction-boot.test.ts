@@ -106,14 +106,19 @@ async function boot(): Promise<() => Promise<void>> {
     if (signal === 'SIGTERM') onTerm = listener;
     return process;
   }) as never);
-  vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+  const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
   const { register } = await import('@/instrumentation');
   await register();
   return async () => {
     onTerm!();
-    for (let attempt = 0; attempt < 100 && !order.includes('pool ended'); attempt += 1) {
+    // Next.js asks to exit after closing its server; the hold defers that
+    // until the shutdown is done, then restores process.exit.
+    (process.exit as (code: number) => void)(143);
+    for (let attempt = 0; attempt < 100 && process.exit !== exit; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
+    // A hold still pending would exit later, outside this test.
+    expect(process.exit).toBe(exit);
   };
 }
 

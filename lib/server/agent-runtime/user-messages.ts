@@ -35,6 +35,13 @@ export async function readAgentMessageLog(
   messages: AgentUserMessageWithElementRefs[];
   detachedSkills: DetachedSessionSkill[];
   openingMessageSeq?: number;
+  /**
+   * Reason of the interruption the log ENDS on, when the last run-boundary
+   * event is a `session_interrupted`. A run that crashed leaves no event, so
+   * its own `session_start` / `session_resumed` is the last boundary and this
+   * stays absent — an older clean handoff is never mistaken for this one.
+   */
+  lastInterruptedReason?: string;
 }> {
   // Lightweight runner fakes and compatibility implementations may expose only
   // the old projection. Production PgAgentSessionStore always takes the event path.
@@ -45,6 +52,12 @@ export async function readAgentMessageLog(
   const detachedSkills: DetachedSessionSkill[] = [];
   let priorRunSeen = false;
   let openingMessageSeq: number | undefined;
+  // The last run-boundary event, with its reason. A resume reads this to tell
+  // a clean step-boundary handoff from a crash: a crash leaves NO event at all,
+  // so its own run's `session_start` / `session_resumed` is the last boundary.
+  // Only an interruption that actually ENDS the log is evidence of a clean
+  // handoff — an older one belongs to a run that already resumed and ended.
+  let lastRunBoundary: { type: string; reason?: string } | undefined;
   let cursor = 0;
   for (;;) {
     const events = await store.readEventsAfter(sessionId, cursor, 500);
@@ -54,8 +67,17 @@ export async function readAgentMessageLog(
         event.type === HOST_AGENT_LIFECYCLE.sessionResumed ||
         event.type === HOST_AGENT_LIFECYCLE.sessionEnd ||
         event.type === HOST_AGENT_LIFECYCLE.sessionInterrupted
-      )
+      ) {
         priorRunSeen = true;
+        const boundaryData =
+          event.data && typeof event.data === 'object' && !Array.isArray(event.data)
+            ? (event.data as Record<string, unknown>)
+            : {};
+        lastRunBoundary = {
+          type: event.type,
+          ...(typeof boundaryData.reason === 'string' ? { reason: boundaryData.reason } : {}),
+        };
+      }
       const data =
         event.data && typeof event.data === 'object' && !Array.isArray(event.data)
           ? (event.data as Record<string, unknown>)
@@ -98,6 +120,10 @@ export async function readAgentMessageLog(
         messages,
         detachedSkills,
         ...(openingMessageSeq !== undefined ? { openingMessageSeq } : {}),
+        ...(lastRunBoundary?.type === HOST_AGENT_LIFECYCLE.sessionInterrupted &&
+        lastRunBoundary.reason !== undefined
+          ? { lastInterruptedReason: lastRunBoundary.reason }
+          : {}),
       };
     cursor = events[events.length - 1]!.id;
   }

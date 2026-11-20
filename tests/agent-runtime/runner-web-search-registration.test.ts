@@ -152,7 +152,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   return { ...actual, listUserSkills: vi.fn(async () => []) };
 });
 
-import { runSession } from '@/lib/server/agent-runtime/runner';
+import { handOffRunningSessions, runSession } from '@/lib/server/agent-runtime/runner';
 
 const SESSION_ID = 'session-1';
 /** Mirrors the runner's `WORKER_ID` derivation with the fixed mock uuid. */
@@ -676,10 +676,7 @@ describe('extraction watcher at run termination', () => {
           mocks.extractionWatcher!.watch(['pending-source']);
           await polling;
           if (exit === 'failed') throw new Error('agent failed after starting extraction');
-          if (exit === 'interrupted') {
-            ctx.shuttingDown = true;
-            ctx.running.get(meta.id)!.abort.abort();
-          }
+          if (exit === 'interrupted') handOffRunningSessions(ctx);
         };
         return agent;
       });

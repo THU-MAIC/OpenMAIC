@@ -26,6 +26,7 @@ interface ComposeService {
   healthcheck?: { test?: unknown };
   volumes?: string[];
   build?: { args?: string[] };
+  stop_grace_period?: string;
 }
 
 const compose = yaml.load(readFileSync(path.join(root, 'docker-compose.yml'), 'utf8')) as {
@@ -119,11 +120,26 @@ describe('docker-compose.yml', () => {
     expect(defaults).toEqual({
       DATABASE_URL: expect.stringMatching(/@postgres:5432\/openmaic$/),
       OWNER_SINGLE_USER: 'true',
+      OPENMAIC_AGENT_RUNTIME_STOP_TIMEOUT_MS: expect.stringMatching(/^\d+$/),
     });
     // An automatic claim irreversibly merges every browser's anonymous library
     // into the single owner; it must be an operator's explicit choice.
     expect(defaults).not.toHaveProperty('OWNER_CLAIM_TRIGGER');
     expect(JSON.stringify(app.environment)).not.toContain('OWNER_CLAIM_TRIGGER');
+  });
+
+  it('keeps the agent shutdown wait inside the stop grace Compose gives the app', () => {
+    // Docker's own default (10 s) would kill a longer drain; the shutdown wait
+    // must end before the grace does, or sessions die without being handed off.
+    const grace = /^(\d+)s$/.exec(app.stop_grace_period ?? '');
+    expect(grace, 'stop_grace_period in whole seconds').not.toBeNull();
+    const graceMs = Number(grace![1]) * 1000;
+    const stopTimeoutMs = Number(
+      readEnvFile('docker-compose.defaults.env').OPENMAIC_AGENT_RUNTIME_STOP_TIMEOUT_MS,
+    );
+    expect(graceMs).toBeGreaterThan(10_000);
+    expect(stopTimeoutMs).toBeGreaterThan(0);
+    expect(stopTimeoutMs).toBeLessThan(graceMs);
   });
 
   function stubComposeEnvironment(publishAddress: string, accessCode = ''): void {

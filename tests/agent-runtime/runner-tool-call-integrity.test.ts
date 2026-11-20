@@ -12,7 +12,13 @@
  * - read-time repair: resuming a session whose durable tail contains an orphaned
  *   tool call hands the agent a repaired history (synthetic receipt included)
  *   while leaving the durable tree untouched, and reports the repaired id on
- *   the session_resumed event.
+ *   the session_resumed event;
+ * - shutdown drain: stop() leaves running turns to finish and settle inside the
+ *   drain window and hands off (receipt, park, lease release) what is still
+ *   running when it closes; a failure during the drain parks only if it
+ *   aborted the run;
+ * - resume marker: the settle log marks a takeover of an interrupted run as
+ *   resumed by the same test as the session_resumed frame's 'crash' reason.
  */
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { InMemorySessionRepo, Session } from '@earendil-works/pi-agent-core';
@@ -107,8 +113,25 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   const actual = await importActual<typeof import('@/lib/server/agent-runtime/user-skills')>();
   return { ...actual, listUserSkills: vi.fn(async () => []) };
 });
+// A test can run code while a run is preloading skills, after its setup and
+// before its first model call.
+const preloading = vi.hoisted(() => ({ hook: undefined as (() => void) | undefined }));
+vi.mock('@/lib/server/agent-runtime/skill-preload', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/server/agent-runtime/skill-preload')>();
+  return {
+    ...actual,
+    buildSkillPreload: async (...args: Parameters<typeof actual.buildSkillPreload>) => {
+      preloading.hook?.();
+      return actual.buildSkillPreload(...args);
+    },
+  };
+});
 
-import { runSession, startAgentRunner } from '@/lib/server/agent-runtime/runner';
+import {
+  handOffRunningSessions,
+  runSession,
+  startAgentRunner,
+} from '@/lib/server/agent-runtime/runner';
 
 const SESSION_ID = 'session-1';
 const TOOL_CALL_ID = 'call_1';
@@ -190,8 +213,9 @@ interface FakeAgent {
   prompt(text: string): Promise<void>;
   continue(): Promise<void>;
   waitForIdle(): Promise<void>;
-  steer(message: AgentMessage): void;
-  abort(): void;
+  steer: ReturnType<typeof vi.fn<(message: AgentMessage) => void>>;
+  clearSteeringQueue: ReturnType<typeof vi.fn<() => void>>;
+  abort: ReturnType<typeof vi.fn<() => void>>;
   readonly state: { messages: AgentMessage[]; errorMessage?: string };
 }
 
@@ -199,6 +223,7 @@ function makeFakeAgent(options: {
   messages?: AgentMessage[];
   onPrompt?: (emit: (event: AgentEvent) => void) => void | Promise<void>;
   onContinue?: (emit: (event: AgentEvent) => void) => void | Promise<void>;
+  onAbort?: () => void;
 }): FakeAgent {
   const messages = [...(options.messages ?? [])];
   const listeners = new Set<(event: AgentEvent, signal?: AbortSignal) => void>();
@@ -218,8 +243,9 @@ function makeFakeAgent(options: {
       await options.onContinue?.(emit);
     },
     waitForIdle: async () => {},
-    steer: () => {},
-    abort: () => {},
+    steer: vi.fn(),
+    clearSteeringQueue: vi.fn(),
+    abort: vi.fn(() => options.onAbort?.()),
     state: {
       get messages() {
         return messages;
@@ -256,6 +282,102 @@ function expectInterruptedReceipt(messages: readonly AgentMessage[]): void {
     'interrupted',
   );
   expect(typeof (messages[2] as { timestamp?: unknown }).timestamp).toBe('number');
+}
+
+/** Emit a finished pi turn: user prompt + a text-only assistant reply. */
+function emitTextTurn(emit: (event: AgentEvent) => void): void {
+  const user = userMessage('Build a lesson', 1);
+  const assistant = {
+    role: 'assistant',
+    content: [{ type: 'text', text: 'Done.' }],
+    stopReason: 'stop',
+    timestamp: 2,
+  } as unknown as AgentMessage;
+  emit({ type: 'agent_start' });
+  emit({ type: 'turn_start' });
+  emit({ type: 'message_start', message: user });
+  emit({ type: 'message_end', message: user });
+  emit({ type: 'message_start', message: assistant });
+  emit({ type: 'message_end', message: assistant });
+  emit({ type: 'turn_end', message: assistant, toolResults: [] });
+  emit({ type: 'agent_end', messages: [user, assistant] });
+}
+
+/** Emit a turn whose one tool call is still executing: no result, no turn end. */
+function emitPendingToolCall(emit: (event: AgentEvent) => void): void {
+  const user = userMessage('Build a lesson', 1);
+  const assistant = assistantCallMessage(2);
+  emit({ type: 'agent_start' });
+  emit({ type: 'turn_start' });
+  emit({ type: 'message_start', message: user });
+  emit({ type: 'message_end', message: user });
+  emit({ type: 'message_start', message: assistant });
+  emit({ type: 'message_end', message: assistant });
+}
+
+/**
+ * Entry storage whose writes, once `gate()` is called, wait for `release()`:
+ * a finished turn reaches the entry store only when the test lets it.
+ * `flushing` resolves when the first held write arrives.
+ */
+async function gatedEntryStorage() {
+  const storage = (await makeEntryTree()).getStorage();
+  const flushing = Promise.withResolvers<void>();
+  const flushed = Promise.withResolvers<void>();
+  let gated = false;
+  const held = new Proxy(storage, {
+    get(target, property) {
+      if (property === 'appendEntry') {
+        return async (entry: Parameters<typeof target.appendEntry>[0]) => {
+          if (gated) {
+            flushing.resolve();
+            await flushed.promise;
+          }
+          return target.appendEntry(entry);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  return {
+    storage: held,
+    gate: () => {
+      gated = true;
+    },
+    flushing: flushing.promise,
+    release: () => flushed.resolve(),
+  };
+}
+
+/** A store whose claims hand out `metas` in order, then nothing. */
+function claimingStore(...metas: [ClaimedAgentSession, ...ClaimedAgentSession[]]) {
+  const claimNextSession = vi.fn(
+    async (_workerId: string): Promise<ClaimedAgentSession | null> => null,
+  );
+  for (const meta of metas) claimNextSession.mockResolvedValueOnce(meta);
+  return { ...makeStore(metas[0]), claimNextSession };
+}
+
+/** Start a runner that claims one session and runs it on `agent` (fake timers). */
+async function startRunnerWith(agent: FakeAgent, storage?: unknown) {
+  const meta = makeMeta();
+  const store = claimingStore(meta);
+  const session = await makeEntryTree();
+  mocks.getAgentSessionStore.mockResolvedValue(store);
+  mocks.openEntryStorage.mockResolvedValue(storage ?? session.getStorage());
+  mocks.buildAgent.mockReturnValue(agent);
+  const runner = startAgentRunner();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(mocks.buildAgent).toHaveBeenCalledOnce();
+  return { store, session, runner };
+}
+
+/** Let a stop() that may still be draining reach its deadline under fake timers. */
+async function finishStop(runner: ReturnType<typeof startAgentRunner>): Promise<void> {
+  const stopping = runner.stop({ timeoutMs: 0 });
+  await vi.advanceTimersByTimeAsync(30_000);
+  await stopping;
 }
 
 beforeEach(() => {
@@ -434,6 +556,725 @@ describe('runner claim drain', () => {
   });
 });
 
+describe('shutdown drain', () => {
+  it('lets a running turn finish and settle normally while the runner drains', async () => {
+    vi.useFakeTimers();
+    const turn = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        await turn.promise;
+        emitTextTurn(emit);
+      },
+    });
+    const { store, runner } = await startRunnerWith(agent);
+    try {
+      const stopped = vi.fn();
+      const stopping = runner.stop().then(stopped);
+      // Inside the drain window of the default budget (10s, 5s of it to drain).
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(agent.abort).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+      expect(stopped).not.toHaveBeenCalled();
+
+      turn.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(store.finishSession).toHaveBeenCalledWith(
+        SESSION_ID,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(agent.abort).not.toHaveBeenCalled();
+      expect(store.releaseLease).not.toHaveBeenCalled();
+      expect(runEvents(store).map((event) => event.type)).not.toContain('session_interrupted');
+    } finally {
+      turn.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('hands off a session still running when the drain window closes', async () => {
+    vi.useFakeTimers();
+    const aborted = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        emitPendingToolCall(emit);
+        await aborted.promise;
+      },
+      onAbort: () => aborted.resolve(),
+    });
+    const { store, session, runner } = await startRunnerWith(agent);
+    try {
+      const stopping = runner.stop();
+      await vi.advanceTimersByTimeAsync(4_800);
+      expect(agent.abort).not.toHaveBeenCalled();
+      // The window closes at 5s; the remaining 5s settle the handoff.
+      await vi.advanceTimersByTimeAsync(400);
+      expect(agent.abort).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expectInterruptedReceipt((await session.buildContext()).messages);
+      expect(runEvents(store).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown', attempt: 1 },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      aborted.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('does not let a second stop() cut a running drain short', async () => {
+    vi.useFakeTimers();
+    const turn = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        await turn.promise;
+        emitTextTurn(emit);
+      },
+    });
+    const { store, runner } = await startRunnerWith(agent);
+    try {
+      const first = runner.stop();
+      expect(runner.stop({ timeoutMs: 0 })).toBe(first);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(agent.abort).not.toHaveBeenCalled();
+      turn.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await first;
+      expect(store.finishSession).toHaveBeenCalledWith(
+        SESSION_ID,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+    } finally {
+      turn.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('hands off a run whose entry write fails during the drain, for another instance to retry', async () => {
+    vi.useFakeTimers();
+    let failWrites = false;
+    const storage = (await makeEntryTree()).getStorage();
+    // The write fails on its own and the session aborts itself. While the
+    // runner shuts down, that parks it like a handoff instead of failing it.
+    const failing = new Proxy(storage, {
+      get(target, property) {
+        if (property === 'appendEntry') {
+          return async (entry: Parameters<typeof target.appendEntry>[0]) => {
+            if (failWrites) throw new Error('entry store unavailable');
+            return target.appendEntry(entry);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const turn = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        await turn.promise;
+        emitTextTurn(emit);
+      },
+    });
+    const { store, runner } = await startRunnerWith(agent, failing);
+    try {
+      const stopping = runner.stop();
+      failWrites = true;
+      turn.resolve();
+      // Well inside the drain window: the runner aborted nothing itself.
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(runEvents(store).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown', attempt: 1 },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      turn.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('attributes a lease lost mid-drain to the lease and reports it in the stop summary', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const aborted = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        emitPendingToolCall(emit);
+        await aborted.promise;
+      },
+      onAbort: () => aborted.resolve(),
+    });
+    const { store, runner } = await startRunnerWith(agent);
+    try {
+      const stopping = runner.stop({ timeoutMs: 30_000 });
+      store.heartbeat.mockResolvedValue(false);
+      // The next heartbeat (every 2s) finds the lease taken.
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(agent.abort).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      // Another instance holds the session now: nothing to release or settle.
+      expect(store.releaseLease).not.toHaveBeenCalled();
+      expect(store.finishSession).not.toHaveBeenCalled();
+      const lines = log.mock.calls.map((call) => String(call[0]));
+      expect(lines).toContainEqual(
+        expect.stringContaining(`session ${SESSION_ID} parked at attempt 1 (lease lost)`),
+      );
+      expect(lines).toContainEqual(
+        expect.stringMatching(
+          /1 session\(s\) running at stop, 0 aborted when the drain window closed, 0 still settling; outcomes interrupted:lease lost=1$/,
+        ),
+      );
+    } finally {
+      log.mockRestore();
+      aborted.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('counts each session once in the stop summary, even when its park cannot release the lease', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const aborted = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        emitPendingToolCall(emit);
+        await aborted.promise;
+      },
+      onAbort: () => aborted.resolve(),
+    });
+    const { store, runner } = await startRunnerWith(agent);
+    // Each park retry emits its interruption again before it fails.
+    store.releaseLease.mockRejectedValue(new Error('database unavailable'));
+    try {
+      const stopping = runner.stop();
+      await vi.advanceTimersByTimeAsync(5_400);
+      await stopping;
+      const interrupted = runEvents(store).filter((event) => event.type === 'session_interrupted');
+      expect(interrupted.length).toBeGreaterThan(1);
+      const lines = log.mock.calls.map((call) => String(call[0]));
+      expect(lines).toContainEqual(
+        expect.stringMatching(
+          /1 session\(s\) running at stop, 1 aborted when the drain window closed, 0 still settling; outcomes interrupted:runner shutdown=1$/,
+        ),
+      );
+    } finally {
+      log.mockRestore();
+      error.mockRestore();
+      aborted.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('does not abort or count a verdict that is already settling when the window closes', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // Over the attempt cap: the claim settles as failed without running.
+    const store = claimingStore(makeMeta({ attempt: 6 }));
+    const settled = Promise.withResolvers<boolean>();
+    store.finishSession.mockImplementationOnce(() => settled.promise);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.finishSession).toHaveBeenCalledOnce();
+      const stopping = runner.stop();
+      await vi.advanceTimersByTimeAsync(5_200);
+      settled.resolve(true);
+      await vi.advanceTimersByTimeAsync(400);
+      await stopping;
+      // Its outcome was decided before the stop, so only the abort count shows it.
+      expect(log.mock.calls.map((call) => String(call[0]))).toContainEqual(
+        expect.stringMatching(
+          /1 session\(s\) running at stop, 0 aborted when the drain window closed, 0 still settling$/,
+        ),
+      );
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
+      settled.resolve(true);
+      await finishStop(runner);
+    }
+  });
+
+  it('leaves a session that only settles to finish when it hands sessions off, unless the schema is refused', () => {
+    const settling = { abort: new AbortController(), settling: true };
+    const working = { abort: new AbortController() };
+    const cancelling = { abort: new AbortController() };
+    cancelling.abort.abort();
+    const ctx = {
+      running: new Map([
+        ['settling', settling],
+        ['working', working],
+        ['cancelling', cancelling],
+      ]),
+      shuttingDown: false,
+    };
+    expect(handOffRunningSessions(ctx)).toBe(1);
+    expect(ctx.shuttingDown).toBe(true);
+    expect(settling.abort.signal.aborted).toBe(false);
+    expect(working.abort.signal.aborted).toBe(true);
+    // A schema refusal hands off the settling session too.
+    expect(handOffRunningSessions(ctx, { includeSettling: true })).toBe(1);
+    expect(settling.abort.signal.aborted).toBe(true);
+  });
+
+  it('leaves a turn that completed alone when the drain window closes during its final flush', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // The finished turn is still being written when the drain window closes.
+    const writes = await gatedEntryStorage();
+    const agent = makeFakeAgent({
+      onPrompt: (emit) => {
+        writes.gate();
+        emitTextTurn(emit);
+      },
+    });
+    const { store, runner } = await startRunnerWith(agent, writes.storage);
+    try {
+      await writes.flushing;
+      const stopping = runner.stop();
+      await vi.advanceTimersByTimeAsync(5_200);
+      // The window closed while the completed turn was still being written.
+      expect(agent.abort).not.toHaveBeenCalled();
+      writes.release();
+      await vi.advanceTimersByTimeAsync(400);
+      await stopping;
+      expect(store.finishSession).toHaveBeenCalledWith(
+        SESSION_ID,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(runEvents(store).map((event) => event.type)).not.toContain('session_interrupted');
+      expect(store.releaseLease).not.toHaveBeenCalled();
+      expect(log.mock.calls.map((call) => String(call[0]))).toContainEqual(
+        expect.stringMatching(
+          /1 session\(s\) running at stop, 0 aborted when the drain window closed, 0 still settling; outcomes end:succeeded=1$/,
+        ),
+      );
+    } finally {
+      log.mockRestore();
+      writes.release();
+      await finishStop(runner);
+    }
+  });
+
+  it('hands off a turn that completed alone when the process monitor refuses the schema during its final flush', async () => {
+    vi.useFakeTimers();
+    const writes = await gatedEntryStorage();
+    const agent = makeFakeAgent({
+      onPrompt: (emit) => {
+        writes.gate();
+        emitTextTurn(emit);
+      },
+    });
+    const { store, runner } = await startRunnerWith(agent, writes.storage);
+    try {
+      await writes.flushing;
+      // Let the finished turn reach its final flush, where it only settles.
+      await vi.advanceTimersByTimeAsync(200);
+      runner.handOff();
+      writes.release();
+      await vi.advanceTimersByTimeAsync(400);
+      // It must not settle against the refused schema: it parks instead.
+      expect(runEvents(store).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown', attempt: 1 },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      writes.release();
+      await finishStop(runner);
+    }
+  });
+
+  it('hands off a turn that completed alone when another session meets a schema refusal', async () => {
+    const settlingMeta = makeMeta();
+    const refusedMeta = makeMeta({ id: 'session-2' });
+    const store = makeStore(settlingMeta);
+    const writes = await gatedEntryStorage();
+    const setup = Promise.withResolvers<never>();
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockImplementation(({ sessionId }: { sessionId: string }) =>
+      sessionId === refusedMeta.id ? setup.promise : Promise.resolve(writes.storage),
+    );
+    mocks.buildAgent.mockReturnValue(
+      makeFakeAgent({
+        onPrompt: (emit) => {
+          writes.gate();
+          emitTextTurn(emit);
+        },
+      }),
+    );
+    const onSchemaRefusal = vi.fn(async () => {});
+    const ctx = { running: new Map(), shuttingDown: false, onSchemaRefusal };
+    const settlingRun = runSession(ctx, settlingMeta);
+    const refusedRun = runSession(ctx, refusedMeta);
+    try {
+      await writes.flushing;
+      await vi.waitFor(() => expect(ctx.running.get(settlingMeta.id)?.settling).toBe(true));
+      setup.reject(Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' }));
+      await refusedRun;
+      expect(onSchemaRefusal).toHaveBeenCalledOnce();
+      expect(ctx.running.get(settlingMeta.id)?.abort.signal.aborted).toBe(true);
+      writes.release();
+      await settlingRun;
+      const events = store.appendRunEvent.mock.calls
+        .filter((call) => call[0] === settlingMeta.id)
+        .map((call) => call[2]);
+      expect(events.at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown' },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(settlingMeta.id, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      writes.release();
+      setup.reject(new Error('test cleanup'));
+      await Promise.allSettled([settlingRun, refusedRun]);
+      mocks.openEntryStorage.mockReset();
+    }
+  });
+
+  it('hands off a run whose shutdown begins while it preloads, before its first model call', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta();
+    const store = claimingStore(meta);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    const agent = makeFakeAgent({ onPrompt: emitTextTurn });
+    const prompt = vi.spyOn(agent, 'prompt');
+    mocks.buildAgent.mockReturnValue(agent);
+    const runner = startAgentRunner();
+    let stopping: Promise<void> | undefined;
+    preloading.hook = () => {
+      stopping ??= runner.stop();
+    };
+    try {
+      await vi.advanceTimersByTimeAsync(400);
+      expect(stopping).toBeDefined();
+      await stopping;
+      expect(prompt).not.toHaveBeenCalled();
+      expect(runEvents(store).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown', attempt: 1 },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      preloading.hook = undefined;
+      await finishStop(runner);
+    }
+  });
+
+  it('hands off a session still setting up when the shutdown begins, without starting its turn', async () => {
+    vi.useFakeTimers();
+    const meta = makeMeta();
+    const store = claimingStore(meta);
+    const tree = await makeEntryTree();
+    const opening = Promise.withResolvers<ReturnType<Session['getStorage']>>();
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockReturnValueOnce(opening.promise);
+    const agent = makeFakeAgent({ onPrompt: emitTextTurn });
+    const prompt = vi.spyOn(agent, 'prompt');
+    mocks.buildAgent.mockReturnValue(agent);
+    const runner = startAgentRunner();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      const stopping = runner.stop();
+      opening.resolve(tree.getStorage());
+      await vi.advanceTimersByTimeAsync(400);
+      await stopping;
+      expect(mocks.buildAgent).toHaveBeenCalledOnce();
+      expect(prompt).not.toHaveBeenCalled();
+      expect(runEvents(store).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown', attempt: 1 },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      opening.resolve(tree.getStorage());
+      await finishStop(runner);
+    }
+  });
+
+  it('parks at a step boundary on shutdown and emits clean handoff instead of runner shutdown', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    // A config object the runner will patch shouldStopAfterTurn onto. The fake
+    // agent exposes createLoopConfig so the runner's guard passes; onPrompt
+    // calls it (as real pi does internally) so the hook lands on the config.
+    const loopConfig: Record<string, unknown> = {};
+    const afterStep = Promise.withResolvers<void>();
+    // agentRef is assigned after makeFakeAgent returns; the onPrompt closure
+    // reads it at call time, not at definition time.
+    // eslint-disable-next-line prefer-const
+    let agentRef: FakeAgent & {
+      createLoopConfig?: (opts?: object) => Record<string, unknown>;
+    };
+
+    const base = makeFakeAgent({
+      onPrompt: async (emit) => {
+        // Pause so the test can start shutdown before the step completes.
+        await afterStep.promise;
+        // Call the patched createLoopConfig so shouldStopAfterTurn lands on
+        // the config object, mirroring what real pi does internally.
+        const config = agentRef.createLoopConfig?.() ?? {};
+        const stopFn = config.shouldStopAfterTurn as
+          | ((turn: { message: AgentMessage }) => boolean)
+          | undefined;
+        // Simulate pi's inner step: model call + a tool batch it must act on.
+        const user = userMessage('Build a lesson', 1);
+        const assistant = assistantCallMessage(2);
+        emit({ type: 'agent_start' });
+        emit({ type: 'turn_start' });
+        emit({ type: 'message_start', message: user });
+        emit({ type: 'message_end', message: user });
+        emit({ type: 'message_start', message: assistant });
+        emit({ type: 'message_end', message: assistant });
+        emit({ type: 'turn_end', message: assistant, toolResults: [] });
+        // Pi calls shouldStopAfterTurn before emitting agent_end.
+        const stopped = stopFn?.({ message: assistant }) ?? false;
+        // agent_end is emitted by pi either way, including when stopping early.
+        emit({ type: 'agent_end', messages: [user, assistant] });
+        // A stop ends the loop; without it the fake step is simply complete.
+        if (stopped) return;
+      },
+    });
+    agentRef = Object.assign(base, {
+      createLoopConfig: (_opts?: object) => loopConfig,
+    });
+
+    const { store, runner } = await startRunnerWith(agentRef);
+    try {
+      // Trigger shutdown while the step is in flight.
+      const stopping = runner.stop();
+      // Release the step: shouldStopAfterTurn fires with ctx.shuttingDown=true.
+      afterStep.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(runEvents(store).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'clean handoff', attempt: 1 },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+      // The step finished on its own — no abort.
+      expect(agentRef.abort).not.toHaveBeenCalled();
+      // agent_end must not have reached the durable log.
+      expect(runEvents(store).map((e) => e.type)).not.toContain('agent_end');
+      expect(log.mock.calls.map((call) => String(call[0]))).toContainEqual(
+        expect.stringContaining(`session ${SESSION_ID} parked at step boundary`),
+      );
+    } finally {
+      log.mockRestore();
+      afterStep.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('settles normally when shutdown begins during the step that ended the answer', async () => {
+    vi.useFakeTimers();
+    // The last step is a text-only reply: pi was about to exit on its own, so
+    // parking would leave a finished answer in a `running` row with no worker.
+    const loopConfig: Record<string, unknown> = {};
+    const afterStep = Promise.withResolvers<void>();
+    // eslint-disable-next-line prefer-const
+    let agentRef: FakeAgent & {
+      createLoopConfig?: (opts?: object) => Record<string, unknown>;
+    };
+    const base = makeFakeAgent({
+      onPrompt: async (emit) => {
+        await afterStep.promise;
+        const config = agentRef.createLoopConfig?.() ?? {};
+        const stopFn = config.shouldStopAfterTurn as
+          | ((turn: { message: AgentMessage }) => boolean)
+          | undefined;
+        const user = userMessage('Build a lesson', 1);
+        const assistant = {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Done.' }],
+          stopReason: 'stop',
+          timestamp: 2,
+        } as unknown as AgentMessage;
+        emit({ type: 'agent_start' });
+        emit({ type: 'turn_start' });
+        emit({ type: 'message_start', message: user });
+        emit({ type: 'message_end', message: user });
+        emit({ type: 'message_start', message: assistant });
+        emit({ type: 'message_end', message: assistant });
+        emit({ type: 'turn_end', message: assistant, toolResults: [] });
+        stopFn?.({ message: assistant });
+        emit({ type: 'agent_end', messages: [user, assistant] });
+      },
+    });
+    agentRef = Object.assign(base, {
+      createLoopConfig: (_opts?: object) => loopConfig,
+    });
+
+    const { store, runner } = await startRunnerWith(agentRef);
+    try {
+      const stopping = runner.stop();
+      afterStep.resolve();
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      // The answer completed: the run settles instead of parking.
+      expect(store.finishSession).toHaveBeenCalledWith(
+        SESSION_ID,
+        WORKER_ID,
+        expect.objectContaining({ status: 'succeeded' }),
+      );
+      expect(store.releaseLease).not.toHaveBeenCalled();
+      const types = runEvents(store).map((e) => e.type);
+      expect(types).not.toContain('session_interrupted');
+      expect(types).toContain('agent_end');
+      expect(agentRef.abort).not.toHaveBeenCalled();
+      // Even on a completed step, the hook clears the steering queue so a
+      // pending steer does not start another model call.
+      expect(agentRef.clearSteeringQueue).toHaveBeenCalled();
+    } finally {
+      afterStep.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('keeps a step-boundary park clean when the drain deadline lands while it settles', async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    // The step finishes just before the drain window closes and its transcript
+    // write is still on the chain when the window closes. The settlement path
+    // marks the run settling before that write, so the force abort must not
+    // steal a park that already happened — otherwise the park is attributed to
+    // `runner shutdown` and the "recovering" notice comes back.
+    const writes = await gatedEntryStorage();
+    const loopConfig: Record<string, unknown> = {};
+    const afterStep = Promise.withResolvers<void>();
+    // eslint-disable-next-line prefer-const
+    let agentRef: FakeAgent & {
+      createLoopConfig?: (opts?: object) => Record<string, unknown>;
+    };
+    const base = makeFakeAgent({
+      onPrompt: async (emit) => {
+        await afterStep.promise;
+        const config = agentRef.createLoopConfig?.() ?? {};
+        const stopFn = config.shouldStopAfterTurn as
+          | ((turn: { message: AgentMessage }) => boolean)
+          | undefined;
+        const user = userMessage('Build a lesson', 1);
+        const assistant = assistantCallMessage(2);
+        emit({ type: 'agent_start' });
+        emit({ type: 'turn_start' });
+        emit({ type: 'message_start', message: user });
+        emit({ type: 'message_end', message: user });
+        emit({ type: 'message_start', message: assistant });
+        emit({ type: 'message_end', message: assistant });
+        emit({ type: 'turn_end', message: assistant, toolResults: [] });
+        stopFn?.({ message: assistant });
+        emit({ type: 'agent_end', messages: [user, assistant] });
+      },
+    });
+    agentRef = Object.assign(base, {
+      createLoopConfig: (_opts?: object) => loopConfig,
+    });
+
+    const { store, runner } = await startRunnerWith(agentRef, writes.storage);
+    try {
+      const stopping = runner.stop();
+      // Finish the step INSIDE the drain window, then hold its transcript
+      // write so the run is still settling when the window closes.
+      await vi.advanceTimersByTimeAsync(4_800);
+      writes.gate();
+      afterStep.resolve();
+      await writes.flushing;
+      await vi.advanceTimersByTimeAsync(400);
+      // The window is closed: a run that had not marked itself settling would
+      // be force-aborted here.
+      writes.release();
+      await vi.advanceTimersByTimeAsync(400);
+      await stopping;
+      expect(runEvents(store).find((event) => event.type === 'session_interrupted')).toMatchObject({
+        data: { reason: 'clean handoff' },
+      });
+      // The hook's `settling` kept the force abort away from this session.
+      expect(agentRef.abort).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+      writes.release();
+      afterStep.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('still force-aborts and retires on a schema refusal that arrives mid-drain', async () => {
+    vi.useFakeTimers();
+    const running = makeMeta();
+    const settingUp = makeMeta({ id: 'session-2' });
+    const store = claimingStore(running, settingUp);
+    const tree = await makeEntryTree();
+    const setup = Promise.withResolvers<never>();
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.openEntryStorage.mockImplementation(({ sessionId }: { sessionId: string }) =>
+      sessionId === settingUp.id ? setup.promise : Promise.resolve(tree.getStorage()),
+    );
+    const aborted = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        emitPendingToolCall(emit);
+        await aborted.promise;
+      },
+      onAbort: () => aborted.resolve(),
+    });
+    mocks.buildAgent.mockReturnValue(agent);
+    const onSchemaRefusal = vi.fn(async () => {});
+    const runner = startAgentRunner({ onSchemaRefusal });
+    const eventsOf = (id: string) =>
+      store.appendRunEvent.mock.calls.filter((call) => call[0] === id).map((call) => call[2]);
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.buildAgent).toHaveBeenCalledOnce();
+      const stopping = runner.stop({ timeoutMs: 30_000 });
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(agent.abort).not.toHaveBeenCalled();
+
+      const error = Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
+      setup.reject(error);
+      await vi.advanceTimersByTimeAsync(0);
+      // Long before the 25s drain window would have closed.
+      expect(agent.abort).toHaveBeenCalledOnce();
+      expect(onSchemaRefusal).toHaveBeenCalledOnce();
+      expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+      await vi.advanceTimersByTimeAsync(200);
+      await stopping;
+      expect(eventsOf(running.id).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'runner shutdown' },
+      });
+      expect(eventsOf(settingUp.id).at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'schema compatibility changed' },
+      });
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      aborted.resolve();
+      setup.reject(new Error('test cleanup'));
+      await finishStop(runner);
+      mocks.openEntryStorage.mockReset();
+    }
+  });
+});
+
 describe('runtime schema incompatibility', () => {
   const refusal = () =>
     Object.assign(new Error('newer schema'), { name: 'SchemaVersionAheadError' });
@@ -557,6 +1398,37 @@ describe('runtime schema incompatibility', () => {
       }),
     );
   });
+
+  it('hands the refusal to retirement once when several sessions meet it', async () => {
+    const first = makeMeta();
+    const second = makeMeta({ id: 'session-2' });
+    const store = makeStore(first);
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    const error = refusal();
+    mocks.openEntryStorage.mockRejectedValueOnce(error).mockRejectedValueOnce(error);
+    const onSchemaRefusal = vi.fn(async () => {});
+    const ctx = { running: new Map(), shuttingDown: false, onSchemaRefusal };
+    try {
+      await Promise.all([runSession(ctx, first), runSession(ctx, second)]);
+    } finally {
+      mocks.openEntryStorage.mockReset();
+    }
+    // Both sessions park, but the process retires once: a second retirement
+    // would restart the drain and exit path the first one already owns.
+    expect(onSchemaRefusal).toHaveBeenCalledOnce();
+    expect(onSchemaRefusal).toHaveBeenCalledWith(error);
+    for (const id of [first.id, second.id]) {
+      const events = store.appendRunEvent.mock.calls
+        .filter((call) => call[0] === id)
+        .map((call) => call[2]);
+      expect(events.at(-1)).toMatchObject({
+        type: 'session_interrupted',
+        data: { reason: 'schema compatibility changed' },
+      });
+      expect(store.releaseLease).toHaveBeenCalledWith(id, WORKER_ID);
+    }
+    expect(store.finishSession).not.toHaveBeenCalled();
+  });
 });
 
 describe('write-time settlement of interrupted tool calls', () => {
@@ -603,29 +1475,82 @@ describe('write-time settlement of interrupted tool calls', () => {
     }
   });
 
-  it('parks a shutdown-interrupted run with a durable receipt for the orphaned call', async () => {
+  it('parks a run the shutdown hands off with a durable receipt for the orphaned call', async () => {
+    vi.useFakeTimers();
+    const aborted = Promise.withResolvers<void>();
+    const agent = makeFakeAgent({
+      onPrompt: async (emit) => {
+        emitPendingToolCall(emit);
+        await aborted.promise;
+      },
+      onAbort: () => aborted.resolve(),
+    });
+    const { store, session, runner } = await startRunnerWith(agent);
+    try {
+      // A zero budget has no drain window: the session is handed off at once.
+      await runner.stop({ timeoutMs: 0 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(agent.abort).toHaveBeenCalledOnce();
+      expectInterruptedReceipt((await session.buildContext()).messages);
+      const events = runEvents(store);
+      expect(events.at(-1)?.type).toBe('session_interrupted');
+      expect(events.at(-1)?.data).toMatchObject({ reason: 'runner shutdown', attempt: 1 });
+      expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
+      expect(store.finishSession).not.toHaveBeenCalled();
+    } finally {
+      aborted.resolve();
+      await finishStop(runner);
+    }
+  });
+
+  it('settles a run whose own code throws while a shutdown drains, instead of parking it', async () => {
     const meta = makeMeta();
     const session = await makeEntryTree();
     const store = makeStore(meta);
+    const ctx = { running: new Map(), shuttingDown: false };
     mocks.openEntryStorage.mockResolvedValue(session.getStorage());
     mocks.getAgentSessionStore.mockResolvedValue(store);
     mocks.buildAgent.mockImplementation(() =>
       makeFakeAgent({
         onPrompt: async (emit) => {
           emitToolCallTurn(emit);
-          throw new Error('worker draining before result');
+          // The drain starts mid-turn. pi records a provider failure in the
+          // transcript and resolves; a rejection stands for the runner's own code.
+          ctx.shuttingDown = true;
+          throw new Error('runner step failed while draining');
         },
       }),
     );
 
-    await runSession({ running: new Map(), shuttingDown: true }, meta);
+    // Draining, but the runner never handed this session off.
+    await runSession(ctx, meta);
 
     expectInterruptedReceipt((await session.buildContext()).messages);
-    const events = runEvents(store);
-    expect(events.at(-1)?.type).toBe('session_interrupted');
-    expect(events.at(-1)?.data).toMatchObject({ reason: 'runner shutdown', attempt: 1 });
-    expect(store.releaseLease).toHaveBeenCalledWith(SESSION_ID, WORKER_ID);
-    expect(store.finishSession).not.toHaveBeenCalled();
+    expect(store.finishSession).toHaveBeenCalledWith(
+      SESSION_ID,
+      WORKER_ID,
+      expect.objectContaining({ status: 'failed' }),
+    );
+    expect(runEvents(store).at(-1)?.type).toBe('session_end');
+    expect(store.releaseLease).not.toHaveBeenCalled();
+  });
+
+  it('settles a setup failure during the drain as a failure instead of parking it', async () => {
+    const meta = makeMeta();
+    const store = makeStore(meta);
+    mocks.openEntryStorage.mockResolvedValue((await makeEntryTree()).getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.resolveAgentDriverModel.mockRejectedValueOnce(new Error('driver unavailable'));
+
+    // Draining from the start: the setup failure did not abort the run.
+    await runSession({ running: new Map(), shuttingDown: true }, meta);
+
+    expect(store.finishSession).toHaveBeenCalledWith(
+      SESSION_ID,
+      WORKER_ID,
+      expect.objectContaining({ status: 'failed', error: 'driver unavailable' }),
+    );
+    expect(store.releaseLease).not.toHaveBeenCalled();
   });
 
   it('appends the receipt on the catch path when the run fails before the result lands', async () => {
@@ -696,5 +1621,104 @@ describe('read-time repair of an orphaned durable tool call', () => {
     expect(after.messages.map((message) => message.role)).toEqual(['user', 'assistant']);
     expect(after.messages[0]).toBe(seedUser);
     expect(after.messages[1]).toBe(seedAssistant);
+  });
+});
+
+describe('resume marker in the settle log', () => {
+  /** Settle one claim over an interrupted transcript; return its settle line and resume reason. */
+  async function settle(meta: ClaimedAgentSession) {
+    const session = await makeEntryTree([
+      userMessage('Build a lesson', 1),
+      assistantCallMessage(2),
+    ]);
+    const store = makeStore(meta);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.buildAgent.mockImplementation((options: { history?: AgentMessage[] }) =>
+      makeFakeAgent({ messages: options.history ?? [] }),
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runSession({ running: new Map(), shuttingDown: false }, meta);
+      return {
+        line: log.mock.calls
+          .map((call) => String(call[0]))
+          .find((text) => text.includes(`session ${SESSION_ID} -> `)),
+        resumedReason: runEvents(store).find((event) => event.type === 'session_resumed')?.data
+          ?.reason,
+      };
+    } finally {
+      log.mockRestore();
+    }
+  }
+
+  it('marks the takeover of a parked run as resumed, though the park spent no attempt', async () => {
+    // A park releases the lease, and the next claim takes the run over as
+    // `orphaned` without counting an attempt: it is still attempt 1.
+    const { line, resumedReason } = await settle(makeMeta({ claimReason: 'orphaned', attempt: 1 }));
+    expect(resumedReason).toBe('crash');
+    expect(line).toContain('-> succeeded (attempt 1, resumed, ');
+  });
+
+  it('does not mark a retry after a failure as resumed, though it is a later attempt', async () => {
+    // A failed run requeued for retry keeps its attempt count and is claimed
+    // as `queued`: a new attempt, not the takeover of an interrupted run.
+    const { line, resumedReason } = await settle(makeMeta({ claimReason: 'queued', attempt: 2 }));
+    expect(resumedReason).toBe('follow_up');
+    expect(line).toContain('-> succeeded (attempt 2, ');
+    expect(line).not.toContain('resumed');
+  });
+
+  it('marks a takeover of a clean step-boundary handoff as clean_handoff, not crash', async () => {
+    // The runner reads the log tail: the handoff parked with its own reason, so
+    // the workbench keeps the claim silent instead of painting "recovering".
+    const session = await makeEntryTree([
+      userMessage('Build a lesson', 1),
+      assistantCallMessage(2),
+    ]);
+    const store = makeStore(makeMeta({ claimReason: 'orphaned', attempt: 1 }));
+    store.readEventsAfter.mockResolvedValue([
+      { id: 1, ts: 1, attempt: 1, type: 'session_start', data: { prompt: 'Build a lesson' } },
+      { id: 2, ts: 2, attempt: 1, type: 'session_interrupted', data: { reason: 'clean handoff' } },
+    ] as never);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.buildAgent.mockImplementation((options: { history?: AgentMessage[] }) =>
+      makeFakeAgent({ messages: options.history ?? [] }),
+    );
+    await runSession(
+      { running: new Map(), shuttingDown: false },
+      makeMeta({ claimReason: 'orphaned', attempt: 1 }),
+    );
+    expect(runEvents(store).find((event) => event.type === 'session_resumed')?.data?.reason).toBe(
+      'clean_handoff',
+    );
+  });
+
+  it('still marks a takeover after a crash as crash when the log ends on another run boundary', async () => {
+    // A crash writes no interruption at all: the dead run's own session_resumed
+    // is the last boundary, and an OLDER clean handoff must not be reused.
+    const session = await makeEntryTree([
+      userMessage('Build a lesson', 1),
+      assistantCallMessage(2),
+    ]);
+    const store = makeStore(makeMeta({ claimReason: 'orphaned', attempt: 1 }));
+    store.readEventsAfter.mockResolvedValue([
+      { id: 1, ts: 1, attempt: 1, type: 'session_interrupted', data: { reason: 'clean handoff' } },
+      { id: 2, ts: 2, attempt: 2, type: 'session_resumed', data: { reason: 'clean_handoff' } },
+      { id: 3, ts: 3, attempt: 2, type: 'user_message', data: { text: 'another turn' } },
+    ] as never);
+    mocks.openEntryStorage.mockResolvedValue(session.getStorage());
+    mocks.getAgentSessionStore.mockResolvedValue(store);
+    mocks.buildAgent.mockImplementation((options: { history?: AgentMessage[] }) =>
+      makeFakeAgent({ messages: options.history ?? [] }),
+    );
+    await runSession(
+      { running: new Map(), shuttingDown: false },
+      makeMeta({ claimReason: 'orphaned', attempt: 1 }),
+    );
+    expect(runEvents(store).find((event) => event.type === 'session_resumed')?.data?.reason).toBe(
+      'crash',
+    );
   });
 });
