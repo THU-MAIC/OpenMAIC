@@ -472,8 +472,8 @@ function AccountMenu({
             >
               {supportedLocales.map((l) => (
                 <DropdownMenuItem
-                  {...HOLD_FOCUS}
                   key={l.code}
+                  {...HOLD_FOCUS}
                   onSelect={() => setLocale(l.code)}
                   className="ws-menu-item"
                 >
