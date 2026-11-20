@@ -1,3 +1,5 @@
+import type { StageMetaResult } from '@/lib/classroom/stage-meta-client';
+import { resolveCourseAccess } from './course-read-only';
 import { requestEpisodeStart } from './request-activity';
 import type { ChatNode } from './session-store';
 
@@ -147,24 +149,41 @@ export function requestCourse(
 }
 
 /**
- * The course a context-limit block's "Start a new chat" carries, if any: the
- * conversation's own course, but only one the viewer can change — the same
- * rule that keeps "Edit with AI" off a read-only course (`isOwner === false`
- * from Discover, or a course not in the viewer's list at all). Naming a
- * read-only one would bind the new conversation to a course its agent cannot
- * write; a course-less conversation (or an unownable one) starts ordinary.
- *
- * A request that is making a new course carries the first one with a page;
- * blocked before any page landed, the first course it created
- * (`requestCreatedCourses`) — that empty course is exactly what the new
- * conversation has to finish.
+ * The course a context-limit block's "Start a new chat" would carry: the
+ * conversation's own course. A request that is making a new course carries the
+ * first one with a page; blocked before any page landed, the first course it
+ * created (`requestCreatedCourses`) — that empty course is exactly what the new
+ * conversation has to finish. Whether the viewer may carry it is decided by
+ * `ownedCourseForNewChat`.
  */
 export function blockedConversationNewChatCourse(
   request: RequestCourse,
-  isOwnedCourse: (courseId: string) => boolean,
   created: readonly string[] = [],
 ): string | null {
-  const courseId =
-    request.kind === 'course' ? request.courseId : (request.ready[0] ?? created[0] ?? null);
-  return courseId !== null && isOwnedCourse(courseId) ? courseId : null;
+  return request.kind === 'course' ? request.courseId : (request.ready[0] ?? created[0] ?? null);
+}
+
+/**
+ * The course the new chat names, or null for an ordinary new chat: only one
+ * the viewer can change — the same rule that keeps "Edit with AI" off a
+ * read-only course. Naming a read-only one would bind the new conversation to a
+ * course its agent cannot write.
+ *
+ * Ownership is resolved the way the workspace resolves it for an open course
+ * (`resolveCourseAccess`): the viewer's own course list answers when the course
+ * is in it; otherwise — the list not loaded yet or failed, or a course created
+ * after it loaded — the stage-meta sidecar is asked. An unknown answer is not
+ * ownership: the chat starts ordinary rather than bound to a course it may not
+ * write.
+ */
+export async function ownedCourseForNewChat(input: {
+  readonly courseId: string | null;
+  /** `isOwner` from the viewer's course list; undefined when the course is not in it. */
+  readonly listedIsOwner: boolean | undefined;
+  readonly fetchMeta: (courseId: string) => Promise<StageMetaResult>;
+}): Promise<string | null> {
+  const { courseId, listedIsOwner, fetchMeta } = input;
+  if (!courseId) return null;
+  const meta = listedIsOwner === undefined ? await fetchMeta(courseId) : null;
+  return resolveCourseAccess({ listedIsOwner, meta }) === 'owner' ? courseId : null;
 }

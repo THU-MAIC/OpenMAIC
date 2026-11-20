@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import type { StageMetaResult } from '@/lib/classroom/stage-meta-client';
 import {
   blockedConversationNewChatCourse,
+  ownedCourseForNewChat,
   requestCourse,
   requestCreatedCourses,
 } from '@/lib/workbench/conversation-course';
@@ -247,30 +249,17 @@ describe('rule 5: a conversation that @-names an existing course', () => {
 });
 
 describe('the context-limit block carries the conversation own course', () => {
-  const owned = (id: string) => id.startsWith('mine-');
   it('carries the course the conversation works on', () => {
-    expect(blockedConversationNewChatCourse({ kind: 'course', courseId: 'mine-a' }, owned)).toBe(
-      'mine-a',
-    );
+    expect(blockedConversationNewChatCourse({ kind: 'course', courseId: 'mine-a' })).toBe('mine-a');
   });
   it('carries the first ready page of a course the blocked request was making', () => {
     expect(
-      blockedConversationNewChatCourse({ kind: 'new', ready: ['mine-new', 'mine-other'] }, owned),
+      blockedConversationNewChatCourse({ kind: 'new', ready: ['mine-new', 'mine-other'] }),
     ).toBe('mine-new');
   });
   it('names nothing when the conversation has no course to carry', () => {
-    expect(blockedConversationNewChatCourse({ kind: 'course', courseId: null }, owned)).toBeNull();
-    expect(blockedConversationNewChatCourse({ kind: 'new', ready: [] }, owned)).toBeNull();
-  });
-  it('names nothing for a course the viewer cannot change — the "Edit with AI" rule', () => {
-    // A course saved from Discover is not the viewer's; a conversation about
-    // it gets an ordinary new chat, not one bound to a read-only course.
-    expect(
-      blockedConversationNewChatCourse({ kind: 'course', courseId: 'theirs-a' }, owned),
-    ).toBeNull();
-    expect(
-      blockedConversationNewChatCourse({ kind: 'course', courseId: 'unknown' }, owned),
-    ).toBeNull();
+    expect(blockedConversationNewChatCourse({ kind: 'course', courseId: null })).toBeNull();
+    expect(blockedConversationNewChatCourse({ kind: 'new', ready: [] })).toBeNull();
   });
   it('carries the course a request created before its first page landed', () => {
     // `create_stage` saved the empty course, then the next model call was
@@ -280,21 +269,75 @@ describe('the context-limit block carries the conversation own course', () => {
     expect(requestCourse(chat, false)).toEqual({ kind: 'new', ready: [] });
     expect(requestCreatedCourses(chat)).toEqual(['mine-empty']);
     expect(
-      blockedConversationNewChatCourse(
-        requestCourse(chat, false),
-        owned,
-        requestCreatedCourses(chat),
-      ),
+      blockedConversationNewChatCourse(requestCourse(chat, false), requestCreatedCourses(chat)),
     ).toBe('mine-empty');
     // A course with a page still wins over an empty one.
     expect(
-      blockedConversationNewChatCourse({ kind: 'new', ready: ['mine-paged'] }, owned, [
-        'mine-empty',
-      ]),
+      blockedConversationNewChatCourse({ kind: 'new', ready: ['mine-paged'] }, ['mine-empty']),
     ).toBe('mine-paged');
     // Only this request's creations count: an earlier request's course is not
     // the one this request was making.
     const later = [...chat, user('u2', 'something else')];
     expect(requestCreatedCourses(later)).toEqual([]);
+  });
+});
+
+describe('the new chat names only a course the viewer owns', () => {
+  const found = (isOwner: boolean): StageMetaResult => ({
+    outcome: 'found',
+    meta: { isOwner, isPublic: false, publishedAt: null, generationComplete: true },
+  });
+  const never = () => Promise.reject(new Error('the list already answered'));
+
+  it('takes the course list at its word when the course is in it', async () => {
+    expect(
+      await ownedCourseForNewChat({ courseId: 'a', listedIsOwner: true, fetchMeta: never }),
+    ).toBe('a');
+    // Saved from Discover: in the list, not the viewer's — the "Edit with AI" rule.
+    expect(
+      await ownedCourseForNewChat({ courseId: 'a', listedIsOwner: false, fetchMeta: never }),
+    ).toBeNull();
+  });
+
+  it('asks the stage-meta sidecar when the list cannot answer', async () => {
+    // Not in the list: it has not loaded yet, failed, or predates the course.
+    // An owned course must not be dropped for that.
+    const asked: string[] = [];
+    const ask = (meta: StageMetaResult) => async (courseId: string) => {
+      asked.push(courseId);
+      return meta;
+    };
+    expect(
+      await ownedCourseForNewChat({
+        courseId: 'a',
+        listedIsOwner: undefined,
+        fetchMeta: ask(found(true)),
+      }),
+    ).toBe('a');
+    expect(asked).toEqual(['a']);
+    expect(
+      await ownedCourseForNewChat({
+        courseId: 'b',
+        listedIsOwner: undefined,
+        fetchMeta: ask(found(false)),
+      }),
+    ).toBeNull();
+    // No answer is not ownership: an ordinary chat, never one bound to a
+    // course its agent may not write.
+    for (const meta of [{ outcome: 'absent' }, { outcome: 'unavailable' }] as const) {
+      expect(
+        await ownedCourseForNewChat({
+          courseId: 'c',
+          listedIsOwner: undefined,
+          fetchMeta: ask(meta),
+        }),
+      ).toBeNull();
+    }
+  });
+
+  it('asks nothing when the conversation has no course', async () => {
+    expect(
+      await ownedCourseForNewChat({ courseId: null, listedIsOwner: undefined, fetchMeta: never }),
+    ).toBeNull();
   });
 });

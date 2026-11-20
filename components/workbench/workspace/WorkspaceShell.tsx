@@ -165,6 +165,7 @@ import { isPreviewClosed, rememberPreviewClosed } from '@/lib/workbench/preview-
 import { QUEUED_REQUEST_KEY, requestEpisodeStart } from '@/lib/workbench/request-activity';
 import {
   blockedConversationNewChatCourse,
+  ownedCourseForNewChat,
   requestCourse,
   requestCreatedCourses,
   type RequestCourse,
@@ -1300,14 +1301,36 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * The context-limit notice's "Start a new chat" (`new-chat-host`): the new
    * conversation is for THIS conversation's own course — the one the request
    * works on, when the viewer owns it — and otherwise an ordinary new chat.
+   *
+   * Ownership may need the stage-meta sidecar (the course list not loaded yet,
+   * or a course created after it loaded; see `ownedCourseForNewChat`), so the
+   * new chat opens when the answer is in. An answer for a click the teacher
+   * has moved on from — another conversation, a new chat, a later click —
+   * opens nothing. The workspace's own background moves (the conversation's
+   * course opening in an empty right pane) are not the teacher moving on.
    */
   const startChatOutOfBlockedConversation = () => {
     const courseId = blockedConversationNewChatCourse(
       thisRequestCourse,
-      (id) => courses.classrooms.some((course) => course.id === id && course.isOwner !== false),
       // A course the blocked request created before its first page landed.
       requestCreatedCourses(useWorkbenchStore.getState().chat),
     );
+    const listed = courseId
+      ? courses.classrooms.find((course) => course.id === courseId)
+      : undefined;
+    const sessionAtClick = panes.sessionId;
+    const ask = ++newChatAsk.current;
+    void ownedCourseForNewChat({
+      courseId,
+      listedIsOwner: listed ? listed.isOwner !== false : undefined,
+      fetchMeta: fetchStageMeta,
+    }).then((owned) => {
+      if (ask !== newChatAsk.current || shownSessionRef.current !== sessionAtClick) return;
+      openChatOutOfBlockedRef.current(owned);
+    });
+  };
+  /** Opens the new chat with the workspace as it is when ownership is known. */
+  const openChatOutOfBlockedConversation = (courseId: string | null) => {
     if (!courseId) {
       startNewConversation();
       return;
@@ -1319,10 +1342,18 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   };
   // Stable for the pane: the notice publishes it through the host store once,
   // so it must read the request's course and the owner's list as they are at
-  // CLICK time. Same ref shape as `talkAboutCourseStable` below.
+  // CLICK time, and open with the workspace as it is when the answer lands.
+  // Same ref shape as `talkAboutCourseStable` below.
   const startChatOutOfBlockedRef = useRef(startChatOutOfBlockedConversation);
+  const openChatOutOfBlockedRef = useRef(openChatOutOfBlockedConversation);
+  /** The last click's number: an earlier click's late answer opens nothing. */
+  const newChatAsk = useRef(0);
+  /** The conversation the middle column shows now, for an answer that lands later. */
+  const shownSessionRef = useRef(panes.sessionId);
   useLayoutEffect(() => {
     startChatOutOfBlockedRef.current = startChatOutOfBlockedConversation;
+    openChatOutOfBlockedRef.current = openChatOutOfBlockedConversation;
+    shownSessionRef.current = panes.sessionId;
   });
   const [startChatOutOfBlockedStable] = useState(() => () => startChatOutOfBlockedRef.current());
   // Closed by the user — now, or in the tab memory a session-only refresh
