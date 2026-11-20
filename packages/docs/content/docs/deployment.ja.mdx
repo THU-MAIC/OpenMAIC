@@ -107,7 +107,7 @@ DATABASE_URL=postgres://user:password@db-host:5432/openmaic pnpm start      # �
 | `OPENMAIC_GENERATION_RUN_STREAMS_PER_OWNER` | `16` | 1 人のオーナーが 1 つのプロセスで同時に開ける生成イベントストリームの数。 |
 | `OPENMAIC_GENERATION_RUN_RETENTION_HOURS` | `24` | 終了した生成が完全なイベントログを保持する時間（時間単位）。その後は圧縮されます。 |
 
-生成はエージェントランタイムのリース設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`。`.env.example` を参照）を共有します。サーバーの停止や再起動（ローリングアップデートを含む）の際は、実行中の生成を別のインスタンスか再起動した同じインスタンスが、最後に完了したステップから続けます。進行はリースの有効期間（既定 10 秒）ほど止まり、実行中だったステップはもう一度生成されます。ステップを完了しないまま `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` 回（既定 5 回）続けて中断された生成は、そのステップで一時停止し再試行できる状態になります。多数のインスタンスのローリングアップデートでこの回数に達する場合は値を大きくしてください。
+生成はエージェントランタイムのリース設定（`OPENMAIC_AGENT_RUNTIME_SCAN_INTERVAL_MS`、`_HEARTBEAT_MS`、`_LEASE_TTL_MS`、`_MAX_ATTEMPTS`。`.env.example` を参照）を共有します。サーバーの停止や再起動（ローリングアップデートを含む）の際は、実行中の生成を別のインスタンスか再起動した同じインスタンスが、最後に完了したステップから続けます。実行中だったステップはもう一度生成されます。SIGTERM（ローリングアップデート、`docker compose down`）を受けたサーバーは終了処理の中で生成を手放すため、生成はすぐに続けられます。サーバーが異常終了した場合（クラッシュ、または終了処理が終わる前の強制終了）は、リースが切れるまで生成は再開されず、進行はリースの有効期間（既定 10 秒）ほど止まります。ステップを完了しないうちにサーバーが続けて `OPENMAIC_AGENT_RUNTIME_MAX_ATTEMPTS` 回（既定 5 回）を超えて異常終了した生成は、そのステップで一時停止し再試行できる状態になります。終了処理で手放された生成はこの回数に数えません。
 
 ## サーバー側永続化（PostgreSQL）
 

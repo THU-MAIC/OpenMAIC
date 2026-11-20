@@ -6,6 +6,7 @@ const startup = vi.hoisted(() => ({
   }),
   onSchemaRefusal: undefined as unknown as (error: unknown) => Promise<void>,
   stop: vi.fn(async () => {}),
+  handOff: vi.fn(),
   exit: vi.fn(async () => {}),
   extractionStart: vi.fn(() => ({ stop: async () => {} })),
 }));
@@ -53,7 +54,7 @@ vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
 vi.mock('@/lib/server/agent-runtime/runner', () => ({
   startAgentRunner: (options: { onSchemaRefusal: (error: unknown) => Promise<void> }) => {
     startup.onSchemaRefusal = options.onSchemaRefusal;
-    return { stop: startup.stop };
+    return { stop: startup.stop, handOff: startup.handOff };
   },
 }));
 vi.mock('@/lib/server/material-extraction/runner', async () => {
@@ -84,6 +85,11 @@ it('drains and exits when the first scan refuses the schema before registration 
 
   await register();
 
+  // Running sessions are handed off before the drain, not drained first.
+  expect(startup.handOff).toHaveBeenCalledOnce();
+  expect(startup.handOff.mock.invocationCallOrder[0]).toBeLessThan(
+    startup.stop.mock.invocationCallOrder[0],
+  );
   expect(startup.stop).toHaveBeenCalledOnce();
   expect(startup.exit).toHaveBeenCalledWith(startup.error);
   expect(startup.extractionStart).not.toHaveBeenCalled();
