@@ -116,7 +116,7 @@ vi.mock('@/lib/server/agent-runtime/user-skills', async (importActual) => {
   return { ...actual, listUserSkills: vi.fn(async () => []) };
 });
 
-import { runSession } from '@/lib/server/agent-runtime/runner';
+import { handOffRunningSessions, runSession } from '@/lib/server/agent-runtime/runner';
 import type { Message } from '@earendil-works/pi-ai';
 import { preloadInitialPlan } from '@/lib/server/pbl-v3/plan-tool-context';
 import { AGENT_TOOL_TIMEOUT_ENV } from '@/lib/agent/runtime/tool-timeout';
@@ -465,10 +465,7 @@ describe('runner: unbounded V3 teaching turns', () => {
       expect(store.finishSession).not.toHaveBeenCalled();
       expect(ctx.running.size).toBe(1);
       if (outcome === 'cancel') cancelRequested = true;
-      if (outcome === 'shutdown') {
-        ctx.shuttingDown = true;
-        ctx.running.get(meta.id)!.abort.abort();
-      }
+      if (outcome === 'shutdown') handOffRunningSessions(ctx);
       if (outcome === 'lease-loss') store.heartbeat.mockResolvedValue(false);
       await vi.advanceTimersByTimeAsync(5_000);
       await run;

@@ -368,8 +368,21 @@ flag (see [Course library and agent runtime](#course-library-and-agent-runtime))
 `thinking.mode`. An effort the agent inherits from `llm` is dropped for the agent. A deployment still configured only through `DEFAULT_MODEL` has the
 agent turned off until the `agent` slot is assigned.
 
-Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts) and
-the reserved compaction knobs are listed in `.env.example`.
+Runner cadence (scan interval, heartbeat, lease TTL, concurrency, attempts,
+shutdown wait) and the reserved compaction knobs are listed in `.env.example`.
+
+On SIGTERM the runner stops claiming and gives running sessions
+`OPENMAIC_AGENT_RUNTIME_STOP_TIMEOUT_MS` (default 10 s) to finish their turn and
+settle; in its last 5 s it interrupts whatever still runs, which another
+instance resumes. The production server (`pnpm start` or the Docker image)
+stops accepting connections at once and exits when that shutdown is done; open
+requests may finish until then, or until 10 s after the signal if that is
+later. (`pnpm dev` stops at once and by default hands running sessions off at
+once, as before.) The platform's SIGTERM grace
+should be longer than the wait: Kubernetes' `terminationGracePeriodSeconds`
+defaults to 30 s, while Docker's `stop_grace_period` defaults to 10 s, which the
+default wait fills. To wait longer, raise the grace with it; the bundled Compose
+setup waits 25 s within a 30 s grace.
 
 ## Owner identity
 

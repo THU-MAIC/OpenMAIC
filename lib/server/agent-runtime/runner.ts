@@ -126,6 +126,13 @@ const log = createLogger('AgentRunner');
 const PROCESS_WORKER_ID = `${randomUUID().slice(0, 8)}:${process.pid}`;
 const SESSION_WAKEUP_FALLBACK_MS = 5_000;
 const MESSAGE_UPDATE_MIN_INTERVAL_MS = 150;
+/**
+ * Reserved tail of the stop budget: after the drain window force-aborts the
+ * remaining sessions, their settlement writes (interrupted tool receipts,
+ * event flush, lease release) must still fit before the deadline — and before
+ * the platform's SIGKILL when the budget matches its SIGTERM grace.
+ */
+const STOP_SETTLE_MARGIN_MS = 5_000;
 
 /** The runner's always-registered tool; additional tools are capability-gated. */
 export const MINIMAL_AGENT_TOOL_NAMES = new Set(['ask_user']);
@@ -1021,20 +1028,73 @@ export interface AgentRunnerHandle {
   /** Stable process identity for diagnostics; each claim owns a distinct lease identity. */
   readonly workerId: string;
   stop(options?: { timeoutMs?: number }): Promise<void>;
+  /**
+   * Hand every running session off at once, settling ones included (each
+   * parks for another instance), and stop claiming, without waiting. For a
+   * process that must not keep running them, such as one whose database
+   * schema was refused; a stop() then has nothing left to drain.
+   */
+  handOff(): void;
+}
+
+/** A running session's entry in {@link RunContext.running}. */
+export interface RunningSession {
+  abort: AbortController;
+  /**
+   * Set once the run only settles: its turn ended on its own, or its outcome
+   * is decided. A shutdown's handoff leaves such a run to finish; a schema
+   * refusal does not.
+   */
+  settling?: boolean;
+  /** The run's outcome (end:<status> or interrupted:<reason>), recorded once. */
+  outcome?: string;
 }
 
 export interface RunContext {
-  running: Map<string, { abort: AbortController }>;
+  running: Map<string, RunningSession>;
   shuttingDown: boolean;
   onSchemaRefusal?: (error: unknown) => Promise<void>;
+  /** Set once the schema-refusal retirement has been handed to onSchemaRefusal. */
+  retiring?: boolean;
+  /**
+   * Counts each run's outcome once, for the stop() summary. Optional so a bare
+   * context (tests, direct runSession) works without it.
+   */
+  tally?: (outcome: string) => void;
+}
+
+/**
+ * Hand every running session off: aborted while the runner shuts down, each
+ * parks for another instance to resume. Returns how many this call aborted; a
+ * session aborted earlier (cancellation, lease loss, a failed write) keeps its
+ * own course and is not counted, and so does one that only settles unless
+ * `includeSettling` is set (a schema refusal: none may settle against the
+ * refused schema).
+ */
+export function handOffRunningSessions(
+  ctx: RunContext,
+  { includeSettling = false }: { includeSettling?: boolean } = {},
+): number {
+  ctx.shuttingDown = true;
+  let count = 0;
+  for (const session of ctx.running.values()) {
+    if ((session.settling && !includeSettling) || session.abort.signal.aborted) continue;
+    session.abort.abort();
+    count += 1;
+  }
+  return count;
 }
 
 /** Retire this worker, never turn a release incompatibility into a learner failure. */
 function retireIncompatibleRunner(ctx: RunContext, error: unknown): boolean {
   if (!isSchemaRefusal(error)) return false;
-  if (!ctx.shuttingDown) {
-    ctx.shuttingDown = true;
-    for (const session of ctx.running.values()) session.abort.abort();
+  // Force the handoff even while a shutdown is draining, settling sessions
+  // included: no session can commit against the incompatible schema, so
+  // finishing a turn only delays the exit, and the refusal must still reach
+  // its own exit path.
+  handOffRunningSessions(ctx, { includeSettling: true });
+  if (!ctx.retiring) {
+    ctx.retiring = true;
     // Do not await our own drain from inside a running session's catch block.
     void ctx
       .onSchemaRefusal?.(error)
@@ -1080,7 +1140,7 @@ interface RunCleanup {
 export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Promise<void> {
   const abort = new AbortController();
   const retired = new AbortController();
-  const running = { abort };
+  const running: RunningSession = { abort };
   const releases = new Set<() => void>();
   let closed = false;
   const cleanup: RunCleanup = {
@@ -1095,7 +1155,7 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
   ctx.running.set(meta.id, running);
   try {
     await abortable(
-      executeSession(ctx, meta, abort, () => retired.abort(), cleanup),
+      executeSession(ctx, meta, running, () => retired.abort(), cleanup),
       retired.signal,
     );
   } catch (error) {
@@ -1113,10 +1173,11 @@ export async function runSession(ctx: RunContext, meta: ClaimedAgentSession): Pr
 async function executeSession(
   ctx: RunContext,
   meta: ClaimedAgentSession,
-  abort: AbortController,
+  slot: RunningSession,
   retire: () => void,
   cleanup: RunCleanup,
 ): Promise<void> {
+  const abort = slot.abort;
   // Attempts reset on attended retry; the lease identity must still distinguish old work.
   const WORKER_ID = meta.lease?.workerId ?? PROCESS_WORKER_ID;
   const id = meta.id;
@@ -1137,6 +1198,20 @@ async function executeSession(
     leaseLost = true;
     abort.abort();
     if (id.startsWith('pbl-role-')) retire();
+  };
+  // A run aborted while the runner shuts down parks for another instance to
+  // resume: one still running when the drain window closed, one stopped by
+  // schema retirement, or one whose own write failed during the drain (the
+  // next instance retries its turn). A cancellation the run has seen wins; the
+  // settle path also reads one recorded but not yet seen before it parks.
+  const abortedForShutdown = () => ctx.shuttingDown && abort.signal.aborted && !cancelled;
+  // Each run reports one outcome to the stop() summary: its first terminal
+  // frame, or its silent park.
+  const reportOutcome = (outcome: string): void => {
+    if (slot.outcome !== undefined) return;
+    slot.outcome = outcome;
+    slot.settling = true;
+    ctx.tally?.(outcome);
   };
   const enqueue = (write: () => Promise<void>, critical = false): void => {
     chain = chain.then(async () => {
@@ -1271,6 +1346,11 @@ async function executeSession(
     }
     if (type === LIFECYCLE.sessionEnd || type === LIFECYCLE.sessionInterrupted) {
       extractionWatcher?.stop();
+      reportOutcome(
+        type === LIFECYCLE.sessionEnd
+          ? `end:${String((data as { status?: string }).status)}`
+          : `interrupted:${String((data as { reason?: string }).reason)}`,
+      );
     }
     runEventEmitted = true;
     if (type === LIFECYCLE.sessionEnd) terminalFrameEmitted = true;
@@ -1365,6 +1445,9 @@ async function executeSession(
   // A verdict claim never executes the model. A message posted after the
   // claim still receives one attended redemption through the common check.
   if (isOverAttemptCap(meta)) {
+    log.warn(
+      `session ${id} reached the retry limit of ${config.maxAttempts} consecutive unattended attempts`,
+    );
     try {
       const error =
         `session failed ${config.maxAttempts} consecutive unattended attempts; ` +
@@ -2199,7 +2282,10 @@ async function executeSession(
     const awaitingLearner = () =>
       questionEmitted || askUserLatch.isCommitted() || !!teaching?.isTurnComplete();
     const drainMessages = async (): Promise<number> => {
-      if (awaitingLearner()) return 0;
+      // A draining runner never steers: a message injected now would start
+      // another model turn the shutdown budget must then cut off. Undelivered
+      // messages stay for the next claim's requeue instead.
+      if (awaitingLearner() || ctx.shuttingDown) return 0;
       // These reads deliberately avoid a shared transaction: a message added
       // between them is left for the next serialized drain, while the lease
       // snapshot prevents steering after ownership has already changed.
@@ -2221,7 +2307,10 @@ async function executeSession(
         // course's current name, not the pick-time snapshot.
         const courseResolved = await resolveCourseRefContext(meta.ownerId, followUp);
         const resolved = await resolveFollowUpElementContext(courseResolved);
-        if (awaitingLearner()) break;
+        // Recheck after the resolution awaits above: shutdown may have started
+        // while this drain was in flight, and steering then would extend the
+        // turn the drain is supposed to let finish.
+        if (awaitingLearner() || ctx.shuttingDown) break;
         agent.steer(
           tagDurableUserMessage(
             {
@@ -2282,6 +2371,14 @@ async function executeSession(
       repairedTeachingStop = true;
       return true;
     };
+    // A run the shutdown reaches before its first model call (still loading
+    // its transcript or preloading skills) is handed off instead of starting a
+    // turn the force-abort would likely cut off, running its step again on the
+    // next instance.
+    const startFirstTurn = async (call: () => Promise<void>): Promise<void> => {
+      if (ctx.shuttingDown) abort.abort();
+      else await call();
+    };
     try {
       if (plannedStart.kind === 'prompt') {
         // A follow-up-driven prompt is already in the event log; here it
@@ -2336,9 +2433,11 @@ async function executeSession(
           filePreload.length === 0 &&
           plannedStart.durableMessageSeq === undefined
         ) {
-          await agent.prompt(preload.text);
+          await startFirstTurn(() => agent.prompt(preload.text));
         } else {
-          await agent.prompt([deliveredPrompt, ...preload.messages, ...filePreload]);
+          await startFirstTurn(() =>
+            agent.prompt([deliveredPrompt, ...preload.messages, ...filePreload]),
+          );
         }
       } else {
         // ── Resume repair ─────────────────────────────────────────────────────
@@ -2393,10 +2492,10 @@ async function executeSession(
             id: driver.piModel.id,
           }) ?? [];
         if (repair.messages.length > 0 || filePreload.length > 0) {
-          await agent.prompt([...repair.messages, ...filePreload]);
+          await startFirstTurn(() => agent.prompt([...repair.messages, ...filePreload]));
         } else {
           if (plan.kind === 'already-complete') await repairTeachingStop();
-          await agent.continue();
+          await startFirstTurn(() => agent.continue());
         }
       }
 
@@ -2411,6 +2510,9 @@ async function executeSession(
           await agent.continue();
           continue;
         }
+        // A draining shutdown settles the finished turn as it is; it does not
+        // pick up another message (the settle check requeues it).
+        if (ctx.shuttingDown) break;
         const before = acceptedMessageSeqs.size;
         const delivered = await requestDrain();
         if (abort.signal.aborted) break;
@@ -2421,6 +2523,9 @@ async function executeSession(
       // durable receipt yet. Append its interrupted result before the terminal
       // flush so the tree is provider-safe for the next claim, and so a
       // shutdown/lease-loss park leaves no orphaned call behind.
+      // A turn that ended on its own only settles from here on: a handoff (the
+      // drain window closing during the flush below) leaves it alone.
+      if (!abort.signal.aborted) slot.settling = true;
       queueInterruptedToolResults();
       await flushAll();
 
@@ -2429,19 +2534,25 @@ async function executeSession(
         (teaching?.needsTurnReceipt()
           ? 'Teaching turn ended without recording a review question or stage completion. Retry to continue the current review.'
           : undefined);
-      const shutdown = ctx.shuttingDown && abort.signal.aborted && !cancelled;
+      let shutdown = abortedForShutdown();
+      if (shutdown && !leaseLost && !tripwireViolated) {
+        // A cancel already recorded wins over the handoff even if this run
+        // had not seen it yet: settle it as cancelled instead of parking it.
+        cancelRequestedAt ??= await store.getCancelRequestedAt(id);
+        if (cancelRequestedAt !== null) shutdown = false;
+      }
       if (shutdown || tripwireViolated || (leaseLost && abort.signal.aborted)) {
-        emit(LIFECYCLE.sessionInterrupted, {
-          reason: shutdown
-            ? 'runner shutdown'
-            : tripwireViolated
-              ? 'runner event-order tripwire'
-              : 'lease lost',
-          attempt,
-        });
+        // Lease loss wins the attribution: during a drain both flags can be
+        // set, and the park belongs to the lease that was actually lost.
+        const parkReason = leaseLost
+          ? 'lease lost'
+          : tripwireViolated
+            ? 'runner event-order tripwire'
+            : 'runner shutdown';
+        emit(LIFECYCLE.sessionInterrupted, { reason: parkReason, attempt });
         await flushAll();
         if (!leaseLost) await store.releaseLease(id, WORKER_ID);
-        log.info(`session ${id} parked at attempt ${attempt}`);
+        log.info(`session ${id} parked at attempt ${attempt} (${parkReason})`);
         return;
       }
 
@@ -2487,13 +2598,21 @@ async function executeSession(
           contextBlocked,
         );
       }
-      log.info(`session ${id} -> ${status} (attempt ${attempt}, ${toolCalls} tool calls)`);
+      log.info(
+        `session ${id} -> ${status} (attempt ${attempt}` +
+          // Same test as the session_resumed frame's 'crash' reason: this run
+          // took over an interrupted one, so these lines give the resume rate.
+          `${plan.kind !== 'start' && meta.claimReason !== 'queued' ? ', resumed' : ''}, ` +
+          `${toolCalls} tool calls)`,
+      );
     } catch (error) {
       queueInterruptedToolResults();
       if (isLeaseLostError(error)) markLeaseLost();
       const schemaRefused = retireIncompatibleRunner(ctx, error);
       const message = error instanceof Error ? error.message : String(error);
-      if (ctx.shuttingDown || leaseLost || tripwireViolated) {
+      // Park only a run aborted for the shutdown; a failure during the drain
+      // that did not abort it settles as it would without a shutdown.
+      if (schemaRefused || abortedForShutdown() || leaseLost || tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
           reason: schemaRefused
             ? 'schema compatibility changed'
@@ -2534,13 +2653,18 @@ async function executeSession(
     if (isLeaseLostError(error)) markLeaseLost();
     const schemaRefused = retireIncompatibleRunner(ctx, error);
     const message = error instanceof Error ? error.message : String(error);
-    if (ctx.shuttingDown || leaseLost || tripwireViolated) {
+    // Same rule as the inner catch: a setup failure during the drain settles
+    // unless it aborted the run.
+    if (schemaRefused || abortedForShutdown() || leaseLost || tripwireViolated) {
       if (schemaRefused || tripwireViolated) {
         emit(LIFECYCLE.sessionInterrupted, {
           reason: schemaRefused ? 'schema compatibility changed' : 'runner event-order tripwire',
           attempt,
         });
         await flushAll(false).catch(() => {});
+      } else {
+        // This park writes no durable frame; still count it for stop().
+        reportOutcome(`interrupted:${leaseLost ? 'lease lost' : 'runner shutdown'}`);
       }
       if (!leaseLost) await store.releaseLease(id, WORKER_ID).catch(() => {});
     } else {
@@ -2585,10 +2709,19 @@ async function executeSession(
 export function startAgentRunner(
   options: Pick<RunContext, 'onSchemaRefusal'> = {},
 ): AgentRunnerHandle {
-  const ctx: RunContext = { running: new Map(), shuttingDown: false, ...options };
+  // Run outcomes (end:<status> / interrupted:<reason>), one per run, fed by
+  // every session; stop() reports the delta of one shutdown.
+  const outcomes = new Map<string, number>();
+  const ctx: RunContext = {
+    running: new Map(),
+    shuttingDown: false,
+    ...options,
+    tally: (outcome) => outcomes.set(outcome, (outcomes.get(outcome) ?? 0) + 1),
+  };
   let scanTimer: ReturnType<typeof setInterval> | null = null;
   let scanning = false;
   let nextSchemaCheckAt = 0;
+  let stopPromise: Promise<void> | undefined;
 
   const scan = async (): Promise<void> => {
     if (scanning || ctx.shuttingDown) return;
@@ -2641,7 +2774,8 @@ export function startAgentRunner(
   log.info(
     `runner ${PROCESS_WORKER_ID} started (scan=${config.scanIntervalMs}ms, ` +
       `heartbeat=${config.heartbeatIntervalMs}ms, leaseTtl=${config.leaseTtlMs}ms, ` +
-      `maxConcurrent=${config.maxConcurrent}, maxAttempts=${config.maxAttempts})`,
+      `maxConcurrent=${config.maxConcurrent}, maxAttempts=${config.maxAttempts}, ` +
+      `stopTimeout=${config.stopTimeoutMs}ms)`,
   );
   log.info(
     'agent runner toolset: ask_user always; web_search when a web-search backend is configured; ' +
@@ -2652,20 +2786,55 @@ export function startAgentRunner(
 
   return {
     workerId: PROCESS_WORKER_ID,
-    async stop(options?: { timeoutMs?: number }): Promise<void> {
-      ctx.shuttingDown = true;
-      if (scanTimer) clearInterval(scanTimer);
-      const deadlineAt = Date.now() + (options?.timeoutMs ?? 15_000);
-      for (const session of ctx.running.values()) session.abort.abort();
-      while ((scanning || ctx.running.size > 0) && Date.now() < deadlineAt) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-      if (scanning || ctx.running.size > 0) {
-        log.warn(
-          `stop() timed out with ${ctx.running.size} session(s)${scanning ? ' and an active scan' : ''} still settling`,
+    handOff(): void {
+      handOffRunningSessions(ctx, { includeSettling: true });
+    },
+    stop(options?: { timeoutMs?: number }): Promise<void> {
+      // Memoized: a second call (a test's final stop({timeoutMs: 0}), or the
+      // schema-refusal retirement meeting a SIGTERM shutdown) must not shorten
+      // the drain the first call is still running. A refusal that must cut it
+      // short hands the sessions off first (handOff()).
+      stopPromise ??= (async () => {
+        const outcomesBefore = new Map(outcomes);
+        const runningAtStop = ctx.running.size;
+        ctx.shuttingDown = true;
+        if (scanTimer) clearInterval(scanTimer);
+        const timeoutMs = options?.timeoutMs ?? config.stopTimeoutMs;
+        const startedAt = Date.now();
+        const deadlineAt = startedAt + timeoutMs;
+        const forceAbortAt = startedAt + Math.max(0, timeoutMs - STOP_SETTLE_MARGIN_MS);
+        // Drain: claiming has stopped, and running sessions are left alone for
+        // the grace window. Their in-flight model or tool step finishes and
+        // the turn settles normally, so no output is discarded, no tool runs
+        // twice, and the session never shows as interrupted.
+        while (ctx.running.size > 0 && Date.now() < forceAbortAt) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        // Force: a session still running past the window (a step longer than
+        // it) is handed off as before the drain existed: interrupted receipts,
+        // park, lease release. One already settling, or aborted earlier
+        // (cancellation, lease loss, schema retirement), keeps its own course.
+        const forceAborted = handOffRunningSessions(ctx);
+        while ((scanning || ctx.running.size > 0) && Date.now() < deadlineAt) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        if (scanning || ctx.running.size > 0) {
+          log.warn(
+            `stop() timed out with ${ctx.running.size} session(s)${scanning ? ' and an active scan' : ''} still settling`,
+          );
+        }
+        const settled = [...outcomes]
+          .map(([outcome, total]) => [outcome, total - (outcomesBefore.get(outcome) ?? 0)] as const)
+          .filter(([, count]) => count > 0)
+          .map(([outcome, count]) => `${outcome}=${count}`);
+        log.info(
+          `runner ${PROCESS_WORKER_ID} stopped: ${runningAtStop} session(s) running at stop, ` +
+            `${forceAborted} aborted when the drain window closed, ` +
+            `${ctx.running.size} still settling` +
+            (settled.length ? `; outcomes ${settled.join(', ')}` : ''),
         );
-      }
-      log.info(`runner ${PROCESS_WORKER_ID} stopped`);
+      })();
+      return stopPromise;
     },
   };
 }
