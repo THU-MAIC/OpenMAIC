@@ -101,7 +101,12 @@ export function fenceUntrustedDetail(detail: string): string {
     .slice(0, AGENT_FIX_DETAIL_MAX)
     .replace(/\r\n?|[\u2028\u2029\u0085]/g, '\n')
     .split('\n')
-    .map((line) => line.trim().replace(/(^|\s)\/+/g, '$1').trim())
+    .map((line) =>
+      line
+        .trim()
+        .replace(/(^|\s)\/+/g, '$1')
+        .trim(),
+    )
     .filter(Boolean)
     .map((line) => `> ${line}`)
     .join('\n');
