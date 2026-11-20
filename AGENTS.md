@@ -54,8 +54,8 @@ Policy (maintained in Chinese by the team; apply it as written):
 3. **内部基础设施、供应商和域名**：maic.chat、cogevol.com、平台或管理后台域名、飞书或 Lark 链接、Nacos、ACK、ESA、SLS、MSE、MaaS、ops 网关（maic-ops-*）、百炼（bailian）、内部 IP、主机名、集群和命名空间、任何凭据或 key。
 4. **业务和策略**：计费、额度、credit、配额、付费墙、Token Plan、客户、合作方、-live 的产品路线和灰度方案、品牌（如紫育）、内部人员姓名或飞书账号、Mono 层面的架构或整合计划。
 5. **agent 和工具链残留**：Claude 会话链接（`claude.ai/code/session_…`）和 `Claude-Session:` trailer（署名只保留 `Co-Authored-By` 和 `Generated with Claude Code` 那一行）、本机绝对路径（`/Users/…`）、`_` 开头的临时报告、`.log`、调试输出、内部 skill 名或流程名。
-6. **数据产物**：`eval/`、`cache/`、fixture、截图、录屏里来自线上或内部系统的数据、账号、界面。评测证据只放在私有侧，公开 PR 里用文字给出结论。
-7. **语言**：公开仓库只用英文。代码注释、commit message、PR 和 issue 正文里不能出现中文；需要引用中文界面文案时翻译成英文，测试 fixture 本身是多语言数据的除外，但要逐条确认。
+6. **数据产物**：`eval/`、`cache/`、fixture、截图、录屏里来自线上或内部系统的数据、账号、界面。评测证据只放在私有侧，公开 PR 里用文字给出结论。评审人要求作者补的验证截图、录屏，如果是本地运行、用虚构数据，而且画面里没有其他各类内容，可以公开。
+7. **语言**：公开仓库只用英文。代码注释、commit message、PR 和 issue 正文里不能出现中文；需要引用中文界面文案时翻译成英文，测试 fixture 本身是多语言数据的除外，但要逐条确认。截图、录屏里出现的产品界面文案，如果已经在公开仓库 main 上，不算。
 
 ### 要读的范围
 
