@@ -33,6 +33,7 @@ import { ColorPicker } from './ColorPicker';
 interface TextFormatBarProps {
   readonly elementId: string;
   readonly attrs: TextAttrs;
+  readonly onCommand?: (payload: TextCommandPayload) => void;
 }
 
 // Radix Select forbids an empty-string item value, but the canonical "default
@@ -106,12 +107,13 @@ const STEP_BUTTON =
   'hover:bg-white hover:text-zinc-900 hover:shadow-sm ' +
   'dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-100';
 
-export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
+export function TextFormatBar({ elementId, attrs, onCommand }: TextFormatBarProps) {
   const { t } = useI18n();
-  const run = useCallback(
+  const runLegacyCommand = useCallback(
     (payload: TextCommandPayload) => runActiveTextCommand(elementId, payload),
     [elementId],
   );
+  const run = onCommand ?? runLegacyCommand;
   const fontSize = parseInt(attrs.fontsize, 10) || 16;
   // Local mirror so the user can type freely; only commits on Enter / blur.
   // The effect re-syncs from `attrs.fontsize` whenever it changes externally

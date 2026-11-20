@@ -3,6 +3,10 @@ import { createTextProseStyles } from '@openmaic/renderer';
 export const EDITOR_REACT_STYLES = `
 ${createTextProseStyles('.renderer-prosemirror-editor .ProseMirror')}
 
+[data-editable-slide-canvas] :is([data-rotate-handle], [data-resize-handle]) {
+  transform: translate(-50%, -50%);
+}
+
 /* ProseMirror inserts this zero-size caret helper after inline atoms.
    Host image resets (e.g. Tailwind display:block) must not add a new line. */
 .renderer-prosemirror-editor img.ProseMirror-separator {

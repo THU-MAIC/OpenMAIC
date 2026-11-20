@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
 import type { ViewportStyles } from '@openmaic/renderer';
 import {
@@ -20,9 +20,6 @@ export interface ResizeHandlesProps {
   /** Arm a resize gesture from a pointer-down on a handle box. */
   onHandlePointerDown: (handle: ResizeHandle, e: ReactPointerEvent) => void;
 }
-
-/** Half the handle box size, so `translate(-HALF, -HALF)` centers it on its point. */
-const HANDLE_HALF = 5;
 
 /**
  * Presentational 8-point resize handles for a selected box element.
@@ -61,20 +58,22 @@ export function ResizeHandles({
             key={handle}
             data-resize-handle={handle}
             onPointerDown={(e) => onHandlePointerDown(handle, e)}
-            style={{
-              position: 'absolute',
-              left: `${viewportStyles.left + point.left * canvasScale}px`,
-              top: `${viewportStyles.top + point.top * canvasScale}px`,
-              width: '10px',
-              height: '10px',
-              transform: `translate(-${HANDLE_HALF}px, -${HANDLE_HALF}px)`,
-              border: '1px solid #3b82f6',
-              backgroundColor: '#fff',
-              boxSizing: 'border-box',
-              pointerEvents: 'auto',
-              cursor: getResizeCursor(handle, rotate),
-              touchAction: 'none',
-            }}
+            style={
+              {
+                position: 'absolute',
+                left: `${viewportStyles.left + point.left * canvasScale}px`,
+                top: `${viewportStyles.top + point.top * canvasScale}px`,
+                width: '10px',
+                height: '10px',
+                '--maic-handle-angle': `${rotate}deg`,
+                border: '1px solid var(--maic-editor-selection-color, #3b82f6)',
+                backgroundColor: '#fff',
+                boxSizing: 'border-box',
+                pointerEvents: 'auto',
+                cursor: getResizeCursor(handle, rotate),
+                touchAction: 'none',
+              } as CSSProperties
+            }
           />
         );
       })}

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { InsertPaletteItem } from '@/lib/edit/scene-editor-surface';
@@ -21,6 +22,7 @@ interface Props {
  * (provider, not DOM) doesn't drop the popover trigger handler.
  */
 export function InsertButton({ item, iconOnly = false, popoverSide = 'bottom' }: Props) {
+  const [open, setOpen] = useState(false);
   const button = (
     <button
       type="button"
@@ -55,7 +57,7 @@ export function InsertButton({ item, iconOnly = false, popoverSide = 'bottom' }:
   if (!item.popoverContent) return triggerWithTooltip;
 
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>{button}</PopoverTrigger>
@@ -69,7 +71,7 @@ export function InsertButton({ item, iconOnly = false, popoverSide = 'bottom' }:
         align={popoverSide === 'right' ? 'start' : 'center'}
         className="w-80 p-3"
       >
-        {item.popoverContent()}
+        {item.popoverContent({ close: () => setOpen(false) })}
       </PopoverContent>
     </Popover>
   );

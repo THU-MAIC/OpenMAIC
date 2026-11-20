@@ -2,7 +2,8 @@
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, render } from '@testing-library/react';
 import { BaseLatexElement } from '../../../src/elements/latex/BaseLatexElement';
-import type { PPTLatexElement } from '@openmaic/dsl';
+import { SlideRendererProvider } from '../../../src/context';
+import type { PPTLatexElement, Slide } from '@openmaic/dsl';
 
 /**
  * KaTeX lays out large delimiters (\left\{ … \begin{cases}) using the metrics of
@@ -124,6 +125,26 @@ describe('BaseLatexElement — fit-scale re-measures after fonts settle', () => 
       await Promise.resolve();
     });
     expect(readScale(container)).toBeCloseTo(1);
+  });
+
+  it('fits short formulas to their original classroom frame', () => {
+    installFakeFonts();
+    naturalW = 50;
+    naturalH = 50;
+    const element = latex('x');
+    const slide: Slide = {
+      id: 'formula-page',
+      elements: [element],
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
+    };
+    const { container } = render(
+      <SlideRendererProvider slide={slide} classroomSizing>
+        <BaseLatexElement elementInfo={element} />
+      </SlideRendererProvider>,
+    );
+    expect(readScale(container)).toBeCloseTo(2);
   });
 
   it('keeps KaTeX HTML, formula color, and horizontal alignment in the shared render path', () => {

@@ -74,8 +74,8 @@ describe('PlaybackScreenCanvas', () => {
     }
   });
 
-  it('uses the legacy playback renderer by default', () => {
-    delete process.env[flag];
+  it('uses the legacy playback renderer when disabled', () => {
+    process.env[flag] = 'false';
 
     const html = renderToStaticMarkup(
       createElement(
@@ -90,8 +90,8 @@ describe('PlaybackScreenCanvas', () => {
     expect(html).not.toContain('class="slide-element"');
   });
 
-  it('uses @openmaic/renderer when the playback renderer flag is enabled', () => {
-    process.env[flag] = 'true';
+  it('uses @openmaic/renderer by default', () => {
+    delete process.env[flag];
     const html = renderToStaticMarkup(
       createElement(
         TestSceneProvider,
@@ -138,8 +138,7 @@ describe('PlaybackScreenCanvas', () => {
     };
 
     for (const rendererEnabled of [false, true]) {
-      if (rendererEnabled) process.env[flag] = 'true';
-      else delete process.env[flag];
+      process.env[flag] = String(rendererEnabled);
       const html = renderToStaticMarkup(
         createElement(
           TestSceneProvider,
@@ -183,11 +182,7 @@ describe('PlaybackScreenCanvas', () => {
     };
 
     for (const rendererEnabled of [false, true]) {
-      if (rendererEnabled) {
-        process.env[flag] = 'true';
-      } else {
-        delete process.env[flag];
-      }
+      process.env[flag] = String(rendererEnabled);
 
       const html = renderToStaticMarkup(
         createElement(

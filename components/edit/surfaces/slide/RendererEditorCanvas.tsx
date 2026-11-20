@@ -1,24 +1,38 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useContext, useMemo } from 'react';
+import { SlideRendererProvider } from '@openmaic/renderer';
 import type { Selection } from '@openmaic/editor/react';
 import {
   EditableSlideCanvasWithUI,
   type EditorHostCapabilities,
   type EditorTranslate,
+  type InsertToolbarItem,
 } from '@openmaic/editor/ui';
 import type { EditorTransaction } from '@openmaic/editor/core';
+import { InsertToolbarSlot } from '@/components/edit/EditShell/FloatingInsertToolbar';
 import { useResolvedSlide } from '@/components/slide-renderer/use-resolved-slide';
 import { createElementId } from '@/lib/edit/element-id';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSyncCanvasViewportFromSlide } from '@/lib/store/sync-canvas-viewport';
+import { AnchoredTextBar } from './AnchoredTextBar';
+import './classroom-editor.css';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
 import { useSlideEditSession } from './slide-edit-session';
 import { useResolvedSlideContent } from './use-slide-surface';
 
 export function RendererEditorCanvas() {
   useSyncCanvasViewportFromSlide();
+  const toolbarSlot = useContext(InsertToolbarSlot);
+  const renderInsertToolbar = (items: readonly InsertToolbarItem[]) =>
+    toolbarSlot?.(
+      items.map(({ renderPopover, onInvoke, ...item }) => ({
+        ...item,
+        onInvoke: () => onInvoke?.(),
+        popoverContent: renderPopover,
+      })),
+    );
   const { locale, t } = useI18n();
   const content = useResolvedSlideContent();
   const slide = useResolvedSlide(content.canvas);
@@ -28,6 +42,7 @@ export function RendererEditorCanvas() {
   const pickTarget = useCanvasStore.use.pickTarget();
   const setActiveElementIdList = useCanvasStore.use.setActiveElementIdList();
   const setEditingElementId = useCanvasStore.use.setEditingElementId();
+  const canvasPercentage = useCanvasStore.use.canvasPercentage();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
   const sceneId = useSlideEditSession.getState().sceneId;
 
@@ -79,18 +94,25 @@ export function RendererEditorCanvas() {
   );
 
   return (
-    <EditableSlideCanvasWithUI
-      slide={slide}
-      documentSlide={content.canvas}
-      host={host}
-      selection={selection}
-      onSelectionChange={handleSelectionChange}
-      onTransaction={applyTransaction}
-      onScaleChange={setCanvasScale}
-      elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
-      hiddenElementIds={hiddenElementIds}
-      insertToolbarPlacement="top"
-      snapping
-    />
+    <SlideRendererProvider slide={slide} classroomSizing>
+      <EditableSlideCanvasWithUI
+        slide={slide}
+        documentSlide={content.canvas}
+        host={host}
+        selection={selection}
+        onSelectionChange={handleSelectionChange}
+        onTransaction={applyTransaction}
+        canvasPercentage={canvasPercentage}
+        onScaleChange={setCanvasScale}
+        elementIdPrefix={EDITABLE_ELEMENT_ID_PREFIX}
+        hiddenElementIds={hiddenElementIds}
+        className="classroom-slide-editor"
+        renderTextToolbar={(toolbar) => (
+          <AnchoredTextBar editingElementId={toolbar.elementId} toolbar={toolbar} />
+        )}
+        renderInsertToolbar={toolbarSlot ? renderInsertToolbar : undefined}
+        snapping
+      />
+    </SlideRendererProvider>
   );
 }

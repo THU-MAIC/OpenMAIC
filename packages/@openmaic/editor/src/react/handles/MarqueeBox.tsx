@@ -28,8 +28,9 @@ export function MarqueeBox({ rect, viewportStyles, canvasScale }: MarqueeBoxProp
         top: `${viewportStyles.top + rect.minY * canvasScale}px`,
         width: `${(rect.maxX - rect.minX) * canvasScale}px`,
         height: `${(rect.maxY - rect.minY) * canvasScale}px`,
-        border: '1px dashed #3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        border:
+          'var(--maic-editor-marquee-width, 1px) dashed var(--maic-editor-selection-color, #3b82f6)',
+        backgroundColor: 'var(--maic-editor-marquee-fill, rgba(59, 130, 246, 0.1))',
         boxSizing: 'border-box',
         pointerEvents: 'none',
       }}

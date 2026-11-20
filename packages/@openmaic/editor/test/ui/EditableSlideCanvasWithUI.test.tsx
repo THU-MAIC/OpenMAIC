@@ -315,6 +315,25 @@ describe('EditableSlideCanvasWithUI canonical host', () => {
     });
   });
 
+  it('gives a floating host live insert actions and the full canvas viewport', () => {
+    const { container } = renderEditor({
+      insertItems: ['text'],
+      renderInsertToolbar: ([text]) => (
+        <button onClick={text.onInvoke} aria-pressed={text.active}>
+          {text.label}
+        </button>
+      ),
+    });
+    expect(screen.queryByTestId('renderer-insert-toolbar')).toBeNull();
+    const viewport = container.querySelector<HTMLElement>('[data-editing-ui-canvas-viewport]');
+    expect(viewport?.style.width).toBe('100%');
+    expect(viewport?.style.height).toBe('100%');
+    const button = screen.getByRole('button', { name: 'Insert text box' });
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(canvasMock.latestProps?.creatingText).toBe(true);
+  });
+
   it('uses insertItems as the visibility filter and display order', () => {
     renderEditor({ insertItems: ['audio', 'text', 'image'] });
     const toolbar = screen.getByRole('toolbar', { name: 'Insert toolbar' });
@@ -383,6 +402,22 @@ describe('EditableSlideCanvasWithUI canonical host', () => {
             content: '<p><strong>text-1</strong></p>',
           },
         ],
+      }),
+    );
+  });
+
+  it('routes a host format control to the active text controller', async () => {
+    const { onTransaction } = renderEditor({
+      initialSelection: { elementIds: ['text-1'], editingId: 'text-1' },
+      renderTextToolbar: ({ elementId, onCommand }) => (
+        <button onClick={() => onCommand({ command: 'bold' })}>Format {elementId}</button>
+      ),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Format text-1' }));
+    expect(screen.queryByRole('button', { name: 'Bold' })).toBeNull();
+    expect(onTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operations: [expect.objectContaining({ type: 'text.updateContent', elementId: 'text-1' })],
       }),
     );
   });
