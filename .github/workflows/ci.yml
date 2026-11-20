@@ -500,8 +500,12 @@ jobs:
           NEXT_PUBLIC_MAIC_EDITOR_ENABLED: 'true'
           NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED: 'true'
 
+      # playwright.config.ts maps E2E_SHARD to its files; the shards are
+      # grouped by duration, not by test count.
       - name: Run e2e tests
-        run: pnpm exec playwright test --shard=${{ matrix.shard }}/3
+        run: pnpm exec playwright test
+        env:
+          E2E_SHARD: ${{ matrix.shard }}
 
       - uses: actions/upload-artifact@v7
         if: failure()
