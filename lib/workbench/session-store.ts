@@ -303,14 +303,14 @@ export interface WorkbenchFold {
   /**
    * The conversation is over: a run ended because even compacted history
    * cannot fit the model's context (`CONTEXT_BUDGET_EXCEEDED` with
-   * `still_oversized` or `no_compaction_boundary` — see
-   * `contextBudgetBlocksConversation`). Retrying in this conversation can
-   * never succeed, so the composer closes and the failure notice offers a new
-   * chat instead. A failed summary request is not this: the next message
-   * retries the compaction. Assigned on EVERY terminal `session_end` — a
-   * later end that is not the block (another client ran after a model switch,
-   * say) clears it — which is what keeps the flag a pure function of the
-   * applied event prefix, replaying exactly.
+   * `still_oversized`, `no_compaction_boundary` or `summary_input_too_large`
+   * — see `contextBudgetBlocksConversation`). Retrying in this conversation
+   * can never succeed, so the composer closes and the failure notice offers a
+   * new chat instead. A failed summary request (`summary_failed`) is not
+   * this: the next message retries the compaction. Assigned on EVERY terminal
+   * `session_end` — a later end that is not the block (another client ran
+   * after a model switch, say) clears it — which is what keeps the flag a
+   * pure function of the applied event prefix, replaying exactly.
    */
   contextBlocked: boolean;
   lastEventId: number;

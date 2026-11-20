@@ -75,6 +75,7 @@ const contentOf = (state: WorkbenchFold) => state.chat.filter((n) => n.kind !== 
 describe('lifecycle events', () => {
   it.each([
     'summary_failed',
+    'summary_input_too_large',
     'no_compaction_boundary',
     'still_oversized',
     'invalid_output_budget',
@@ -107,10 +108,14 @@ describe('lifecycle events', () => {
     expect(state.status).toBe('failed');
     expect(state.generationOpen).toBe(false);
     // Only a transcript that cannot fit even after compaction closes the
-    // conversation. A failed summary request is retried by the next message,
+    // conversation (including a history too large to send to the summary
+    // model at all). A failed summary request is retried by the next message,
     // and a misconfigured budget once the configuration is fixed, so the
     // composer stays open for both.
-    const blocks = reason === 'still_oversized' || reason === 'no_compaction_boundary';
+    const blocks =
+      reason === 'still_oversized' ||
+      reason === 'no_compaction_boundary' ||
+      reason === 'summary_input_too_large';
     expect(state.contextBlocked).toBe(blocks);
     // The new-chat exit rides every length-limit notice, including the
     // retryable one: a new chat is always a valid way out.

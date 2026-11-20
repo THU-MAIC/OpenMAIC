@@ -820,12 +820,24 @@ export function createCompactionRuntime(opts: CreateCompactionRuntimeOptions): C
     trace.lastSummaryFailure = failure;
     // Metadata only: never the summarized history, the prompt, or a summary.
     console.warn('[compaction] summary failed; checking context budget', failure);
-    return recoverSummaryFailure(messages, signal);
+    return recoverSummaryFailure(
+      messages,
+      signal,
+      // Planned, not attempted: the history itself cannot be sent to the
+      // summary model, so a resend (which only adds to it) fails the same way.
+      // A provider outage or timeout stays `summary_failed`: the next message
+      // retries the compaction.
+      error instanceof SummaryInputTooLargeError ? 'summary_input_too_large' : 'summary_failed',
+    );
   };
-  const recoverSummaryFailure = (messages: AgentMessage[], signal?: AbortSignal) => {
+  const recoverSummaryFailure = (
+    messages: AgentMessage[],
+    signal: AbortSignal | undefined,
+    reason: 'summary_failed' | 'summary_input_too_large',
+  ) => {
     if (signal?.aborted) throw signal.reason ?? new Error('Compaction aborted');
     // Never pass an oversized transcript through merely because summarization failed.
-    if (estimate(messages) >= targetTokens) throw new ContextBudgetError('summary_failed');
+    if (estimate(messages) >= targetTokens) throw new ContextBudgetError(reason);
     return messages;
   };
   return {
