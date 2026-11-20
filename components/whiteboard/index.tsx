@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eraser, History, Minimize2, PencilLine, RotateCcw } from 'lucide-react';
+import { Copy, Eraser, History, Minimize2, PencilLine, RotateCcw } from 'lucide-react';
 import type { PPTElement } from '@openmaic/dsl';
 import type { WhiteboardElementReference } from '@/lib/types/chat';
 import { ElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
@@ -20,6 +20,7 @@ import { createStageAPI } from '@/lib/api/stage-api';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
+import { extractWhiteboardText } from '@/lib/whiteboard/extract-text';
 
 interface WhiteboardProps {
   readonly isOpen: boolean;
@@ -111,6 +112,26 @@ export function Whiteboard({
       toast.success(t('whiteboard.clearSuccess'));
     } else {
       toast.error(t('whiteboard.clearError') + result.error);
+    }
+  };
+
+  const handleCopyAllText = async () => {
+    if (clearingRef.current || isClearing) return;
+
+    const text = extractWhiteboardText(whiteboard);
+    if (!text) {
+      toast.info(t('whiteboard.copyEmpty'));
+      return;
+    }
+
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API unavailable');
+      }
+      await navigator.clipboard.writeText(text);
+      toast.success(t('whiteboard.copySuccess'));
+    } catch {
+      toast.error(t('whiteboard.copyError'));
     }
   };
 
@@ -210,6 +231,18 @@ export function Whiteboard({
                     </div>
                   </>
                 )}
+                <motion.button
+                  type="button"
+                  data-testid="whiteboard-copy-all-text"
+                  onClick={handleCopyAllText}
+                  disabled={isClearing}
+                  whileTap={{ scale: 0.9 }}
+                  className="p-2 text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                  title={t('whiteboard.copyAllText')}
+                  aria-label={t('whiteboard.copyAllText')}
+                >
+                  <Copy className="w-4 h-4" />
+                </motion.button>
                 <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                 <button
                   type="button"
