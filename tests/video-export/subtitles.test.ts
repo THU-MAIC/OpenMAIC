@@ -60,3 +60,9 @@ describe('subtitle serialization', () => {
     expect(toVtt([])).toBe('WEBVTT\n\n');
   });
 });
+
+it('renders old formula-only cues and leaves literal currency readable in SRT and VTT', () => {
+  const cues = [cue(0, 0, 3000, String.raw`$5 or $10 for $\frac{a}{b}$ today.`)];
+  for (const serialize of [toSrt, toVtt])
+    expect(serialize(cues)).toContain('$5 or $10 for a over b today.');
+});

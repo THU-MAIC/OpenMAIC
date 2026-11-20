@@ -14,7 +14,7 @@ import type { DocumentMigrationDeps } from '@/lib/document-store';
 import { fetchMediaUrl } from '@/lib/media/fetch-media-url';
 import { isConcreteMediaAddress } from '@/lib/media/resolve-media-ref';
 import { mapWithConcurrency } from '@/lib/utils/concurrency';
-import { renderQuizMathText } from '@/lib/quiz/math-text';
+import { hasCaptionMath, renderQuizMathText } from '@/lib/quiz/math-text';
 import {
   buildClassroomExportSnapshot,
   classroomExportBaseName,
@@ -496,6 +496,13 @@ function hasQuizMath(text: string | undefined): boolean {
  */
 function needsMathFonts(manifest: ClassroomManifest): boolean {
   return manifest.scenes.some((scene) => {
+    if (
+      (scene.actions ?? []).some(
+        (action) => action.type === 'speech' && hasCaptionMath((action as { text?: string }).text),
+      )
+    ) {
+      return true;
+    }
     const content = scene.content;
     if (content.type === 'slide') {
       // KaTeX markup, or inline formulas the player typesets from source.

@@ -10,6 +10,7 @@ import type { PlaybackView } from '@/lib/playback';
 import type { Participant } from '@/lib/types/roundtable';
 import { cn } from '@/lib/utils';
 import { DEFAULT_TEACHER_AVATAR, DEFAULT_STUDENT_AVATAR } from '@/components/roundtable/constants';
+import { CaptionMathText } from '@/components/common/CaptionMathText';
 
 const PRESENTATION_BUBBLE_WIDTH = 'w-[min(420px,calc(100cqw-3rem))]';
 
@@ -294,7 +295,7 @@ export function PresentationBubbleCard({
           </div>
         ) : (
           <p className="text-[15px] leading-relaxed whitespace-pre-wrap break-words text-gray-800 dark:text-gray-100">
-            {bubble.text}
+            <CaptionMathText text={bubble.text} />
             {bubble.isTopicPending && (
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 ml-1 align-middle" />
             )}

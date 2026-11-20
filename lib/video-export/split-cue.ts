@@ -18,6 +18,7 @@
  * Pure: depends only on the IR types. No `@/`, no DOM — inside the
  * `lib/video-export/**` purity boundary.
  */
+import { speechMathSpans } from '@openmaic/dsl';
 import type { SubtitleCue } from './ir';
 
 /**
@@ -222,6 +223,25 @@ function joinCueText(prev: string, next: string): string {
   return `${prev}${gap}${next}`;
 }
 
+function displayPieces(text: string): string[] {
+  const spans = speechMathSpans(text);
+  if (!spans.length) return splitCueText(text);
+  const originals = new Map<string, string>();
+  let code = 0xf0000;
+  let masked = '';
+  let cursor = 0;
+  for (const span of spans) {
+    let token = String.fromCodePoint(code++);
+    while (text.includes(token)) token = String.fromCodePoint(code++);
+    originals.set(token, text.slice(span.start, span.end));
+    masked += text.slice(cursor, span.start) + token;
+    cursor = span.end;
+  }
+  return splitCueText(masked + text.slice(cursor)).map((piece) =>
+    Array.from(piece, (char) => originals.get(char) ?? char).join(''),
+  );
+}
+
 /**
  * Split one cue into multiple, distributing its `[startMs, endMs]` window across
  * the text pieces in proportion to their reading weight. The pieces tile the
@@ -233,7 +253,7 @@ function joinCueText(prev: string, next: string): string {
  * unchanged except for text-trim, so already-short narration is untouched.
  */
 export function splitCue(cue: SubtitleCue): SubtitleCue[] {
-  const pieces = splitCueText(cue.text);
+  const pieces = displayPieces(cue.text);
   const windowMs = cue.endMs - cue.startMs;
   if (pieces.length <= 1 || windowMs <= 0) {
     const text = pieces[0] ?? cue.text.trim();
@@ -290,5 +310,9 @@ export function splitCue(cue: SubtitleCue): SubtitleCue[] {
  * serializers all consume the same short cues.
  */
 export function splitCues(cues: readonly SubtitleCue[]): SubtitleCue[] {
-  return cues.flatMap((c) => splitCue(c)).map((c, index) => ({ ...c, index }));
+  // Paired views share the audio interval. Their sentences may differ, so each exporter
+  // wraps its view within that interval after scene timing has been finalized.
+  return cues
+    .flatMap((c) => (c.spokenText === undefined ? splitCue(c) : [c]))
+    .map((c, index) => ({ ...c, index }));
 }

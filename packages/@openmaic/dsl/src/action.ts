@@ -48,6 +48,11 @@ export interface SpeechAction extends ActionBase {
   type: 'speech';
   text: string;
   /**
+   * Spoken form for TTS when inline formula pairs (`[[$LaTeX$ | spoken]]`)
+   * decouple caption display (`text`, rendered with KaTeX) from narration.
+   */
+  spokenText?: string;
+  /**
    * An asset reference for narration audio. Documents converted by the app-side
    * reference converter (#1007 part 2, step c) hold allocated asset ids here.
    * Unconverted legacy documents may still carry TTS-derived ids until they are

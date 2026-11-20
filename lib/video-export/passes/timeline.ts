@@ -14,6 +14,7 @@
  *
  * Pure: no IO; timing comes entirely through the injected options.
  */
+import { plainSpeechText, splitSpeechFormulaPairs } from '@openmaic/dsl';
 import type {
   Action,
   SpeechAction,
@@ -182,13 +183,17 @@ function dispatchSegment(
   switch (action.type) {
     case 'speech': {
       const speech = action as SpeechAction;
+      const plain = plainSpeechText(speech);
+      const display = speech.text.includes('[[')
+        ? splitSpeechFormulaPairs(speech.text).text
+        : speech.text;
       const stored = opts.getAudioDurationMs?.(speech) != null;
       if (stored) markTts();
       bucket.narration.push({
         ...base,
         startMs: seg.startMs,
         durationMs: seg.durationMs,
-        text: speech.text,
+        text: plain,
         audio: {
           durationMs: seg.durationMs,
           source: stored ? 'stored' : 'estimated',
@@ -210,7 +215,8 @@ function dispatchSegment(
           actionId: speech.id,
           startMs: seg.startMs,
           endMs: seg.startMs + seg.durationMs,
-          text: speech.text,
+          text: display,
+          ...(plain !== display ? { spokenText: plain } : {}),
         });
       }
       return;

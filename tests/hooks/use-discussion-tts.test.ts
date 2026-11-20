@@ -216,6 +216,41 @@ afterEach(() => {
 });
 
 describe('discussion TTS synthesis lookahead', () => {
+  it('routes a female teacher and male student to their MOSS references even with old roster voices', async () => {
+    const original = selection.providersConfig['openai-tts'];
+    const maleId = 'test-film-voice';
+    selection.providersConfig['openai-tts'] = Object.assign({}, original, {
+      isServerConfigured: true,
+      modelId: 'hosted-classroom-voice',
+      providerOptions: { backend: 'moss' },
+      voices: [
+        { id: 'course-narrator', name: '讲师', gender: 'female' },
+        { id: maleId, name: '影视解说男声', gender: 'male' },
+      ],
+    });
+    try {
+      agents = [
+        {
+          ...teacher,
+          voiceDesign: { gender: 'female', identity: '老师', texture: '', delivery: '' },
+        },
+        {
+          ...teacher,
+          id: 'student',
+          role: 'student',
+          voiceDesign: { gender: 'male', identity: '学生', texture: '', delivery: '' },
+        },
+      ];
+      act(() => root.render(createElement(Probe)));
+      await seal('teacher-line', 'teacher');
+      await seal('student-line', 'student');
+      await respond(0);
+      expect(requests.map((r) => r.body.ttsVoice)).toEqual(['course-narrator', maleId]);
+    } finally {
+      selection.providersConfig['openai-tts'] = original;
+    }
+  });
+
   it('requests B during A playback and consumes the prepared result exactly once', async () => {
     await seal('A');
     await seal('B');

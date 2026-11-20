@@ -61,6 +61,8 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
+import { CaptionMathText } from '@/components/common/CaptionMathText';
+import { hasCaptionMath } from '@/lib/quiz/math-text';
 import {
   Select,
   SelectContent,
@@ -641,6 +643,8 @@ function SpeechClip({
   const { t } = useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
   const [val, setVal] = useState(text);
+  const fieldId = useId();
+  const showFormula = useMemo(() => hasCaptionMath(text), [text]);
   // Has the user typed since the last external sync? If not, external text
   // changes (e.g. an agent regeneration mid-edit) are adopted even while
   // focused — so a stale draft can't clobber regenerated narration on blur.
@@ -705,19 +709,32 @@ function SpeechClip({
           <DeleteButton onDelete={onDelete} />
         </span>
       </div>
-      <QuietTextarea
-        ref={ref}
-        lineHeightPx={SPEECH_LINE_PX}
-        wrapperClassName="mt-1"
-        value={val}
-        onChange={(e) => {
-          dirtyRef.current = true;
-          setVal(e.target.value);
-        }}
-        onBlur={commit}
-        placeholder={t('edit.timeline.speechPlaceholder')}
-        className="px-3 text-[12.5px] leading-[19px] text-foreground/90 placeholder:text-muted-foreground/40"
-      />
+      <div className="group/speech relative mt-1 flex min-h-0 flex-1 flex-col">
+        <QuietTextarea
+          id={fieldId}
+          ref={ref}
+          lineHeightPx={SPEECH_LINE_PX}
+          wrapperClassName={showFormula ? 'opacity-0 focus-within:opacity-100' : undefined}
+          value={val}
+          onChange={(e) => {
+            dirtyRef.current = true;
+            setVal(e.target.value);
+          }}
+          onBlur={commit}
+          aria-label={t('edit.timeline.speechPlaceholder')}
+          placeholder={t('edit.timeline.speechPlaceholder')}
+          className="px-3 text-[12.5px] leading-[19px] text-foreground/90 placeholder:text-muted-foreground/40"
+        />
+        {showFormula && (
+          <label
+            htmlFor={fieldId}
+            aria-hidden="true"
+            className="absolute inset-0 cursor-text overflow-y-auto whitespace-pre-wrap break-words px-3 text-[12.5px] leading-[19px] text-foreground/90 group-focus-within/speech:hidden [scrollbar-width:thin]"
+          >
+            <CaptionMathText text={text} />
+          </label>
+        )}
+      </div>
     </div>
   );
 }

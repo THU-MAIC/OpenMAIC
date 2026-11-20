@@ -107,6 +107,8 @@ export interface GenerationRunOutline {
   outlines: SceneOutline[];
   languageDirective: string;
   courseTitle?: string;
+  /** The course's school subject label from the outline (e.g. 数学, 英语). */
+  subject?: string;
   /** The server-effective task-engine mode the outline was generated in. */
   taskEngineMode: boolean;
 }

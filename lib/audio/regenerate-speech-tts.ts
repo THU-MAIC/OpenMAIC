@@ -8,6 +8,7 @@
 import { db } from '@/lib/device-storage/database';
 import { serverTTSAvailable } from '@/lib/audio/tts-selection';
 import { generateAndStoreTTS } from '@/lib/audio/narration-tts';
+import { mossCourseSubject, narrationSpokenText, precedingSpeechTexts } from '@/lib/audio/moss-tts';
 import { useStageStore } from '@/lib/store/stage';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
@@ -77,18 +78,31 @@ export async function audioObjectUrl(audioId: string): Promise<string | null> {
  */
 export async function regenerateSpeechAudio(
   sceneOrder: number,
-  action: { id?: string; text?: string; audioId?: string },
+  action: { id?: string; text?: string; spokenText?: string; audioId?: string },
   language?: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
   if (!isManagedTtsActive()) return null;
-  const text = action.text?.trim();
-  if (!text || !action.id) return null;
+  const rawText = action.text?.trim();
+  if (!rawText || !action.id) return null;
   const requestId = `tts_request_s${sceneOrder}_${action.id}`;
-  const stageId = useStageStore.getState().stage?.id;
+  const { stage, scenes } = useStageStore.getState();
+  const stageId = stage?.id;
   // Regenerating narration calls the TTS provider and allocates a fresh pool
   // asset, so it is gated exactly like every other way generation starts. The
   // surfaces withhold the control too; refusing here keeps the two one rule.
   if (!mayGenerateForStage(stageId)) return null;
-  return generateAndStoreTTS(requestId, text, language, signal, undefined, stageId);
+  const scene = scenes.find((item) => item.order === sceneOrder);
+  const live = scene?.actions?.find((item) => item.type === 'speech' && item.id === action.id);
+  const spokenText =
+    action.spokenText ??
+    (live?.type === 'speech' && live.text?.trim() === rawText ? live.spokenText : undefined);
+  const text = narrationSpokenText({ text: rawText, spokenText });
+  const previousTexts = scene ? precedingSpeechTexts(scenes, scene.id, action.id) : [];
+  const subject = mossCourseSubject(stage);
+  const options =
+    previousTexts.length || subject
+      ? { ...(previousTexts.length ? { previousTexts } : {}), ...(subject ? { subject } : {}) }
+      : undefined;
+  return generateAndStoreTTS(requestId, text, language, signal, options, stageId);
 }

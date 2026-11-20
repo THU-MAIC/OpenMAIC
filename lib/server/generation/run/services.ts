@@ -96,6 +96,9 @@ export interface NarrateClipInput {
   target: RunNarrationTarget;
   stageId: string;
   text: string;
+  previousTexts?: readonly string[];
+  /** The course's subject label (or title), for managed MOSS pinyin handling. */
+  subject?: string;
   /** The request label (`tts_s<order>_<actionId>`); the stored clip gets an allocated id. */
   audioId: string;
   voice: string;
@@ -549,6 +552,8 @@ export const defaultRunStepServices: RunStepServices = {
     const narration = await synthesizeNarration(
       {
         text: input.text,
+        previousTexts: input.previousTexts,
+        ...(input.subject ? { subject: input.subject } : {}),
         audioId: input.audioId,
         connection: input.target.connection,
         requestedVoice: input.voice,

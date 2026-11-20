@@ -176,6 +176,10 @@ export interface TTSSpeaker {
  */
 export interface TTSModelConfig {
   providerId: TTSProviderId;
+  /** Previous course speech lines in reading order, for context-aware normalization. */
+  previousTexts?: readonly string[];
+  /** The course's subject label (or title), sent to managed MOSS to steer pinyin handling. */
+  subject?: string;
   modelId?: string;
   apiKey?: string;
   baseUrl?: string;

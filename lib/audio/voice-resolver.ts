@@ -1,5 +1,7 @@
 import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
+import { isManagedMossTts, mossRoleGender, mossRoleVoice } from '@/lib/audio/moss-tts';
+import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   QWEN_VOICE_CLONE_GROUP_ID,
@@ -40,7 +42,12 @@ export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
 
 type ProviderConfigMap = Record<
   string,
-  (TTSEnablementConfig & { modelId?: string; voices?: ConfiguredTTSVoice[] }) | undefined
+  | (TTSEnablementConfig & {
+      modelId?: string;
+      voices?: ConfiguredTTSVoice[];
+      providerOptions?: Record<string, unknown>;
+    })
+  | undefined
 >;
 
 /** Prefer a persisted narrator binding, retaining the global fallback when it is unusable. */
@@ -48,7 +55,30 @@ export function resolveNarratorVoiceBinding(
   bound: AgentConfig['voiceConfig'] | undefined,
   globalVoice: ResolvedVoice,
   providerConfigs: ProviderConfigMap,
+  design?: AgentConfig['voiceDesign'],
 ): ResolvedVoice {
+  // Old courses can still bind Vivian under the same OpenAI-compatible adapter.
+  const config = providerConfigs[globalVoice.providerId];
+  if (
+    isManagedMossTts({
+      providerId: globalVoice.providerId,
+      managed: config?.isServerConfigured,
+      options: config?.providerOptions,
+    })
+  ) {
+    const voices = config?.voices;
+    const defaultVoice = configuredDefaultVoice(config?.providerOptions, voices);
+    // The teacher picker persists its explicit choice as the lecture voice.
+    if (globalVoice.voiceId !== defaultVoice && voices?.some((v) => v.id === globalVoice.voiceId)) {
+      return globalVoice;
+    }
+    const boundId = bound?.providerId === globalVoice.providerId ? bound.voiceId : undefined;
+    const preferred = voices?.some((voice) => voice.id === boundId) ? boundId : globalVoice.voiceId;
+    return {
+      ...globalVoice,
+      voiceId: mossRoleVoice(voices, preferred, mossRoleGender(design), defaultVoice),
+    };
+  }
   if (
     bound &&
     bound.voiceId.trim() &&
@@ -114,6 +144,22 @@ export function resolveAgentVoice(
   enabledProviders: ProviderWithVoices[],
   overrides?: AgentVoiceOverrides,
 ): ResolvedVoice | null {
+  const primary = enabledProviders[0];
+  if (primary?.mossDefaultVoice) {
+    const voices = primary.configuredVoices;
+    const override = overrides?.[agent.id];
+    const picked =
+      override?.providerId === primary.providerId && voices?.find((v) => v.id === override.voiceId);
+    const bound =
+      agent.voiceConfig?.providerId === primary.providerId ? agent.voiceConfig.voiceId : undefined;
+    return {
+      providerId: primary.providerId,
+      modelId: primary.modelGroups[0]?.modelId,
+      voiceId: picked
+        ? picked.id
+        : mossRoleVoice(voices, bound, mossRoleGender(agent.voiceDesign), primary.mossDefaultVoice),
+    };
+  }
   // Candidates in priority order: the user's persisted per-agent override
   // (settings store — survives reloads; registry records for default/generated
   // agents do not), then the agent's own voiceConfig. Each is honored only
@@ -357,6 +403,8 @@ export interface ModelVoiceGroup {
 }
 
 export interface ProviderWithVoices {
+  /** Configured MOSS narrator, used for automatic role matching. */
+  mossDefaultVoice?: string;
   providerId: TTSProviderId;
   providerName: string;
   voices: Array<{
@@ -453,6 +501,13 @@ export function getEnabledProvidersWithVoices(
         providerId,
         providerName: config.name,
         configuredVoiceList: true,
+        ...(isManagedMossTts({
+          providerId,
+          managed: providerConfig.isServerConfigured,
+          options: providerConfig.providerOptions,
+        })
+          ? { mossDefaultVoice: configuredDefaultVoice(providerConfig.providerOptions, voices) }
+          : {}),
         configuredVoices: providerConfig.voices,
         voices: allVoices,
         modelGroups: [

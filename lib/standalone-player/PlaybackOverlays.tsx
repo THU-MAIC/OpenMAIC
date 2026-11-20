@@ -7,12 +7,14 @@ import { safeClassroomUrl } from './scenes/PblScene';
  * narrow or short screens it is a strip of fixed height below the scene, shown
  * while playback is active so the scene does not resize with every line.
  */
+import { CaptionMathText } from '@/components/common/CaptionMathText';
+
 export function CaptionBar({ text }: { text: string }) {
   return (
     <div className="caption-bar" data-testid="caption-bar">
       {text && (
         <p className="caption-text" data-testid="caption" aria-live="polite">
-          {text}
+          <CaptionMathText text={text} />
         </p>
       )}
     </div>

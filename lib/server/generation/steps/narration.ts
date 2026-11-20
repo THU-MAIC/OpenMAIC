@@ -1,5 +1,6 @@
 import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
+import { isManagedMossTts, mossRoleVoice } from '@/lib/audio/moss-tts';
 /**
  * Narration: synthesize one speech line through the tts slot's provider.
  * Moved from POST /api/generate/tts, which keeps resolving the slot (with the
@@ -24,6 +25,9 @@ import { StepRefusal, type StepContext } from './context';
 
 export interface NarrationInput {
   text: string;
+  previousTexts?: readonly string[];
+  /** The course's subject label (or title); managed MOSS reads it for pinyin handling. */
+  subject?: string;
   /** The audio's id, for the log. */
   audioId: string;
   /** The tts slot's connection. */
@@ -67,13 +71,31 @@ export async function synthesizeNarration(
   trace.providerId = ttsProviderId;
   // A voice belongs to its provider: the request's voice unless it was
   // chosen for another provider, in which case the provider's default.
-  const ttsVoice =
-    requestedVoice && (!requestedProviderId || requestedProviderId === ttsProviderId)
-      ? requestedVoice
-      : configuredDefaultVoice(connection.options, connection.voices) ||
-        DEFAULT_TTS_VOICES[ttsProviderId as keyof typeof DEFAULT_TTS_VOICES] ||
-        requestedVoice;
+  const moss = isManagedMossTts(connection);
+  const requestedProviderVoice =
+    !requestedProviderId || requestedProviderId === ttsProviderId ? requestedVoice : undefined;
+  const ttsVoice = moss
+    ? mossRoleVoice(
+        connection.voices,
+        requestedProviderVoice,
+        undefined,
+        configuredDefaultVoice(connection.options, connection.voices),
+      )
+    : requestedProviderVoice ||
+      configuredDefaultVoice(connection.options, connection.voices) ||
+      DEFAULT_TTS_VOICES[ttsProviderId as keyof typeof DEFAULT_TTS_VOICES] ||
+      requestedVoice;
   trace.voice = ttsVoice;
+  if (
+    moss &&
+    requestedProviderVoice !== ttsVoice &&
+    /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i.test(requestedProviderVoice ?? '')
+  ) {
+    throw new StepRefusal<NarrationRefusal>(
+      'voice-missing',
+      'This voice ID is not registered with the configured MOSS speech API',
+    );
+  }
   if (!ttsVoice) {
     throw new StepRefusal<NarrationRefusal>('voice-missing', 'Missing required field: ttsVoice');
   }
@@ -149,6 +171,8 @@ export async function synthesizeNarration(
   const config = {
     providerId: ttsProviderId as TTSProviderId,
     modelId: resolvedModelId,
+    ...(moss ? { previousTexts: input.previousTexts } : {}),
+    ...(moss && input.subject ? { subject: input.subject } : {}),
     voice: ttsVoice,
     ...(connection.voices ? { voices: connection.voices } : {}),
     speed: qwenCloneVoice ? 1 : requestedSpeed,

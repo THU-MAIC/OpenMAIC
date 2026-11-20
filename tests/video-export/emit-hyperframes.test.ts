@@ -1054,3 +1054,31 @@ describe('emitHyperframes determinism red-lines (hyperframes lint proxy)', () =>
     expect(html).toMatch(/tl\.set\(\{\}, \{\}, [\d.]+\);/);
   });
 });
+
+it('burns a derivative as typeset math on a slide-only video and ships readable sidecars', () => {
+  const latex = String.raw`$f'(x)=\lim_{h\to 0}\frac{f(x+h)-f(x)}{h}$`;
+  const reading = 'The derivative is the limit of the difference quotient.';
+  const ir = compileVideoTimeline(
+    {
+      stage: { id: 'math', name: 'Calculus' },
+      scenes: [slide('s1', [speech('sp', 'For <students> ' + latex, { spokenText: reading })])],
+    },
+    { timing: stubProbe({ sp: 6000 }), assets: NO_ASSETS },
+  );
+  expect(ir.scenes[0].narration[0].text).toBe(reading);
+  const project = emitHyperframes(ir, { burnInSubtitles: true });
+  const file = (name: string) => project.files.find((f) => f.path === name)!.content;
+  const band = file('index.html').split('id="subtitles"')[1].split('<script')[0];
+  expect(band).toContain('class="katex"');
+  expect(band).toContain('&lt;students&gt;');
+  expect(band).not.toMatch(/\\frac|\\lim/);
+  expect(file('index.html')).toContain('KaTeX_Main-Regular.woff2');
+  expect(project.vendorAssets.length).toBeGreaterThan(0);
+  expect(file('LICENSES/KaTeX-MIT.txt')).toContain('MIT');
+  for (const name of ['subtitles.srt', 'subtitles.vtt']) {
+    expect(file(name)).toContain(reading);
+    expect(file(name)).not.toMatch(/\\frac|\\lim|\$/);
+    expect(file(name)).toMatch(/00:00:00[,.]000 --> 00:00:06[,.]000/);
+  }
+  expect(emitHyperframes(ir).vendorAssets).toHaveLength(0);
+});

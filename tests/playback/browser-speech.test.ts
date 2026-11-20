@@ -21,6 +21,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function setup(actions: Action[], playbackSpeed = 1) {
   const synth = new FakeSpeechSynthesis();
+  const onSpeechStart = vi.fn();
   const onSpeechEnd = vi.fn();
   const onComplete = vi.fn();
   const engine = new PlaybackEngine(
@@ -39,10 +40,10 @@ function setup(actions: Action[], playbackSpeed = 1) {
       isPlaying: vi.fn(() => false),
       hasActiveAudio: vi.fn(() => false),
     } as unknown as AudioPlayer,
-    { onSpeechEnd, onComplete, getPlaybackSpeed: () => playbackSpeed },
+    { onSpeechStart, onSpeechEnd, onComplete, getPlaybackSpeed: () => playbackSpeed },
     new BrowserSpeechPlayer({ synth }),
   );
-  return { synth, engine, onSpeechEnd, onComplete };
+  return { synth, engine, onSpeechStart, onSpeechEnd, onComplete };
 }
 
 const initialSettings = useSettingsStore.getState();
@@ -64,6 +65,23 @@ afterEach(() => {
 });
 
 describe('classroom playback with browser speech', () => {
+  it('keeps printed formulas in the captions and speaks the matching lines in order', async () => {
+    const { synth, engine, onSpeechStart, onComplete } = setup([
+      { id: 'a', type: 'speech', text: '先看 $x^2$。', spokenText: '先看 X 的平方。' },
+      speech('b', '再看 $\\alpha$。'),
+    ]);
+    engine.start();
+    await flush();
+    expect(onSpeechStart.mock.calls).toEqual([['先看 $x^2$。']]);
+    expect(synth.texts).toEqual(['先看 X 的平方。']);
+    synth.finish();
+    await flush();
+    expect(onSpeechStart.mock.calls).toEqual([['先看 $x^2$。'], ['再看 $\\alpha$。']]);
+    expect(synth.texts).toEqual(['先看 X 的平方。', '再看 α。']);
+    synth.finish();
+    expect(onComplete).toHaveBeenCalledOnce();
+  });
+
   it('pauses mid-line and resumes by speaking the interrupted sentence again', async () => {
     const { synth, engine, onSpeechEnd, onComplete } = setup([
       speech('a', 'One. Two.'),

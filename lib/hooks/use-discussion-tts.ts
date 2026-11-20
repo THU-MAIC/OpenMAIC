@@ -204,6 +204,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
             modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
           },
           ttsProvidersConfig,
+          agent.voiceDesign,
         );
         const preferred = isTTSProviderEnabled(
           resolved.providerId,

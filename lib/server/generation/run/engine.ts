@@ -41,6 +41,14 @@
  * owner-bound document store); a worker executing it loses its lease.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
+import { getMossTtsConcurrency } from '@/lib/server/narration-concurrency';
+import {
+  isManagedMossTts,
+  mossCourseSubject,
+  MOSS_REQUEST_TIMEOUT_MS,
+  narrationSpokenText,
+  precedingSpeechTexts,
+} from '@/lib/audio/moss-tts';
 import { audioFailureKind } from '@/lib/audio/provider-error';
 import { isAbortError } from '@openmaic/generation';
 import type { Queryable } from '@openmaic/storage/document/pg';
@@ -839,6 +847,7 @@ async function executeClaimedRun(
       outlines: result.outlines,
       languageDirective: result.languageDirective,
       ...(result.courseTitle ? { courseTitle: result.courseTitle } : {}),
+      ...(result.subject ? { subject: result.subject } : {}),
       taskEngineMode: result.taskEngineMode,
     };
     // The run waits for confirmation holding no worker, unless its caller
@@ -874,7 +883,7 @@ async function executeClaimedRun(
   };
 
   const resolveAgents = async (): Promise<AgentsOutput> => {
-    const { outlines, languageDirective, courseTitle, taskEngineMode } = outline();
+    const { outlines, languageDirective, courseTitle, subject, taskEngineMode } = outline();
     const name = courseTitle || topicFromRequirement(input.requirement);
     const presets = async (agentIds: readonly string[]): Promise<GenerationRunAgentsResult> => {
       const configs = await services.presetAgents(owner, agentIds);
@@ -925,7 +934,7 @@ async function executeClaimedRun(
                 languageDirective,
                 availableAvatars: AGENT_AVATARS.map((a) => a.path),
                 avatarDescriptions: AGENT_AVATARS.map((a) => ({ path: a.path, desc: a.desc })),
-                availableVoices: target ? advertisedVoices(target) : [],
+                availableVoices: target ? advertisedVoices(target, input.voice) : [],
                 narratorVoice: target ? narratorVoiceForGeneration(target, input.voice) : undefined,
               },
               { log, signal: callSignal },
@@ -968,6 +977,7 @@ async function executeClaimedRun(
       interactiveMode: input.interactive,
       taskEngineMode,
       languageDirective,
+      ...(subject ? { subject } : {}),
       agentIds: result.agentIds,
       ...(result.generatedAgentConfigs
         ? { generatedAgentConfigs: result.generatedAgentConfigs }
@@ -989,6 +999,17 @@ async function executeClaimedRun(
     const speechActions = scene.actions.filter(
       (action): action is SpeechAction => action.type === 'speech' && !!action.text,
     );
+    const moss = isManagedMossTts(target.connection);
+    const contextScenes: Pick<Scene, 'id' | 'actions'>[] = [];
+    if (moss) {
+      for (let i = 0; i < sceneIndex; i++) {
+        const previous =
+          output<NarrationOutput>(sceneStepId(i, 'narration')) ??
+          output<SceneActionsResult>(sceneStepId(i, 'actions'));
+        if (previous?.scene) contextScenes.push(previous.scene);
+      }
+      contextScenes.push(scene);
+    }
     // The narrator as the browser's registry finds it: the built-in agents
     // first, then the owner's custom agents, then the course's generated roster.
     const teacher = pickNarratorAgent([
@@ -1000,6 +1021,8 @@ async function executeClaimedRun(
     const { speed } = slotVoice(target, input.voice);
     const stageId = agents().stage.id;
     const { languageDirective } = outline();
+    // The course's subject steers MOSS pinyin handling; older runs fall back to its name.
+    const subject = moss ? mossCourseSubject(agents().stage) : undefined;
     const allocated: string[] = [];
     // Clips left silent: the asset store refused them, or the voice is not the slot's.
     let unvoiced = 0;
@@ -1014,6 +1037,7 @@ async function executeClaimedRun(
         target,
         preference: input.voice,
         bound,
+        design: teacher?.voiceDesign,
         unavailable: unavailableBindings,
         override,
       });
@@ -1029,21 +1053,31 @@ async function executeClaimedRun(
       try {
         return await withRouteRetry(
           () =>
-            withDeadline(stepId, STEP_DEADLINES_MS.narrationClip, signal, (callSignal) =>
-              services.narrateClip(
-                owner,
-                {
-                  target,
-                  stageId,
-                  text: action.text,
-                  audioId: `tts_s${scene.order}_${action.id}`,
-                  voice: voice.voiceId,
-                  speed,
-                  ...(providerOptions ? { providerOptions } : {}),
-                  fence,
-                },
-                { log, signal: callSignal },
-              ),
+            withDeadline(
+              stepId,
+              moss ? MOSS_REQUEST_TIMEOUT_MS : STEP_DEADLINES_MS.narrationClip,
+              signal,
+              (callSignal) =>
+                services.narrateClip(
+                  owner,
+                  {
+                    target,
+                    stageId,
+                    text: narrationSpokenText(action),
+                    ...(moss
+                      ? {
+                          previousTexts: precedingSpeechTexts(contextScenes, scene.id, action.id),
+                          ...(subject ? { subject } : {}),
+                        }
+                      : {}),
+                    audioId: `tts_s${scene.order}_${action.id}`,
+                    voice: voice.voiceId,
+                    speed,
+                    ...(providerOptions ? { providerOptions } : {}),
+                    fence,
+                  },
+                  { log, signal: callSignal },
+                ),
             ),
           retryOptions(stepId, sceneIndex, 400),
         );
@@ -1078,7 +1112,8 @@ async function executeClaimedRun(
       }
     };
     try {
-      const concurrency = services.parallelSceneConcurrency();
+      const sharedLimit = services.parallelSceneConcurrency();
+      const concurrency = moss ? getMossTtsConcurrency(sharedLimit) : sharedLimit;
       // The clips and the scene that names them commit together; a failure
       // anywhere here retries both.
       if (concurrency > 1 && speechActions.length > 1) {

@@ -429,4 +429,84 @@ describe('scene generation primitives', () => {
     });
     expect(fallback).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['Teach in English. Introduce Chinese pinyin.', false],
+    ['Teach in Mandarin Chinese. Use English names for products.', true],
+    ['使用中文授课。', true],
+    ['Teach in English and Chinese.', false],
+    ['Enseñar en español.', false],
+  ])(
+    'applies Mandarin-only guidance to the teaching language of %s',
+    async (directive, expected) => {
+      let systemPrompt = '';
+      await generateSceneActions(
+        slideOutline(),
+        { elements: [] },
+        async (system) => {
+          systemPrompt = system;
+          return '[]';
+        },
+        { languageDirective: directive },
+      );
+      expect(systemPrompt.includes('For Mandarin narration only')).toBe(expected);
+      expect(systemPrompt).toContain('including the opening sentence');
+    },
+  );
+
+  it('passes full formula and table cell contents into slide-actions user prompt', async () => {
+    let capturedUserPrompt = '';
+    const aiCall: AICallFn = vi.fn(async (_system, user) => {
+      capturedUserPrompt = user;
+      return JSON.stringify([{ type: 'text', content: '大家好。' }]);
+    });
+
+    const longFormula = 'f(x) = \\sum_{n=0}^{\\infty} \\frac{f^{(n)}(a)}{n!}(x - a)^n + R_n(x)';
+
+    await generateSceneActions(
+      slideOutline(),
+      {
+        elements: [
+          {
+            id: 'latex_1',
+            type: 'latex',
+            left: 0,
+            top: 0,
+            width: 400,
+            height: 80,
+            rotate: 0,
+            latex: longFormula,
+          },
+          {
+            id: 'table_1',
+            type: 'table',
+            left: 0,
+            top: 100,
+            width: 600,
+            height: 200,
+            rotate: 0,
+            outline: {},
+            colWidths: [0.3, 0.7],
+            cellMinHeight: 36,
+            data: [
+              [
+                { id: 'c1', colspan: 1, rowspan: 1, text: '函数' },
+                { id: 'c2', colspan: 1, rowspan: 1, text: '展开式' },
+              ],
+              [
+                { id: 'c3', colspan: 1, rowspan: 1, text: '$e^x$' },
+                { id: 'c4', colspan: 1, rowspan: 1, text: '$1 + x + \\frac{x^2}{2!} + \\cdots$' },
+              ],
+            ],
+          },
+        ],
+      },
+      aiCall,
+    );
+
+    expect(capturedUserPrompt).toContain(`Formula: ${longFormula}`);
+    expect(capturedUserPrompt).toContain(
+      'Table: "函数 | 展开式 ; $e^x$ | $1 + x + \\frac{x^2}{2!} + \\cdots$"',
+    );
+  });
 });

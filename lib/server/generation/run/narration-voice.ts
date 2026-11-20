@@ -1,4 +1,5 @@
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
+import { isManagedMossTts, mossRoleVoice } from '@/lib/audio/moss-tts';
 /**
  * Which voice a run narrates with, decided as the browser decides it for the
  * `tts` slot (`lib/audio/tts-selection.ts`, `generateAndStoreTTS`): the slot
@@ -124,30 +125,45 @@ function catalogVoiceGender(
 }
 
 /** The voices the agent-profiles step may bind agents to, as the browser advertises them. */
-export function advertisedVoices(target: RunNarrationTarget) {
+export function advertisedVoices(
+  target: RunNarrationTarget,
+  preference?: GenerationRunInput['voice'],
+) {
+  // The automatic roster uses the established male/female narrators. Other MOSS
+  // references are opt-in through the teacher or individual agent picker.
+  const defaultVoice = configuredDefaultVoice(target.connection.options, target.connection.voices);
+  const automatic = isManagedMossTts(target.connection)
+    ? new Set([
+        mossRoleVoice(target.connection.voices, undefined, 'female', defaultVoice),
+        mossRoleVoice(target.connection.voices, undefined, 'male', defaultVoice),
+        slotVoice(target, preference).voice,
+      ])
+    : undefined;
   return getEnabledProvidersWithVoices(providersConfig(target)).flatMap((provider) =>
-    provider.voices.map((voice) => {
-      const cloneModelGroup =
-        provider.providerId === 'qwen-tts' && isQwenCloneVoice(voice.id, target.connection.voices)
-          ? provider.modelGroups.find((group) =>
-              group.voices.some((groupVoice) => groupVoice.id === voice.id),
-            )
+    provider.voices
+      .filter((v) => !automatic || automatic.has(v.id))
+      .map((voice) => {
+        const cloneModelGroup =
+          provider.providerId === 'qwen-tts' && isQwenCloneVoice(voice.id, target.connection.voices)
+            ? provider.modelGroups.find((group) =>
+                group.voices.some((groupVoice) => groupVoice.id === voice.id),
+              )
+            : undefined;
+        const modelId = cloneModelGroup
+          ? resolveTTSModelForVoice(provider.providerId, voice.id, cloneModelGroup.modelId)
           : undefined;
-      const modelId = cloneModelGroup
-        ? resolveTTSModelForVoice(provider.providerId, voice.id, cloneModelGroup.modelId)
-        : undefined;
-      const gender = provider.configuredVoiceList
-        ? voice.gender
-        : (voice.gender ?? catalogVoiceGender(provider.providerId, voice.id));
-      return {
-        providerId: provider.providerId,
-        ...(modelId ? { modelId } : {}),
-        voiceId: voice.id,
-        voiceName: voice.name,
-        voiceLanguage: voice.language,
-        ...(gender ? { gender } : {}),
-      };
-    }),
+        const gender = provider.configuredVoiceList
+          ? voice.gender
+          : (voice.gender ?? catalogVoiceGender(provider.providerId, voice.id));
+        return {
+          providerId: provider.providerId,
+          ...(modelId ? { modelId } : {}),
+          voiceId: voice.id,
+          voiceName: voice.name,
+          voiceLanguage: voice.language,
+          ...(gender ? { gender } : {}),
+        };
+      }),
   );
 }
 
@@ -157,6 +173,9 @@ export function narratorVoiceForGeneration(
   preference: GenerationRunInput['voice'],
 ): ResolvedVoice | undefined {
   const { voice } = slotVoice(target, preference);
+  // An unselected MOSS lecture takes its teacher's role default.
+  if (isManagedMossTts(target.connection) && voice === slotVoice(target, undefined).voice)
+    return undefined;
   return resolveNarratorVoiceForGeneration(
     target.providerId,
     voice,
@@ -176,6 +195,7 @@ export function clipVoice(input: {
   target: RunNarrationTarget;
   preference: GenerationRunInput['voice'];
   bound: AgentConfig['voiceConfig'] | undefined;
+  design?: AgentConfig['voiceDesign'];
   /** The bindings this run found unusable (a deleted clone, say). */
   unavailable: ReadonlySet<string>;
   /** An explicit voice a retry uses instead. */
@@ -194,6 +214,7 @@ export function clipVoice(input: {
       bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
       globalVoice,
       configs,
+      input.design,
     );
   if (
     bound &&

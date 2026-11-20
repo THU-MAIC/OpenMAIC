@@ -171,4 +171,34 @@ describe('allocated speech audio identities', () => {
     );
     expect(mocks.poolRemove).not.toHaveBeenCalled();
   });
+
+  it('sends the course subject, falling back to the course name for older courses', async () => {
+    const speech = (id: string, text: string) => ({ id, type: 'speech', text });
+    mocks.stageState = {
+      stage: { id: 'stage-1', name: '拼音入门', subject: '语文' },
+      scenes: [
+        { id: 'scene-3', order: 3, actions: [speech('prior', '上一句'), speech('speech-1', '新')] },
+      ],
+    };
+    await regenerateSpeechAudio(3, { id: 'speech-1', text: '新' }, 'Chinese');
+    expect(mocks.generateAndStoreTTS).toHaveBeenLastCalledWith(
+      'tts_request_s3_speech-1',
+      '新',
+      'Chinese',
+      undefined,
+      { previousTexts: ['上一句'], subject: '语文' },
+      'stage-1',
+    );
+
+    mocks.stageState = { stage: { id: 'stage-1', name: 'Phonics Basics' }, scenes: [] };
+    await regenerateSpeechAudio(3, { id: 'speech-1', text: 'New' }, 'English');
+    expect(mocks.generateAndStoreTTS).toHaveBeenLastCalledWith(
+      'tts_request_s3_speech-1',
+      'New',
+      'English',
+      undefined,
+      { subject: 'Phonics Basics' },
+      'stage-1',
+    );
+  });
 });

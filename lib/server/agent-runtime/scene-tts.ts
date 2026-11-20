@@ -7,6 +7,13 @@ import {
 } from '@/lib/agent/runtime/tool-timeout';
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
 import {
+  isManagedMossTts,
+  mossRoleGender,
+  mossRoleVoice,
+  narrationSpokenText,
+  precedingSpeechTexts,
+} from '@/lib/audio/moss-tts';
+import {
   authorizeMediaModel,
   serverMediaConnection,
   type MediaConnection,
@@ -19,7 +26,8 @@ import { generateTTS, TTSRateLimitError, TTSRequestTimeoutError } from '@/lib/au
 import { runFailureCode, type RunFailureErrorCode } from '@/lib/server/generation/run/failure-code';
 import { SCENE_MAX_RETRIES, withRouteRetry } from '@/lib/server/generation/run/retry';
 import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
-import { createSemaphore } from '@/lib/utils/concurrency';
+import { getMossTtsConcurrency } from '@/lib/server/narration-concurrency';
+import { createSemaphore, lazyBoundedMap } from '@/lib/utils/concurrency';
 import type { TTSProviderId, TTSSpeaker } from '@/lib/audio/types';
 import { BROWSER_NATIVE_TTS_PROVIDER_ID } from '@/lib/audio/provider-enablement';
 import type { LegacySpeechAction, SpeechAction } from '@/lib/types/action';
@@ -45,11 +53,15 @@ export interface SceneTtsFailure {
 export interface SceneTtsVoice {
   /** `providerId::voiceId`; the voice part is empty when the provider has no default. */
   binding: string;
-  source: 'roster-teacher' | 'provider-default';
+  source: 'roster-teacher' | 'teacher-gender' | 'provider-default';
   /** The teacher whose binding applied, or who was passed over for the default. */
   teacher?: string;
   /** Why a teacher binding did not apply. */
-  fallbackReason?: 'no-teacher' | 'teacher-unbound' | 'teacher-bound-to-other-provider';
+  fallbackReason?:
+    | 'no-teacher'
+    | 'teacher-unbound'
+    | 'teacher-bound-to-other-provider'
+    | 'voice-unavailable';
 }
 
 export interface SceneTtsSummary {
@@ -112,12 +124,12 @@ function sweepIdleProviderGates(now: number) {
   }
 }
 
-function holdProviderGate(connection: ConnectionGateIdentity) {
+function holdProviderGate(connection: ConnectionGateIdentity, limit: number) {
   sweepIdleProviderGates(Date.now());
   const key = connectionGateKey(connection);
   let entry = providerGates.get(key);
   if (!entry) {
-    entry = { gate: createSemaphore(agentTtsInFlightLimit()), callers: 0, notBefore: 0 };
+    entry = { gate: createSemaphore(limit), callers: 0, notBefore: 0 };
     providerGates.set(key, entry);
   }
   entry.callers += 1;
@@ -188,6 +200,12 @@ export function formatTtsFailureTally(
 
 export interface SceneTtsInput {
   scene: Scene;
+  courseScenes?: readonly Scene[];
+  /**
+   * The course's subject hint for managed MOSS (`mossCourseSubject(stage)`:
+   * the outline's subject label, else the course name).
+   */
+  subject?: string;
   force: boolean;
   roster?: readonly GeneratedAgentConfig[] | null;
   signal?: AbortSignal;
@@ -271,6 +289,7 @@ function voiceReport(
   roster: SceneTtsInput['roster'],
   providerId: string,
   voice: string,
+  matchedGender = false,
 ): SceneTtsVoice {
   // The same teacher narratorVoice picks: the first bound one, else the first.
   const teacher =
@@ -278,32 +297,40 @@ function voiceReport(
     roster?.find((agent) => agent.role === 'teacher');
   const bound = teacher?.voiceConfig;
   const binding = `${providerId}::${voice}`;
-  if (bound?.providerId === providerId && bound.voiceId) {
+  if (bound?.providerId === providerId && bound.voiceId === voice) {
     return { binding, source: 'roster-teacher', teacher: teacher!.name };
   }
+  if (matchedGender && teacher) return { binding, source: 'teacher-gender', teacher: teacher.name };
   return {
     binding,
     source: 'provider-default',
     ...(teacher?.name ? { teacher: teacher.name } : {}),
     fallbackReason: !teacher
       ? 'no-teacher'
-      : bound?.providerId && bound.voiceId
-        ? 'teacher-bound-to-other-provider'
-        : 'teacher-unbound',
+      : bound?.providerId === providerId && bound.voiceId
+        ? 'voice-unavailable'
+        : bound?.providerId && bound.voiceId
+          ? 'teacher-bound-to-other-provider'
+          : 'teacher-unbound',
   };
 }
 
 /** One line for a tool result: which voice the synthesized lines used, and why. */
 export function describeNarrationVoice(voice: SceneTtsVoice): string {
+  if (voice.source === 'teacher-gender') {
+    return `Voice: ${voice.binding} (matched teacher "${voice.teacher}"'s voice profile).`;
+  }
   if (voice.source === 'roster-teacher') {
     return `Voice: ${voice.binding} (teacher "${voice.teacher}"'s roster binding).`;
   }
   const why =
     voice.fallbackReason === 'no-teacher'
       ? 'the roster has no teacher'
-      : voice.fallbackReason === 'teacher-bound-to-other-provider'
-        ? `teacher "${voice.teacher}" is bound to a voice of another provider`
-        : `teacher "${voice.teacher}" has no voice bound`;
+      : voice.fallbackReason === 'voice-unavailable'
+        ? `teacher "${voice.teacher}"'s saved voice is unavailable on this model`
+        : voice.fallbackReason === 'teacher-bound-to-other-provider'
+          ? `teacher "${voice.teacher}" is bound to a voice of another provider`
+          : `teacher "${voice.teacher}" has no voice bound`;
   return `Voice: ${voice.binding} (provider default; ${why}).`;
 }
 
@@ -344,27 +371,43 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
   const providerId = activeConnection.providerId as TTSProviderId;
   const bound = narratorVoice(input.roster);
   const apiKey = activeConnection.apiKey ?? '';
-  const voice =
-    bound?.providerId === providerId && bound.voiceId
+  const moss = isManagedMossTts(activeConnection);
+  const speaker = narratorSpeaker(input.roster);
+  const gender = moss ? mossRoleGender(speaker?.voiceDesign) : undefined;
+  const voice = moss
+    ? mossRoleVoice(
+        activeConnection.voices,
+        bound?.providerId === providerId ? bound.voiceId : undefined,
+        gender,
+        configuredDefaultVoice(activeConnection.options, activeConnection.voices),
+      )
+    : bound?.providerId === providerId && bound.voiceId
       ? bound.voiceId
       : configuredDefaultVoice(activeConnection.options, activeConnection.voices) ||
         DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] ||
         '';
-  const speaker = narratorSpeaker(input.roster);
   const model =
     activeConnection.modelId ??
     (DEFAULT_TTS_MODELS[providerId as keyof typeof DEFAULT_TTS_MODELS] || '');
   let generated = 0;
   let skipped = 0;
   const failed: SceneTtsFailure[] = [];
-  const held = holdProviderGate(activeConnection);
+  const agentLimit = agentTtsInFlightLimit();
+  const limit = moss
+    ? Math.min(
+        getMossTtsConcurrency(),
+        process.env[AGENT_TTS_CONCURRENCY_ENV]?.trim() ? agentLimit : Infinity,
+      )
+    : agentLimit;
+  const held = holdProviderGate(activeConnection, limit);
   try {
-    for (const action of input.scene.actions ?? []) {
-      if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
+    const actions = input.scene.actions ?? [];
+    const synthesize = async (action: (typeof actions)[number]) => {
+      if (action.type !== 'speech' || !(action as SpeechAction).text) return;
       const speech = action as SpeechAction;
       if (!input.force && speech.audioId) {
         skipped += 1;
-        continue;
+        return;
       }
       if (input.signal?.aborted) throw new Error('aborted');
       // Same retry as a classroom narration clip: a retryable failure, including
@@ -408,6 +451,16 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
                       providerId,
                       modelId,
                       apiKey,
+                      ...(moss
+                        ? {
+                            previousTexts: precedingSpeechTexts(
+                              input.courseScenes ?? [input.scene],
+                              input.scene.id,
+                              speech.id,
+                            ),
+                            ...(input.subject ? { subject: input.subject } : {}),
+                          }
+                        : {}),
                       baseUrl: activeConnection.baseUrl,
                       managed: activeConnection.managed,
                       publicOnly: activeConnection.userEndpoint,
@@ -419,7 +472,7 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
                       ...(speaker ? { speaker } : {}),
                       signal: input.signal,
                     },
-                    speech.text,
+                    narrationSpokenText(speech),
                   );
                 } catch (error) {
                   lastError = error;
@@ -508,6 +561,30 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
             : {}),
         });
       }
+    };
+    if (moss) {
+      let failedFatally = false;
+      const settled = await Promise.allSettled(
+        lazyBoundedMap(
+          actions,
+          limit,
+          async (action) => {
+            try {
+              await synthesize(action);
+            } catch (error) {
+              failedFatally = true;
+              throw error;
+            }
+          },
+          { shouldContinue: () => !failedFatally },
+        ),
+      );
+      const rejected = settled.find((result) => result.status === 'rejected');
+      if (rejected) throw rejected.reason;
+      const order = new Map(actions.map((action, index) => [action.id, index]));
+      failed.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+    } else {
+      for (const action of actions) await synthesize(action);
     }
     return {
       available: true,
@@ -515,7 +592,13 @@ export async function synthesizeSceneNarration(input: SceneTtsInput): Promise<Sc
       generated,
       skipped,
       failed,
-      voice: voiceReport(input.roster, providerId, voice),
+      voice: voiceReport(
+        input.roster,
+        providerId,
+        voice,
+        !!gender &&
+          !!activeConnection.voices?.some((entry) => entry.id === voice && entry.gender === gender),
+      ),
     };
   } finally {
     releaseProviderGate(held);

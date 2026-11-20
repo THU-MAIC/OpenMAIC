@@ -120,6 +120,60 @@ function extractCourseTitleFromComplete(buffer: string): string | null {
   return match ? normalizeStreamedTitle(match[1]) : null;
 }
 
+/** Longest course subject label kept (labels are 2-6 Chinese characters). */
+const MAX_COURSE_SUBJECT_CHARS = 20;
+
+// Same normalization as the package parser (`normalizeCourseSubject`): trim,
+// cap, and treat blank as absent so the caller falls back to the course title.
+function normalizeStreamedSubject(raw: string): string | null {
+  let subject: string;
+  try {
+    subject = JSON.parse(`"${raw}"`);
+  } catch {
+    subject = raw;
+  }
+  const normalized = subject.trim().slice(0, MAX_COURSE_SUBJECT_CHARS).trim();
+  return normalized || null;
+}
+
+const SUBJECT_VALUE_RE = /\s*:\s*"((?:[^"\\]|\\.)*)"/y;
+
+/**
+ * Extract the top-level `subject` from the complete wrapper JSON, run once
+ * after the stream finishes. Unlike the title scan this tracks nesting depth,
+ * so a `"subject"` key inside an outline (a widget field, say) is never taken
+ * for the course's subject. Returns null when absent, blank, or not a string —
+ * a missing subject never fails generation.
+ */
+function extractCourseSubjectFromComplete(buffer: string): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let start = -1;
+  for (let i = 0; i < buffer.length; i++) {
+    const char = buffer[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') {
+        inString = false;
+        if (depth === 1 && buffer.slice(start + 1, i) === 'subject') {
+          SUBJECT_VALUE_RE.lastIndex = i + 1;
+          const match = SUBJECT_VALUE_RE.exec(buffer);
+          if (match) return normalizeStreamedSubject(match[1]);
+        }
+      }
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      start = i;
+    } else if (char === '{' || char === '[') depth++;
+    else if (char === '}' || char === ']') depth--;
+  }
+  return null;
+}
+
 /**
  * Index of the first `[` outside a JSON string, or -1. A `[` inside a string
  * (`"E[X]"` in a languageDirective that streams before `outlines`) is not an
@@ -358,6 +412,8 @@ export interface OutlineResult {
   outlines: SceneOutline[];
   languageDirective: string;
   courseTitle: string | undefined;
+  /** The course's school subject label (e.g. 数学, 英语), when the model gave one. */
+  subject?: string;
   taskEngineMode: boolean;
 }
 
@@ -628,6 +684,7 @@ async function streamOutlines(
   let parsedOutlines: SceneOutline[] = [];
   let languageDirective: string | null = null;
   let courseTitle: string | null = null;
+  let subject: string | null = null;
   let lastError: string | undefined;
   let lastCause: unknown;
 
@@ -645,6 +702,7 @@ async function streamOutlines(
       parsedOutlines = [];
       languageDirective = null;
       courseTitle = null;
+      subject = null;
       const usedOutlineIds = new Set<string>();
       // Consume the FULL stream, not just textStream: errors that
       // happen before the stream starts (a 401, an invalid key) and
@@ -738,6 +796,7 @@ async function streamOutlines(
           // recover it from the now-complete response before finalizing.
           courseTitle = extractCourseTitleFromComplete(fullText);
         }
+        subject = extractCourseSubjectFromComplete(fullText);
         break;
       }
 
@@ -819,6 +878,7 @@ async function streamOutlines(
     outlines: uniquifyMediaElementIds(parsedOutlines),
     languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
     courseTitle: courseTitle || undefined,
+    ...(subject ? { subject } : {}),
     taskEngineMode,
   };
 }
