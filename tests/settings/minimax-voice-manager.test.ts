@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import 'fake-indexeddb/auto';
-import { act, createElement } from 'react';
+import { act, createElement, Fragment, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { db } from '@/lib/device-storage/database';
+import { deviceOwnerKey } from '@/lib/device-storage/owner-key';
+import { useTTSSelection } from '@/lib/audio/use-tts-selection';
 import { modelSettingsClient } from '@/lib/model-settings/client';
 import type { ServiceEntry } from '@/lib/model-settings/services';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -95,6 +97,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await act(async () => root.unmount());
+  window.dispatchEvent(new Event('auth-change'));
   host.remove();
   modelSettingsClient.adopt(null);
   vi.restoreAllMocks();
@@ -107,12 +110,14 @@ async function render({
   keySet = true,
   revision = 1,
   configuredVoices,
+  sibling,
 }: {
   alias?: string;
   active?: boolean;
   keySet?: boolean;
   revision?: number;
   configuredVoices?: ConfiguredTTSVoice[];
+  sibling?: ReactNode;
 } = {}) {
   const provider = {
     ...workspaceProvider(alias),
@@ -142,7 +147,8 @@ async function render({
     : base;
   await act(async () => {
     modelSettingsClient.adopt(view);
-    root.render(createElement(TTSSettings, { entry, view, apply: vi.fn() }));
+    const panel = createElement(TTSSettings, { entry, view, apply: vi.fn() });
+    root.render(createElement(Fragment, null, panel, sibling));
   });
 }
 
@@ -223,6 +229,49 @@ function dialog() {
   expect(element).not.toBeNull();
   return element!;
 }
+
+it.each([
+  { listFailsFirst: true, sameOwner: true, expected: voiceId },
+  { listFailsFirst: false, sameOwner: true, expected: voiceId },
+  { listFailsFirst: true, sameOwner: false, expected: 'female-yujie' },
+])(
+  'restores the classroom and preview voice on a fresh page (listFailsFirst=$listFailsFirst, sameOwner=$sameOwner)',
+  async ({ listFailsFirst, sameOwner, expected }) => {
+    await render();
+    await act(async () => {
+      await deviceOwnerKey();
+      useSettingsStore.getState().setTTSVoice(voiceId, providerId);
+    });
+    await act(async () => root.render(null));
+    window.dispatchEvent(new Event('auth-change'));
+
+    vi.mocked(accountVoices.useAccountVoices).mockRestore();
+    const identity = Promise.withResolvers<Response>();
+    const catalogue = Promise.withResolvers<Response>();
+    vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+      if (input === '/api/persistence/learner-key') return identity.promise;
+      if (String(input).startsWith('/api/generate/voice?')) return catalogue.promise;
+      return fetchRequest(input, init);
+    });
+    fetchRequest.mockResolvedValue(Response.json({ base64: 'AQI=', format: 'mp3' }));
+    function ClassroomVoice() {
+      return createElement('output', null, useTTSSelection()?.voice);
+    }
+    await render({ sibling: createElement(ClassroomVoice) });
+    expect(host.querySelector('output')?.textContent).toBe('female-yujie');
+    const failList = () => catalogue.resolve(new Response(null, { status: 503 }));
+    if (listFailsFirst) await act(async () => failList());
+    await act(async () => {
+      identity.resolve(Response.json({ learnerKey: sameOwner ? learnerKey : 'different-owner' }));
+      await deviceOwnerKey();
+    });
+    expect.soft(host.querySelector('output')?.textContent).toBe(expected);
+    if (!listFailsFirst) await act(async () => failList());
+    await click('settings.testTTS');
+    const request = fetchRequest.mock.calls.find(([input]) => input === '/api/generate/tts');
+    expect(JSON.parse(String(request?.[1]?.body)).ttsVoice).toBe(expected);
+  },
+);
 
 it('shows the manager only for the active configured MiniMax service and lists only custom voices', async () => {
   account.voices = [

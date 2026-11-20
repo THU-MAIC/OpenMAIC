@@ -131,7 +131,7 @@ export function voicePreference(): {
 
 /** Speech synthesis for these capabilities, or null when the `tts` slot resolves to nothing. */
 export function ttsSelection(
-  capabilities: ModelCapabilities = currentModelCapabilities(),
+  capabilities: Pick<ModelCapabilities, 'tts' | 'ttsVoiceAccount'> = currentModelCapabilities(),
   preference = voicePreference(),
   accountVoices?: AccountVoice[],
 ): TTSSelection | null {

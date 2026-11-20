@@ -18,7 +18,8 @@ const readProfile = vi.hoisted(() =>
   vi.fn<(id: string) => Promise<VoiceProfileRecord | undefined>>(),
 );
 vi.mock('@/lib/device-storage/database', () => ({ db: { voiceProfiles: { get: readProfile } } }));
-vi.mock('@/lib/device-storage/owner-key', () => ({
+vi.mock('@/lib/device-storage/owner-key', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/device-storage/owner-key')>()),
   deviceOwnerKey: () => Promise.resolve(owner.key),
   knownDeviceOwnerKey: () => owner.key,
 }));

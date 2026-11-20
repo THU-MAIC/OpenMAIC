@@ -19,7 +19,8 @@ import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import { useAccountVoices } from '@/lib/audio/use-account-voices';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
-import { defaultVoiceFor, slotVoxCPMBackend, ttsSelection } from '@/lib/audio/tts-selection';
+import { defaultVoiceFor, slotVoxCPMBackend } from '@/lib/audio/tts-selection';
+import { useTTSSelectionFor } from '@/lib/audio/use-tts-selection';
 import { modelCapabilities } from '@/lib/model-settings/capabilities';
 import { assignService, entryConfigured } from '@/lib/model-settings/services';
 import { regionalEndpointTemplate } from '@/lib/config/official-endpoints';
@@ -104,9 +105,6 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
 
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
-  const ttsVoice = useSettingsStore((state) => state.ttsVoice);
-  const ttsVoiceProviderId = useSettingsStore((state) => state.ttsVoiceProviderId);
-  const ttsVoiceAccount = useSettingsStore((state) => state.ttsVoiceAccount);
 
   const providerId = entry.registryId;
   const ttsProvider = TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
@@ -126,20 +124,7 @@ export function TTSSettings({ view, apply, entry }: ServicePanelProps) {
   // The voice the test speaks with: the user's while this service is the
   // workspace's narration, else the service's own default.
   const capabilities = useMemo(() => modelCapabilities(view), [view]);
-  const selection = useMemo(
-    () =>
-      ttsSelection(
-        capabilities,
-        {
-          voice: ttsVoice,
-          providerId: ttsVoiceProviderId,
-          account: ttsVoiceAccount,
-          speed: ttsSpeed,
-        },
-        account.voices,
-      ),
-    [capabilities, ttsVoice, ttsVoiceProviderId, ttsVoiceAccount, ttsSpeed, account.voices],
-  );
+  const selection = useTTSSelectionFor(capabilities, account.voices);
   const effectiveVoice =
     use.inUse && selection
       ? selection.voice
