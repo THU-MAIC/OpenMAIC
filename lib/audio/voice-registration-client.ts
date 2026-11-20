@@ -27,6 +27,8 @@ export interface VoiceRegistrationRequestConfig {
 
 export interface UserVoiceRegistrationParams {
   name: string;
+  /** The browser account whose cached availability a successful registration clears. */
+  accountScope?: string;
   referenceAudio: Blob;
   expectedServiceId?: string;
   expectedRevision?: number;
@@ -84,8 +86,8 @@ export async function registerVoiceFromReference(
   }
   const voiceId = typeof data.voiceId === 'string' ? data.voiceId.trim() : '';
   if (!voiceId) throw new Error('Voice registration returned no voice id');
-  clearVoiceBindingUnavailable({ providerId, voiceId: params.name.trim() });
-  clearVoiceBindingUnavailable({ providerId, voiceId });
+  clearVoiceBindingUnavailable({ providerId, voiceId: params.name.trim() }, params.accountScope);
+  clearVoiceBindingUnavailable({ providerId, voiceId }, params.accountScope);
   return voiceId;
 }
 

@@ -51,6 +51,18 @@ describe('TTS provider failure classification', () => {
     fetchMock.mockReset();
   });
 
+  it.each([
+    [200, 2054],
+    [400, '20132'],
+    [403, 2042],
+  ])('reports an unusable synthesis voice on HTTP %i with code %s', async (http, code) => {
+    fetchMock.mockResolvedValue(jsonResponse({ base_resp: { status_code: code } }, Number(http)));
+    await expect(generateTTS(miniMaxConfig, 'hello')).rejects.toMatchObject({
+      code: 'TTS_VOICE_UNAVAILABLE',
+      httpStatus: 404,
+    });
+  });
+
   it.each([1008, 2056, '1008', '2056'])(
     'translates native quota code %s into the provider quota error, not a rate-limit error',
     async (status_code) => {

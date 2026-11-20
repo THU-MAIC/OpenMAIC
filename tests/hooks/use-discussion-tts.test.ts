@@ -244,6 +244,59 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(requests[0].body.ttsVoice).toBe(expected);
   });
 
+  it('retries the same line on a preset and remembers the refusal only for that account', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const providerId = 'minimax-tts';
+    selection = {
+      providerId,
+      voice: registeredVoice,
+      accountScope: 'first-account',
+      speed: 1,
+      providersConfig: {
+        [providerId]: {
+          enabled: true,
+          isServerConfigured: true,
+          apiKey: '',
+          baseUrl: '',
+          voices: [
+            { id: registeredVoice, name: 'Original narrator' },
+            { id: 'female-yujie', name: 'Preset' },
+          ],
+        },
+      },
+    };
+    agents = [
+      {
+        ...teacher,
+        id: 'student',
+        role: 'student',
+        voiceConfig: { providerId, voiceId: registeredVoice },
+      },
+    ];
+    act(() => root.render(createElement(Probe)));
+    await seal('first', 'student');
+    expect(requests[0].body.ttsVoice).toBe(registeredVoice);
+    await act(async () =>
+      requests[0].response.resolve(
+        Response.json({ errorCode: 'TTS_VOICE_UNAVAILABLE' }, { status: 404 }),
+      ),
+    );
+    expect(requests.map((r) => [r.body.audioId, r.body.ttsVoice])).toEqual([
+      ['first', registeredVoice],
+      ['first', 'female-yujie'],
+    ]);
+    await respond(1);
+    await act(async () => FakeAudio.instances.at(-1)!.end());
+    await seal('second', 'student');
+    expect(requests[2].body.ttsVoice).toBe('female-yujie');
+    await respond(2);
+    await act(async () => FakeAudio.instances.at(-1)!.end());
+    selection = { ...selection, accountScope: 'second-account' };
+    act(() => root.render(createElement(Probe)));
+    await seal('third', 'student');
+    expect(requests[3].body.ttsVoice).toBe(registeredVoice);
+  });
+
   it('requests B during A playback and consumes the prepared result exactly once', async () => {
     await seal('A');
     await seal('B');

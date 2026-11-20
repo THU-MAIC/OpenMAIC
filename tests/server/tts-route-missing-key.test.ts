@@ -215,6 +215,17 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
     expect(mocks.generateTTS).not.toHaveBeenCalled();
   });
 
+  it('passes a refused voice to the player as a recoverable voice error', async () => {
+    const { TTSVoiceUnavailableError } = await import('@/lib/audio/provider-error');
+    mocks.generateTTS.mockRejectedValueOnce(new TTSVoiceUnavailableError());
+    const { POST } = await import('@/app/api/generate/tts/route');
+    const res = await POST(
+      ttsRequest({ ttsProviderId: 'minimax-tts', ttsVoice: 'old-clone', ttsApiKey: 'client-key' }),
+    );
+    expect(res.status).toBe(404);
+    expect(await res.json()).toMatchObject({ success: false, errorCode: 'TTS_VOICE_UNAVAILABLE' });
+  });
+
   it('keeps the 500 GENERATION_FAILED envelope for a non-key library failure', async () => {
     // Only the missing-key case moved to 400; genuine downstream failures keep
     // the existing server-error contract.

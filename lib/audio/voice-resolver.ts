@@ -266,18 +266,30 @@ export function narratorBindingDiffers(
 /** The deterministic last-resort narrator voice among the enabled providers, or null. */
 export function deterministicNarratorVoice(
   providerConfigs: ProviderConfigMap,
+  unavailable?: ResolvedVoice,
 ): ResolvedVoice | null {
+  const providers = getEnabledProvidersWithVoices(
+    providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
+  );
+  if (unavailable) {
+    const failedProvider = providers.find(
+      (provider) => provider.providerId === unavailable.providerId,
+    );
+    if (failedProvider) {
+      failedProvider.voices = failedProvider.voices.filter(
+        (voice) => voice.id !== unavailable.voiceId,
+      );
+    }
+  }
   return resolveDeterministicFallbackVoice(
-    getEnabledProvidersWithVoices(
-      providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
-    ),
+    providers.filter((provider) => provider.voices.length),
     0,
   );
 }
 
 /**
  * The one voice a narration clip is retried with after the provider said the
- * voice clone it used does not exist (QWEN_VC_VOICE_NOT_FOUND), or null when
+ * voice it used is unavailable for the account, or null when
  * no retry applies. Only a clip that used the bound narrator voice is
  * retried: with the global voice when the binding differs from it, else (a
  * pinned narrator, bound == global) with the deterministic enabled-provider
@@ -298,7 +310,7 @@ export function narratorVoiceAfterMissingClone(input: {
     return resolveNarratorVoiceBinding(undefined, globalVoice, input.providerConfigs);
   }
   if (input.usedFallbackVoice) return null;
-  return deterministicNarratorVoice(input.providerConfigs);
+  return deterministicNarratorVoice(input.providerConfigs, failed);
 }
 
 /**

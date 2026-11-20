@@ -112,6 +112,7 @@ function MiniMaxVoiceEditor({
       if (!mounted.current) return;
       const id = await registerVoiceFromReference(providerId, {
         name: name.trim(),
+        accountScope: scope,
         referenceAudio: audio.blob,
         expectedServiceId: serviceId,
         expectedRevision: settingsRevision,

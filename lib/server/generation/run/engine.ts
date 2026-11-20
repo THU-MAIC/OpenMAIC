@@ -41,7 +41,7 @@
  * owner-bound document store); a worker executing it loses its lease.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
-import { audioFailureKind } from '@/lib/audio/provider-error';
+import { audioFailureKind, isVoiceUnavailableCode } from '@/lib/audio/provider-error';
 import { isAbortError } from '@openmaic/generation';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
@@ -1050,7 +1050,7 @@ async function executeClaimedRun(
       } catch (error) {
         // The bound voice's clone is gone: one retry with a different voice.
         if (
-          errorCode(error) === 'QWEN_VC_VOICE_NOT_FOUND' &&
+          isVoiceUnavailableCode(errorCode(error)) &&
           bound &&
           hops < 1 &&
           voiceBindingKey(voice) === voiceBindingKey(bound)

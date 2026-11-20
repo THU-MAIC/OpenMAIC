@@ -201,19 +201,17 @@ export function clipVoice(input: {
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
     voiceId: slotVoice(target, input.preference).voice,
   };
+  const boundUnavailable = bound && input.unavailable.has(voiceBindingKey(bound));
   let voice =
     input.override ??
-    resolveNarratorVoiceBinding(
-      bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
-      globalVoice,
-      configs,
-    );
+    resolveNarratorVoiceBinding(boundUnavailable ? undefined : bound, globalVoice, configs);
   if (
     bound &&
     !narratorBindingDiffers(bound, globalVoice) &&
-    !isTTSProviderEnabled(voice.providerId, configs[voice.providerId])
+    ((!input.override && boundUnavailable) ||
+      !isTTSProviderEnabled(voice.providerId, configs[voice.providerId]))
   ) {
-    voice = deterministicNarratorVoice(configs) ?? voice;
+    voice = deterministicNarratorVoice(configs, bound) ?? voice;
   }
   if (!isTTSProviderEnabled(voice.providerId, configs[voice.providerId])) return null;
   return { voice, globalVoice };

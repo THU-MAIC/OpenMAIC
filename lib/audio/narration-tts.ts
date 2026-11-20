@@ -18,6 +18,7 @@ import {
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
 import { resolveTTSModelForVoice } from '@/lib/audio/constants';
+import { isVoiceUnavailableCode } from '@/lib/audio/provider-error';
 import {
   isVoiceBindingUnavailable,
   markVoiceBindingNoticeShown,
@@ -117,30 +118,30 @@ export async function generateAndStoreTTS(
   const globalDiffers = narratorBindingDiffers(boundVoice, globalVoice);
   const fallbackForUnusablePin = (): ResolvedVoice | null => {
     if (!boundVoice) return null;
-    const key = voiceBindingKey(boundVoice);
-    markVoiceBindingUnavailable(boundVoice);
+    const key = markVoiceBindingUnavailable(boundVoice, selection.accountScope);
     if (markVoiceBindingNoticeShown(key)) {
       toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
     }
-    return deterministicNarratorVoice(providersConfig);
+    return deterministicNarratorVoice(providersConfig, boundVoice);
   };
 
+  const boundUnavailable =
+    boundVoice && isVoiceBindingUnavailable(boundVoice, selection.accountScope);
   let resolvedVoice =
     overrideVoice ??
     resolveNarratorVoiceBinding(
-      boundVoice && isVoiceBindingUnavailable(boundVoice) ? undefined : boundVoice,
+      boundUnavailable ? undefined : boundVoice,
       globalVoice,
       providersConfig,
     );
 
-  // Pinned narrator (bound == global) whose provider became disabled:
-  // resolveNarratorVoiceBinding falls back to the global voice, which is the
-  // same broken provider — swap in the deterministic enabled-provider pick
-  // instead of silently skipping narration below.
+  // A pinned narrator is also the global selection. If that voice or its
+  // provider is unavailable, pick a different enabled voice.
   if (
     boundVoice &&
     !globalDiffers &&
-    !isTTSProviderEnabled(resolvedVoice.providerId, providersConfig[resolvedVoice.providerId])
+    ((!overrideVoice && boundUnavailable) ||
+      !isTTSProviderEnabled(resolvedVoice.providerId, providersConfig[resolvedVoice.providerId]))
   ) {
     resolvedVoice = fallbackForUnusablePin() ?? resolvedVoice;
   }
@@ -212,14 +213,14 @@ export async function generateAndStoreTTS(
     // hot-looping /api/generate/tts (bound-dead → global-dead → …). The
     // fallbackHops bound keeps even pathological chains at a single hop.
     if (
-      errorCode === 'QWEN_VC_VOICE_NOT_FOUND' &&
+      isVoiceUnavailableCode(errorCode) &&
       boundKey &&
       boundVoice &&
       fallbackHops < MAX_NARRATOR_VOICE_FALLBACK_HOPS
     ) {
       if (voiceBindingKey(resolvedVoice) === boundKey) {
-        markVoiceBindingUnavailable(boundVoice);
-        if (markVoiceBindingNoticeShown(boundKey)) {
+        const key = markVoiceBindingUnavailable(boundVoice, selection.accountScope);
+        if (markVoiceBindingNoticeShown(key)) {
           toast.warning(getClientTranslation('settings.qwenCloneNarrationUnavailable'));
         }
         // One retry with a different voice: the global one when the binding

@@ -108,6 +108,8 @@ export interface TTSSelection {
   /** The user's voice when it was picked for this provider, else the provider's default. */
   voice: string;
   speed: number;
+  /** A voice refused by this account may still work with a different key. */
+  accountScope?: string;
   providersConfig: SlotTTSProvidersConfig;
 }
 
@@ -155,6 +157,9 @@ export function ttsSelection(
       ? preference.voice
       : defaultVoiceFor(providerId, model, target.options, target.voices),
     speed: preference.speed,
+    ...(capabilities.ttsVoiceAccount?.scope
+      ? { accountScope: capabilities.ttsVoiceAccount.scope }
+      : {}),
     providersConfig: slotTTSProvidersConfig(target, accountVoices),
   };
 }
