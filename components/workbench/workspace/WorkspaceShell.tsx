@@ -166,6 +166,7 @@ import { QUEUED_REQUEST_KEY, requestEpisodeStart } from '@/lib/workbench/request
 import {
   blockedConversationNewChatCourse,
   requestCourse,
+  requestCreatedCourses,
   type RequestCourse,
 } from '@/lib/workbench/conversation-course';
 import { PaneTab } from './PaneTab';
@@ -1301,8 +1302,11 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * works on, when the viewer owns it — and otherwise an ordinary new chat.
    */
   const startChatOutOfBlockedConversation = () => {
-    const courseId = blockedConversationNewChatCourse(thisRequestCourse, (id) =>
-      courses.classrooms.some((course) => course.id === id && course.isOwner !== false),
+    const courseId = blockedConversationNewChatCourse(
+      thisRequestCourse,
+      (id) => courses.classrooms.some((course) => course.id === id && course.isOwner !== false),
+      // A course the blocked request created before its first page landed.
+      requestCreatedCourses(useWorkbenchStore.getState().chat),
     );
     if (!courseId) {
       startNewConversation();

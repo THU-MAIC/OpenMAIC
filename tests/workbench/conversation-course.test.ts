@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   blockedConversationNewChatCourse,
   requestCourse,
+  requestCreatedCourses,
 } from '@/lib/workbench/conversation-course';
 import {
   createInitialSessionState,
@@ -270,5 +271,30 @@ describe('the context-limit block carries the conversation own course', () => {
     expect(
       blockedConversationNewChatCourse({ kind: 'course', courseId: 'unknown' }, owned),
     ).toBeNull();
+  });
+  it('carries the course a request created before its first page landed', () => {
+    // `create_stage` saved the empty course, then the next model call was
+    // blocked: no page yet, so the request has no ready course, but the new
+    // conversation is how the teacher finishes this one.
+    const chat = [user('u1', 'make a course'), created('c', 'mine-empty')];
+    expect(requestCourse(chat, false)).toEqual({ kind: 'new', ready: [] });
+    expect(requestCreatedCourses(chat)).toEqual(['mine-empty']);
+    expect(
+      blockedConversationNewChatCourse(
+        requestCourse(chat, false),
+        owned,
+        requestCreatedCourses(chat),
+      ),
+    ).toBe('mine-empty');
+    // A course with a page still wins over an empty one.
+    expect(
+      blockedConversationNewChatCourse({ kind: 'new', ready: ['mine-paged'] }, owned, [
+        'mine-empty',
+      ]),
+    ).toBe('mine-paged');
+    // Only this request's creations count: an earlier request's course is not
+    // the one this request was making.
+    const later = [...chat, user('u2', 'something else')];
+    expect(requestCreatedCourses(later)).toEqual([]);
   });
 });

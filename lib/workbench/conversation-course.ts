@@ -69,6 +69,23 @@ function pageStageId(node: ChatNode): string | null {
   return typeof stageId === 'string' && stageId ? stageId : null;
 }
 
+/** The courses a request's `create_stage` calls created, in creation order. */
+function createdInRequest(request: readonly ChatNode[]): string[] {
+  return request.flatMap((node) => {
+    const id = createdStageId(node);
+    return id ? [id] : [];
+  });
+}
+
+/**
+ * The courses the current request created, whether or not a page has landed
+ * in them yet. `create_stage` saves the (empty) course at once, so a request
+ * blocked before its first page still has a course to come back to.
+ */
+export function requestCreatedCourses(chat: readonly ChatNode[]): string[] {
+  return createdInRequest(chat.slice(Math.max(requestEpisodeStart(chat), 0)));
+}
+
 /**
  * What the current request is to the right pane.
  *
@@ -113,10 +130,7 @@ export function requestCourse(
   }
 
   // The courses this request created, so far, in creation order.
-  const created = request.flatMap((node) => {
-    const id = createdStageId(node);
-    return id ? [id] : [];
-  });
+  const created = createdInRequest(request);
   const ready: string[] = [];
   let lastCreated: string | null = null;
   for (const [index, node] of request.entries()) {
@@ -139,11 +153,18 @@ export function requestCourse(
  * from Discover, or a course not in the viewer's list at all). Naming a
  * read-only one would bind the new conversation to a course its agent cannot
  * write; a course-less conversation (or an unownable one) starts ordinary.
+ *
+ * A request that is making a new course carries the first one with a page;
+ * blocked before any page landed, the first course it created
+ * (`requestCreatedCourses`) — that empty course is exactly what the new
+ * conversation has to finish.
  */
 export function blockedConversationNewChatCourse(
   request: RequestCourse,
   isOwnedCourse: (courseId: string) => boolean,
+  created: readonly string[] = [],
 ): string | null {
-  const courseId = request.kind === 'course' ? request.courseId : (request.ready[0] ?? null);
+  const courseId =
+    request.kind === 'course' ? request.courseId : (request.ready[0] ?? created[0] ?? null);
   return courseId !== null && isOwnedCourse(courseId) ? courseId : null;
 }
