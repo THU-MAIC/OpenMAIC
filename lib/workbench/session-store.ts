@@ -1325,9 +1325,7 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
       // tools would render above the divider, whose caption says the
       // opposite. Insert before the gap so the divider stays above the reply
       // it enabled.
-      const gapIdx = next.waitingKey
-        ? next.chat.findIndex((n) => n.key === next.waitingKey)
-        : -1;
+      const gapIdx = next.waitingKey ? next.chat.findIndex((n) => n.key === next.waitingKey) : -1;
       next.chat = [
         ...(gapIdx >= 0 ? next.chat.slice(0, gapIdx) : next.chat),
         {
