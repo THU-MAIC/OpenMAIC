@@ -100,7 +100,6 @@ function MiniMaxVoiceEditor({
     else if (voice.kind !== 'system') rows.set(voice.id, { ...voice, local: false });
   }
   const confirming = account.canDeleteRemote && confirmId ? rows.get(confirmId) : undefined;
-  const discoversVoices = account.canDeleteRemote && !configuredVoices?.length;
   useEffect(() => {
     if (confirmId && (!confirming || confirming.kind === 'system')) setConfirmId(null);
   }, [confirmId, confirming]);
@@ -169,7 +168,7 @@ function MiniMaxVoiceEditor({
         account.voices.some((voice) => voice.id === id) ||
         configuredVoices?.some((voice) => voice.id === id);
       // The voice may also have been activated by a class since the list was last read.
-      if (!atProvider && discoversVoices && !stillListed) {
+      if (!atProvider && !configuredVoices?.length && !stillListed) {
         const voices = await account.refresh();
         if (!mounted.current) return;
         stillListed = voices?.some((voice) => voice.id === id);

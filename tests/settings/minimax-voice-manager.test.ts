@@ -45,6 +45,7 @@ beforeEach(async () => {
   fetchRequest.mockReset();
   play.mockClear();
   account.voices = [];
+  account.loading = false;
   account.canDeleteRemote = true;
   account.refresh.mockReset();
   useSettingsStore.getState().setTTSVoice('female-yujie', providerId);
@@ -321,19 +322,25 @@ it.each([
   expect(fetchRequest).toHaveBeenCalledTimes(1);
 });
 
-it('keeps the selected voice when another classroom activated it before its local label was removed', async () => {
-  fetchRequest.mockResolvedValueOnce(registered());
-  await render();
-  await createVoice();
-  await waitForUI(() => row(friendlyName));
-  await click('settings.serverConfig.useForNarration', row(friendlyName));
-  expect(account.voices).toEqual([]);
-  account.refresh.mockResolvedValueOnce([{ id: voiceId, name: 'Cloud narrator', kind: 'clone' }]);
-  await chooseVoiceAction(unsaveLabel, row(friendlyName));
-  await waitForUI(() => expect(host.textContent).not.toContain(friendlyName));
-  expect(await db.voiceProfiles.get(voiceId)).toBeUndefined();
-  expect(useSettingsStore.getState().ttsVoice).toBe(voiceId);
-});
+it.each([false, true])(
+  'keeps a voice activated by another classroom when removing its local label (initial list loading: %s)',
+  async (loading) => {
+    fetchRequest.mockResolvedValueOnce(registered());
+    await render();
+    await createVoice();
+    await waitForUI(() => row(friendlyName));
+    await click('settings.serverConfig.useForNarration', row(friendlyName));
+    expect(account.voices).toEqual([]);
+    account.loading = loading;
+    account.canDeleteRemote = !loading;
+    await render();
+    account.refresh.mockResolvedValueOnce([{ id: voiceId, name: 'Cloud narrator', kind: 'clone' }]);
+    await chooseVoiceAction(unsaveLabel, row(friendlyName));
+    await waitForUI(() => expect(host.textContent).not.toContain(friendlyName));
+    expect(await db.voiceProfiles.get(voiceId)).toBeUndefined();
+    expect(useSettingsStore.getState().ttsVoice).toBe(voiceId);
+  },
+);
 
 it('confirms account deletion of a pending clone, keeps the local voice on refusal, and gates shared accounts', async () => {
   fetchRequest.mockResolvedValueOnce(registered());
