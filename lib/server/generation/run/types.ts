@@ -96,8 +96,10 @@ export interface GenerationRunInput {
   /**
    * The learner's narrator voice for the tts slot's provider (a voice is a
    * preference, not a model); the provider's default voice otherwise.
+   * `explicit` distinguishes an intentional user selection (including selecting
+   * the configured default) from a browser-resolved fallback.
    */
-  voice?: { providerId: string; voiceId: string; speed?: number };
+  voice?: { providerId: string; voiceId: string; speed?: number; explicit?: boolean };
   /** Accepted for older clients; successful uploads are retained regardless. */
   releaseMaterials?: boolean;
 }

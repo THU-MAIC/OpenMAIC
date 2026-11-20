@@ -134,7 +134,7 @@ export async function generateAndStoreTTS(
     overrideVoice ??
     resolveNarratorVoiceBinding(
       boundVoice && isVoiceBindingUnavailable(boundVoice) ? undefined : boundVoice,
-      globalVoice,
+      { ...globalVoice, explicit: selection.explicit },
       providersConfig,
       teacher?.voiceDesign,
     );

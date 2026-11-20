@@ -261,6 +261,17 @@ export interface SpeechMathSpan {
   displayMode: boolean;
 }
 
+function isProseDollarSpan(raw: string, latex: string, afterClose: string): boolean {
+  if (raw.includes('\n') || /^\s+\d/.test(raw)) return true;
+  // A single `$` preceded by whitespace (without matching leading whitespace) or
+  // immediately followed by a digit opens the next price rather than closing math.
+  if ((!/^\s/.test(raw) && /\s$/.test(raw)) || /^\d/.test(afterClose)) return true;
+  return (
+    /^\d[\d,.]*(?:[,;，；、]\s*[\p{L}]|\s+[\p{L}]|[\p{sc=Han}])/u.test(latex) &&
+    (!/[\\^_={}+*<>|]/.test(latex) || /\\[([]/.test(raw))
+  );
+}
+
 export function speechMathSpans(text: string): SpeechMathSpan[] {
   const spans: SpeechMathSpan[] = [];
   const openings = /\$\$?|\\\(|\\\[/g;
@@ -274,14 +285,7 @@ export function speechMathSpans(text: string): SpeechMathSpan[] {
     if (end === -1) continue;
     const raw = text.slice(from, end);
     const latex = raw.trim();
-    if (
-      !latex ||
-      (open === '$' &&
-        (raw.includes('\n') ||
-          /^\s+\d/.test(raw) ||
-          (/^\d[\d,.]*\s+[\p{L}]/u.test(latex) &&
-            (!/[\\^_={}]/.test(latex) || /\\[([]/.test(raw)))))
-    )
+    if (!latex || (open === '$' && isProseDollarSpan(raw, latex, text.slice(end + close.length))))
       continue;
     openings.lastIndex = end + close.length;
     spans.push({
@@ -318,9 +322,10 @@ export function stripInlineLatexForPlainTts(text: string): string {
     s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, (_m, body) =>
       hasCjk ? `根号下 ${body}` : `square root of ${body}`,
     );
-    s = s.replace(/\^\s*\\circ\b/g, hasCjk ? '度' : ' degrees');
-    s = s.replace(/\^\s*\{?2\}?(?![0-9])/g, hasCjk ? ' 的平方' : ' squared');
-    s = s.replace(/\^\s*\{?3\}?(?![0-9])/g, hasCjk ? ' 的立方' : ' cubed');
+    s = s.replace(/\^\s*(?:\{\s*\\circ\s*\}|\\circ\b)/g, hasCjk ? '度' : ' degrees');
+    s = s.replace(/\^\s*(?:\{\s*2\s*\}|2(?![0-9]))/g, hasCjk ? ' 的平方 ' : ' squared ');
+    s = s.replace(/\^\s*(?:\{\s*3\s*\}|3(?![0-9]))/g, hasCjk ? ' 的立方 ' : ' cubed ');
+    s = s.replace(/\^\s*\{([^{}]+)\}/g, '^($1)');
     s = s.replace(/\\(?:left|right|displaystyle|mathrm|mathbf|mathit|text)\b/g, '');
     s = s.replace(/\\([A-Za-z]+)/g, (_m, cmd: string) => TEX_SYMBOL_FALLBACK[cmd] ?? cmd);
     s = s.replace(/_\s*\{([^{}]*)\}/g, '($1)').replace(/_\s*([A-Za-z0-9])/g, '($1)');

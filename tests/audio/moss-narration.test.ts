@@ -5,12 +5,17 @@ import {
   resolveAgentVoice,
   resolveNarratorVoiceBinding,
   getEnabledProvidersWithVoices,
+  getSelectableProvidersWithVoices,
 } from '@/lib/audio/voice-resolver';
 import {
   advertisedVoices,
   clipVoice,
   narratorVoiceForGeneration,
 } from '@/lib/server/generation/run/narration-voice';
+import { selectedRunVoice } from '@/lib/generation-run-client/start';
+import { parseRunInput } from '@/lib/server/generation/run/input';
+import { useSettingsStore } from '@/lib/store/settings';
+import type { ModelCapabilities } from '@/lib/model-settings/capabilities';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { RunNarrationTarget } from '@/lib/server/generation/run/narration-voice';
 
@@ -184,4 +189,131 @@ it('uses the actual MOSS voice for a new clip of a course originally bound to Vi
       },
     }),
   ).toEqual(global);
+});
+
+it('honors explicit student overrides on browser-native or secondary providers when MOSS is first', () => {
+  const configs = {
+    'openai-tts': {
+      apiKey: '',
+      baseUrl: '',
+      enabled: true,
+      isServerConfigured: true,
+      providerOptions: { backend: 'moss', defaultVoice: 'course-narrator' },
+      modelId: 'teaching-v3',
+      voices,
+    },
+    'qwen-tts': {
+      apiKey: 'key',
+      baseUrl: '',
+      enabled: true,
+    },
+    'browser-native-tts': {
+      apiKey: '',
+      baseUrl: '',
+      enabled: true,
+    },
+  };
+  const selectable = getSelectableProvidersWithVoices(
+    configs,
+    [],
+    [{ voiceURI: 'Samantha', name: 'Samantha' }],
+  );
+  expect(selectable[0]?.providerId).toBe('openai-tts');
+  const pupil = { id: 'pupil', role: 'student', voiceDesign: male } as AgentConfig;
+  expect(
+    resolveAgentVoice(pupil, 0, selectable, {
+      pupil: { providerId: 'browser-native-tts', voiceId: 'Samantha' },
+    }),
+  ).toEqual({
+    providerId: 'browser-native-tts',
+    modelId: undefined,
+    voiceId: 'Samantha',
+  });
+  expect(
+    resolveAgentVoice(pupil, 0, selectable, {
+      pupil: { providerId: 'qwen-tts', voiceId: 'Cherry' },
+    }),
+  ).toEqual({
+    providerId: 'qwen-tts',
+    modelId: 'qwen3-tts-flash',
+    voiceId: 'Cherry',
+  });
+});
+
+it('preserves an explicit selection of the configured MOSS default voice through run start and narration', () => {
+  const providerId = 'openai-tts' as const;
+  const modelId = 'teaching-v3';
+  const capabilities = {
+    tts: {
+      registryId: providerId,
+      modelId,
+      options: { backend: 'moss', defaultVoice: 'course-narrator' },
+      voices,
+    },
+  } as unknown as ModelCapabilities;
+  const target: RunNarrationTarget = {
+    providerId,
+    modelId,
+    connection: {
+      providerId,
+      modelId,
+      voices,
+      options: { backend: 'moss', defaultVoice: 'course-narrator' },
+      managed: true,
+      userEndpoint: false,
+      origin: 'configuration',
+    },
+  };
+
+  try {
+    // Unselected browser state resolves the default voice with explicit=false -> unpinned role matching.
+    useSettingsStore.setState({ ttsVoiceProviderId: '', ttsVoice: '', ttsSpeed: 1 });
+    const unselected = selectedRunVoice(capabilities);
+    expect(unselected).toMatchObject({
+      providerId,
+      voiceId: 'course-narrator',
+      explicit: false,
+    });
+    expect(narratorVoiceForGeneration(target, unselected)).toBeUndefined();
+    expect(
+      clipVoice({
+        target,
+        preference: unselected,
+        bound: undefined,
+        design: male,
+        unavailable: new Set(),
+      })?.voice.voiceId,
+    ).toBe(filmVoice);
+
+    // Explicitly picking the default voice sets explicit=true -> pins and preserves 'course-narrator'.
+    useSettingsStore.setState({
+      ttsVoiceProviderId: providerId,
+      ttsVoice: 'course-narrator',
+      ttsSpeed: 1,
+    });
+    const explicitDefault = selectedRunVoice(capabilities);
+    expect(explicitDefault).toMatchObject({
+      providerId,
+      voiceId: 'course-narrator',
+      explicit: true,
+    });
+    const parsed = parseRunInput({ requirement: 'Calculus', voice: explicitDefault });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error(parsed.message);
+    expect(narratorVoiceForGeneration(target, parsed.value.voice)).toEqual({
+      providerId,
+      voiceId: 'course-narrator',
+    });
+    expect(
+      clipVoice({
+        target,
+        preference: parsed.value.voice,
+        bound: { providerId, modelId, voiceId: filmVoice },
+        design: male,
+        unavailable: new Set(),
+      })?.voice.voiceId,
+    ).toBe('course-narrator');
+  } finally {
+    useSettingsStore.setState({ ttsVoiceProviderId: '', ttsVoice: '', ttsSpeed: 1 });
+  }
 });

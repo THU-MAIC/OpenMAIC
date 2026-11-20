@@ -1,5 +1,6 @@
 import { speechForTts } from '@openmaic/generation/browser';
 import type { Scene } from '@/lib/types/stage';
+import { configuredDefaultVoice } from './provider-default-voice';
 import type { ConfiguredTTSVoice } from './types';
 import type { VoiceDesign } from './voice-design';
 
@@ -70,6 +71,56 @@ export function mossRoleVoice(
   const fallback = voices.find((voice) => voice.id === defaultVoice) ?? voices[0];
   if (!gender || fallback.gender === gender) return fallback.id;
   return voices.find((voice) => voice.gender === gender)?.id ?? fallback.id;
+}
+
+export interface RoleVoicePolicy {
+  /** Whether an unselected default narrator voice should be pinned at agent generation. */
+  readonly pinsDefaultNarrator: boolean;
+  /** Automatic voice subset advertised to agent-profile generation, when restricted. */
+  automaticVoiceIds(selectedVoice?: string): ReadonlySet<string> | undefined;
+  /** Automatic voice for an unpinned agent when explicit candidates did not match. */
+  resolveAgentFallbackVoice(design?: VoiceDesign): string;
+  /** Narrator voice for a teacher, preserving an explicit learner selection even when equal to the default. */
+  resolveNarratorVoice(params: {
+    boundVoiceId?: string;
+    globalVoiceId: string;
+    explicitGlobal: boolean;
+    design?: VoiceDesign;
+  }): string;
+}
+
+/** Provider-local role-matching policy for managed MOSS deployments. */
+export function createMossRoleVoicePolicy(target: {
+  providerId: string;
+  managed?: boolean;
+  options?: Record<string, unknown>;
+  voices?: readonly ConfiguredTTSVoice[];
+}): RoleVoicePolicy | undefined {
+  if (!isManagedMossTts(target)) return undefined;
+  const voices = target.voices;
+  const defaultVoice = configuredDefaultVoice(target.options, voices);
+  return {
+    pinsDefaultNarrator: false,
+    automaticVoiceIds(selectedVoice?: string) {
+      return new Set([
+        mossRoleVoice(voices, undefined, 'female', defaultVoice),
+        mossRoleVoice(voices, undefined, 'male', defaultVoice),
+        ...(selectedVoice ? [selectedVoice] : []),
+      ]);
+    },
+    resolveAgentFallbackVoice(design?: VoiceDesign) {
+      return mossRoleVoice(voices, undefined, mossRoleGender(design), defaultVoice);
+    },
+    resolveNarratorVoice({ boundVoiceId, globalVoiceId, explicitGlobal, design }) {
+      if (explicitGlobal && (!voices?.length || voices.some((v) => v.id === globalVoiceId))) {
+        return globalVoiceId;
+      }
+      const preferred = voices?.some((voice) => voice.id === boundVoiceId)
+        ? boundVoiceId
+        : globalVoiceId;
+      return mossRoleVoice(voices, preferred, mossRoleGender(design), defaultVoice);
+    },
+  };
 }
 
 /** The frozen rules carry a topic for three speech lines, in document order. */

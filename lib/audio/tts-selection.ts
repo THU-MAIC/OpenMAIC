@@ -95,6 +95,8 @@ export interface TTSSelection {
   modelId?: string;
   /** The user's voice when it was picked for this provider, else the provider's default. */
   voice: string;
+  /** Whether `voice` came from an explicit user preference rather than the provider default. */
+  explicit: boolean;
   speed: number;
   providersConfig: SlotTTSProvidersConfig;
 }
@@ -127,6 +129,7 @@ export function ttsSelection(
     voice: usable
       ? preference.voice
       : defaultVoiceFor(providerId, model, target.options, target.voices),
+    explicit: usable,
     speed: preference.speed,
     providersConfig: slotTTSProvidersConfig(target),
   };

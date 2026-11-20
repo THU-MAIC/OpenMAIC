@@ -1,5 +1,5 @@
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
-import { isManagedMossTts, mossRoleVoice } from '@/lib/audio/moss-tts';
+import { getRoleVoicePolicy } from '@/lib/audio/role-voice';
 /**
  * Which voice a run narrates with, decided as the browser decides it for the
  * `tts` slot (`lib/audio/tts-selection.ts`, `generateAndStoreTTS`): the slot
@@ -85,7 +85,7 @@ function defaultVoiceFor(
 export function slotVoice(
   target: RunNarrationTarget,
   preference: GenerationRunInput['voice'],
-): { voice: string; speed: number } {
+): { voice: string; speed: number; explicit: boolean } {
   const usable =
     preference?.providerId === target.providerId &&
     !!preference.voiceId &&
@@ -110,6 +110,7 @@ export function slotVoice(
           target.connection.voices,
         ),
     speed: preference?.speed ?? 1,
+    explicit: usable && preference?.explicit !== false,
   };
 }
 
@@ -129,16 +130,8 @@ export function advertisedVoices(
   target: RunNarrationTarget,
   preference?: GenerationRunInput['voice'],
 ) {
-  // The automatic roster uses the established male/female narrators. Other MOSS
-  // references are opt-in through the teacher or individual agent picker.
-  const defaultVoice = configuredDefaultVoice(target.connection.options, target.connection.voices);
-  const automatic = isManagedMossTts(target.connection)
-    ? new Set([
-        mossRoleVoice(target.connection.voices, undefined, 'female', defaultVoice),
-        mossRoleVoice(target.connection.voices, undefined, 'male', defaultVoice),
-        slotVoice(target, preference).voice,
-      ])
-    : undefined;
+  const rolePolicy = getRoleVoicePolicy(target.connection);
+  const automatic = rolePolicy?.automaticVoiceIds(slotVoice(target, preference).voice);
   return getEnabledProvidersWithVoices(providersConfig(target)).flatMap((provider) =>
     provider.voices
       .filter((v) => !automatic || automatic.has(v.id))
@@ -172,10 +165,9 @@ export function narratorVoiceForGeneration(
   target: RunNarrationTarget,
   preference: GenerationRunInput['voice'],
 ): ResolvedVoice | undefined {
-  const { voice } = slotVoice(target, preference);
-  // An unselected MOSS lecture takes its teacher's role default.
-  if (isManagedMossTts(target.connection) && voice === slotVoice(target, undefined).voice)
-    return undefined;
+  const { voice, explicit } = slotVoice(target, preference);
+  const rolePolicy = getRoleVoicePolicy(target.connection);
+  if (rolePolicy && !rolePolicy.pinsDefaultNarrator && !explicit) return undefined;
   return resolveNarratorVoiceForGeneration(
     target.providerId,
     voice,
@@ -203,16 +195,17 @@ export function clipVoice(input: {
 }): { voice: ResolvedVoice; globalVoice: ResolvedVoice } | null {
   const { target, bound } = input;
   const configs = providersConfig(target);
+  const resolvedSlot = slotVoice(target, input.preference);
   const globalVoice: ResolvedVoice = {
     providerId: target.providerId,
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
-    voiceId: slotVoice(target, input.preference).voice,
+    voiceId: resolvedSlot.voice,
   };
   let voice =
     input.override ??
     resolveNarratorVoiceBinding(
       bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
-      globalVoice,
+      { ...globalVoice, explicit: resolvedSlot.explicit },
       configs,
       input.design,
     );

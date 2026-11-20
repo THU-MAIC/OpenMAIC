@@ -24,9 +24,14 @@ describe('speech caption KaTeX and spokenText decoupling', () => {
   });
 
   it('does not mis-render plain prose currency as math', () => {
-    const segs = renderCaptionMathText('Tickets cost $5 and $10 today.');
-    expect(segs).toEqual([{ type: 'text', value: 'Tickets cost $5 and $10 today.' }]);
-    expect(hasCaptionMath('Tickets cost $5 and $10 today.')).toBe(false);
+    for (const line of [
+      'Tickets cost $5 and $10 today.',
+      'Prices are $5, $10, and $20.',
+      'Prices are $5,$10, and $20.',
+    ]) {
+      expect(renderCaptionMathText(line)).toEqual([{ type: 'text', value: line }]);
+      expect(hasCaptionMath(line)).toBe(false);
+    }
   });
 
   it('uses spokenText for TTS and preceding 3-line context while keeping LaTeX in text', () => {

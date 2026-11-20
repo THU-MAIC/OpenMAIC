@@ -83,4 +83,16 @@ it('keeps both currency amounts alongside a later formula and handles legacy del
   expect(stripInlineLatexForPlainTts(String.raw`Pay $5 or $10 for \(x^2\) and $y^3$.`)).toBe(
     'Pay $5 or $10 for x squared and y cubed.',
   );
+  expect(stripInlineLatexForPlainTts('Prices are $5, $10, and $20.')).toBe(
+    'Prices are $5, $10, and $20.',
+  );
+  expect(stripInlineLatexForPlainTts('Prices are $5,$10, and $20.')).toBe(
+    'Prices are $5,$10, and $20.',
+  );
+});
+
+it('rewrites exact squares and cubes without corrupting multi-token braced exponents', () => {
+  expect(stripInlineLatexForPlainTts('Compare $x^{2}$, $x^{2n}$, and $x^{3n}$.')).toBe(
+    'Compare x squared, x^(2n), and x^(3n).',
+  );
 });

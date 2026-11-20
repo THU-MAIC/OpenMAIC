@@ -243,6 +243,53 @@ describe('audio generated from text that has since changed', () => {
     stepCourseTimeline('redo');
     expect(audio()).toBe('tts_new');
   });
+
+  it('keeps the original clip on undo when only spokenText changed under the same caption', () => {
+    const scene = slide('a', '<p>x</p>');
+    (scene as unknown as { actions: unknown[] }).actions = [
+      { id: '1', type: 'speech', text: '$x^2$', spokenText: 'x squared', audioId: 'tts_old' },
+    ];
+    load([scene], 'a');
+    commitCourseEdit({}, () =>
+      useStageStore.getState().updateScene('a', {
+        actions: [
+          {
+            id: '1',
+            type: 'speech',
+            text: '$x^2$',
+            spokenText: 'x times x',
+            audioInvalidated: true,
+          },
+        ] as never,
+      }),
+    );
+    stampGeneratedAudio('a', '1', '$x^2$', 'tts_new', 'x times x');
+    const current = () =>
+      sceneOf('a').actions![0] as unknown as {
+        text: string;
+        spokenText?: string;
+        audioId?: string;
+      };
+    expect(current()).toMatchObject({
+      text: '$x^2$',
+      spokenText: 'x times x',
+      audioId: 'tts_new',
+    });
+
+    stepCourseTimeline('undo');
+    expect(current()).toMatchObject({
+      text: '$x^2$',
+      spokenText: 'x squared',
+      audioId: 'tts_old',
+    });
+
+    stepCourseTimeline('redo');
+    expect(current()).toMatchObject({
+      text: '$x^2$',
+      spokenText: 'x times x',
+      audioId: 'tts_new',
+    });
+  });
 });
 
 describe('agent runs', () => {
