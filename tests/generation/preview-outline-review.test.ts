@@ -243,4 +243,32 @@ describe('the preview of a run that waits for its outline', () => {
     expect(editor()).toBe(true);
     expect(commands.confirmOutline).not.toHaveBeenCalled();
   });
+
+  it.each(['wait', 'countdown'] as const)(
+    'keeps a %s review open after streaming completes and the countdown deadline passes',
+    async (mode) => {
+      let view = streaming(mode);
+      render(view);
+      act(() => reviewEntry()!.click());
+      await settle();
+      expect(commands.holdOutline).toHaveBeenCalledTimes(mode === 'countdown' ? 1 : 0);
+
+      view = outlineReady(view, false);
+      if (mode === 'countdown') {
+        view = applyRunEvent(
+          view,
+          event(5, 'outline_review', { outlineReview: 'wait', autoConfirmAt: null }),
+        );
+      }
+      render(view);
+      act(() => vi.advanceTimersByTime(11_000));
+      expect(editor()).toBe(true);
+      expect(confirmButton()?.disabled).toBe(false);
+      expect(commands.confirmOutline).not.toHaveBeenCalled();
+
+      act(() => confirmButton()!.click());
+      await settle();
+      expect(commands.confirmOutline).toHaveBeenCalledTimes(1);
+    },
+  );
 });
