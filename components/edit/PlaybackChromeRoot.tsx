@@ -15,8 +15,9 @@ import {
 } from 'react';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { CourseEnd } from '@/components/classroom/course-end/CourseEnd';
+import { CourseEndLayer } from '@/components/classroom/course-end/CourseEndLayer';
 import {
   readSceneQuizAnswers,
   summarizeScenes,
@@ -1971,11 +1972,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             />
             <AnimatePresence>
               {courseEnd && !isPendingScene ? (
-                <motion.div
+                <CourseEndLayer
                   key="course-end"
-                  className="absolute inset-0 z-[130]"
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.18 }}
+                  overInteractive={currentScene?.type === 'interactive'}
                 >
                   <CourseEnd
                     summary={courseEnd}
@@ -1985,7 +1984,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                     onDismiss={closeCourseEnd}
                     onAction={handleCourseEndAction}
                   />
-                </motion.div>
+                </CourseEndLayer>
               ) : null}
             </AnimatePresence>
           </div>
