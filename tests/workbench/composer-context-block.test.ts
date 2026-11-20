@@ -104,7 +104,7 @@ afterEach(async () => {
 
 describe('the context-limit block closes the composer', () => {
   it('disables the box and every action, and says why where the placeholder sat', async () => {
-    openFailedConversation('CONTEXT_BUDGET_EXCEEDED:still_oversized');
+    openFailedConversation('CONTEXT_BUDGET_EXCEEDED:summary_input_too_large');
     const container = await mountChat();
 
     const input = container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
@@ -132,17 +132,21 @@ describe('the context-limit block closes the composer', () => {
     ).toBe(false);
   });
 
-  it('keeps the composer after a failed compaction summary: the next message retries it', async () => {
-    // A provider outage or timeout on the summary request is not a transcript
-    // that cannot fit, so it must not close the conversation for good.
-    openFailedConversation('CONTEXT_BUDGET_EXCEEDED:summary_failed');
-    const container = await mountChat();
+  it.each(['summary_failed', 'still_oversized', 'no_compaction_boundary'])(
+    'keeps the composer after %s: the next message can still get through',
+    async (reason) => {
+      // A failed summary request is retried, and an oversized request or a
+      // missing cut point gets a cut point from the next message, so none of
+      // these may close the conversation for good.
+      openFailedConversation(`CONTEXT_BUDGET_EXCEEDED:${reason}`);
+      const container = await mountChat();
 
-    const input = container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
-    expect(input.getAttribute('aria-disabled')).toBeNull();
-    expect(input.getAttribute('aria-placeholder')).toBe('workbench.chat.continuePlaceholder');
-    expect(
-      container.querySelector<HTMLButtonElement>('[data-testid="workbench-attach"]')!.disabled,
-    ).toBe(false);
-  });
+      const input = container.querySelector<HTMLElement>(COMPOSER_INPUT)!;
+      expect(input.getAttribute('aria-disabled')).toBeNull();
+      expect(input.getAttribute('aria-placeholder')).toBe('workbench.chat.continuePlaceholder');
+      expect(
+        container.querySelector<HTMLButtonElement>('[data-testid="workbench-attach"]')!.disabled,
+      ).toBe(false);
+    },
+  );
 });

@@ -301,16 +301,17 @@ export function sessionBuildsCourse(
 export interface WorkbenchFold {
   status: SessionStatus;
   /**
-   * The conversation is over: a run ended because even compacted history
-   * cannot fit the model's context (`CONTEXT_BUDGET_EXCEEDED` with
-   * `still_oversized`, `no_compaction_boundary` or `summary_input_too_large`
+   * The conversation is over: a run ended because its history is too large
+   * even to be summarized (`CONTEXT_BUDGET_EXCEEDED:summary_input_too_large`
    * — see `contextBudgetBlocksConversation`). Retrying in this conversation
    * can never succeed, so the composer closes and the failure notice offers a
-   * new chat instead. A failed summary request (`summary_failed`) is not
-   * this: the next message retries the compaction. Assigned on EVERY terminal
-   * `session_end` — a later end that is not the block (another client ran
-   * after a model switch, say) clears it — which is what keeps the flag a
-   * pure function of the applied event prefix, replaying exactly.
+   * new chat instead. The other context-budget failures are not this: the
+   * next message can still get through (it adds a cut point, or retries a
+   * failed summary request), so the composer stays open beside the same
+   * notice. Assigned on EVERY terminal `session_end` — a later end that is
+   * not the block (another client ran after a model switch, say) clears it —
+   * which is what keeps the flag a pure function of the applied event prefix,
+   * replaying exactly.
    */
   contextBlocked: boolean;
   lastEventId: number;

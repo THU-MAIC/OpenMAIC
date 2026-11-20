@@ -107,15 +107,11 @@ describe('lifecycle events', () => {
     }
     expect(state.status).toBe('failed');
     expect(state.generationOpen).toBe(false);
-    // Only a transcript that cannot fit even after compaction closes the
-    // conversation (including a history too large to send to the summary
-    // model at all). A failed summary request is retried by the next message,
-    // and a misconfigured budget once the configuration is fixed, so the
-    // composer stays open for both.
-    const blocks =
-      reason === 'still_oversized' ||
-      reason === 'no_compaction_boundary' ||
-      reason === 'summary_input_too_large';
+    // Only a history too large even to be summarized closes the conversation:
+    // no resend can get through. The next message adds a cut point after an
+    // oversized request or a missing boundary, retries a failed summary, and a
+    // misconfigured budget is retried once fixed, so the composer stays open.
+    const blocks = reason === 'summary_input_too_large';
     expect(state.contextBlocked).toBe(blocks);
     // The new-chat exit rides every length-limit notice, including the
     // retryable one: a new chat is always a valid way out.
@@ -128,7 +124,7 @@ describe('lifecycle events', () => {
   });
 
   it('keeps a blocked conversation blocked across replay and lifts it on a later clean end', () => {
-    const error = new ContextBudgetError('still_oversized').message;
+    const error = new ContextBudgetError('summary_input_too_large').message;
     const blocked = [
       ev('session_start', { prompt: 'keep my request' }),
       ev('session_end', { status: 'failed', error, errorCode: 'CONTEXT_BUDGET_EXCEEDED' }),

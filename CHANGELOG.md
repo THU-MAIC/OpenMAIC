@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Features
 
-- Workbench: a conversation that hit the model's context limit offers "Start a new chat" on its terminal notice — the new conversation continues with the same course when the user owns it. When even compaction cannot make the conversation fit, its composer also closes with a placeholder saying why, instead of accepting messages that would fail again. [#2338](https://github.com/THU-MAIC/OpenMAIC/issues/2338)
+- Workbench: a conversation that hit the model's context limit offers "Start a new chat" on its terminal notice — the new conversation continues with the same course when the user owns it. When the history is too large even to be summarized, its composer also closes with a placeholder saying why, instead of accepting messages that would fail again. [#2338](https://github.com/THU-MAIC/OpenMAIC/issues/2338)
 
 ### Bug Fixes
 

@@ -82,7 +82,10 @@ const assistant = (parts: { type: string; text?: string; thinking?: string }[]) 
  */
 const EARLIER_BLOCK: readonly WorkbenchEvent[] = [
   ev('session_start', { prompt: '先讲光的反射' }),
-  ev('session_end', { status: 'failed', error: 'CONTEXT_BUDGET_EXCEEDED:still_oversized' }),
+  ev('session_end', {
+    status: 'failed',
+    error: 'CONTEXT_BUDGET_EXCEEDED:summary_input_too_large',
+  }),
 ];
 
 /**

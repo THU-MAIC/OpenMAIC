@@ -81,10 +81,10 @@ export function presentSystemNotice(
       : '';
   const detail = node.detail ? cleanDetail(node.detail) : '';
   // The length-limit notice carries the way out (`contextBudgetCopyKey` maps
-  // `invalid_output_budget` elsewhere). Its conversation may still accept a
-  // resend (a failed summary is retried by the next message), but a new chat
-  // is always a valid exit. A misconfigured budget is fixed in settings, not
-  // by abandoning the chat.
+  // `invalid_output_budget` elsewhere). Its conversation usually still
+  // accepts a resend (the next message adds a cut point, or retries a failed
+  // summary), but a new chat is always a valid exit. A misconfigured budget is
+  // fixed in settings, not by abandoning the chat.
   const action: NoticeAction | undefined =
     node.kind === 'system' && node.copyKey === 'workbench.system.contextLengthLimit'
       ? 'newChat'

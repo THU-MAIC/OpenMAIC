@@ -44,20 +44,15 @@ export function contextBudgetCopyKey(error: string): `workbench.${string}` | und
 }
 
 /**
- * Whether a context-budget failure is final for the conversation: the
- * transcript itself cannot fit even after compaction, so no resend can
- * succeed. `still_oversized`, `no_compaction_boundary` and
- * `summary_input_too_large` are (the last: the history cannot even be sent to
- * the summary model, and a resend only adds to it). `summary_failed` means
- * the summary request failed (a provider outage, a timeout), and the next
- * message retries the compaction; `invalid_output_budget` is a
+ * Whether a context-budget failure is final for the conversation: no resend
+ * can succeed. Only `summary_input_too_large` is provably so: the history
+ * cannot even be sent to the summary model, and a resend only adds to it.
+ * The others can recover. `still_oversized` and `no_compaction_boundary` mean
+ * no cut point fits yet, and the next message adds one (the oversized request
+ * can then be summarized); `summary_failed` is a provider outage or timeout
+ * that the next message retries; `invalid_output_budget` is a
  * model-configuration error, retried once the configuration is fixed.
  */
 export function contextBudgetBlocksConversation(error: string): boolean {
-  const reason = contextBudgetReason(error);
-  return (
-    reason === 'still_oversized' ||
-    reason === 'no_compaction_boundary' ||
-    reason === 'summary_input_too_large'
-  );
+  return contextBudgetReason(error) === 'summary_input_too_large';
 }

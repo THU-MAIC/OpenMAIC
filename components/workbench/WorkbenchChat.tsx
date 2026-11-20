@@ -199,11 +199,12 @@ export function WorkbenchChat({
    */
   const ownerAttached = conversation === undefined || conversation === composerOwnerId;
   /**
-   * The conversation cannot fit the model's context even after compaction:
-   * no resend can fit, so the composer stays closed (`canSend`) with a
-   * placeholder that says why, and the way out is the notice's new-chat
-   * action. A failed summary request leaves it open (the next message retries
-   * the compaction), and a misconfigured budget is fixed in settings.
+   * The conversation's history is too large even to be summarized: no resend
+   * can fit, so the composer stays closed (`canSend`) with a placeholder that
+   * says why, and the way out is the notice's new-chat action. Every other
+   * context-budget failure leaves it open: the next message can still get
+   * through (a new cut point, a retried summary), and a misconfigured budget
+   * is fixed in settings.
    */
   const contextBlocked = useWorkbenchStore((s) => s.contextBlocked);
   const canSend =
