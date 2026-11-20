@@ -82,7 +82,13 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
     [view, apply, entry, t],
   );
 
-  const saveModels = (ids: string[] | null) => save({ models: ids && ids.length ? ids : null });
+  const saveModels = (ids: string[] | null, windows?: Record<string, number> | null) =>
+    save({
+      models: ids && ids.length ? ids : null,
+      ...(windows !== undefined
+        ? { modelContextWindows: windows && Object.keys(windows).length ? windows : null }
+        : {}),
+    });
 
   const handleTestApi = useCallback(async () => {
     setTestStatus('testing');
@@ -486,14 +492,21 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
         modelId={editing?.id ?? ''}
         isNew={editing?.index === null}
         providerId={provider ? entry.id : undefined}
-        onSave={async (id) => {
+        contextWindow={editing?.id ? provider?.modelContextWindows?.[editing.id] : undefined}
+        onSave={async (id, contextWindow) => {
           const ids = models.map((model) => model.id);
+          // The declared windows travel with the list: the edited model's entry
+          // moves to its (possibly new) id; the server prunes keys the list no
+          // longer holds.
+          const windows = { ...(provider?.modelContextWindows ?? {}) };
+          if (editing?.id) delete windows[editing.id];
           if (editing?.index === null || editing === null) {
             if (!ids.includes(id)) ids.push(id);
           } else {
             ids[editing.index] = id;
           }
-          await saveModels([...new Set(ids)]);
+          if (contextWindow !== undefined) windows[id] = contextWindow;
+          await saveModels([...new Set(ids)], windows);
           setEditing(null);
         }}
       />

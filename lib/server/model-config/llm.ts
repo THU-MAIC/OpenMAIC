@@ -110,9 +110,22 @@ export async function languageModelFor(
     proxy: target.proxy,
     fetchImpl: userEndpoint ? clientBaseUrlLlmFetch : fetchWithRedirectValidation,
   });
+  // A context window the configuration declared for a model the catalogue may
+  // not describe. The catalogue still wins where it applies; only a preset
+  // that distrusts the catalogue (an OpenAI-compatible endpoint) takes the
+  // declared window over a name-colliding catalogue hit.
+  const declared = target.declaredContextWindow;
+  const resolvedInfo =
+    declared === undefined
+      ? modelInfo
+      : modelInfo === null
+        ? { id: modelId, name: modelId, contextWindow: declared }
+        : target.catalogue === false
+          ? { ...modelInfo, contextWindow: declared }
+          : modelInfo;
   return {
     model,
-    modelInfo,
+    modelInfo: resolvedInfo,
     modelString: `${registryId}:${modelId}`,
     providerId: registryId,
     modelId,

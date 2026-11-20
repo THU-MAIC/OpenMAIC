@@ -87,6 +87,13 @@ export interface ResolvedModelTarget {
   customBaseUrl?: true;
   /** Absent: the provider's default model (never for chat). */
   modelId?: string;
+  /**
+   * The context window the configuration declared for this chat model
+   * (`modelContextWindows` on the provider). Catalogue metadata still wins for
+   * a provider the catalogue covers; a preset that distrusts the catalogue
+   * (`catalogue: false`) takes this over a name-colliding catalogue hit.
+   */
+  declaredContextWindow?: number;
 }
 
 export interface RequirementCheck {
@@ -266,6 +273,11 @@ function resolveTarget(
     // plan's), else the registry's, which the adapter applies.
     ...(effectiveModel !== undefined ? { modelId: effectiveModel } : {}),
     ...(preset.trustsModelCatalogue === false ? { catalogue: false as const } : {}),
+    ...(capability === 'chat' &&
+    effectiveModel !== undefined &&
+    provider.modelContextWindows?.[effectiveModel] !== undefined
+      ? { declaredContextWindow: provider.modelContextWindows[effectiveModel] }
+      : {}),
   };
 }
 

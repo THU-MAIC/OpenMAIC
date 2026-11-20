@@ -25,6 +25,7 @@ import {
   type SlotId,
 } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
+import { deploymentAuthorizedModels } from './model-authorization';
 import { retiredPresetReason } from '@/lib/config/preset-ids';
 import { VALID_EFFORTS, VALID_LEVELS, VALID_MODES } from '@/lib/server/model-routes';
 
@@ -150,6 +151,14 @@ export const providerSchema = z
     apiKey: z.string().min(1).optional(),
     baseUrl: z.url().optional(),
     models: z.array(z.string().trim().min(1)).min(1).optional(),
+    /**
+     * Context windows the configuration declares for chat models the built-in
+     * catalogue does not describe (or, for a preset that distrusts the
+     * catalogue, describes only by a name collision). Catalogue metadata still
+     * wins for a provider the catalogue covers. Applied by compaction and the
+     * context budget check, never sent on the wire.
+     */
+    modelContextWindows: z.record(z.string().trim().min(1), z.number().int().positive()).optional(),
     /** HTTP proxy for this provider's requests. */
     proxy: z.url().optional(),
     /** Multi-part credentials for vendors that do not use a single key. */
@@ -349,6 +358,26 @@ function crossCheck(
     }
     if (preset.requiresBaseUrl && !provider.baseUrl) {
       issues.push(`providers.${id}.baseUrl: preset "${preset.id}" needs a baseUrl`);
+    }
+    const declared = provider.modelContextWindows;
+    if (declared && Object.keys(declared).length) {
+      const windowsAt = `providers.${id}.modelContextWindows`;
+      if (!preset.capabilities.chat) {
+        issues.push(`${windowsAt}: only chat providers support declared context windows`);
+      } else {
+        // A declared window applies to a model the provider serves: pinned in
+        // its model list or referenced from a chat slot. Anything else is
+        // configuration that can never take effect.
+        const served = new Set(deploymentAuthorizedModels(config, id, 'chat'));
+        for (const modelId of Object.keys(declared)) {
+          if (!served.has(modelId)) {
+            issues.push(
+              `${windowsAt}: ${shown(modelId, windowsAt)} is not a chat model this ` +
+                'provider serves; add it to models or reference it from a slot',
+            );
+          }
+        }
+      }
     }
   }
 
