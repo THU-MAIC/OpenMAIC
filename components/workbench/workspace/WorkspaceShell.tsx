@@ -2307,35 +2307,6 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
           />
         ) : null}
 
-      {panes.courseId ? (
-        <WorkspaceClassroomPane
-          browser={classroomBrowser}
-          hidden={!classroomOpen || previewShowing}
-          readOnly={readOnlyCourse}
-          // Not known yet is read-only too, but says nothing until it is known.
-          readOnlyKnown={courseAccess !== 'unknown'}
-          fullscreen={playbackOn}
-          // Symmetric with the conversation's fold: offered only while both
-          // panes are on screen (the last visible pane cannot fold — see
-          // `resolveWorkspaceRender`). Its button lives in the pane's own header.
-          onCollapse={bothPanesOnScreen ? collapse.collapseClassroom : undefined}
-          onTalkAboutCourse={browsingCourse && !readOnlyCourse ? talkAboutCourseStable : undefined}
-          // Whoever owns the course may see its raw problems; a conversation
-          // can only take them on while it could change the course.
-          canRepair={courseAccess === 'owner'}
-          onAgentFix={readOnlyCourse ? undefined : startAgentFixStable}
-        />
-      ) : null}
-
-        {previewTabOpen && !panes.courseId && collapse.value.classroom ? (
-          <PaneTab
-            testId="workspace-preview-reopen"
-            label={t('workspace.expandClassroom')}
-            side="right"
-            onClick={collapse.expandClassroom}
-          />
-        ) : null}
-
         {panes.courseId ? (
           <WorkspaceClassroomPane
             browser={classroomBrowser}
