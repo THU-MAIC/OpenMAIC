@@ -11,6 +11,8 @@ import { generateAndStoreTTS } from '@/lib/audio/narration-tts';
 import { mossCourseSubject, narrationSpokenText, precedingSpeechTexts } from '@/lib/audio/moss-tts';
 import { useStageStore } from '@/lib/store/stage';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
+import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
+import { AUDIO_PRESENCE_BATCH_SIZE } from '@/lib/media/audio-presence';
 import { mayGenerateForStage } from '@/lib/classroom/generation-permission';
 
 /** Legacy deterministic Dexie key used before pool allocation. */
@@ -47,20 +49,47 @@ export function isManagedTtsActive(): boolean {
   return serverTTSAvailable();
 }
 
-/** True if an audio blob is cached under this exact audioId. */
-export async function audioExists(audioId: string): Promise<boolean> {
-  return !!(await db.audioFiles.get(audioId));
+// Timeline rows mount together. Coalesce their checks before accessing Dexie or HTTP.
+let pending = new Map<string, Array<(exists: boolean) => void>>();
+
+export function audioExists(audioId: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!pending.size)
+      queueMicrotask(async () => {
+        const batch = pending;
+        pending = new Map();
+        const found = await audioExistsBulk([...batch.keys()]).catch(() => new Set<string>());
+        for (const [id, listeners] of batch) for (const notify of listeners) notify(found.has(id));
+      });
+    const listeners = pending.get(audioId) ?? [];
+    listeners.push(resolve);
+    pending.set(audioId, listeners);
+  });
 }
 
-/** Existence for many audioIds in one IndexedDB round-trip. */
 export async function audioExistsBulk(audioIds: string[]): Promise<Set<string>> {
-  if (audioIds.length === 0) return new Set();
-  const recs = await db.audioFiles.bulkGet(audioIds);
-  const have = new Set<string>();
-  recs.forEach((r, i) => {
-    if (r) have.add(audioIds[i]);
-  });
-  return have;
+  const ids = [...new Set(audioIds)];
+  if (!ids.length) return new Set();
+  const cached = await db.audioFiles.bulkGet(ids).catch(() => []);
+  const found = new Set(ids.filter((_, i) => cached[i]));
+  const remote = ids.filter((id) => !found.has(id) && mayNameAPoolAsset(id) && id.length <= 128);
+  for (let i = 0; i < remote.length; i += AUDIO_PRESENCE_BATCH_SIZE) {
+    const chunk = remote.slice(i, i + AUDIO_PRESENCE_BATCH_SIZE);
+    const query = new URLSearchParams(chunk.map((id) => ['id', id]));
+    try {
+      const response = await fetch('/api/persistence/audio-presence?' + query, {
+        cache: 'no-store',
+      });
+      if (!response.ok) continue;
+      const body = await response.json();
+      if (Array.isArray(body.ids)) {
+        for (const id of chunk) if (body.ids.includes(id)) found.add(id);
+      }
+    } catch {
+      /* Offline: clips from the local cache are still playable. */
+    }
+  }
+  return found;
 }
 
 /** Object URL for the audio this id currently resolves to (caller revokes). */

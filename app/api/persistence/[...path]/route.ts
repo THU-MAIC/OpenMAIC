@@ -10,6 +10,7 @@ import {
   type AssetIndirectByteEgress,
 } from '@openmaic/storage/server';
 
+import { AUDIO_PRESENCE_BATCH_SIZE } from '@/lib/media/audio-presence';
 import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import { createLogger } from '@/lib/logger';
 import { configuredAssetByteEgress } from '@/lib/persistence/asset-byte-egress';
@@ -20,7 +21,11 @@ import {
   type DocumentAccess,
 } from '@/lib/persistence/document-access';
 import { createOwnerBoundDocumentStore } from '@/lib/persistence/owner-bound-document-store';
-import { assetPrincipalForOwner, createOwnerAssetStore } from '@/lib/persistence/owner-assets';
+import {
+  assetPrincipalForOwner,
+  createOwnerAssetStore,
+  readableAssetIds,
+} from '@/lib/persistence/owner-assets';
 import {
   claimRefusalResponse,
   isSameOriginJsonRequest,
@@ -511,6 +516,30 @@ async function handlePersistenceRequestInner(
     const { ownerId } = principal;
     try {
       const path = routeRelativePath(request);
+      if (path === '/audio-presence') {
+        if (request.method !== 'GET')
+          return withHeaders(
+            jsonError(405, 'METHOD_NOT_ALLOWED', 'audio-presence accepts GET only'),
+            responseHeaders,
+          );
+        const ids = new URL(request.url).searchParams.getAll('id');
+        if (
+          !ids.length ||
+          ids.length > AUDIO_PRESENCE_BATCH_SIZE ||
+          ids.some((id) => id.length > 128 || !id.startsWith('ast_'))
+        ) {
+          return withHeaders(
+            jsonError(400, 'INVALID_ASSET_IDS', 'Invalid asset id list'),
+            responseHeaders,
+          );
+        }
+        const { pool } = await getServerPersistenceProvider(connectionString, deps.poolFactory);
+        const found = await readableAssetIds(pool, ownerId, ids);
+        return withHeaders(
+          Response.json({ ids: found }, { headers: { 'Cache-Control': 'private, no-store' } }),
+          responseHeaders,
+        );
+      }
       if (path === LEARNER_KEY_PATH) {
         return request.method === 'GET'
           ? learnerKeyResponse(ownerId, responseHeaders)

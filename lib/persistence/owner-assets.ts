@@ -90,6 +90,46 @@ function isQueryableId(value: string): boolean {
   return typeof value === 'string' && !value.includes('\0') && !LONE_SURROGATE.test(value);
 }
 
+// Both single-asset reads and timeline presence checks enforce the same viewer policy.
+const FOREIGN_READABLE_ENTRY = `e.mime <> 'application/vnd.openmaic.pbl-project+json'
+        AND (
+          e.principal = $3
+          OR (
+            e.committed_at IS NOT NULL
+            AND EXISTS (
+              SELECT 1
+                FROM document_asset_refs r
+                JOIN stage_meta m ON m.stage_id = r.stage_id
+               WHERE r.asset_id = e.id
+                 AND m.deleted_at IS NULL
+                 AND e.principal = $4 || m.owner_id
+            )
+          )
+        )`;
+
+/** The same registry identity as HEAD, in one lookup and without fetching any audio bytes. */
+export async function readableAssetIds(
+  queryable: OwnerAssetQueryable,
+  ownerId: string,
+  ids: string[],
+): Promise<string[]> {
+  const queryIds = ids.filter(isQueryableId);
+  if (!queryIds.length) return [];
+  const result = await queryable.query(
+    `SELECT e.id FROM asset_entries e
+       JOIN asset_blobs b ON b.content_hash = e.content_hash
+      WHERE e.id = ANY($1::text[])
+        AND (e.principal = $2 OR (${FOREIGN_READABLE_ENTRY}))`,
+    [
+      queryIds,
+      assetPrincipalForOwner(ownerId).key,
+      LEGACY_SHARED_ASSET_PRINCIPAL,
+      OWNER_ASSET_PRINCIPAL_PREFIX,
+    ],
+  );
+  return (result.rows as { id: string }[]).map((row) => row.id);
+}
+
 /**
  * The principal to read `ref` under when the caller's own partition missed:
  * a legacy shared entry, or another owner's committed entry that a live course
@@ -106,21 +146,7 @@ async function foreignReadablePrincipal(
        FROM asset_entries e
       WHERE e.id = $1
         AND e.principal <> $2
-        AND e.mime <> 'application/vnd.openmaic.pbl-project+json'
-        AND (
-          e.principal = $3
-          OR (
-            e.committed_at IS NOT NULL
-            AND EXISTS (
-              SELECT 1
-                FROM document_asset_refs r
-                JOIN stage_meta m ON m.stage_id = r.stage_id
-               WHERE r.asset_id = e.id
-                 AND m.deleted_at IS NULL
-                 AND e.principal = $4 || m.owner_id
-            )
-          )
-        )`,
+        AND ${FOREIGN_READABLE_ENTRY}`,
     [ref, callerKey, LEGACY_SHARED_ASSET_PRINCIPAL, OWNER_ASSET_PRINCIPAL_PREFIX],
   );
   const row = result.rows[0] as { principal?: unknown } | undefined;
