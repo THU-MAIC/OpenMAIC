@@ -2048,11 +2048,16 @@ async function executeSession(
             }),
         },
         onCompaction: (event) => {
-          emit(LIFECYCLE.trace, {
-            message:
-              `context compacted: ${event.tokensBefore} -> ${event.tokensAfter} tokens, ` +
-              `${event.messagesBefore} -> ${event.messagesAfter} messages, ` +
-              `${event.summaryCalls} summary call(s)`,
+          // This used to emit a `trace`, which folds onto a running tool's
+          // card and is dropped without one — and compaction runs before the
+          // model call, so there usually is none. The durable frame is what
+          // makes the compaction divider survive refresh and replay.
+          emit(LIFECYCLE.contextCompacted, {
+            summary: event.summary,
+            tokensBefore: event.tokensBefore,
+            tokensAfter: event.tokensAfter,
+            messagesBefore: event.messagesBefore,
+            messagesAfter: event.messagesAfter,
           });
         },
       });

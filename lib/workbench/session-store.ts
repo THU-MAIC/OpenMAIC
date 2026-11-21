@@ -24,7 +24,10 @@
 import { create } from 'zustand';
 import i18n from 'i18next';
 import { supportedLocaleOf } from '@/lib/i18n/types';
-import { contextBudgetCopyKey } from '@/lib/agent/runtime/context-budget-error';
+import {
+  contextBudgetCopyKey,
+  contextBudgetHintKey,
+} from '@/lib/agent/runtime/context-budget-error';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
   defaultWorkbenchTranslator,
@@ -48,6 +51,14 @@ export type ChatNodeKind =
   | 'system'
   | 'tool'
   | 'boundary'
+  /**
+   * The run's context compaction replaced earlier messages with a summary
+   * before the next model call (`LIFECYCLE.contextCompacted`). A centered
+   * divider at the chronological point where that became true: everything
+   * above it the agent now knows only through `compactionSummary`. Durable by
+   * construction — the frame replays, so the divider survives refresh.
+   */
+  | 'compaction'
   /**
    * The classrooms ONE EXCHANGE produced or was pointed at, as things you can
    * click.
@@ -161,6 +172,17 @@ export interface ChatNode {
   hint?: string;
   /** Product-owned hint resolved at render time. */
   hintCopyKey?: WorkbenchCopyKey;
+  /**
+   * Compaction dividers only: the summary the run substituted for earlier
+   * messages, verbatim from the durable `context_compacted` frame. Expanded
+   * behind the divider — never spliced into `text`.
+   */
+  compactionSummary?: string;
+  /** Compaction dividers only: the admission counts around the cut. */
+  compactionTokensBefore?: number;
+  compactionTokensAfter?: number;
+  compactionMessagesBefore?: number;
+  compactionMessagesAfter?: number;
   /** Thinking bars only: wall-clock bounds for the "thought for Ns" summary. */
   startedAt?: number;
   endedAt?: number;
@@ -1283,6 +1305,52 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
           : state.chat;
       break;
     }
+    case 'context_compacted': {
+      // The one "the job says something about itself" fact the user must not
+      // miss: past this divider the agent answers from the summary plus the
+      // kept tail, and a conversation that silently forgets its own past reads
+      // as a bug. This used to ride a `trace`, which folds onto a running
+      // tool's card and is dropped without one — and compaction runs before
+      // the model call, so there usually is none. The frame is durable, so the
+      // divider lands identically live and on replay, at the chronological
+      // point where the summary became the agent's only memory of everything
+      // above it.
+      const summary = String(data.summary ?? '');
+      if (!summary.trim()) break;
+      const count = (value: unknown) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+      // Compaction runs before a model call. If the turn's waiting (gap)
+      // node is already open, appending would put the divider below it, and
+      // the gap turns into the reply in place — so the new reasoning and
+      // tools would render above the divider, whose caption says the
+      // opposite. Insert before the gap so the divider stays above the reply
+      // it enabled.
+      const gapIdx = next.waitingKey ? next.chat.findIndex((n) => n.key === next.waitingKey) : -1;
+      next.chat = [
+        ...(gapIdx >= 0 ? next.chat.slice(0, gapIdx) : next.chat),
+        {
+          key,
+          kind: 'compaction' as const,
+          text: defaultWorkbenchTranslator('workbench.system.contextCompacted'),
+          copyKey: 'workbench.system.contextCompacted' as const,
+          compactionSummary: summary,
+          ...(count(data.tokensBefore) !== undefined
+            ? { compactionTokensBefore: count(data.tokensBefore) }
+            : {}),
+          ...(count(data.tokensAfter) !== undefined
+            ? { compactionTokensAfter: count(data.tokensAfter) }
+            : {}),
+          ...(count(data.messagesBefore) !== undefined
+            ? { compactionMessagesBefore: count(data.messagesBefore) }
+            : {}),
+          ...(count(data.messagesAfter) !== undefined
+            ? { compactionMessagesAfter: count(data.messagesAfter) }
+            : {}),
+        },
+        ...(gapIdx >= 0 ? next.chat.slice(gapIdx) : []),
+      ];
+      break;
+    }
     case 'thinking_end': {
       // Durable settle marker from the runner: reasoning handed over to text
       // at this instant. Settling HERE (not on the volatile first text delta)
@@ -1755,10 +1823,15 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
         // sentence, which read as a log line and — because every auto-retry
         // appends its own marker — stacked N identical copies of it.
         const cause = data.error ? String(data.error).trim() : '';
-        // A context-budget block is final for this conversation: say so in
-        // plain words and point to a new chat, not to a retry that would hit
-        // the same limit.
+        // A context-budget block names its specific reason (summarization
+        // failed, the conversation does not fit, nothing left to cut) and
+        // points at the action that can actually help — retrying an oversized
+        // transcript would hit the same limit, and a misconfigured output
+        // budget is an operator fix, so that one deliberately has no hint.
         const budgetCopyKey = contextBudgetCopyKey(cause);
+        const budgetHintCopyKey = budgetCopyKey
+          ? contextBudgetHintKey(cause)
+          : 'workbench.system.retryHint';
         next.chat = [
           ...settled,
           {
@@ -1767,13 +1840,13 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
             tone: 'error',
             text: defaultWorkbenchTranslator(budgetCopyKey ?? 'workbench.system.runFailed'),
             copyKey: budgetCopyKey ?? 'workbench.system.runFailed',
-            ...(!budgetCopyKey
+            ...(budgetHintCopyKey
               ? {
-                  hint: defaultWorkbenchTranslator('workbench.system.retryHint'),
-                  hintCopyKey: 'workbench.system.retryHint',
-                  ...(cause ? { detail: cause } : {}),
+                  hint: defaultWorkbenchTranslator(budgetHintCopyKey),
+                  hintCopyKey: budgetHintCopyKey,
                 }
               : {}),
+            ...(cause ? { detail: cause } : {}),
           },
         ];
         break;

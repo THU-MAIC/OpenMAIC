@@ -341,7 +341,9 @@ describe('runner conversation compaction', () => {
     expect(
       store.appendRunEvent.mock.calls.some(
         (call) =>
-          call[2].type === 'trace' && String(call[2].data?.message).includes('context compacted'),
+          call[2].type === 'context_compacted' &&
+          typeof call[2].data?.summary === 'string' &&
+          call[2].data.summary.length > 0,
       ),
     ).toBe(true);
 
