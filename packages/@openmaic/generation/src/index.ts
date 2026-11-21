@@ -16,6 +16,7 @@ export {
   resolveImageIds,
 } from './scene-generator.js';
 export type {
+  GenerateWidgetContentOptions,
   SceneActionsOptions,
   SceneContentFailure,
   SceneContentFailureCode,

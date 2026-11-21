@@ -124,6 +124,7 @@ export interface SceneContentOptions {
   baselineContent?: GeneratedSlideContent;
   /** Optional host fallback for the app-only loop planner. */
   pblLoopFallback?: (input: PBLPlannerV2Input) => Promise<PBLProject>;
+  design?: string;
   onFailure?: (failure: SceneContentFailure) => void;
   logger?: GenerationLogger;
 }
@@ -286,6 +287,7 @@ export async function generateSceneContent(
       allowProceduralSkill,
       logger: log,
       onFailure: options.onFailure,
+      design: options.design,
     });
   }
 
@@ -1270,6 +1272,13 @@ function extractHtml(
 
 // ==================== Ultra Mode Widget Generation ====================
 
+export interface GenerateWidgetContentOptions {
+  allowProceduralSkill?: boolean;
+  logger?: GenerationLogger;
+  onFailure?: (failure: SceneContentFailure) => void;
+  design?: string;
+}
+
 /**
  * Generate widget content based on widget type (Ultra Mode)
  */
@@ -1277,11 +1286,7 @@ export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
-  options: {
-    allowProceduralSkill?: boolean;
-    logger?: GenerationLogger;
-    onFailure?: (failure: SceneContentFailure) => void;
-  } = {},
+  options: GenerateWidgetContentOptions = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const log = options.logger ?? noopGenerationLogger;
   const widgetType = outline.widgetType;
@@ -1291,6 +1296,9 @@ export async function generateWidgetContent(
     log.warn(`Interactive outline missing widget config, falling back to standard interactive`);
     return null;
   }
+
+  const design = (options.design ?? outline.design)?.trim();
+  const designVars = design ? { design } : {};
 
   // Select appropriate prompt based on widget type
   let promptId: PromptId;
@@ -1306,6 +1314,7 @@ export async function generateWidgetContent(
         variables: formatWidgetVariables(widgetOutline.keyVariables),
         designIdea: resolveWidgetDesignIdea(outline),
         languageDirective: languageDirective || '',
+        ...designVars,
       };
       break;
 
@@ -1322,6 +1331,7 @@ export async function generateWidgetContent(
         hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
         hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
+        ...designVars,
       };
       break;
     }
@@ -1337,6 +1347,7 @@ export async function generateWidgetContent(
         testCases: '', // AI generates appropriate test cases based on challenge
         hints: '', // AI generates progressive hints based on challenge
         languageDirective: languageDirective || '',
+        ...designVars,
       };
       break;
 
@@ -1349,6 +1360,7 @@ export async function generateWidgetContent(
         keyPoints: (outline.keyPoints || []).join('\n'),
         scoring: { correctPoints: 10, speedBonus: 5 },
         languageDirective: languageDirective || '',
+        ...designVars,
       };
       break;
 
@@ -1362,6 +1374,7 @@ export async function generateWidgetContent(
         objects: widgetOutline.objects || [],
         interactions: widgetOutline.interactions || [],
         languageDirective: languageDirective || '',
+        ...designVars,
       };
       break;
 
@@ -1382,6 +1395,7 @@ export async function generateWidgetContent(
         successCriteria: widgetOutline.successCriteria || [],
         errorConsequences: widgetOutline.errorConsequences || [],
         languageDirective: languageDirective || '',
+        ...designVars,
       };
       break;
 

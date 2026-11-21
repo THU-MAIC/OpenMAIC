@@ -58,13 +58,13 @@ order:
 4. **`generate_scene` for EACH settled page, in ascending order** — one
    page per call, never more. Pass the page's settled `title`, `type` and
    `brief` (plus `materialFacts` when the page's content comes from attached
-   material); no planned outline is needed. For a `slide`, also pass `design`:
-   the course style restated in full, then this page's own layout — what the
-   learner must see at a glance, the regions with rough proportions, and which
-   content sits where in what form (table, steps, cards, diagram, chart,
-   formula). Keep content and look apart: `brief` and `materialFacts` carry
-   what the page says, `design` only how it looks, referring to the content by
-   role instead of repeating it.
+   material); no planned outline is needed. For a `slide` or `interactive` page,
+   also pass `design`: the course style restated in full, and for a slide, then
+   this page's own layout — what the learner must see at a glance, the regions
+   with rough proportions, and which content sits where in what form (table,
+   steps, cards, diagram, chart, formula). Keep content and look apart: `brief`
+   and `materialFacts` carry what the page says, `design` only how it looks,
+   referring to the content by role instead of repeating it.
    To show an extracted figure on the page, call `use_material_media` for it
    first and pass each returned `src` in `media` as
    `{ src, description, width, height }`. A page generated without `media`

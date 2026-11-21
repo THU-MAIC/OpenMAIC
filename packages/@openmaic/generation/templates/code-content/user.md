@@ -26,7 +26,13 @@ Create a code playground widget for: {{title}}
 
 {{hints}}
 
-{{#if additionalRequirements}}## Additional Design Requirements
+{{#if design}}## Course Visual Style
+
+Follow this style for page background, panels, text and accent colours:
+
+{{design}}
+
+{{/if}}{{#if additionalRequirements}}## Additional Design Requirements
 
 {{additionalRequirements}}
 

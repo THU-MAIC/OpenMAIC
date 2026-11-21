@@ -18,7 +18,7 @@ Your output must be a complete HTML document with:
 ### 1. LIGHTING - Objects MUST be clearly visible
 
 **ALWAYS ensure:**
-- Background should NOT be pure black (use deep blue `#0a0a1a` or dark gradient)
+- Background: follow the course visual style when given; otherwise do not use pure black (use deep blue `#0a0a1a` or dark gradient)
 - Ambient light intensity at least `0.4` (not 0.1!)
 - Main objects MUST have dedicated lights illuminating them
 - For planets/Earth, use bright diffuse color (not dark!)
