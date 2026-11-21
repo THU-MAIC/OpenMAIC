@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   Archive,
+  Copy,
   Download,
   FileCode,
   FileDown,
@@ -47,6 +50,14 @@ import {
 import { cn } from '@/lib/utils';
 import type { StageMode } from '@/lib/types/stage';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
+
+function useSafeRouter() {
+  try {
+    return useRouter();
+  } catch {
+    return null;
+  }
+}
 
 interface ExportMenuItemProps {
   readonly icon: ReactNode;
@@ -143,8 +154,56 @@ export function HeaderControls({
 }: HeaderControlsProps) {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
+  const router = useSafeRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
+  const [copying, setCopying] = useState(false);
+
+  const stage = useStageStore((s) => s.stage);
+
+  const handleCopyCourse = async () => {
+    if (copying || !stage?.id) return;
+    setCopying(true);
+    try {
+      const res = await fetch(`/api/stages/${encodeURIComponent(stage.id)}/copy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      if (!res.ok) {
+        let data: { error?: string; errorCode?: string; details?: string } | undefined;
+        try {
+          data = await res.json();
+        } catch {
+          // ignore
+        }
+        const message =
+          data?.errorCode === 'ASSET_QUOTA_EXCEEDED'
+            ? t('classroom.copyQuotaRefused')
+            : data?.errorCode === 'PBL_COPY_UNSUPPORTED'
+              ? t('classroom.copyPblV3Unsupported')
+              : data?.errorCode === 'RATE_LIMITED'
+                ? t('classroom.copyFailed')
+                : data?.errorCode === 'COURSE_GENERATING'
+                  ? t('classroom.copyFailed')
+                  : data?.error || t('classroom.copyFailed');
+        toast.error(message);
+        return;
+      }
+      const data = (await res.json()) as { id: string };
+      toast.success(t('classroom.copySuccess'));
+      if (router) {
+        router.push(`/classroom/${data.id}`);
+      } else if (typeof window !== 'undefined') {
+        window.location.assign(`/classroom/${data.id}`);
+      }
+    } catch {
+      toast.error(t('classroom.copyFailed'));
+    } finally {
+      setCopying(false);
+    }
+  };
 
   // Export plumbing — uses the stage / media task stores to check
   // readiness, then hands off to the export hooks. Available in both
@@ -397,7 +456,8 @@ export function HeaderControls({
             description={t('export.videoDesc')}
           />
         )}
-        {showViewerCopyHint({ isOwner, workbench: isWorkbenchEnabled(), scenes }) ? (
+        {!makeOwnCourseHref &&
+        showViewerCopyHint({ isOwner, workbench: isWorkbenchEnabled(), scenes }) ? (
           // Someone else's course: how to make an editable copy of their own.
           <p
             data-testid="export-viewer-copy-hint"
@@ -513,6 +573,35 @@ export function HeaderControls({
           </button>
         </div>
       ) : null}
+
+      {/* Copy to my courses — for non-owners only */}
+      {makeOwnCourseHref && stage?.id && showCourseActions && mode !== 'edit' && (
+        <button
+          type="button"
+          data-testid="classroom-copy-course"
+          onClick={handleCopyCourse}
+          disabled={copying}
+          className={cn(
+            'shrink-0 inline-flex items-center gap-1.5 sm:gap-2 rounded-full border shadow-sm transition-all',
+            'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
+            compact ? 'h-8 px-2 sm:px-3 text-xs' : 'h-9 px-2.5 sm:px-3.5 text-xs font-medium',
+            copying
+              ? 'opacity-60 cursor-not-allowed border-gray-200 dark:border-gray-700 text-gray-400'
+              : 'border-gray-100/50 dark:border-gray-700/50 text-gray-700 dark:text-gray-200 hover:bg-white dark:hover:bg-gray-700 hover:border-violet-300 dark:hover:border-violet-600',
+          )}
+          title={copying ? t('classroom.copying') : t('classroom.copyToMyCourses')}
+          aria-label={copying ? t('classroom.copying') : t('classroom.copyToMyCourses')}
+        >
+          {copying ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500 shrink-0" />
+          ) : (
+            <Copy className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400 shrink-0" />
+          )}
+          <span className="hidden sm:inline whitespace-nowrap">
+            {copying ? t('classroom.copying') : t('classroom.copyToMyCourses')}
+          </span>
+        </button>
+      )}
 
       {/* Edit Switch — toggle property: on/off both clickable, not a
           one-way "Done" button. Disabled only when the current scene

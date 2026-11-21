@@ -1090,6 +1090,12 @@
     "notReady": "생성이 완료된 후 이용 가능합니다"
   },
   "classroom": {
+    "copyToMyCourses": "내 강좌로 복사",
+    "copying": "복사 중...",
+    "copySuccess": "강좌를 내 강좌로 복사했습니다",
+    "copyFailed": "강좌 복사 실패",
+    "copyQuotaRefused": "저장 공간 할당량 초과",
+    "copyPblV3Unsupported": "PBL v3 프로젝트가 포함된 강좌는 복사할 수 없습니다",
     "recentClassrooms": "최근",
     "today": "오늘",
     "yesterday": "어제",

@@ -14,7 +14,11 @@ import { randomBytes } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
-import { getBackgroundDocumentStore } from '@/lib/server/agent-runtime/owner-scoped-documents';
+import {
+  getBackgroundDocumentStore,
+  getOwnerScopedDocumentStore,
+} from '@/lib/server/agent-runtime/owner-scoped-documents';
+import type { OwnerPrincipal } from '@/lib/server/identity/types';
 import { sanitizeSceneContent } from '@/lib/server/sanitize-scene-content';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -49,7 +53,7 @@ export interface CompletedClassroom {
  * throw; nothing is written then.
  */
 export async function saveCompletedClassroom(
-  ownerId: string,
+  owner: string | OwnerPrincipal,
   classroom: CompletedClassroom,
   options: { inTransaction?: (queryable: Queryable) => Promise<void> } = {},
 ): Promise<{ stage: Stage; scenes: Scene[] }> {
@@ -62,7 +66,10 @@ export async function saveCompletedClassroom(
     createdAt: stage.createdAt ?? now,
     updatedAt: now,
   };
-  const store = await getBackgroundDocumentStore(ownerId);
+  const store =
+    typeof owner === 'string'
+      ? await getBackgroundDocumentStore(owner)
+      : await getOwnerScopedDocumentStore(owner);
   await store.createDocument({ stage, scenes, outline }, { inTransaction: options.inTransaction });
   return { stage, scenes };
 }

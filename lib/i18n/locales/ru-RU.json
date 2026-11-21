@@ -1090,6 +1090,12 @@
     "notReady": "Доступно после завершения генерации"
   },
   "classroom": {
+    "copyToMyCourses": "Копировать в мои курсы",
+    "copying": "Копирование...",
+    "copySuccess": "Курс скопирован в ваши курсы",
+    "copyFailed": "Не удалось скопировать курс",
+    "copyQuotaRefused": "Превышена квота хранилища",
+    "copyPblV3Unsupported": "Курсы с проектами PBL v3 нельзя копировать",
     "recentClassrooms": "Недавние",
     "today": "Сегодня",
     "yesterday": "Вчера",

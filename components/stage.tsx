@@ -349,7 +349,9 @@ export function Stage({
   // tour and the guide course).
   const openInWorkspace =
     !hosted && proWorkbenchEntry && isOwner ? handleEnterWorkbench : undefined;
-  const makeOwnCourseHref = !hosted && proWorkbenchEntry && !isOwner ? '/' : undefined;
+  const hasPblScene = scenes.some((scene) => scene.content?.type === 'pbl');
+  const makeOwnCourseHref =
+    !hosted && proWorkbenchEntry && !isOwner && !hasPblScene ? '/' : undefined;
 
   // Mode swap choreography — a clean opacity cross-fade. Both roots layer
   // via `absolute inset-0` so they coexist for the ~280ms window without
