@@ -3,6 +3,8 @@
 import { cn } from '@/lib/utils';
 import {
   Flashlight,
+  Search,
+  Globe,
   MousePointer2,
   Type,
   Shapes,
@@ -55,6 +57,9 @@ interface ActionCfg {
 }
 
 const ACTION_CONFIG: Record<string, ActionCfg> = {
+  web_search: { label: 'Search', Icon: Search, style: DEFAULT_STYLE },
+  fetch_url: { label: 'Read', Icon: Globe, style: DEFAULT_STYLE },
+
   // Slide effects
   spotlight: { label: 'Spotlight', Icon: Flashlight, style: SPOTLIGHT_STYLE },
   laser: { label: 'Laser', Icon: MousePointer2, style: LASER_STYLE },

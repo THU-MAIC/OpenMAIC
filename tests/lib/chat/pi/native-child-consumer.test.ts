@@ -761,7 +761,9 @@ describe('Native Child production consumer', () => {
     expect(toolMessage?.content?.[0]?.output?.type).toBe('text');
     expect(toolMessage?.content?.[0]?.output?.value).toContain('https://example.test/current');
     expect(harness.onActionDone).not.toHaveBeenCalled();
-    expect(harness.events.some((event) => event.type === 'action')).toBe(false);
+    expect(harness.events.filter((event) => event.type === 'action')).toMatchObject([
+      { data: { actionName: 'web_search', params: {} } },
+    ]);
     expect(result).toMatchObject({
       details: {
         availableToolNames: ['read', 'web_search'],

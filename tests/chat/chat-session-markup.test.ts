@@ -38,6 +38,36 @@ describe('ChatSessionComponent markup contract', () => {
     expect(html).toContain('first line\nsecond line');
   });
 
+  it('renders the Native Child web calls as inline tags alongside its text', () => {
+    const session: ChatSession = {
+      id: 'session',
+      type: 'qa',
+      title: 'Q&A',
+      status: 'active',
+      messages: [
+        {
+          id: 'answer',
+          role: 'assistant',
+          parts: [
+            { type: 'action-web_search', actionName: 'web_search', state: 'result' },
+            { type: 'action-fetch_url', actionName: 'fetch_url', state: 'result' },
+            { type: 'text', text: 'The page describes the procedure.' },
+          ] as unknown as ChatSession['messages'][number]['parts'],
+          metadata: { agentId: 'teacher', originalRole: 'agent' },
+        },
+      ],
+      config: { agentIds: ['teacher'] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const html = renderToStaticMarkup(
+      createElement(ChatSessionComponent, { session, isActive: false }),
+    );
+    expect(html).toMatch(/>Search<.*>Read<.*The page describes the procedure\./);
+  });
+
   it('renders separate stop and continue controls during soft-closing', () => {
     const session: ChatSession = {
       id: 'session-1',
