@@ -3,7 +3,11 @@
 import { motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { SceneEditorSurface, SurfaceState } from '@/lib/edit/scene-editor-surface';
+import type {
+  InsertPaletteItem,
+  SceneEditorSurface,
+  SurfaceState,
+} from '@/lib/edit/scene-editor-surface';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import { NOOP_SURFACE } from '@/lib/edit/noop-surface';
 import type { Scene } from '@/lib/types/stage';
@@ -12,7 +16,7 @@ import { StageGrid } from '@/components/edit/StageGrid';
 import { ContainBox } from '@/components/edit/ContainBox';
 import type { SceneType } from '@/lib/types/stage';
 import { CommandBar } from './CommandBar';
-import { FloatingInsertToolbar } from './FloatingInsertToolbar';
+import { FloatingInsertToolbar, InsertToolbarSlot } from './FloatingInsertToolbar';
 import { FloatingToolbar } from './FloatingToolbar';
 import { HeaderHistoryControls } from './HeaderHistoryControls';
 import { HintRail } from './HintRail';
@@ -128,6 +132,18 @@ export function EditShell({
     () => setInsertToolbarCollapsed((current) => !current),
     [],
   );
+  const renderInsertToolbar = useCallback(
+    (items: readonly InsertPaletteItem[]) => (
+      <FloatingInsertToolbar
+        items={items}
+        x={insertToolbarX}
+        y={insertToolbarY}
+        collapsed={insertToolbarCollapsed}
+        onToggleCollapsed={toggleInsertToolbarCollapsed}
+      />
+    ),
+    [insertToolbarX, insertToolbarY, insertToolbarCollapsed, toggleInsertToolbarCollapsed],
+  );
   const SurfaceComponent = surface.SurfaceComponent;
 
   return (
@@ -152,16 +168,10 @@ export function EditShell({
         pager={pager}
         hideCommandBar={hideCommandBar}
       >
-        <SurfaceComponent />
-        {state && state.insertItems.length > 0 && (
-          <FloatingInsertToolbar
-            items={state.insertItems}
-            x={insertToolbarX}
-            y={insertToolbarY}
-            collapsed={insertToolbarCollapsed}
-            onToggleCollapsed={toggleInsertToolbarCollapsed}
-          />
-        )}
+        <InsertToolbarSlot.Provider value={renderInsertToolbar}>
+          <SurfaceComponent />
+        </InsertToolbarSlot.Provider>
+        {state && state.insertItems.length > 0 && renderInsertToolbar(state.insertItems)}
         {state?.hasSelection && <FloatingToolbar actions={state.floatingActions} />}
         <HintRail hints={state?.hints} reserveSpace={scene.type === 'quiz'} />
       </Frame>

@@ -36,7 +36,7 @@ export { ChartInsertPicker } from './insert/ChartInsertPicker';
 export { LineInsertPicker } from './insert/LineInsertPicker';
 export { BackgroundInsertPicker } from './insert/BackgroundInsertPicker';
 export { computeToolbarPosition, TextToolbarOverlay } from './text/TextToolbarOverlay';
-export { useToolbarAnchor } from './text/useToolbarAnchor';
+export { measureEditorToolbarAnchor, useToolbarAnchor } from './text/useToolbarAnchor';
 export { LatexEditorDialog } from './latex/LatexEditorDialog';
 export { LatexToolbarOverlay } from './latex/LatexToolbarOverlay';
 export { VideoToolbarOverlay } from './video/VideoToolbarOverlay';

@@ -1,17 +1,43 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
 import { HomePage } from '../pages/home.page';
-import { MockApi } from '../fixtures/mock-api';
+import { MockApi, type MockRunOptions } from '../fixtures/mock-api';
+import { ClassroomPage } from '../pages/classroom.page';
+import { createMockScene } from '../fixtures/test-data/generated-scene';
 import { createSettingsStorage, SETTINGS_KV_KEY } from '../fixtures/test-data/settings';
 import type { Page } from '@playwright/test';
 
 const SETTINGS_STORAGE = createSettingsStorage();
 const REVIEW_SETTINGS_STORAGE = createSettingsStorage({ reviewOutlineEnabled: true });
 
-async function startFromHome(page: Page) {
+async function setupRun(mockApi: MockApi, options: MockRunOptions = {}) {
+  return mockApi.setupGenerationMocks({
+    stepMs: 0,
+    afterFirstScene: Promise.resolve(),
+    beforeComplete: Promise.resolve(),
+    ...options,
+  });
+}
+
+async function setupStreamingRun(mockApi: MockApi) {
+  let finishOutline!: () => void;
+  const beforeOutlineReady = new Promise<void>((resolve) => {
+    finishOutline = resolve;
+  });
+  const run = await setupRun(mockApi, { beforeOutlineReady });
+  return { run, finishOutline };
+}
+
+async function startFromHome(page: Page, verifyHome = false) {
   const home = new HomePage(page);
   await home.goto();
-  await home.fillRequirement('讲解光合作用');
+  if (verifyHome) {
+    await expect(home.logo).toBeVisible();
+    await expect(home.textarea).toBeVisible();
+    await expect(home.enterButton).toBeDisabled();
+  }
+  await home.fillRequirement('Explain photosynthesis');
+  if (verifyHome) await expect(home.enterButton).toBeEnabled();
   await home.submit();
   await page.waitForURL(/\/generation-preview\?run=/);
 }
@@ -27,11 +53,12 @@ test.describe('Generation Flow', () => {
     page,
     mockApi,
   }) => {
-    const run = await mockApi.setupGenerationMocks();
-    await startFromHome(page);
+    const run = await setupRun(mockApi);
+    await startFromHome(page, true);
     expect(run.input.outlineReview).toBe('countdown');
 
     const preview = new GenerationPreviewPage(page);
+    await expect(preview.stepTitle).toBeVisible();
     await expect(preview.outlineReadyMessage).toBeVisible({ timeout: 15_000 });
     // The run confirms its outline itself; the page never does.
     await preview.waitForRedirectToClassroom();
@@ -42,7 +69,7 @@ test.describe('Generation Flow', () => {
   });
 
   test('a run left at once goes on to completion with no page open', async ({ page, mockApi }) => {
-    const run = await mockApi.setupGenerationMocks();
+    const run = await setupRun(mockApi);
     await startFromHome(page);
     await new GenerationPreviewPage(page).backButton.first().click();
     await page.waitForURL((url) => url.pathname === '/');
@@ -56,15 +83,16 @@ test.describe('Generation Flow', () => {
     mockApi,
   }) => {
     // A countdown long enough to open the review on the card.
-    const run = await mockApi.setupGenerationMocks({ countdownMs: 10_000 });
+    const run = await setupRun(mockApi, { countdownMs: 10_000 });
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
     await expect(preview.outlineReadyMessage).toBeVisible({ timeout: 15_000 });
     await preview.openOutlineReview();
     await expect.poll(() => run.holds.length).toBe(1);
-    // Held: the countdown no longer confirms it.
-    await page.waitForTimeout(11_000);
+    // Timer behavior is covered with fake timers in preview-outline-review.test.ts.
+    await expect.poll(() => run.snapshot().input.outlineReview).toBe('wait');
+    expect(run.snapshot().outlineAutoConfirmAt).toBeUndefined();
     expect(run.autoConfirmations).toBe(0);
     expect(run.confirmations).toHaveLength(0);
 
@@ -82,8 +110,7 @@ test.describe('Generation Flow', () => {
     page,
     mockApi,
   }) => {
-    // Slow enough to open the review while the outline streams.
-    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    const { run, finishOutline } = await setupStreamingRun(mockApi);
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
@@ -91,9 +118,11 @@ test.describe('Generation Flow', () => {
     await preview.openOutlineReview();
     await expect(preview.editorTitle).toBeVisible();
     await expect.poll(() => run.holds.length).toBe(1);
-    // The review holds the run: nothing is confirmed until the learner does.
+    expect(run.snapshot().state).toBe('outlining');
+    finishOutline();
     await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
-    await page.waitForTimeout(3_000);
+    expect(run.snapshot().state).toBe('awaiting_outline_confirmation');
+    expect(run.input.outlineReview).toBe('wait');
     expect(run.confirmations).toHaveLength(0);
     expect(run.autoConfirmations).toBe(0);
 
@@ -103,14 +132,14 @@ test.describe('Generation Flow', () => {
   });
 
   test('persists always review preference from the outline editor', async ({ page, mockApi }) => {
-    // Slow enough to open the review while the outline streams.
-    await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    const { finishOutline } = await setupStreamingRun(mockApi);
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
     await preview.waitForReviewOpportunity();
     await preview.openOutlineReview();
     await preview.enableAlwaysReview();
+    finishOutline();
 
     // The persist write goes through the KVStore and is asynchronous, so poll
     // rather than reading once straight after the toggle.
@@ -136,15 +165,15 @@ test.describe('Generation Flow with outline review', () => {
   });
 
   test('waits for the outline review when always review is enabled', async ({ page, mockApi }) => {
-    const run = await mockApi.setupGenerationMocks();
+    const run = await setupRun(mockApi);
     await startFromHome(page);
     expect(run.input.outlineReview).toBe('wait');
 
     const preview = new GenerationPreviewPage(page);
     await preview.waitForEditor();
     await expect(preview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
-    // The review holds the run, with no countdown: nothing is confirmed until the learner does.
-    await page.waitForTimeout(3_000);
+    expect(run.snapshot().state).toBe('awaiting_outline_confirmation');
+    expect(run.snapshot().outlineAutoConfirmAt).toBeUndefined();
     expect(run.confirmations).toHaveLength(0);
 
     await preview.confirmOutlines();
@@ -157,14 +186,15 @@ test.describe('Generation Flow with outline review', () => {
     page,
     mockApi,
   }) => {
-    // Slow enough to open the review while the outline streams.
-    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    const { run, finishOutline } = await setupStreamingRun(mockApi);
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
     await preview.waitForReviewOpportunity();
     await preview.openOutlineReview();
     await expect(preview.editorTitle).toBeVisible();
+    expect(run.snapshot().state).toBe('outlining');
+    finishOutline();
 
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
@@ -176,8 +206,7 @@ test.describe('Generation Flow with outline review', () => {
     page,
     mockApi,
   }) => {
-    // Slow enough to open the review while the outline streams.
-    const run = await mockApi.setupGenerationMocks({ stepMs: 1_000 });
+    const { run, finishOutline } = await setupStreamingRun(mockApi);
     await startFromHome(page);
 
     const preview = new GenerationPreviewPage(page);
@@ -187,6 +216,8 @@ test.describe('Generation Flow with outline review', () => {
 
     // The run is still waiting: the page attaches to it in review.
     await preview.waitForEditor();
+    expect(run.snapshot().state).toBe('outlining');
+    finishOutline();
     await preview.confirmOutlines();
     await preview.waitForRedirectToClassroom();
     expect(run.confirmations).toHaveLength(1);
@@ -196,7 +227,7 @@ test.describe('Generation Flow with outline review', () => {
     page,
     mockApi,
   }) => {
-    const run = await mockApi.setupGenerationMocks();
+    const run = await setupRun(mockApi);
     await startFromHome(page);
     const preview = new GenerationPreviewPage(page);
     await preview.waitForEditor();
@@ -214,7 +245,7 @@ test.describe('Generation Flow with outline review', () => {
     mockApi,
     context,
   }) => {
-    const run = await mockApi.setupGenerationMocks({ stepMs: 400 });
+    const { run, finishOutline } = await setupStreamingRun(mockApi);
     await startFromHome(page);
     // A second tab on the same run, attached while the outline streams.
     const second = await context.newPage();
@@ -222,11 +253,17 @@ test.describe('Generation Flow with outline review', () => {
     await run.attach(second);
     await second.goto(page.url());
     const secondPreview = new GenerationPreviewPage(second);
-    await secondPreview.waitForEditor();
+    await secondPreview.waitForReviewOpportunity();
     const firstPreview = new GenerationPreviewPage(page);
+    await firstPreview.waitForReviewOpportunity();
+    expect(run.snapshot().state).toBe('outlining');
+    finishOutline();
+    await secondPreview.waitForEditor();
     await firstPreview.waitForEditor();
+    await expect(firstPreview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
     await expect(secondPreview.confirmOutlinesButton).toBeEnabled({ timeout: 15_000 });
-    await page.waitForTimeout(3_000);
+    expect(run.snapshot().state).toBe('awaiting_outline_confirmation');
+    expect(run.snapshot().outlineAutoConfirmAt).toBeUndefined();
     expect(run.confirmations).toHaveLength(0);
     // Confirmed in the second tab: the first follows the run.
     await secondPreview.confirmOutlines();
@@ -254,12 +291,15 @@ test.describe('Generation runs', () => {
     const afterFirstScene = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const run = await mockApi.setupGenerationMocks({ afterFirstScene });
+    const run = await setupRun(mockApi, { afterFirstScene });
     await startFromHome(page);
     const preview = new GenerationPreviewPage(page);
     await preview.waitForRedirectToClassroom();
-    const scenes = page.locator('[data-testid="scene-item"]');
+    const classroom = new ClassroomPage(page);
+    await classroom.waitForLoaded();
+    const scenes = classroom.sidebarScenes;
     await expect(scenes.first()).toBeVisible({ timeout: 15_000 });
+    await expect(classroom.getSceneTitle(0)).toContainText(createMockScene(run.stageId).title);
     // Generating: the Pro switch shows, disabled.
     try {
       expect(run.snapshot().state).toBe('generating');
@@ -272,13 +312,16 @@ test.describe('Generation runs', () => {
     // Completed: editable.
     await expect(page.getByRole('switch')).toBeEnabled({ timeout: 15_000 });
     expect(page.url()).toContain(run.stageId);
+    await classroom.clickScene(1);
+    await expect(scenes.nth(1)).toBeVisible();
+    await expect(scenes.nth(1)).toHaveClass(/bg-purple-50/);
   });
 
   test('a failed first scene pauses with Retry, and Retry resumes the run', async ({
     page,
     mockApi,
   }) => {
-    const run = await mockApi.setupGenerationMocks({ failFirstScene: true });
+    const run = await setupRun(mockApi, { failFirstScene: true });
     await startFromHome(page);
     const retry = page.getByTestId('generation-retry');
     await expect(retry).toBeVisible({ timeout: 15_000 });
@@ -290,7 +333,7 @@ test.describe('Generation runs', () => {
   });
 
   test('a start over the active-run limit says so', async ({ page, mockApi }) => {
-    await mockApi.setupGenerationMocks({ atRunLimit: true });
+    await setupRun(mockApi, { atRunLimit: true });
     const home = new HomePage(page);
     await home.goto();
     await home.fillRequirement('讲解光合作用');

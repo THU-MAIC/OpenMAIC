@@ -67,7 +67,7 @@ export function LineHandles({
             width: '10px',
             height: '10px',
             transform: `translate(-${HANDLE_HALF}px, -${HANDLE_HALF}px)`,
-            border: '1px solid #3b82f6',
+            border: '1px solid var(--maic-editor-selection-color, #3b82f6)',
             backgroundColor: '#fff',
             boxSizing: 'border-box',
             pointerEvents: 'auto',

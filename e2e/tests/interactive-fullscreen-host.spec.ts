@@ -1,10 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { buildSync } from 'esbuild';
+import type * as ClientRects from '../../lib/edit/visible-client-rect';
 
 /**
  * #2121 through the real interactive chain: the placeholder's per-frame
  * measurement, the keep-alive pool and the host's portal and clipped wrapper
- * (as in interactive-observation-http, only unrelated stores are stubbed).
+ * (as in interactive-observation-lifecycle, only unrelated stores are stubbed).
  *
  * The workbench is not part of the e2e build, so only its layout is mirrored:
  * the navigation and conversation columns take the left 640px, and the course
@@ -104,59 +105,156 @@ async function exitFullscreen(page: Page) {
   await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true);
 }
 
-test.beforeEach(async ({ page }) => {
-  const errors: string[] = [];
-  page.on('pageerror', (error) => errors.push(error.message));
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route('http://localhost/fullscreen-host', (route) =>
-    route.fulfill({ contentType: 'text/html', body: LAYOUT }),
-  );
-  await page.goto('http://localhost/fullscreen-host');
-  await page.addScriptTag({ content: bundle });
-  await expect(page.frameLocator(IFRAME).getByRole('button', { name: 'Left edge' })).toBeVisible();
-  expect(errors).toEqual([]);
+test.describe('Interactive fullscreen host', () => {
+  test.beforeEach(async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.route('http://localhost/fullscreen-host', (route) =>
+      route.fulfill({ contentType: 'text/html', body: LAYOUT }),
+    );
+    await page.goto('http://localhost/fullscreen-host');
+    await page.addScriptTag({ content: bundle });
+    await expect(
+      page.frameLocator(IFRAME).getByRole('button', { name: 'Left edge' }),
+    ).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
+  test('player fullscreen with workbench panels open shows the whole page and keeps it clickable', async ({
+    page,
+  }) => {
+    // Windowed: the frame fills the 800x900 pane right of the panels (1280x1440
+    // logical at 0.625), with no letterbox.
+    const windowed = { left: 640, top: 0, width: 800, height: 900 };
+    await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+
+    await enterFullscreen(page);
+    // Fullscreen: the frame fills the 1440x900 stage (1280x800 logical at 1.125).
+    await expect
+      .poll(() => wrapperBox(page))
+      .toEqual({ left: 0, top: 0, width: 1440, height: 900 });
+    expect(
+      await page.evaluate(
+        (s) => document.fullscreenElement!.contains(document.querySelector(s)),
+        IFRAME,
+      ),
+    ).toBe(true);
+    // The control at the page's left edge sat where the panels used to clip it.
+    const frame = page.frameLocator(IFRAME);
+    await frame.getByRole('button', { name: 'Left edge' }).click({ timeout: 5_000 });
+    await expect(frame.locator('#count')).toHaveText('1');
+
+    await exitFullscreen(page);
+    await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+  });
+
+  test('re-entering fullscreen after a resize follows the new viewport', async ({ page }) => {
+    await enterFullscreen(page);
+    await expect
+      .poll(() => wrapperBox(page))
+      .toEqual({ left: 0, top: 0, width: 1440, height: 900 });
+    await exitFullscreen(page);
+    await expect
+      .poll(() => wrapperBox(page))
+      .toEqual({ left: 640, top: 0, width: 800, height: 900 });
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    // The pane is now 640x720: the frame fills it at 0.5 (1280x1440 logical).
+    const windowed = { left: 640, top: 0, width: 640, height: 720 };
+    await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+
+    await enterFullscreen(page);
+    await expect
+      .poll(() => wrapperBox(page))
+      .toEqual({ left: 0, top: 0, width: 1280, height: 720 });
+
+    await exitFullscreen(page);
+    await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+  });
 });
 
-test('player fullscreen with workbench panels open shows the whole page and keeps it clickable', async ({
-  page,
-}) => {
-  // Windowed: the frame fills the 800x900 pane right of the panels (1280x1440
-  // logical at 0.625), with no letterbox.
-  const windowed = { left: 640, top: 0, width: 800, height: 900 };
-  await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+// Exercise the production clipping calculation with real browser fullscreen geometry.
+const clippingScript = buildSync({
+  entryPoints: ['lib/edit/visible-client-rect.ts'],
+  bundle: true,
+  write: false,
+  format: 'iife',
+  globalName: 'clientRects',
+}).outputFiles[0].text;
 
-  await enterFullscreen(page);
-  // Fullscreen: the frame fills the 1440x900 stage (1280x800 logical at 1.125).
-  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 0, width: 1440, height: 900 });
-  expect(
-    await page.evaluate(
-      (s) => document.fullscreenElement!.contains(document.querySelector(s)),
-      IFRAME,
-    ),
-  ).toBe(true);
-  // The control at the page's left edge sat where the panels used to clip it.
-  const frame = page.frameLocator(IFRAME);
-  await frame.getByRole('button', { name: 'Left edge' }).click({ timeout: 5_000 });
-  await expect(frame.locator('#count')).toHaveText('1');
+function visibleBox(page: Page, selector = '#slot') {
+  return page.evaluate((selector) => {
+    const { clientRects } = window as typeof window & { clientRects: typeof ClientRects };
+    return clientRects.visibleClientRect(document.querySelector(selector)!);
+  }, selector);
+}
 
-  await exitFullscreen(page);
-  await expect.poll(() => wrapperBox(page)).toEqual(windowed);
-});
+async function enterClippingFullscreen(page: Page, selector = '#player') {
+  await page.evaluate((selector) => {
+    document.querySelector<HTMLButtonElement>('#enter')!.onclick = () =>
+      document.querySelector(selector)!.requestFullscreen();
+  }, selector);
+  await page.getByRole('button', { name: 'Fullscreen' }).click();
+  await expect
+    .poll(() => page.evaluate(() => document.fullscreenElement?.id))
+    .toBe(selector.slice(1));
+}
 
-test('re-entering fullscreen after a resize follows the new viewport', async ({ page }) => {
-  await enterFullscreen(page);
-  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 0, width: 1440, height: 900 });
-  await exitFullscreen(page);
-  await expect.poll(() => wrapperBox(page)).toEqual({ left: 640, top: 0, width: 800, height: 900 });
+test.describe('Fullscreen clipping geometry', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setContent(`
+    <style>
+      body { margin: 0; }
+      #workspace { position: absolute; left: 450px; top: 100px; width: 600px; height: 400px; overflow: hidden; }
+      #player { width: 900px; height: 650px; overflow: hidden; }
+      #canvas, #slot { width: 100%; height: 100%; }
+      #enter { position: absolute; z-index: 1; }
+    </style>
+    <div id="workspace">
+      <div id="player"><button id="enter">Fullscreen</button><div id="canvas"><div id="slot"></div></div></div>
+    </div>
+  `);
+    await page.addScriptTag({ content: clippingScript });
+  });
 
-  await page.setViewportSize({ width: 1280, height: 720 });
-  // The pane is now 640x720: the frame fills it at 0.5 (1280x1440 logical).
-  const windowed = { left: 640, top: 0, width: 640, height: 720 };
-  await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+  test('clips inner panels and fullscreen bounds while leaving unrelated nodes clipped', async ({
+    page,
+  }) => {
+    await page.locator('#canvas').evaluate((canvas) => {
+      canvas.style.cssText =
+        'position:relative;left:40px;top:30px;width:500px;height:300px;overflow:hidden';
+      (canvas.firstElementChild as HTMLElement).style.cssText = 'width:1800px;height:1200px';
+    });
+    await enterClippingFullscreen(page);
+    await expect
+      .poll(() => visibleBox(page))
+      .toEqual({ left: 40, top: 30, width: 500, height: 300 });
 
-  await enterFullscreen(page);
-  await expect.poll(() => wrapperBox(page)).toEqual({ left: 0, top: 0, width: 1280, height: 720 });
-
-  await exitFullscreen(page);
-  await expect.poll(() => wrapperBox(page)).toEqual(windowed);
+    await page.locator('#canvas').evaluate((canvas) => {
+      canvas.style.width = '1600px';
+      canvas.style.height = '1000px';
+    });
+    await expect
+      .poll(() => visibleBox(page))
+      .toEqual({ left: 40, top: 30, width: 1400, height: 870 });
+    await page.evaluate(() => document.exitFullscreen());
+    await page.locator('#workspace').evaluate((workspace) => {
+      const other = document.createElement('div');
+      other.id = 'other';
+      other.style.cssText = 'position:absolute;left:0;top:0;width:900px;height:650px';
+      workspace.append(other);
+    });
+    await enterClippingFullscreen(page, '#slot');
+    await expect
+      .poll(() => visibleBox(page))
+      .toEqual({ left: 0, top: 0, width: 1440, height: 900 });
+    expect(await visibleBox(page, '#other')).toEqual({
+      left: 450,
+      top: 100,
+      width: 600,
+      height: 400,
+    });
+  });
 });

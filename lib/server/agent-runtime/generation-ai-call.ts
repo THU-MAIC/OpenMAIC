@@ -1,7 +1,7 @@
 import type { AICallFn } from '@openmaic/generation';
 
 import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
-import { callLLM } from '@/lib/ai/llm';
+import { createGenerationAiCall } from '@/lib/server/generation/ai-call';
 import type { LlmStage } from '@/lib/server/model-routes';
 import { resolveModel } from '@/lib/server/resolve-model';
 
@@ -21,27 +21,17 @@ export function createGenerationAiCallFactory(options?: {
   return (stage) => {
     const cached = calls.get(stage);
     if (cached) return cached;
-    let resolved: Awaited<ReturnType<typeof resolveModel>> | undefined;
+    let aiCall: AICallFn | undefined;
     const call: AICallFn = async (systemPrompt, userPrompt) => {
-      resolved ??= await resolveModel({
+      aiCall ??= createGenerationAiCall(
+        await resolveModel({
+          stage,
+          workspaceId: options?.ownerId ? await backgroundWorkspaceId(options.ownerId) : null,
+        }),
         stage,
-        workspaceId: options?.ownerId ? await backgroundWorkspaceId(options.ownerId) : null,
-      });
-      const result = await callLLM(
-        {
-          model: resolved.model,
-          system: systemPrompt,
-          prompt: userPrompt,
-          maxOutputTokens: resolved.modelInfo?.outputWindow,
-          maxRetries: 0,
-          abortSignal: options?.abortSignal,
-        },
-        stage,
-        undefined,
-        resolved.thinkingConfig,
-        { serverManaged: resolved.serverManaged },
+        options,
       );
-      return result.text;
+      return aiCall(systemPrompt, userPrompt);
     };
     calls.set(stage, call);
     return call;

@@ -8,7 +8,7 @@ import {
   type MotionValue,
 } from 'motion/react';
 import { ChevronDown, GripHorizontal } from 'lucide-react';
-import { useRef, useState, type KeyboardEvent } from 'react';
+import { createContext, type ReactNode, useRef, useState, type KeyboardEvent } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore } from '@/lib/store/canvas';
 import type { InsertPaletteItem } from '@/lib/edit/scene-editor-surface';
@@ -24,6 +24,11 @@ import {
   CanvasOverlayPortal,
 } from '@/components/edit/surfaces/slide/CanvasOverlayPortal';
 import { InsertButton } from './InsertButton';
+
+/** Lets the active surface contribute live actions while the shell retains toolbar position and fold. */
+export const InsertToolbarSlot = createContext<
+  ((items: readonly InsertPaletteItem[]) => ReactNode) | undefined
+>(undefined);
 
 interface Props {
   readonly items: readonly InsertPaletteItem[];

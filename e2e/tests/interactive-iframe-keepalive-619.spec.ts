@@ -129,6 +129,11 @@ test.describe('#619 interactive iframe keep-alive', () => {
     await classroom.sidebarScenes.nth(1).click({ force: true }); // slide
     const handle = page.getByTestId('insert-toolbar-drag-handle');
     await expect(handle).toBeVisible();
+    const collapse = page.getByTestId('insert-toolbar-collapse');
+    await collapse.click();
+    await expect(collapse).toHaveAttribute('aria-expanded', 'false');
+    // Wait for the fold animation to remove the insert buttons before measuring the grip.
+    await expect(page.getByTestId('insert-toolbar').getByRole('button')).toHaveCount(2);
     const initial = await handle.boundingBox();
     expect(initial).not.toBeNull();
 
@@ -145,10 +150,13 @@ test.describe('#619 interactive iframe keep-alive', () => {
     await expect(handle).toBeHidden();
     await classroom.sidebarScenes.nth(1).click({ force: true });
     await expect(handle).toBeVisible();
+    await expect(collapse).toHaveAttribute('aria-expanded', 'false');
     const restored = await handle.boundingBox();
     expect(restored).not.toBeNull();
     expect(restored!.x).toBeCloseTo(moved!.x, 0);
     expect(restored!.y).toBeCloseTo(moved!.y, 0);
+    await collapse.click();
+    await expect(collapse).toHaveAttribute('aria-expanded', 'true');
   });
 
   test('iframe survives Pro-mode toggle and scene switch without reloading', async ({ page }) => {
@@ -211,7 +219,7 @@ test.describe('#619 interactive iframe keep-alive', () => {
     // Let the ~280ms mode cross-fade fully settle: the outgoing chrome's
     // placeholder cleanup fires late, and a non-owner-checked release would hide
     // the iframe here (the blank-on-return regression). It must stay visible.
-    await page.waitForTimeout(600);
+    await expect(page.getByRole('switch')).toHaveCount(1);
     await expect(iframeEl).toBeVisible();
     await expect(count).toHaveText('3');
     await page.screenshot({ path: `${SHOTS}/03-back-from-pro.png`, fullPage: true });

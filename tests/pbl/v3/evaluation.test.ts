@@ -14,9 +14,15 @@ import {
   evaluationOutcome,
   evaluationFor,
 } from '@/lib/server/pbl-v3/evaluation';
+
+// Some tests below run the sandbox's own shell and Python scripts, which target
+// the Linux sandbox. Windows has no `/bin/sh` or `python3` to run them with.
+const onWindows = process.platform === 'win32';
+
 const spec = installedProject({ id: 'greeting-python', version: '1.0.0' }).evaluations.greeting!;
 
-it('tests verified source bytes in a private working directory and rejects stale source', async () => {
+it('tests verified source bytes in a private working directory and rejects stale source', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const cwd = await mkdtemp(join(tmpdir(), 'isolated-assessment-'));
   const run = promisify(execFile);
   const files = { 'source.txt': 'reviewed\n' };
@@ -49,7 +55,8 @@ it('tests verified source bytes in a private working directory and rejects stale
   }
 });
 
-it('fits a large isolated assessment in the command budget and keeps source verification', async () => {
+it('fits a large isolated assessment in the command budget and keeps source verification', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const cwd = await mkdtemp(join(tmpdir(), 'packed-assessment-'));
   const source = { 'source.txt': 'reviewed\n' };
   const resource = 'a private assessment fixture\n'.repeat(744);
@@ -84,7 +91,8 @@ it('fits a large isolated assessment in the command budget and keeps source veri
   }
 });
 
-it('preserves the pre-decision runner encoding at the legacy 32 KiB boundary', async () => {
+it('preserves the pre-decision runner encoding at the legacy 32 KiB boundary', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const legacy = {
     cases: [{ id: 'one', argv: ['python3', '-c', 'pass'], stdin: 'x'.repeat(21292), stdout: '' }],
   };
@@ -114,7 +122,8 @@ it('preserves the pre-decision runner encoding at the legacy 32 KiB boundary', a
   expect(evaluationPassed(inherited, 'legacy', stdout)).toBe(true);
 });
 
-it('binds only declared formal choices without changing the installed assessment', async () => {
+it('binds only declared formal choices without changing the installed assessment', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const original = installedProject({ id: 'greeting-python', version: '1.0.0' });
   const project = structuredClone(original);
   project.evaluations.greeting!.decisionInputs = ['format'];
@@ -149,7 +158,7 @@ it('binds only declared formal choices without changing the installed assessment
   expect(command).not.toContain('private-text');
 });
 
-it.each(['\n', '\r\n', '\r'])(
+it.skipIf(onWindows).each(['\n', '\r\n', '\r'])(
   'normalizes expected and actual line endings equally without relaxing output checks (%j)',
   async (ending) => {
     const installed = {
@@ -177,7 +186,7 @@ it.each(['\n', '\r\n', '\r'])(
   },
 );
 
-it.each([false, true])(
+it.skipIf(onWindows).each([false, true])(
   'locates Python syntax errors with prepare=%s and permits a passing rerun',
   async (prepare) => {
     const root = await mkdtemp(join(tmpdir(), 'pbl-syntax-'));
@@ -320,7 +329,8 @@ it
   },
 );
 
-it('normalizes colored compiler diagnostics without publishing messages, source, or private fixture paths', async () => {
+it('normalizes colored compiler diagnostics without publishing messages, source, or private fixture paths', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const root = await mkdtemp(join(tmpdir(), 'pbl-colored-'));
   try {
     const installed = {
@@ -361,7 +371,8 @@ it('normalizes colored compiler diagnostics without publishing messages, source,
   }
 });
 
-it('does not blame learner code for a failed preparation without public-source diagnostics', async () => {
+it('does not blame learner code for a failed preparation without public-source diagnostics', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const installed = { ...spec, prepare: ['python3', '-c', 'raise RuntimeError("SECRET_FIXTURE")'] };
   const observed = await promisify(execFile)('/bin/sh', [
     '-c',
@@ -377,7 +388,8 @@ it('does not blame learner code for a failed preparation without public-source d
   expect(JSON.stringify(outcome)).not.toMatch(/SECRET_FIXTURE|Traceback|greeting.py/);
 });
 
-it('classifies a syntax error in the private assessment driver as an unreliable assessment', async () => {
+it('classifies a syntax error in the private assessment driver as an unreliable assessment', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const installed = {
     resources: { 'tests/private.py': 'def hidden_check(\n SECRET_EXPECTED' },
     cases: [
@@ -402,7 +414,7 @@ it('classifies a syntax error in the private assessment driver as an unreliable 
   expect(JSON.stringify(outcome)).not.toMatch(/SECRET_EXPECTED|PRIVATE_EXPECTED|private.py/);
 });
 describe('trusted evaluation driver', () => {
-  it.each([
+  it.skipIf(onWindows).each([
     ['def greet(name): return f"Hello, {name}!"', true],
     ['import sys\nsys.exit(0)', false],
     ['def greet(name): return "wrong"', false],
@@ -470,7 +482,8 @@ it.each(['failed', 'timed_out', 'cancelled'] as const)(
     ).toBe('error');
   },
 );
-it('distinguishes a missing interpreter from a learner implementation error', async () => {
+it('distinguishes a missing interpreter from a learner implementation error', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const installed = {
     cases: [
       {
@@ -563,7 +576,7 @@ it('never puts expected stdout or its digest in the sandbox command payload', ()
   ).toBe(false);
 });
 
-it.each([
+it.skipIf(onWindows).each([
   {
     label: 'NPE frame',
     file: 'Greeting.java',

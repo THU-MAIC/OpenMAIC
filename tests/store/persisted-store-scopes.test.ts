@@ -46,6 +46,23 @@ beforeEach(() => {
 });
 
 describe('settings store', () => {
+  it('hydrates an existing account value without creating a raw key', async () => {
+    await kv.set(
+      'settings-storage',
+      { state: { reviewOutlineEnabled: true, playbackSpeed: 1.5 }, version: 7 },
+      'account',
+    );
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    await useSettingsStore.persist.rehydrate();
+
+    expect(useSettingsStore.getState()).toMatchObject({
+      reviewOutlineEnabled: true,
+      playbackSpeed: 1.5,
+    });
+    expect(await persistedIn('account', 'settings-storage')).toMatchObject({ playbackSpeed: 1.5 });
+    expect(localStorageStub.getItem('settings-storage')).toBeNull();
+  });
+
   it('persists under the account scope', async () => {
     const { useSettingsStore } = await import('@/lib/store/settings');
     await useSettingsStore.persist.rehydrate();

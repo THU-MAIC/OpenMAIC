@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 
 import type { ViewportStyles } from '@openmaic/renderer';
 import { getRotateElementPoints, type PPTBoxElement } from '../core/resize';
@@ -14,15 +14,7 @@ export interface RotateHandleProps {
   onPointerDown: (e: ReactPointerEvent) => void;
 }
 
-/** Half the handle box size, so `translate(-HALF, -HALF)` centers it on its point. */
-const HANDLE_HALF = 5;
-
-/**
- * Screen-pixel gap between the element's rotated top edge and the rotate
- * handle, along the element's rotated "up" direction (app parity: the app
- * offsets the handle 25 un-scaled px above the frame inside its rotated
- * operate layer, so the gap is constant on screen at any zoom).
- */
+/** Default screen-pixel gap from the handle center to the rotated top edge. */
 const ROTATE_HANDLE_OFFSET_PX = 25;
 
 /**
@@ -63,21 +55,24 @@ export function RotateHandle({
   return (
     <div
       data-rotate-handle=""
+      data-rotate-element-id={element.id}
       onPointerDown={onPointerDown}
-      style={{
-        position: 'absolute',
-        left: `${left}px`,
-        top: `${top}px`,
-        width: '10px',
-        height: '10px',
-        transform: `translate(-${HANDLE_HALF}px, -${HANDLE_HALF}px)`,
-        border: '1px solid #3b82f6',
-        backgroundColor: '#fff',
-        boxSizing: 'border-box',
-        pointerEvents: 'auto',
-        cursor: 'grab',
-        touchAction: 'none',
-      }}
+      style={
+        {
+          position: 'absolute',
+          left: `${left}px`,
+          top: `${top}px`,
+          width: '10px',
+          height: '10px',
+          '--maic-handle-angle': `${rotate}deg`,
+          border: '1px solid var(--maic-editor-selection-color, #3b82f6)',
+          backgroundColor: '#fff',
+          boxSizing: 'border-box',
+          pointerEvents: 'auto',
+          cursor: 'grab',
+          touchAction: 'none',
+        } as CSSProperties
+      }
     />
   );
 }

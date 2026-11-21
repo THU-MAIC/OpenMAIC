@@ -319,6 +319,7 @@ export interface EditableSlideCanvasWithUIProps extends Pick<
   EditableSlideCanvasProps,
   | 'slide'
   | 'scale'
+  | 'canvasPercentage'
   | 'onScaleChange'
   | 'elementIdPrefix'
   | 'hiddenElementIds'
@@ -337,8 +338,12 @@ export interface EditableSlideCanvasWithUIProps extends Pick<
   readonly onTransaction: (transaction: EditorTransaction) => void;
   /** Stable host integration for built-in editor capabilities. */
   readonly host?: EditorHostCapabilities;
+  /** Render the active text editor’s live formatting and element actions in host chrome. */
+  readonly renderTextToolbar?: (props: TextFormatToolbarProps) => ReactNode;
   /** Visible insert buttons in display order. Omit to use the built-in default order. */
   readonly insertItems?: readonly EditorInsertItem[];
+  /** Render resolved package insert actions in host chrome without reserving a canvas rail. */
+  readonly renderInsertToolbar?: (items: readonly InsertToolbarItem[]) => ReactNode;
   /** Dock outside the canvas viewport. Defaults to `top`. */
   readonly insertToolbarPlacement?: InsertToolbarPlacement;
 }

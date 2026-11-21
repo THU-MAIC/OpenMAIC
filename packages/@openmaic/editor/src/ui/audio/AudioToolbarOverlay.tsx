@@ -101,6 +101,7 @@ export function AudioToolbarOverlay({
     <div
       className="maic-editing-ui-root maic-editing-ui-audio-toolbar-root"
       data-toolbar-overlay=""
+      data-toolbar-anchor={elementIdPrefix + element.id}
       style={{
         left: position ? `${position.left}px` : '0px',
         position: 'fixed',

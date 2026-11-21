@@ -2,7 +2,12 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TextFormatState } from '../../src/react/text/types';
-import { computeToolbarPosition, LineToolbarOverlay, TextToolbarOverlay } from '../../src/ui';
+import {
+  computeToolbarPosition,
+  measureEditorToolbarAnchor,
+  LineToolbarOverlay,
+  TextToolbarOverlay,
+} from '../../src/ui';
 import type { PPTLineElement } from '@openmaic/dsl';
 
 const format: TextFormatState = {
@@ -101,6 +106,30 @@ afterEach(() => {
   document.body.innerHTML = '';
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it('places the toolbar outside its rotation handle while leaving other anchors unchanged', () => {
+  const canvas = document.createElement('div');
+  canvas.dataset.editableSlideCanvas = '';
+  const node = document.createElement('div');
+  const handle = document.createElement('div');
+  handle.dataset.rotateHandle = '';
+  handle.dataset.rotateElementId = 'figure';
+  canvas.append(node, handle);
+  vi.spyOn(node, 'getBoundingClientRect').mockReturnValue(rect(100, 100, 200, 80));
+  vi.spyOn(handle, 'getBoundingClientRect').mockReturnValue(rect(195, 75, 10, 10));
+  expect(measureEditorToolbarAnchor(node, 'figure')).toMatchObject({
+    left: 100,
+    top: 75,
+    width: 200,
+    height: 105,
+  });
+  expect(measureEditorToolbarAnchor(node, 'other')).toMatchObject({
+    left: 100,
+    top: 100,
+    width: 200,
+    height: 80,
+  });
 });
 
 describe('computeToolbarPosition', () => {

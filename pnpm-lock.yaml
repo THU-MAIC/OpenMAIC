@@ -101,9 +101,6 @@ importers:
       '@joplin/turndown-plugin-gfm':
         specifier: ^1.0.67
         version: 1.0.67
-      '@langchain/core':
-        specifier: ^1.1.16
-        version: 1.1.31(@opentelemetry/api@1.9.0)(openai@4.104.0(ws@8.21.3)(zod@4.3.6))
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)

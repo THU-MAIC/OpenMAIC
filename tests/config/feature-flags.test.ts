@@ -183,9 +183,11 @@ describe('isPlaybackRendererEnabled', () => {
     }
   });
 
-  it('defaults off when unset', () => {
+  it('defaults on when unset or empty', () => {
     delete process.env[flag];
-    expect(isPlaybackRendererEnabled()).toBe(false);
+    expect(isPlaybackRendererEnabled()).toBe(true);
+    process.env[flag] = '';
+    expect(isPlaybackRendererEnabled()).toBe(true);
   });
 
   it("returns true for 'true' and '1'", () => {
@@ -221,9 +223,11 @@ describe('isEditorRendererEnabled', () => {
     }
   });
 
-  it('defaults off when unset', () => {
+  it('defaults on when unset or empty', () => {
     delete process.env[flag];
-    expect(isEditorRendererEnabled()).toBe(false);
+    expect(isEditorRendererEnabled()).toBe(true);
+    process.env[flag] = '';
+    expect(isEditorRendererEnabled()).toBe(true);
   });
 
   it("returns true for 'true' and '1'", () => {

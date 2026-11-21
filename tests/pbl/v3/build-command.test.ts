@@ -15,6 +15,10 @@ import {
   evaluationOutcome,
 } from '@/lib/server/pbl-v3/evaluation';
 
+// Some tests below run the sandbox's own shell and Python scripts, which target
+// the Linux sandbox. Windows has no `/bin/sh` or `python3` to run them with.
+const onWindows = process.platform === 'win32';
+
 const sample = (java: boolean) =>
   validateProjectPackage(
     packageBuiltin(
@@ -37,7 +41,8 @@ it('retains existing commands and excludes private or unrelated paths', () => {
     currentBuildCommand({ ...project, buildCommand: undefined }, ['src/helper.py']),
   ).toBeUndefined();
 });
-it('checks newly created Python source without executing it', async () => {
+it('checks newly created Python source without executing it', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const project = sample(false),
     root = await mkdtemp(join(tmpdir(), 'pbl-build-new-python-'));
   try {
@@ -54,7 +59,7 @@ it('checks newly created Python source without executing it', async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
-it.each(['builtin', 'packaged', 'added'])(
+it.skipIf(onWindows).each(['builtin', 'packaged', 'added'])(
   'accepts Python BOM source in %s builds',
   async (kind) => {
     const added = kind === 'added';

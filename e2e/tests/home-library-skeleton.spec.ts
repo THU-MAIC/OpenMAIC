@@ -71,15 +71,21 @@ test.describe('Home library skeleton', () => {
 
     // The first tile of the loaded grid has the skeleton tile's footprint
     // (measured once the cards' entrance has finished).
-    await page.waitForTimeout(800);
-    const first = (await page
+    const firstCard = page
       .locator('.grid.gap-x-5.gap-y-8 > div')
       .first()
-      .locator('.group.cursor-pointer')
-      .boundingBox())!;
-    expect(Math.abs(first.width - tile.width)).toBeLessThanOrEqual(1);
-    expect(Math.abs(first.height - tile.height)).toBeLessThanOrEqual(1);
-    expect(Math.abs(first.x - tile.x)).toBeLessThanOrEqual(1);
+      .locator('.group.cursor-pointer');
+    await expect
+      .poll(async () => {
+        const first = await firstCard.boundingBox();
+        if (!first) return Number.POSITIVE_INFINITY;
+        return Math.max(
+          Math.abs(first.width - tile.width),
+          Math.abs(first.height - tile.height),
+          Math.abs(first.x - tile.x),
+        );
+      })
+      .toBeLessThanOrEqual(1);
   });
 
   test('is on screen, with the hero, before the page scripts run', async ({ page }) => {

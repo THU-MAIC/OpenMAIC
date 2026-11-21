@@ -35,6 +35,10 @@ import type { SandboxService } from '@/lib/server/sandbox/service';
 import { evaluationCommand, evaluationPassed } from '@/lib/server/pbl-v3/evaluation';
 import { MAX_ASSESSMENT_SCRIPT_BYTES, MAX_COMMAND_BYTES } from '@/lib/sandbox/types';
 
+// Some tests below run the sandbox's own shell and Python scripts, which target
+// the Linux sandbox. Windows has no `/bin/sh` or `python3` to run them with.
+const onWindows = process.platform === 'win32';
+
 function archiveFixture() {
   sdk.getInfo.mockResolvedValue({
     sandboxId: 'resource',
@@ -103,7 +107,7 @@ describe('assessment file transport', () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it.each(['success', 'large-source', 'tampered', 'cancelled'] as const)(
+  it.skipIf(onWindows).each(['success', 'large-source', 'tampered', 'cancelled'] as const)(
     'uses the existing supervisor and removes the staged file (%s)',
     async (scenario) => {
       const { provider, sandbox, run } = archiveFixture();
@@ -196,7 +200,7 @@ describe('assessment file transport', () => {
     },
   );
 
-  it.each(['connection', 'upload'] as const)(
+  it.skipIf(onWindows).each(['connection', 'upload'] as const)(
     'cleans a late assessment upload when cancellation completes during %s',
     async (stage) => {
       const { provider, sandbox } = archiveFixture();
@@ -271,7 +275,8 @@ describe('assessment file transport', () => {
   );
 });
 
-it('keeps actual provider enumeration and PBL source access aligned on excluded directories', async () => {
+it('keeps actual provider enumeration and PBL source access aligned on excluded directories', async (ctx) => {
+  if (onWindows) return ctx.skip();
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'workspace-list-')));
   try {
     const accepted = ['src/App.java', 'src/next/page.ts', 'src/venv_helpers.py'];

@@ -3,6 +3,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Mic, MicOff, ArrowUp, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
+import { DEFAULT_STUDENT_AVATAR, DEFAULT_TEACHER_AVATAR } from './constants';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import type { ChatAreaRef, SpeechSource } from '@/components/chat/chat-area';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -167,6 +168,10 @@ export function MobileRoundtable({
         <div className="mobile-roundtable-roles" ref={rolesRef}>
           {participants.map((participant) => {
             const isUser = participant.role === 'user';
+            const avatar =
+              (isUser && userAvatar) ||
+              participant.avatar ||
+              (participant.role === 'teacher' ? DEFAULT_TEACHER_AVATAR : DEFAULT_STUDENT_AVATAR);
             const speaking = participant.id === speakerId;
             return (
               <button
@@ -182,7 +187,7 @@ export function MobileRoundtable({
               >
                 <span className="mobile-roundtable-avatar">
                   <AvatarDisplay
-                    src={isUser ? userAvatar || participant.avatar : participant.avatar}
+                    src={avatar}
                     alt={isUser ? t('mobileClassroom.me') : participant.name}
                   />
                 </span>

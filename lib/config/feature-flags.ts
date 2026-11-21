@@ -73,21 +73,19 @@ export function isMaicEditorEnabled(): boolean {
   return isWorkbenchEnabled() || readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
 }
 
-/**
- * Experimental playback canvas renderer. Default OFF so classroom playback uses
- * the legacy in-app renderer unless explicitly enabled in `.env.local`.
- */
-export function isPlaybackRendererEnabled(): boolean {
-  return readBoolean(process.env.NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED);
+// Docker builds pass an empty string for an omitted public build argument.
+function readRendererFlag(value: string | undefined): boolean {
+  return value === undefined || value === '' || readBoolean(value);
 }
 
-/**
- * Experimental Pro-mode slide editor renderer. Default OFF so professional
- * editing keeps using the legacy in-app editor canvas unless explicitly enabled
- * in `.env.local`.
- */
+/** Select the package playback canvas unless the deployment opts out. */
+export function isPlaybackRendererEnabled(): boolean {
+  return readRendererFlag(process.env.NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED);
+}
+
+/** Select the package editor canvas unless the deployment opts out. */
 export function isEditorRendererEnabled(): boolean {
-  return readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED);
+  return readRendererFlag(process.env.NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED);
 }
 
 /**

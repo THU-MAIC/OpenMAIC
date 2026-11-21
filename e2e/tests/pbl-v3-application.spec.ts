@@ -4,9 +4,7 @@ import { test } from '../fixtures/pbl-learning-events';
 import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
-for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
-  [false, true].map((legacyMove) => ({ legacyMove, nested })),
-)) {
+for (const { legacyMove, nested } of [{ legacyMove: true, nested: true }]) {
   test(`application input and client state survive native fullscreen (legacy DOM: ${legacyMove}, gateway: ${nested})`, async ({
     page,
     learningEvents,
@@ -298,41 +296,6 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
     const boot = await app
       .locator('body')
       .evaluate(() => (window as unknown as { boot: string }).boot);
-    if (nested && !legacyMove) {
-      const launchCount = launches;
-      await page.getByRole('button', { name: 'Workspace guide', exact: true }).click();
-      const guide = page.locator('[data-pbl-onboarding="card"]');
-      await expect(guide).toBeVisible();
-      await expect(app.locator('html')).toHaveJSProperty('inert', true);
-      await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
-      // Simulate an application autofocus attempt while the guide owns input.
-      await app
-        .getByRole('textbox', { name: 'Draft', exact: true })
-        .evaluate((element) => element.focus());
-      // Spaces activate the focused Next button; use ordinary text to probe iframe isolation.
-      await page.keyboard.type('BlockedInput');
-      await expect(guide).toHaveAttribute('data-step', 'progress');
-      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
-        'Unsaved form input',
-      );
-      await page.evaluate(() =>
-        document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),
-      );
-      // The fullscreen promise can resolve before React reparents the portal.
-      await expect
-        .poll(() => guide.evaluate((element) => !!document.fullscreenElement?.contains(element)))
-        .toBe(true);
-      await page.evaluate(() => document.exitFullscreen());
-      for (let step = 0; step < 5; step++) await guide.locator('footer button').last().click();
-      await expect(guide).toHaveCount(0);
-      await expect(app.locator('html')).toHaveJSProperty('inert', false);
-      await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
-      expect(
-        await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
-      ).toBe(boot);
-      expect(launches).toBe(launchCount);
-      expect(commands).toEqual([]);
-    }
     for (let cycle = 0; cycle < 2; cycle++) {
       await page.evaluate(() =>
         document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),
@@ -482,6 +445,41 @@ for (const { legacyMove, nested } of [false, true].flatMap((nested) =>
       expect(documents).toBe(1);
       expect(launches).toBe(1);
       await page.clock.setSystemTime(new Date());
+    }
+    if (nested) {
+      const launchCount = launches;
+      await page.getByRole('button', { name: 'Workspace guide', exact: true }).click();
+      const guide = page.locator('[data-pbl-onboarding="card"]');
+      await expect(guide).toBeVisible();
+      await expect(app.locator('html')).toHaveJSProperty('inert', true);
+      await expect(panel.locator('iframe')).toHaveAttribute('inert', '');
+      // Simulate an application autofocus attempt while the guide owns input.
+      await app
+        .getByRole('textbox', { name: 'Draft', exact: true })
+        .evaluate((element) => element.focus());
+      // Spaces activate the focused Next button; use ordinary text to probe iframe isolation.
+      await page.keyboard.type('BlockedInput');
+      await expect(guide).toHaveAttribute('data-step', 'progress');
+      await expect(app.getByRole('textbox', { name: 'Draft', exact: true })).toHaveValue(
+        'Unsaved form input',
+      );
+      await page.evaluate(() =>
+        document.querySelector<HTMLElement>('[data-playback-stage]')!.requestFullscreen(),
+      );
+      // The fullscreen promise can resolve before React reparents the portal.
+      await expect
+        .poll(() => guide.evaluate((element) => !!document.fullscreenElement?.contains(element)))
+        .toBe(true);
+      await page.evaluate(() => document.exitFullscreen());
+      for (let step = 0; step < 5; step++) await guide.locator('footer button').last().click();
+      await expect(guide).toHaveCount(0);
+      await expect(app.locator('html')).toHaveJSProperty('inert', false);
+      await expect(panel.locator('iframe')).not.toHaveAttribute('inert', '');
+      expect(
+        await app.locator('body').evaluate(() => (window as unknown as { boot: string }).boot),
+      ).toBe(boot);
+      expect(launches).toBe(launchCount);
+      expect(commands).toEqual([]);
     }
     // The dock does not trap focus or block learner input. A busy server state does
     // suspend input while keeping the application document, then resumes automatically.

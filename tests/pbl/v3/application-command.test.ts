@@ -10,6 +10,10 @@ import {
   applicationProbeCommand,
 } from '@/lib/server/pbl-v3/application-command';
 
+// Some tests below run the sandbox's own shell and Python scripts, which target
+// the Linux sandbox. Windows has no `/bin/sh` or `python3` to run them with.
+const onWindows = process.platform === 'win32';
+
 // This exercises a cold JDK on shared CI runners, not compilation performance.
 // Keep each real compile/run bounded, with room for both launches in the test.
 const JAVA_LAUNCH_TIMEOUT_MS = 30_000;
@@ -34,7 +38,8 @@ it('checks the final UTF-8 shell command, preserving accepted quoted arguments',
   );
 });
 
-it('recompiles edited Java sources and drops classes for removed sources', () => {
+it('recompiles edited Java sources and drops classes for removed sources', (ctx) => {
+  if (onWindows) return ctx.skip();
   const root = mkdtempSync(join(tmpdir(), 'pbl-java-launch-'));
   try {
     mkdirSync(join(root, 'src/demo'), { recursive: true });

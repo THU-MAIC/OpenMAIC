@@ -31,6 +31,7 @@ import type {
   PBLProficiency,
 } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
+import { streamPBLParts } from '../api/llm-stream';
 import { RecordObservationArgs, AdjustDifficultyArgs } from '../operations/runtime/schemas';
 import {
   recordEvent,
@@ -1524,31 +1525,12 @@ export async function* runInstructorTurn(
       thinkingConfig,
     );
 
-    for await (const part of result.fullStream) {
+    for await (const part of streamPBLParts(result.fullStream, 'unknown LLM error')) {
       switch (part.type) {
-        case 'text-delta': {
-          // ai SDK 6.x uses `text` for the chunk content.
-          const delta =
-            (part as unknown as { text?: string; textDelta?: string }).text ??
-            (part as unknown as { textDelta?: string }).textDelta ??
-            '';
-          if (delta) {
-            assistantText += delta;
-            yield { type: 'token', delta };
-          }
+        case 'token':
+          assistantText += part.delta;
+          yield part;
           break;
-        }
-        case 'tool-call': {
-          // Only the two non-advance teaching tools reach here
-          // (record_observation / adjust_difficulty); forward them as-is.
-          yield {
-            type: 'tool_call',
-            toolName: part.toolName,
-            args: (part.input ?? {}) as Record<string, unknown>,
-            toolCallId: part.toolCallId,
-          };
-          break;
-        }
         case 'tool-result': {
           // Flush engagement / proficiency patches queued by the tool execute,
           // in server-mutation order.
@@ -1557,21 +1539,9 @@ export async function* runInstructorTurn(
           }
           break;
         }
-        case 'error': {
-          const errAny = (part as unknown as { error?: unknown }).error;
-          yield {
-            type: 'error',
-            code: 'LLM_ERROR',
-            message:
-              errAny instanceof Error ? errAny.message : String(errAny ?? 'unknown LLM error'),
-          };
-          break;
-        }
-        case 'finish': {
-          // End-of-step. Final assistant message is committed below.
-          break;
-        }
-        default:
+        case 'tool_call':
+        case 'error':
+          yield part;
           break;
       }
     }
@@ -1799,15 +1769,10 @@ async function* runSetupFollowup(args: SetupFollowupArgs): AsyncGenerator<PBLSSE
     let rawAssistantText = '';
     let emittedPreview = '';
     let finalCleanedChanged = false;
-    for await (const part of result.fullStream) {
+    for await (const part of streamPBLParts(result.fullStream, 'unknown LLM error')) {
       switch (part.type) {
-        case 'text-delta': {
-          const delta =
-            (part as unknown as { text?: string; textDelta?: string }).text ??
-            (part as unknown as { textDelta?: string }).textDelta ??
-            '';
-          if (!delta) break;
-          rawAssistantText += delta;
+        case 'token': {
+          rawAssistantText += part.delta;
           const cleaned = cleanSetupFollowupText(rawAssistantText);
           finalCleanedChanged = cleaned.changed;
           const preview = cleaned.text;
@@ -1819,16 +1784,9 @@ async function* runSetupFollowup(args: SetupFollowupArgs): AsyncGenerator<PBLSSE
           }
           break;
         }
-        case 'error': {
-          const errAny = (part as unknown as { error?: unknown }).error;
-          yield {
-            type: 'error',
-            code: 'LLM_ERROR',
-            message:
-              errAny instanceof Error ? errAny.message : String(errAny ?? 'unknown LLM error'),
-          };
+        case 'error':
+          yield part;
           break;
-        }
         default:
           break;
       }

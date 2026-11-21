@@ -24,6 +24,7 @@ import { intersectClientBoxes } from '@/lib/edit/visible-client-rect';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useElementRefsStore } from '@/lib/store/element-refs';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useFullscreenPortalTarget } from '@/lib/hooks/use-fullscreen-portal-target';
 import {
   ELEMENT_REF_SELECTOR_MAX,
   ELEMENT_SNAPSHOT_MAX,
@@ -164,21 +165,8 @@ export function InteractiveIframeHost({
 
   // Portal into the fullscreen element when one is active (presentation mode
   // fullscreens the stage, and a body-portaled iframe would not be part of that
-  // subtree, so it would vanish). Stage supplies a stable local container so
-  // responsive layers and this host share a stacking context. Standalone hosts
-  // without a container retain the body fallback. An explicit null means the
-  // local host is still mounting; wait rather than remounting a body portal.
-  const [portalTarget, setPortalTarget] = useState<Element | null>(null);
-  useEffect(() => {
-    const sync = () =>
-      setPortalTarget(
-        document.fullscreenElement ??
-          (portalContainer === undefined ? document.body : portalContainer),
-      );
-    sync();
-    document.addEventListener('fullscreenchange', sync);
-    return () => document.removeEventListener('fullscreenchange', sync);
-  }, [portalContainer]);
+  // subtree, so it would vanish). An explicit null waits for Stage to mount.
+  const portalTarget = useFullscreenPortalTarget(portalContainer);
 
   // Keep the messaging store's active scene in lock-step (its legacy fallback
   // path resolves the current widget by active scene when no id is passed).

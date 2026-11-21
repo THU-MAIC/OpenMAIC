@@ -6,11 +6,11 @@
  * caller resolves the model for the scene type's stage.
  */
 import { prepareVisionImages } from '../vision-images';
+import { createGenerationAiCall } from '../ai-call';
 import { callLLM } from '@/lib/ai/llm';
 import {
   applyOutlineFallbacks,
   generateSceneContent as generateContent,
-  buildVisionUserContent,
   partitionImagesForVision,
 } from '@openmaic/generation';
 import type { AgentInfo } from '@openmaic/generation';
@@ -78,13 +78,7 @@ export async function generateSceneContent(
   ctx: OwnerStepContext,
 ): Promise<SceneContentResult> {
   const { pdfImages, imageMapping, agents, languageDirective, requirements } = input;
-  const {
-    model: languageModel,
-    modelInfo,
-    modelString,
-    thinkingConfig,
-    serverManaged,
-  } = input.model;
+  const { model: languageModel, modelInfo, modelString, thinkingConfig } = input.model;
   const { log } = ctx;
   const outline: SceneOutline = { ...input.outline };
 
@@ -96,51 +90,10 @@ export async function generateSceneContent(
   // resolution below is a DEFENSIVE NO-OP for those concrete data URLs
   // (RFC #1153 part 2 B); it is kept so a package consumer that generates
   // without pre-resolving never sends an allocated asset id as an image.
-  const aiCall = async (
-    systemPrompt: string,
-    userPrompt: string,
-    images?: Array<{ id: string; src: string }>,
-  ): Promise<string> => {
-    if (images?.length && hasVision) {
-      const resolvedImages = await ctx.resolveVisionImages(images);
-      const result = await callLLM(
-        {
-          model: languageModel,
-          // A run cancels the call when it loses its lease or its course.
-          abortSignal: ctx.signal,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user' as const,
-              content: buildVisionUserContent(userPrompt, resolvedImages),
-            },
-          ],
-          maxOutputTokens: modelInfo?.outputWindow,
-          maxRetries: 0,
-        },
-        'scene-content',
-        undefined,
-        thinkingConfig,
-        { serverManaged },
-      );
-      return result.text;
-    }
-    const result = await callLLM(
-      {
-        model: languageModel,
-        abortSignal: ctx.signal,
-        system: systemPrompt,
-        prompt: userPrompt,
-        maxOutputTokens: modelInfo?.outputWindow,
-        maxRetries: 0,
-      },
-      'scene-content',
-      undefined,
-      thinkingConfig,
-      { serverManaged },
-    );
-    return result.text;
-  };
+  const aiCall = createGenerationAiCall(input.model, 'scene-content', {
+    abortSignal: ctx.signal,
+    resolveVisionImages: (images) => ctx.resolveVisionImages(images),
+  });
 
   // ── Apply fallbacks ──
   const vocationalActive = resolveVocationalActive(requirements);

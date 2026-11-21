@@ -58,7 +58,9 @@ test.describe('Slide content surface (#647)', () => {
     await expect(bgInsert).toBeVisible({ timeout: 10_000 });
     await bgInsert.click();
     // The background popover hosts the solid color picker (react-colorful).
-    await expect(page.locator('.color-picker, .react-colorful').first()).toBeVisible();
+    await expect(
+      page.locator('.maic-editing-ui-background-picker input[type="color"]').first(),
+    ).toBeVisible();
     await testInfo.attach('slide-background-popover', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -66,7 +68,14 @@ test.describe('Slide content surface (#647)', () => {
     await page.keyboard.press('Escape');
 
     // --- Z-order on the text element bar: select the title, expect to-front/to-back.
-    await page.locator('.editable-element-text').first().click();
+    const titleId = await page
+      .locator('[id^="editable-element-"]:has(.base-element-text)')
+      .first()
+      .getAttribute('id');
+    await page
+      .locator(`[data-select-element-id="${titleId!.slice('editable-element-'.length)}"]`)
+      .first()
+      .click();
     await expect(page.locator('.lucide-bring-to-front').first()).toBeVisible({ timeout: 10_000 });
     await expect(page.locator('.lucide-send-to-back').first()).toBeVisible();
     await testInfo.attach('text-bar-zorder', {

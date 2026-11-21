@@ -93,6 +93,11 @@ export function resolveSlideMediaState(
         }
       : slide.background;
   const elements = slide.elements.map((element) => {
+    if (element.type === 'audio' && mayNameAPoolAsset(element.src)) {
+      const lease = leaseFor(element.src, options.assetLeases, options.assetUrls);
+      const resolution = resolveMediaRef(element.src, undefined, lease);
+      return { ...element, src: renderableMediaUrl(resolution) ?? '' };
+    }
     if (element.type !== 'image' && element.type !== 'video') return element;
 
     const videoBinding =
@@ -166,11 +171,11 @@ export function resolveSlideMedia(
 /**
  * Every reference on a slide that is worth asking the asset pool about.
  *
- * A slide carries media in four places — an image source, a video source, a
- * video poster, and an image background — and each of them has to apply the
+ * A slide carries media in image, audio, and video sources, as well as a
+ * video poster and an image background. Each of them has to apply the
  * same two tests before a lease is opened: a concrete address (a URL or a data
  * URI) resolves itself, and a reference the pool never issued would only
- * answer 404. Collecting all four here rather than inline in the hook is what
+ * answer 404. Collecting them here rather than inline in the hook is what
  * makes that rule testable: a site that forgets a test still renders correctly
  * while spending a request per element per load, so nothing else would fail.
  *
@@ -188,6 +193,7 @@ export function poolLeasableSlideRefs(
     values.push(ref);
   };
   for (const element of slide.elements) {
+    if (element.type === 'audio') consider(element.src);
     if (element.type === 'image') {
       consider(mediaTaskRefForElement(element) ?? element.src);
     }
