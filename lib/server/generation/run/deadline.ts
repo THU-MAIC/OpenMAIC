@@ -8,18 +8,30 @@
 export const STEP_DEADLINES_MS = {
   /**
    * One material's extraction, once a worker runs it (1.1.x declared no
-   * budget; the platform's default applied).
+   * budget; the platform's default applied). Raised to tolerate slow
+   * server-managed models on content-heavy courses.
    */
-  materialAnalysis: 300_000,
+  materialAnalysis: 600_000,
   /** Research (1.1.x declared no budget; the platform's default applied). */
-  research: 300_000,
+  research: 600_000,
   /** The outline, its own stream retries included. */
-  outline: 300_000,
+  outline: 600_000,
   agentProfiles: 120_000,
+  /**
+   * Per attempt. Raised from 300s: content generation for a single scene can
+   * exceed 5 min with a slower chat model (e.g. qwen3.8-max), which otherwise
+   * aborts the whole run with a StepTimeoutError.
+   */
+  sceneContent: 900_000,
+  /**
+   * Per attempt. Interactive scenes emit the longest output (code + state for
+   * the demo widget), so a slow chat model is most likely to time out there.
+   * Give them a larger budget than the other content types; the slot's
+   * fallback model still covers the connection-drop case.
+   */
+  sceneContentInteractive: 1800_000,
   /** Per attempt. */
-  sceneContent: 300_000,
-  /** Per attempt. */
-  sceneActions: 60_000,
+  sceneActions: 180_000,
   /** Per clip attempt (POST /api/generate/tts). */
   narrationClip: 30_000,
 } as const;

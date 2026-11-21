@@ -1522,6 +1522,12 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: true },
       },
       {
+        id: 'qwen3.8-flash',
+        name: 'Qwen3.8 Flash',
+        contextWindow: 1000000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
         id: 'seed-2.1-pro',
         name: 'Seed 2.1 Pro',
         contextWindow: 256000,
