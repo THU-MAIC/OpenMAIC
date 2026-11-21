@@ -40,10 +40,19 @@ function logJsonParseError(
   logger.warn(`${stage} parse error: ${message}`);
 }
 
-export function parseJsonResponse<T>(response: string, options: JsonParsingOptions = {}): T | null {
+export interface ParsedJsonResult<T> {
+  data: T;
+  candidate: string;
+}
+
+export function parseJsonResponseWithCandidate<T>(
+  response: string,
+  options: JsonParsingOptions = {},
+): ParsedJsonResult<T> | null {
   const logger = options.logger ?? noopGenerationLogger;
-  const exactParsed = tryParseExactJson<T>(response);
-  if (exactParsed !== null) return exactParsed;
+  const exactCandidate = response.trim();
+  const exactParsed = tryParseExactJson<T>(exactCandidate);
+  if (exactParsed !== null) return { data: exactParsed, candidate: exactCandidate };
 
   const cleanedResponse = stripReasoningPrefix(response);
   if (cleanedResponse !== response.trim()) {
@@ -64,6 +73,10 @@ export function parseJsonResponse<T>(response: string, options: JsonParsingOptio
   return null;
 }
 
+export function parseJsonResponse<T>(response: string, options: JsonParsingOptions = {}): T | null {
+  return parseJsonResponseWithCandidate<T>(response, options)?.data ?? null;
+}
+
 function tryParseExactJson<T>(response: string): T | null {
   try {
     return JSON.parse(response.trim()) as T;
@@ -82,7 +95,10 @@ function stripReasoningPrefix(response: string): string {
   return trimmed.slice(lastMatch.index + lastMatch[0].length).trim();
 }
 
-function parseJsonResponseCandidate<T>(response: string, logger: GenerationLogger): T | null {
+function parseJsonResponseCandidate<T>(
+  response: string,
+  logger: GenerationLogger,
+): ParsedJsonResult<T> | null {
   const cleanedResponse = response.trim();
 
   // Strategy 1: Try to extract JSON from markdown code blocks (may have multiple)
@@ -94,7 +110,7 @@ function parseJsonResponseCandidate<T>(response: string, logger: GenerationLogge
       const result = tryParseJson<T>(extracted, { logger });
       if (result !== null) {
         logger.debug('Successfully parsed JSON from code block');
-        return result;
+        return { data: result, candidate: extracted };
       }
     }
   }
@@ -156,16 +172,17 @@ function parseJsonResponseCandidate<T>(response: string, logger: GenerationLogge
       const result = tryParseJson<T>(jsonStr, { logger });
       if (result !== null) {
         logger.debug('Successfully parsed JSON from response body');
-        return result;
+        return { data: result, candidate: jsonStr };
       }
     }
   }
 
   // Strategy 3: Last resort - try the whole response
-  const result = tryParseJson<T>(cleanedResponse.trim(), { logger });
+  const fallbackCandidate = cleanedResponse.trim();
+  const result = tryParseJson<T>(fallbackCandidate, { logger });
   if (result !== null) {
     logger.debug('Successfully parsed raw response as JSON');
-    return result;
+    return { data: result, candidate: fallbackCandidate };
   }
 
   return null;
