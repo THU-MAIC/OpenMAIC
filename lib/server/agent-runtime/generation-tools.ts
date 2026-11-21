@@ -646,10 +646,15 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       }
       const voiceNote =
         audio?.voice && audio.generated > 0 ? ` ${describeNarrationVoice(audio.voice)}` : '';
+      // Without a TTS capability the speech lines stay silent. Say so, with the
+      // reason generate_tts gives, instead of reporting nothing; the actions
+      // themselves were persisted, so this is a note, not an error.
       const narration =
         audio?.available === true
           ? ` Narration audio: ${audio.generated} generated, ${audio.skipped} skipped, ${formatTtsFailureTally(audio.failed)}.${voiceNote}`
-          : '';
+          : audio?.available === false && actions.some((action) => action.type === 'speech')
+            ? ' Narration audio was skipped: no enabled server TTS capability is available.'
+            : '';
       return result(`Persisted ${actions.length} known actions for "${scene.title}".${narration}`, {
         sceneId: scene.id,
         actions,
