@@ -362,6 +362,8 @@ describe('Token Plan → provider and recommended slots', () => {
     };
     const { apply, changes } = recordingApply(() => added);
     mount(createElement(TokenPlanSettings, { view, apply }));
+    // The English interface opens on the international side; TokenDance is mainland-only.
+    click(byText('settings.providerLinks.domestic'));
     click(byText('TokenDance'));
     type(byLabel('settings.tokenPlan.apiKey'), 'td-key-123456');
     act(() => {
@@ -382,6 +384,8 @@ describe('Token Plan → provider and recommended slots', () => {
     const view = makeView({ presets: [plan], providers: [workspaceProvider('tokendance', plan)] });
     const { apply, changes } = recordingApply(() => view);
     mount(createElement(TokenPlanSettings, { view, apply }));
+    // The English interface opens on the international side; TokenDance is mainland-only.
+    click(byText('settings.providerLinks.domestic'));
     click(byText('TokenDance'));
     expect(document.body.textContent).toContain('settings.tokenPlan.statusConnected');
     act(() => {

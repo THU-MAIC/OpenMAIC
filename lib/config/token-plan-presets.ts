@@ -78,8 +78,24 @@ export interface TokenPlanPreset {
   /** Icon path under /public (optional). */
   icon?: string;
   category: PresetCategory;
+  /**
+   * The region whose accounts the plan's endpoints serve: the Token Plan page
+   * lists a plan under that region only. Unset for a vendor with one global
+   * endpoint, listed under both. A vendor whose domestic and international
+   * sites take different keys has one plan per region, each with its own
+   * endpoints, so switching regions never mixes the two.
+   */
+  region?: TokenPlanRegion;
   /** Per-modality apply targets. Only declared modalities get lit up. */
   modalities: Partial<Record<TokenPlanModality, TokenPlanModalityTarget>>;
+}
+
+/** The two sides of the Token Plan page: mainland China accounts, and the rest. */
+export type TokenPlanRegion = 'domestic' | 'international';
+
+/** Whether the Token Plan page lists a plan under a region. */
+export function tokenPlanInRegion(plan: TokenPlanPreset, region: TokenPlanRegion): boolean {
+  return !plan.region || plan.region === region;
 }
 
 /** Human-facing order of modalities in the apply result. */
@@ -108,6 +124,11 @@ export const MODALITY_ORDER: TokenPlanModality[] = [
  * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
  * - Kimi Coding Plan: LLM/web-search/web-fetch via the plan key.
  * - DeepSeek: LLM/TTS/ASR/document OCR/web-search/web-fetch via one platform API key.
+ *
+ * MiniMax and Kimi each have an international plan beside the domestic one,
+ * on the international site's endpoints (MiniMax's domestic endpoints reject
+ * an international key). TokenDance and Ark have no international counterpart
+ * a plan key reaches; DeepSeek has one global endpoint.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // ── Gateway token plan (one key, vendor wire formats) ─────────────────────
@@ -126,6 +147,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     apiKeyPlaceholder: 'sk-...',
     icon: '/logos/tokendance.svg',
     category: 'token_plan',
+    region: 'domestic',
     modalities: {
       llm: {
         providerId: 'tokendance',
@@ -185,6 +207,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     apiKeyPlaceholder: 'sk-...',
     icon: '/logos/minimax.svg',
     category: 'token_plan',
+    region: 'domestic',
     modalities: {
       llm: {
         providerId: 'minimax',
@@ -227,6 +250,59 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       webSearch: { providerId: 'minimax', baseUrl: 'https://api.minimaxi.com' },
     },
   },
+  {
+    // MiniMax's international site (platform.minimax.io): the same APIs on
+    // api.minimax.io, authenticated by the M Plan key (`sk-cp-`); a
+    // pay-as-you-go key (`sk-api-`) is charged to the account balance instead.
+    // The international site no longer serves MiniMax-M2.1 or MiniMax-M2.
+    // Lower tiers may include no video model; generation then reports the
+    // tier, as with the domestic plan.
+    id: 'minimax-intl',
+    name: 'MiniMax',
+    websiteUrl: 'https://platform.minimax.io',
+    apiKeyPlaceholder: 'sk-cp-...',
+    icon: '/logos/minimax.svg',
+    category: 'token_plan',
+    region: 'international',
+    modalities: {
+      llm: {
+        providerId: 'minimax',
+        baseUrl: 'https://api.minimax.io/anthropic/v1',
+        apiFormat: 'anthropic',
+        defaultModels: [
+          'MiniMax-M3',
+          'MiniMax-M2.7',
+          'MiniMax-M2.7-highspeed',
+          'MiniMax-M2.5',
+          'MiniMax-M2.5-highspeed',
+        ],
+      },
+      image: {
+        providerId: 'minimax-image',
+        baseUrl: 'https://api.minimax.io',
+        defaultModels: ['image-01', 'image-01-live'],
+      },
+      video: {
+        providerId: 'minimax-video',
+        baseUrl: 'https://api.minimax.io',
+        defaultModels: ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-02', 'T2V-01-Director', 'T2V-01'],
+      },
+      tts: {
+        providerId: 'minimax-tts',
+        baseUrl: 'https://api.minimax.io',
+        defaultModelId: 'speech-2.8-turbo',
+        defaultModels: [
+          'speech-2.8-hd',
+          'speech-2.8-turbo',
+          'speech-2.6-hd',
+          'speech-2.6-turbo',
+          'speech-02-hd',
+          'speech-02-turbo',
+        ],
+      },
+      webSearch: { providerId: 'minimax', baseUrl: 'https://api.minimax.io' },
+    },
+  },
 
   // ── Vendor token plans (LLM; one key, often spans many models) ────────────
   {
@@ -244,6 +320,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     apiKeyPlaceholder: 'ark-...',
     icon: '/logos/volcengine.svg',
     category: 'token_plan',
+    region: 'domestic',
     modalities: {
       llm: {
         providerId: 'doubao',
@@ -327,6 +404,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     apiKeyPlaceholder: 'sk-...',
     icon: '/logos/kimi.png',
     category: 'token_plan',
+    region: 'domestic',
     modalities: {
       llm: {
         providerId: 'kimi',
@@ -337,6 +415,28 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       },
       webSearch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
       webFetch: { providerId: 'kimi', baseUrl: 'https://api.kimi.com/coding/v1' },
+    },
+  },
+  {
+    // Kimi Code on the international site (kimi.ai/code): the same plan
+    // endpoint and model ids on api.kimi.ai/coding/v1.
+    id: 'kimi-intl',
+    name: 'Kimi',
+    websiteUrl: 'https://www.kimi.ai/code?aff=openmaic',
+    apiKeyPlaceholder: 'sk-...',
+    icon: '/logos/kimi.png',
+    category: 'token_plan',
+    region: 'international',
+    modalities: {
+      llm: {
+        providerId: 'kimi',
+        baseUrl: 'https://api.kimi.ai/coding/v1',
+        apiFormat: 'openai',
+        defaultModels: ['k3', 'k3-256k', 'kimi-for-coding', 'kimi-for-coding-highspeed'],
+        defaultModelId: 'kimi-for-coding',
+      },
+      webSearch: { providerId: 'kimi', baseUrl: 'https://api.kimi.ai/coding/v1' },
+      webFetch: { providerId: 'kimi', baseUrl: 'https://api.kimi.ai/coding/v1' },
     },
   },
   // ── DeepSeek (last = lowest priority) ───────────────────────────────────

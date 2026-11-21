@@ -40,7 +40,7 @@ export const kimi: Extract<WebFetchProvider, { hosted: true }> = {
   icon: PROVIDERS.kimi.icon,
   hosted: true,
   requiresApiKey: true,
-  credentialPresets: ['kimi', 'kimi-coding-plan'],
+  credentialPresets: ['kimi', 'kimi-coding-plan', 'kimi-intl'],
   acceptsWorkspaceBaseUrl: (baseUrl) =>
     [
       'https://api.moonshot.cn/v1',
