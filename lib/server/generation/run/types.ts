@@ -97,7 +97,7 @@ export interface GenerationRunInput {
    * The learner's narrator voice for the tts slot's provider (a voice is a
    * preference, not a model); the provider's default voice otherwise.
    */
-  voice?: { providerId: string; voiceId: string; speed?: number };
+  voice?: { providerId: string; voiceId: string; name?: string; speed?: number };
   /** Accepted for older clients; successful uploads are retained regardless. */
   releaseMaterials?: boolean;
 }

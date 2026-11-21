@@ -197,6 +197,7 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
     voice = {
       providerId: value.providerId,
       voiceId: value.voiceId.trim(),
+      ...(typeof value.name === 'string' && value.name.trim() ? { name: value.name.trim() } : {}),
       ...(speed !== undefined ? { speed: speed as number } : {}),
     };
   }

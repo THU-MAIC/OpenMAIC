@@ -8,6 +8,10 @@ import { ModelAuthorizationError } from '@/lib/server/model-config/model-authori
 import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
 import type { ApiErrorCode } from '@/lib/server/api-response';
 import { resolveAgentsForOwner, UnknownAgentsError } from '@/lib/server/agents/registry';
+import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
+import { clipVoice } from '@/lib/server/generation/run/narration-voice';
+import { pickNarratorAgent } from '@/lib/audio/agent-voice-options';
+import type { TTSProviderId } from '@/lib/audio/types';
 import {
   ClassroomMaterialsRejectedError,
   resolveClassroomMaterials,
@@ -19,7 +23,16 @@ import {
 } from '@/lib/server/generation-run-hooks/runtime';
 import type { GenerationStartOrigin } from '@/lib/server/generation-run-hooks/types';
 import type { OwnerPrincipal } from '@/lib/server/identity/types';
-import { WorkspaceEndpointError } from '@/lib/server/model-config/media';
+import {
+  resolveMediaSlot,
+  WorkspaceEndpointError,
+  type MediaConnection,
+} from '@/lib/server/model-config/media';
+import {
+  backgroundWorkspaceId,
+  SlotDisabledError,
+  SlotUnassignedError,
+} from '@/lib/server/model-config/runtime';
 
 import { generationRunConfig } from './config';
 import { wakeGenerationRunner } from './runner';
@@ -48,12 +61,120 @@ export interface StartRefusal {
   headers?: Headers;
 }
 
+export const QWEN_VOICE_SETTINGS_URL = '/?settings=tts';
+
+export class QwenVoiceRecloneRequiredError extends Error {
+  readonly code = 'QWEN_VC_RECLONE_REQUIRED';
+  readonly status = 400;
+  readonly settingsUrl = QWEN_VOICE_SETTINGS_URL;
+
+  constructor(
+    readonly voiceName: string,
+    readonly agentName?: string,
+  ) {
+    super(
+      agentName
+        ? `Voice "${voiceName}" bound to narrator "${agentName}" is incompatible with the current clone target. ` +
+            `Change that agent's voice in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL} ` +
+            `If TTS Settings are unavailable, contact your administrator.`
+        : `Saved voice "${voiceName}" is incompatible with the current clone target. ` +
+            `Re-clone it in Settings before starting generation: ${QWEN_VOICE_SETTINGS_URL} ` +
+            `If TTS Settings are unavailable, contact your administrator.`,
+    );
+    this.name = 'QwenVoiceRecloneRequiredError';
+  }
+}
+
+export interface NarratorVoiceCandidate {
+  providerId: string;
+  voiceId: string;
+  name?: string;
+  agentName?: string;
+}
+
+export function assertNarratorVoiceCompatibility(
+  candidates: readonly NarratorVoiceCandidate[],
+  configuredVoices: readonly { id: string }[] | undefined,
+): void {
+  for (const candidate of candidates) {
+    try {
+      getVoiceRegistrationAdapter(candidate.providerId)?.assertVoiceCompatible?.(
+        candidate.voiceId,
+        configuredVoices,
+      );
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'QWEN_VC_RECLONE_REQUIRED') {
+        throw new QwenVoiceRecloneRequiredError(
+          candidate.name?.trim() || candidate.voiceId,
+          candidate.agentName?.trim() || undefined,
+        );
+      }
+      throw error;
+    }
+  }
+}
+
+async function validateQwenNarratorVoices(
+  ownerId: string,
+  input: GenerationRunInput,
+  agents: Awaited<ReturnType<typeof resolveAgentsForOwner>>,
+): Promise<void> {
+  const narrator = pickNarratorAgent(agents);
+  const hasCompatibleVoiceAdapter = [
+    input.voice?.providerId,
+    narrator?.voiceConfig?.providerId,
+  ].some(
+    (providerId) =>
+      !!providerId && !!getVoiceRegistrationAdapter(providerId)?.assertVoiceCompatible,
+  );
+  if (!hasCompatibleVoiceAdapter) return;
+
+  let connection: MediaConnection;
+  try {
+    connection = await resolveMediaSlot('tts', {
+      workspaceId: await backgroundWorkspaceId(ownerId),
+    });
+  } catch (error) {
+    if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return;
+    throw error;
+  }
+  const chosen = clipVoice({
+    target: {
+      connection,
+      providerId: connection.providerId as TTSProviderId,
+      modelId: connection.modelId,
+    },
+    preference: input.voice,
+    bound: narrator?.voiceConfig,
+    unavailable: new Set(),
+  })?.voice;
+  if (!chosen) return;
+  assertNarratorVoiceCompatibility(
+    [
+      {
+        providerId: chosen.providerId,
+        voiceId: chosen.voiceId,
+        name: narrator?.voiceConfig ? narrator.name : input.voice?.name,
+        agentName:
+          narrator?.voiceConfig?.providerId === chosen.providerId &&
+          narrator.voiceConfig.voiceId === chosen.voiceId
+            ? narrator.name
+            : undefined,
+      },
+    ],
+    connection.voices,
+  );
+}
+
 /** The refusal `error` (thrown by {@link startGenerationRun}) answers with, or null for a fault. */
 export function startRefusal(error: unknown): StartRefusal | null {
   if (error instanceof ModelAuthorizationError)
     return { code: error.code, status: error.httpStatus, message: error.message };
   if (error instanceof ClassroomMaterialsRejectedError || error instanceof UnknownAgentsError) {
     return { code: 'INVALID_REQUEST', status: 400, message: error.message };
+  }
+  if (error instanceof QwenVoiceRecloneRequiredError) {
+    return { code: error.code, status: error.status, message: error.message };
   }
   // A document or speech service this workspace may not use.
   if (error instanceof WorkspaceEndpointError) {
@@ -94,13 +215,14 @@ export async function startGenerationRun(
   input: GenerationRunInput,
   start?: StartRequest,
 ): Promise<StoredRun> {
+  const agentIds =
+    input.agents.mode === 'preset' ? input.agents.agentIds : (input.agents.presetAgentIds ?? []);
+  const agents = agentIds.length > 0 ? await resolveAgentsForOwner(ownerId, agentIds) : [];
+  await validateQwenNarratorVoices(ownerId, input, agents);
   await assertWorkspaceModelsAuthorized(ownerId, GENERATION_MODEL_SLOTS);
   if (input.materialIds.length > 0) {
     await resolveClassroomMaterials(ownerId, input.materialIds, { forward: false });
   }
-  const agentIds =
-    input.agents.mode === 'preset' ? input.agents.agentIds : (input.agents.presetAgentIds ?? []);
-  if (agentIds.length > 0) await resolveAgentsForOwner(ownerId, agentIds);
 
   const config = generationRunConfig();
   const run = await createGenerationRun(ownerId, input, {

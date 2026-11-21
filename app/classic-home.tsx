@@ -203,6 +203,14 @@ function HomePage() {
   const [settingsSection, setSettingsSection] = useState<
     import('@/lib/types/settings').SettingsSection | undefined
   >(undefined);
+  const [voiceSettingsError, setVoiceSettingsError] = useState(false);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('settings') !== 'tts') return;
+    setSettingsSection('tts');
+    setSettingsOpen(true);
+    window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   // Generation needs the course slots it resolves (outline, content, actions)
   // to name a model, whether or not the llm root does (the server's view;
@@ -605,6 +613,7 @@ function HomePage() {
     }
 
     setError(null);
+    setVoiceSettingsError(false);
 
     // The set is frozen while the run starts (`preparingGenerate` makes add,
     // remove and Retry inert), from the ready materials in their order.
@@ -640,6 +649,7 @@ function HomePage() {
         setError(t(err.reason, err.values));
       } else if (err instanceof RunApiError) {
         setError(runApiErrorText(err, t));
+        setVoiceSettingsError(err.errorCode === 'QWEN_VC_RECLONE_REQUIRED');
       } else {
         setError(err instanceof Error ? err.message : t('upload.generateFailed'));
       }
@@ -1066,6 +1076,18 @@ function HomePage() {
               className="home-error mt-3 w-full p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
             >
               <p className="text-sm text-destructive">{error}</p>
+              {voiceSettingsError && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsSection('tts');
+                    setSettingsOpen(true);
+                  }}
+                  className="mt-2 inline-block text-sm font-medium text-destructive underline"
+                >
+                  {t('settings.title')}
+                </button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

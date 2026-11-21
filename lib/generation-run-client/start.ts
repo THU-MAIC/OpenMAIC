@@ -5,6 +5,7 @@
  * the learner's choices only (agents, learner profile, narrator voice).
  */
 import { ttsSelection } from '@/lib/audio/tts-selection';
+import { db } from '@/lib/device-storage/database';
 import type { ModelCapabilities } from '@/lib/model-settings/capabilities';
 import { useAgentRegistry, whenAgentRegistryLoaded } from '@/lib/orchestration/registry/store';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -83,7 +84,14 @@ export async function startClassicRun(input: {
           ...(profile.bio ? { bio: profile.bio } : {}),
         }
       : undefined;
-  const voice = selectedRunVoice(input.capabilities);
+  const selectedVoice = selectedRunVoice(input.capabilities);
+  const voice =
+    selectedVoice?.providerId === 'qwen-tts'
+      ? {
+          ...selectedVoice,
+          name: (await db.voiceProfiles.get(selectedVoice.voiceId))?.name ?? selectedVoice.voiceId,
+        }
+      : selectedVoice;
   const settings = useSettingsStore.getState();
 
   return startGenerationRun({
