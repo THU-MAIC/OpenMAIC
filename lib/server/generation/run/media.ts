@@ -36,7 +36,7 @@ import { StepRefusal } from '@/lib/server/generation/steps/context';
 import { storeGeneratedAsset } from '@/lib/server/store-generated-asset';
 import type { Scene } from '@/lib/types/stage';
 
-import { withDeadline } from './deadline';
+import { mediaDeadlineMs, withDeadline } from './deadline';
 import { isRetryableRunMedia, mediaStepId, type RunMediaItem } from './plan';
 import type { RunMediaConnections, RunStepServices } from './services';
 import {
@@ -56,11 +56,10 @@ import type {
 const log = createLogger('GenerationRunMedia');
 
 /**
- * The budget of one image or video: the 300 s the image and video routes
- * declared on platforms that enforce one. A resumed video wait
- * gets a fresh one, as the provider's poll budget does.
+ * The budget of one image or video. A resumed video wait gets a fresh one,
+ * as the provider's poll budget does. The default covers a cold local model
+ * load; `MEDIA_DEADLINE_MS` overrides it. See {@link mediaDeadlineMs}.
  */
-export const MEDIA_DEADLINE_MS = 300_000;
 
 /** The statuses that still need the lane (stored bytes wait for their scene instead). */
 export function isMediaWork(checkpoint: GenerationRunMediaCheckpoint | undefined): boolean {
@@ -353,7 +352,7 @@ async function generateItem(
     let media: { bytes: Uint8Array; mimeType: string };
     let poster: { bytes: Uint8Array; mimeType: string } | undefined;
     if (mediaType === 'image') {
-      media = await withDeadline(stepId, MEDIA_DEADLINE_MS, ctx.signal, (signal) =>
+      media = await withDeadline(stepId, mediaDeadlineMs(), ctx.signal, (signal) =>
         ctx.services.generateImage(
           owner,
           { request, stageId: ctx.stageId, connection },
@@ -363,7 +362,7 @@ async function generateItem(
     } else {
       const resume = task;
       if (resume) log.info(`run ${ctx.runId}: resuming the wait on video task ${resume.taskId}`);
-      const video = await withDeadline(stepId, MEDIA_DEADLINE_MS, ctx.signal, (signal) =>
+      const video = await withDeadline(stepId, mediaDeadlineMs(), ctx.signal, (signal) =>
         ctx.services.generateVideo(
           owner,
           {

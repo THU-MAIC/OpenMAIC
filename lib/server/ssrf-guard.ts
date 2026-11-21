@@ -67,6 +67,17 @@ export function allowLocalNetworksEnabled(): boolean {
 }
 
 /**
+ * Whether a strict-policy refusal (`allowLocalNetworks: false`) is the
+ * local/private/CGNAT message rather than metadata, fake-ip, or "public, so
+ * allowed". Reserved and multicast ranges share this message; a caller that
+ * then re-checks with the opt-in still refuses those, because the opt-in does
+ * not unlock them.
+ */
+export function isStrictLocalNetworkRefusal(reason: string | null): boolean {
+  return reason === LOCAL_NETWORK_BLOCK_MESSAGE;
+}
+
+/**
  * Walk an error, its `cause` chain and any `AggregateError` children looking
  * for a guard block error. Undici reports a connect-time lookup refusal as
  * `TypeError: fetch failed` with the real error as `cause`, so callers need to

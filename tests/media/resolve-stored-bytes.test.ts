@@ -61,26 +61,42 @@ describe('shared stored-bytes resolution', () => {
     expect(fetch).toHaveBeenCalledWith('https://cdn.example.com/generated.png');
   });
 
-  /** Gating still suppresses stale bytes while a regeneration is in flight. */
-  it('keeps gating independent of the fallback lookup', async () => {
+  /**
+   * A committed id keeps its last concrete URL while a regeneration runs, the
+   * same image the classroom still shows. A placeholder that has not been
+   * committed stays suppressed, so gating is not the same as "no task lookup".
+   */
+  it('keeps a committed URL while a regeneration is in flight and still gates placeholders', async () => {
     mocks.getState.mockReturnValue({
       tasks: {
-        ast_img_1: { status: 'generating', objectUrl: 'https://cdn.example.com/stale.png' },
+        ast_img_1: { status: 'generating', objectUrl: 'https://cdn.example.com/last.png' },
       },
     });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(new Blob(['stale']))),
-    );
+    const fetchMock = vi.fn(async () => new Response(new Blob(['last'])));
+    vi.stubGlobal('fetch', fetchMock);
 
+    const committed = await resolveStoredBytes('ast_img_1', {
+      taskUrlFallback: true,
+      resolutionGating: true,
+      fetchPolicy: STRICT,
+    });
+    expect(await committed?.text()).toBe('last');
+    expect(fetchMock).toHaveBeenCalledWith('https://cdn.example.com/last.png');
+
+    mocks.getState.mockReturnValue({
+      tasks: {
+        gen_img_1: { status: 'generating', objectUrl: 'https://cdn.example.com/stale.png' },
+      },
+    });
+    fetchMock.mockClear();
     expect(
-      await resolveStoredBytes('ast_img_1', {
+      await resolveStoredBytes('gen_img_1', {
         taskUrlFallback: true,
         resolutionGating: true,
         fetchPolicy: STRICT,
       }),
     ).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   /**
@@ -154,11 +170,11 @@ describe('shared stored-bytes resolution', () => {
   });
 
   /**
-   * Gating's headline promise is that an in-flight regeneration suppresses
-   * stale bytes at EVERY level, not only at the final one -- otherwise an
-   * export ships media the classroom no longer shows.
+   * A committed pool id stays visible in the classroom during a regeneration,
+   * so the export keeps those bytes. A placeholder that is still generating
+   * has no committed id and is still suppressed (see resolveMediaRef).
    */
-  it('suppresses stale pool and row bytes while a regeneration is in flight', async () => {
+  it('keeps committed pool bytes while a regeneration is in flight', async () => {
     mocks.getState.mockReturnValue({
       tasks: { ast_img_1: { status: 'generating', stageId: 'stage-1' } },
     });
@@ -175,15 +191,14 @@ describe('shared stored-bytes resolution', () => {
       vi.fn(async () => new Response(new Blob(['stale']))),
     );
 
-    expect(
-      await resolveStoredBytes('ast_img_1', {
-        stageId: 'stage-1',
-        loadCompatRow: true,
-        resolutionGating: true,
-        fetchPolicy: STRICT,
-      }),
-    ).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
+    const bytes = await resolveStoredBytes('ast_img_1', {
+      stageId: 'stage-1',
+      loadCompatRow: true,
+      resolutionGating: true,
+      fetchPolicy: STRICT,
+    });
+    expect(await bytes?.text()).toBe('stale');
+    expect(fetch).toHaveBeenCalled();
   });
 
   /**

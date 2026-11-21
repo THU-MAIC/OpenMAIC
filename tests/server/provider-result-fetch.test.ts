@@ -50,7 +50,8 @@ describe('fetchProviderResultUrl', () => {
     mocks.promisesLookup.mockResolvedValue(PUBLIC_ANSWER);
     mocks.callbackLookup.mockImplementation(answerWith(LOOPBACK_ANSWER));
     destroyAudioProviderDispatchersForTests();
-    // The operator opt-in must not widen the policy for provider-returned URLs.
+    // Public HTTP and private HTTPS stay refused even when the operator opted in.
+    // The opt-in only unlocks HTTP to a local/CGNAT target.
     process.env.ALLOW_LOCAL_NETWORKS = 'true';
   });
 
@@ -115,6 +116,39 @@ describe('fetchProviderResultUrl', () => {
     const spy = vi.spyOn(providerFetchModule, 'providerFetch');
 
     await expect(fetchProviderResultUrl(url, { maxBytes: MAX })).rejects.toThrow(message);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'http://127.0.0.1:8188/view?filename=a.png',
+    'http://10.1.2.3:8188/view?filename=a.png',
+    'http://100.64.1.5:8188/view?filename=a.png',
+  ])('fetches a local HTTP result URL when ALLOW_LOCAL_NETWORKS is on: %s', async (url) => {
+    const spy = vi
+      .spyOn(providerFetchModule, 'providerFetch')
+      .mockResolvedValue(new Response('ok', { status: 200 }));
+
+    await fetchProviderResultUrl(url, { maxBytes: MAX });
+
+    expect(spy).toHaveBeenCalledWith(url, {}, { allowLocalNetworks: true, requireHttps: true });
+  });
+
+  it('still refuses a local HTTP result URL when the opt-in is off', async () => {
+    delete process.env.ALLOW_LOCAL_NETWORKS;
+    const spy = vi.spyOn(providerFetchModule, 'providerFetch');
+
+    await expect(
+      fetchProviderResultUrl('http://127.0.0.1:8188/view?filename=a.png', { maxBytes: MAX }),
+    ).rejects.toThrow(/must use https/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('still refuses cloud metadata over HTTP when the opt-in is on', async () => {
+    const spy = vi.spyOn(providerFetchModule, 'providerFetch');
+
+    await expect(
+      fetchProviderResultUrl('http://169.254.169.254/latest/meta-data/', { maxBytes: MAX }),
+    ).rejects.toThrow(UnsafeNetworkTargetError);
     expect(spy).not.toHaveBeenCalled();
   });
 

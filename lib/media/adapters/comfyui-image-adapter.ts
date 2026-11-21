@@ -15,8 +15,10 @@
  *      → Ship at least one comfyui-*.json in your Next.js public/ directory.
  *
  * Nodes patched at runtime:
- *   "String (Multiline - Prompt)"  → inputs.value  = prompt
- *   "Empty Flux 2 Latent"          → inputs.width / height
+ *   "Input Prompt" or "String (Multiline - Prompt)" → inputs.value = prompt
+ *     (a CLIPTextEncode prompt node also gets inputs.text)
+ *   "Width" / "Height", else "Empty Latent Image" or "Empty Flux 2 Latent"
+ *     → width / height. Explicit width and height win over aspectRatio.
  *   "KSampler"                     → inputs.seed   = random int
  */
 
@@ -59,11 +61,24 @@ const DEFAULT_WORKFLOW_FILENAME = 'comfyui-workflow.json';
 const DEFAULT_WORKFLOW_PUBLIC_PATH = `/${DEFAULT_WORKFLOW_FILENAME}`;
 /** Polling interval while waiting for the queue to finish (ms) */
 const POLL_INTERVAL_MS = 1500;
-/** Hard timeout for a single generation request (ms) */
-const GENERATION_TIMEOUT_MS = 300_000; // 5 minutes
 /**
- * Per-request timeout for individual ComfyUI HTTP calls (ms). The 5-minute
- * bound above is on the *polling loop* only — without this, an awaited call
+ * Default budget for one generation, including a cold checkpoint load.
+ * A first SDXL load can take several minutes; 5 minutes is too tight.
+ * `COMFYUI_GENERATION_TIMEOUT_MS` overrides this at call time (minimum 60s).
+ */
+const DEFAULT_GENERATION_TIMEOUT_MS = 720_000;
+const MIN_GENERATION_TIMEOUT_MS = 60_000;
+
+export function comfyuiGenerationTimeoutMs(): number {
+  const raw = Number.parseInt(process.env.COMFYUI_GENERATION_TIMEOUT_MS ?? '', 10);
+  return Number.isFinite(raw) && raw >= MIN_GENERATION_TIMEOUT_MS
+    ? raw
+    : DEFAULT_GENERATION_TIMEOUT_MS;
+}
+
+/**
+ * Per-request timeout for individual ComfyUI HTTP calls (ms). The budget
+ * above is on the *polling loop* only — without this, an awaited call
  * whose socket connects but never responds (queuePrompt / pollHistory /
  * fetchImageAsBase64) could hang indefinitely.
  */
@@ -243,6 +258,11 @@ async function loadWorkflow(
  * both axes down by the tighter of the width/height ratios keeps the result
  * inside maxWidth × maxHeight without distorting the aspect ratio.
  *
+ * Explicit width and height win over aspectRatio. aspectRatio alone expands
+ * to `maxWidth` (16:9 at 1920 → 1920×1080). Preferring the ratio whenever it
+ * was also set is what turned an already-sized 1344×768 SDXL request into
+ * 1920×1080.
+ *
  * Returns null when no dimensions can be resolved (caller uses workflow
  * defaults in that case).
  */
@@ -251,11 +271,11 @@ function resolveDimensions(
   maxWidth: number,
   maxHeight: number,
 ): { width: number; height: number } | null {
-  const raw = options.aspectRatio
-    ? aspectRatioToDimensions(options.aspectRatio, maxWidth)
-    : options.width && options.height
-      ? { width: options.width, height: options.height }
-      : null;
+  const explicit =
+    options.width && options.height ? { width: options.width, height: options.height } : null;
+  const raw =
+    explicit ??
+    (options.aspectRatio ? aspectRatioToDimensions(options.aspectRatio, maxWidth) : null);
   if (!raw) return null;
 
   const scale = Math.min(1, maxWidth / raw.width, maxHeight / raw.height);
@@ -290,6 +310,20 @@ function findNodeIdByTitle(workflow: Record<string, unknown>, title: string): st
   return undefined;
 }
 
+/** First node whose `class_type` matches, for workflows that were not retitled. */
+function findNodeIdByClassType(
+  workflow: Record<string, unknown>,
+  classType: string,
+): string | undefined {
+  const lower = classType.toLowerCase();
+  for (const [id, node] of Object.entries(workflow)) {
+    if (!node || typeof node !== 'object') continue;
+    const ct = (node as { class_type?: unknown }).class_type;
+    if (typeof ct === 'string' && ct.toLowerCase() === lower) return id;
+  }
+  return undefined;
+}
+
 /**
  * Patch the workflow clone with the caller-supplied generation options.
  *
@@ -299,7 +333,8 @@ function findNodeIdByTitle(workflow: Record<string, unknown>, title: string): st
  *
  * Dimension injection priority:
  *   1. Nodes titled "Width" and "Height"  (preferred — explicit dedicated nodes)
- *   2. Node titled "Empty Flux 2 Latent"  (legacy fallback — patches inputs directly)
+ *   2. "Empty Latent Image" (SDXL EmptyLatentImage), then "Empty Flux 2 Latent"
+ *   3. class_type EmptyLatentImage, then EmptyFlux2LatentImage
  */
 function patchWorkflow(
   workflow: Record<string, unknown>,
@@ -332,6 +367,15 @@ function patchWorkflow(
     );
   }
   promptInputs['value'] = options.prompt;
+  // CLIPTextEncode reads `text`. Leave an incoming node link (an array) alone,
+  // and do not invent a `text` input on a primitive that only has `value`.
+  const promptClass = (workflow[promptNodeId] as { class_type?: unknown } | undefined)?.class_type;
+  if (
+    (promptClass === 'CLIPTextEncode' || typeof promptInputs['text'] === 'string') &&
+    !Array.isArray(promptInputs['text'])
+  ) {
+    promptInputs['text'] = options.prompt;
+  }
   log.debug(
     `Patched prompt node (id: ${promptNodeId}) → "${options.prompt.slice(0, 80)}${options.prompt.length > 80 ? '…' : ''}"`,
   );
@@ -363,7 +407,11 @@ function patchWorkflow(
         'Only one of "Width"/"Height" nodes found — both are needed. Falling back to latent node.',
       );
     }
-    const latentNodeId = findNodeIdByTitle(workflow, 'Empty Flux 2 Latent');
+    const latentNodeId =
+      findNodeIdByTitle(workflow, 'Empty Latent Image') ??
+      findNodeIdByTitle(workflow, 'Empty Flux 2 Latent') ??
+      findNodeIdByClassType(workflow, 'EmptyLatentImage') ??
+      findNodeIdByClassType(workflow, 'EmptyFlux2LatentImage');
     if (latentNodeId) {
       const latentInputs = nodeInputs(workflow[latentNodeId]);
       if (dims && latentInputs) {
@@ -383,7 +431,7 @@ function patchWorkflow(
       }
     } else {
       log.warn(
-        'No dimension nodes found ("Width"/"Height" or "Empty Flux 2 Latent") — using workflow defaults',
+        'No dimension nodes found ("Width"/"Height", "Empty Latent Image", or "Empty Flux 2 Latent") — using workflow defaults',
       );
     }
   }
@@ -614,7 +662,8 @@ export async function generateWithComfyuiImage(
   const promptId = await queuePrompt(mediaFetchFor(config), baseUrl, workflow, clientId);
 
   // 4. Poll history until complete -------------------------------------------
-  const deadline = Date.now() + GENERATION_TIMEOUT_MS;
+  const generationTimeoutMs = comfyuiGenerationTimeoutMs();
+  const deadline = Date.now() + generationTimeoutMs;
   let entry: HistoryEntry | null = null;
   let pollCount = 0;
 
@@ -652,11 +701,9 @@ export async function generateWithComfyuiImage(
   }
 
   if (!entry?.status?.completed) {
-    log.error(
-      `Generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s [prompt_id: ${promptId}]`,
-    );
+    log.error(`Generation timed out after ${generationTimeoutMs / 1000}s [prompt_id: ${promptId}]`);
     throw new Error(
-      `ComfyUI generation timed out after ${GENERATION_TIMEOUT_MS / 1000}s ` +
+      `ComfyUI generation timed out after ${generationTimeoutMs / 1000}s ` +
         `(prompt_id: ${promptId})`,
     );
   }

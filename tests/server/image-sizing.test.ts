@@ -45,6 +45,38 @@ describe('resolveImageSize', () => {
     expect(result).toMatchObject({ width: 1024, height: 1536 });
   });
 
+  it('snaps an SDXL ComfyUI workflow to the 16:9 training bucket', () => {
+    const result = resolveImageSize(options({ aspectRatio: '16:9' }), {
+      providerId: 'comfyui-image',
+      modelId: 'comfyui-workflow-sdxl.json',
+    });
+    expect(result).toMatchObject({ width: 1344, height: 768 });
+  });
+
+  it('snaps an explicit SDXL size to the nearest bucket when no ratio is named', () => {
+    const result = resolveImageSize(options({ width: 800, height: 800 }), {
+      providerId: 'comfyui-image',
+      modelId: 'my-sdxl.json',
+    });
+    expect(result).toMatchObject({ width: 1024, height: 1024 });
+  });
+
+  it('expands a non-SDXL ComfyUI aspect ratio to the provider maximum', () => {
+    const result = resolveImageSize(options({ aspectRatio: '16:9' }), {
+      providerId: 'comfyui-image',
+      modelId: 'comfyui-workflow.json',
+    });
+    expect(result).toMatchObject({ width: 1920, height: 1080 });
+  });
+
+  it('keeps an explicit ComfyUI size when the workflow is not SDXL', () => {
+    const result = resolveImageSize(options({ width: 1344, height: 768, aspectRatio: '16:9' }), {
+      providerId: 'comfyui-image',
+      modelId: 'comfyui-workflow.json',
+    });
+    expect(result).toMatchObject({ width: 1344, height: 768 });
+  });
+
   it('leaves explicit width/height untouched (ratio ignored)', () => {
     const result = resolveImageSize(options({ width: 512, height: 768, aspectRatio: '16:9' }));
     expect(result).toMatchObject({ width: 512, height: 768 });

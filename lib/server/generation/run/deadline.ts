@@ -4,6 +4,32 @@
  * timeout failed the browser's request, as a retryable failure.
  */
 
+/** Below this, an operator override is ignored and the default is used. */
+const MIN_CONFIGURABLE_DEADLINE_MS = 60_000;
+
+/**
+ * Read a millisecond budget from the environment at call time.
+ * Unset, empty, and non-numeric values, and anything under
+ * {@link MIN_CONFIGURABLE_DEADLINE_MS}, keep `defaultMs`.
+ */
+export function readDeadlineMs(envName: string, defaultMs: number): number {
+  const raw = Number.parseInt(process.env[envName] ?? '', 10);
+  return Number.isFinite(raw) && raw >= MIN_CONFIGURABLE_DEADLINE_MS ? raw : defaultMs;
+}
+
+/**
+ * Budget for one image or video in a generation run.
+ *
+ * A cold local checkpoint (ComfyUI loading SDXL, for example) can take several
+ * minutes before the first image, so the default is 12 minutes. `MEDIA_DEADLINE_MS`
+ * overrides it at runtime.
+ */
+export const DEFAULT_MEDIA_DEADLINE_MS = 720_000;
+
+export function mediaDeadlineMs(): number {
+  return readDeadlineMs('MEDIA_DEADLINE_MS', DEFAULT_MEDIA_DEADLINE_MS);
+}
+
 /** Per call, in milliseconds. */
 export const STEP_DEADLINES_MS = {
   /**
