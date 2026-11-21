@@ -264,6 +264,18 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  modelgo: {
+    id: 'modelgo',
+    name: 'ModelGo',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.modelgo.ai/v1',
+    supportsModelDiscovery: true,
+    requiresApiKey: true,
+    // Model visibility is scoped by the API key's account policy. Fetch the
+    // authenticated /v1/models catalogue instead of guessing static defaults.
+    models: [],
+  },
+
   anthropic: {
     id: 'anthropic',
     name: 'Claude',

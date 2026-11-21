@@ -341,6 +341,19 @@ providers:
       expect((providers.atlascloud as Record<string, unknown>).baseUrl).toBeUndefined();
     });
 
+    it('maps ModelGo env vars to the built-in OpenAI-compatible provider', async () => {
+      vi.stubEnv('MODELGO_API_KEY', 'mgk-test');
+      vi.stubEnv('MODELGO_BASE_URL', 'https://api.modelgo.ai/v1');
+      vi.stubEnv('MODELGO_MODELS', 'gpt-6.1-sol,claude-sonnet-4.6');
+      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.modelgo.models).toEqual(['gpt-6.1-sol', 'claude-sonnet-4.6']);
+      expect(resolveBaseUrl('modelgo')).toBe('https://api.modelgo.ai/v1');
+      expect((providers.modelgo as Record<string, unknown>).apiKey).toBeUndefined();
+      expect((providers.modelgo as Record<string, unknown>).baseUrl).toBeUndefined();
+    });
+
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
       vi.stubEnv('TENCENT_HUNYUAN_API_KEY', 'sk-tencent');
       vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3,hy3-202608');
