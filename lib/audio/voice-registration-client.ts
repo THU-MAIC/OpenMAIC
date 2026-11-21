@@ -27,7 +27,11 @@ export interface VoiceRegistrationRequestConfig {
 
 export interface UserVoiceRegistrationParams {
   name: string;
+  /** The browser account whose cached availability a successful registration clears. */
+  accountScope?: string;
   referenceAudio: Blob;
+  expectedServiceId?: string;
+  expectedRevision?: number;
   /** Optional metadata; current enrollment APIs do not require a transcript. */
   refText?: string;
 }
@@ -67,6 +71,9 @@ export async function registerVoiceFromReference(
     headers: { 'Content-Type': 'application/json' },
     // The tts slot names the provider on the server.
     body: JSON.stringify({
+      expectedProviderId: providerId,
+      expectedServiceId: params.expectedServiceId,
+      expectedRevision: params.expectedRevision,
       voiceId: params.name.trim(),
       referenceAudioBase64,
       mimeType: params.referenceAudio.type || 'audio/wav',
@@ -79,8 +86,8 @@ export async function registerVoiceFromReference(
   }
   const voiceId = typeof data.voiceId === 'string' ? data.voiceId.trim() : '';
   if (!voiceId) throw new Error('Voice registration returned no voice id');
-  clearVoiceBindingUnavailable({ providerId, voiceId: params.name.trim() });
-  clearVoiceBindingUnavailable({ providerId, voiceId });
+  clearVoiceBindingUnavailable({ providerId, voiceId: params.name.trim() }, params.accountScope);
+  clearVoiceBindingUnavailable({ providerId, voiceId }, params.accountScope);
   return voiceId;
 }
 

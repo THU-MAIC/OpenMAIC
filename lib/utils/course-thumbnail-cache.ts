@@ -1,11 +1,10 @@
 import type { Slide } from '@openmaic/dsl';
 
 import { db } from '@/lib/device-storage/database';
+import { deviceOwnerKey } from '@/lib/device-storage/owner-key';
 import type { CourseThumbnail } from '@/lib/utils/course-cover';
-import { sha256Hex } from '@/lib/legacy-browser-import/digest';
 import { createLogger } from '@/lib/logger';
 import { slideMediaReferenceSlots } from '@/lib/media/slide-media-slots';
-import { getPersistenceLearnerKey } from '@/lib/persistence/bootstrap';
 import { loadCourseCover } from '@/lib/utils/stage-storage';
 
 /**
@@ -48,23 +47,10 @@ export const COURSE_THUMBNAIL_FORMAT = 2;
 /** How long after a write the bounds are enforced (writes come in bursts). */
 const EVICTION_DELAY_MS = 1000;
 
-let ownerKeyPromise: Promise<string> | undefined;
-
-/** The cache partition of this page's owner. Not cached on failure. */
-export function courseThumbnailOwnerKey(): Promise<string> {
-  return (ownerKeyPromise ??= getPersistenceLearnerKey().then(
-    (learnerKey) => sha256Hex(`course-thumbnail-owner:${learnerKey}`),
-    (error: unknown) => {
-      ownerKeyPromise = undefined;
-      throw error;
-    },
-  ));
-}
-
-/** @internal Forget the memoized owner partition (tests). */
-export function __resetCourseThumbnailOwnerKeyForTesting(): void {
-  ownerKeyPromise = undefined;
-}
+export {
+  deviceOwnerKey as courseThumbnailOwnerKey,
+  forgetDeviceOwnerKey as __resetCourseThumbnailOwnerKeyForTesting,
+} from '@/lib/device-storage/owner-key';
 
 /**
  * A cached thumbnail of `stageId` at `version`: the slide (its media as fresh
@@ -191,7 +177,7 @@ export async function loadCourseThumbnail(
 ): Promise<CourseThumbnail | null> {
   let ownerKey: string | undefined;
   try {
-    ownerKey = await courseThumbnailOwnerKey();
+    ownerKey = await deviceOwnerKey();
     // Only a cached first slide is trusted: a cached null just means "no
     // slide", which since live covers is no longer "no cover" — the course is
     // read again instead (also migrating records written before them).

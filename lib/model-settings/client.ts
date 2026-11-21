@@ -82,15 +82,20 @@ function revisionOf(view: ModelSettingsView | null): number {
 }
 
 export function createModelSettingsClient(fetchImpl: Fetch) {
-  let state: ModelSettingsState = { phase: 'idle', view: null };
+  const idle: ModelSettingsState = { phase: 'idle', view: null };
+  let state = idle;
   let loading: Promise<ModelSettingsState> | null = null;
   const listeners = new Set<() => void>();
-  // The revision decides which view is newer: a view (a read's or a write's
-  // answer) with a lower revision than the one held never replaces it, and one
-  // with a higher revision always does, whenever it arrives. Only at an equal
-  // revision does order decide: reads and adopted views are numbered as they
-  // start (a read) or land (an adoption), and a read that began before a later
-  // read or adoption is dropped.
+  // Revisions are comparable only within one workspace. Forgetting the view
+  // invalidates requests and edits that started under the previous owner.
+  let workspace = 0;
+  const workspaceChanged = {
+    ok: false,
+    reason: 'failed',
+    message: 'The active workspace changed',
+  } as const;
+  // Within a workspace the higher revision wins, regardless of arrival order.
+  // At equal revisions, a read begun before a later read or adoption is dropped.
   let sequence = 0;
   let latestRead = 0;
   let latestAdopted = 0;
@@ -136,7 +141,11 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
    */
   function adopt(view: ModelSettingsView | null) {
     latestAdopted = ++sequence;
-    setState(view ? { phase: 'ready', view } : { phase: 'idle', view: null });
+    if (!view) {
+      workspace++;
+      loading = null;
+    }
+    setState(view ? { phase: 'ready', view } : idle);
   }
 
   /**
@@ -146,10 +155,12 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
    */
   function load({ fresh = false }: { fresh?: boolean } = {}): Promise<ModelSettingsState> {
     if (loading && !fresh) return loading;
+    const owner = workspace;
     const number = (latestRead = ++sequence);
     setState({ ...state, phase: 'loading', error: undefined });
     const read = fetchView()
       .then((next) => {
+        if (owner !== workspace) return idle;
         // A view is judged by its revision; an error or "unavailable" only by order.
         const superseded =
           next.phase === 'ready' && next.view
@@ -172,6 +183,35 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     return read;
   }
 
+  /** Interpret a write's answer before applying it to the originating workspace. */
+  async function write(view: ModelSettingsView, change: ModelSettingsChange): Promise<ApplyResult> {
+    try {
+      const response = await fetchImpl(MODEL_SETTINGS_ENDPOINT, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revision: view.revision, change }),
+      });
+      if (response.ok) return { ok: true, view: (await response.json()) as ModelSettingsView };
+      if (response.status === 404) {
+        return { ok: false, reason: 'unavailable', message: 'Model settings are not available' };
+      }
+      const { code, message = `HTTP ${response.status}` } = await errorBody(response);
+      // A server or gateway error may arrive after the write was saved.
+      if (response.status >= 500) return { ok: false, reason: 'unconfirmed', message };
+      if (response.status === 409) {
+        return { ok: false, reason: code === 'SLOT_LOCKED' ? 'locked' : 'conflict', code, message };
+      }
+      return { ok: false, reason: response.status === 400 ? 'invalid' : 'failed', code, message };
+    } catch (error) {
+      // A lost request or truncated answer may also have been saved.
+      return {
+        ok: false,
+        reason: 'unconfirmed',
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   /**
    * Apply one change. It is sent against the revision of `basis`, the view it
    * was worked out from, so that when the settings changed since (a reload
@@ -183,8 +223,10 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     change: ModelSettingsChange,
     basis?: ModelSettingsView,
   ): Promise<ApplyResult> {
+    const owner = workspace;
     if (loading) await loading;
-    if (!state.view && !basis) await load();
+    if (owner === workspace && !state.view && !basis) await load();
+    if (owner !== workspace) return workspaceChanged;
     const view = basis ?? state.view;
     if (!view) {
       return state.phase === 'unavailable'
@@ -192,68 +234,29 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
         : { ok: false, reason: 'failed', message: state.error ?? 'Could not load the settings' };
     }
 
-    // A write whose answer never arrives (the connection lost before or after
-    // the server read it, a body cut short) may have been saved: read the
-    // settings again to tell, and say it is unconfirmed. `view` is the reloaded
-    // view when that read worked.
-    const unconfirmed = async (error: unknown): Promise<ApplyResult> => {
-      const reloaded = await load({ fresh: true });
-      return {
-        ok: false,
-        reason: 'unconfirmed',
-        message: error instanceof Error ? error.message : String(error),
-        ...(reloaded.phase === 'ready' && reloaded.view ? { view: reloaded.view } : {}),
-      };
-    };
-
-    let response: Response;
-    try {
-      response = await fetchImpl(MODEL_SETTINGS_ENDPOINT, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revision: view.revision, change }),
-      });
-    } catch (error) {
-      return unconfirmed(error);
-    }
-
-    if (response.ok) {
-      let next: ModelSettingsView;
-      try {
-        next = (await response.json()) as ModelSettingsView;
-      } catch (error) {
-        return unconfirmed(error);
-      }
+    const result = await write(view, change);
+    if (owner !== workspace) return workspaceChanged;
+    if (result.ok) {
       // An answer older than a view read meanwhile does not replace it: the
       // caller gets the view that is current.
-      if (newer(next)) adopt(next);
-      return { ok: true, view: state.view ?? next };
+      if (newer(result.view)) adopt(result.view);
+      return { ok: true, view: state.view ?? result.view };
     }
-    if (response.status === 404) {
+    if (result.reason === 'unavailable') {
       setState({ phase: 'unavailable', view: null });
-      return { ok: false, reason: 'unavailable', message: 'Model settings are not available' };
     }
-    const { code, message = `HTTP ${response.status}` } = await errorBody(response);
-    // A server error (or a gateway giving up) may come after the change was
-    // saved: as ambiguous as a lost answer.
-    if (response.status >= 500) return unconfirmed(new Error(message));
-    if (response.status === 409) {
+    if (
+      result.reason === 'conflict' ||
+      result.reason === 'locked' ||
+      result.reason === 'unconfirmed'
+    ) {
       const reloaded = await load({ fresh: true });
-      return {
-        ok: false,
-        reason: code === 'SLOT_LOCKED' ? 'locked' : 'conflict',
-        code,
-        message,
-        // The settings as they are now, to work the change out again from.
-        ...(reloaded.view ? { view: reloaded.view } : {}),
-      };
+      if (owner !== workspace) return workspaceChanged;
+      if (reloaded.view && (result.reason !== 'unconfirmed' || reloaded.phase === 'ready')) {
+        return { ...result, view: reloaded.view };
+      }
     }
-    return {
-      ok: false,
-      reason: response.status === 400 ? 'invalid' : 'failed',
-      code,
-      message,
-    };
+    return result;
   }
 
   return {

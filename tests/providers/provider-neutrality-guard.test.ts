@@ -110,13 +110,6 @@ const TEMPORARY_ALLOWLIST: readonly AllowedLeak[] = [
     reason: 'Existing storage Queryable type import; not audio provider policy.',
   },
   {
-    file: 'lib/server/generation/run/engine.ts',
-    vendor: 'qwen',
-    token: "'QWEN_VC_VOICE_NOT_FOUND'",
-    count: 1,
-    reason: 'Existing main missing-clone fallback; incompatible-voice policy must remain neutral.',
-  },
-  {
     file: 'lib/server/resolve-model.ts',
     vendor: 'bedrock',
     token: "'bedrock'",

@@ -387,6 +387,80 @@ describe('read ordering', () => {
     await next;
     expect(client.getState().view?.revision).toBe(7);
   });
+
+  it('discards a higher revision read from the previous workspace after the next workspace loads', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const previous = client.load();
+    client.adopt(null);
+    const next = client.load({ fresh: true });
+    const current = makeView({ revision: 1 });
+    pending[1].resolve(json(current));
+    await next;
+    pending[0].resolve(json(makeView({ revision: 25 })));
+    expect((await previous).view).toBeNull();
+    expect(client.getState()).toEqual({ phase: 'ready', view: current });
+  });
+
+  it('cancels a write queued behind a previous workspace read and starts the next read independently', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    const oldView = makeView({ revision: 20 });
+    client.adopt(oldView);
+    const previous = client.load();
+    const write = client.apply({ kind: 'slots', clear: ['tts'] }, oldView);
+    client.adopt(null);
+    const next = client.load();
+    expect(pending).toHaveLength(2);
+    const current = makeView({ revision: 1 });
+    pending[1].resolve(json(current));
+    await next;
+    pending[0].resolve(json(oldView));
+    await previous;
+    expect(pending.some((call) => call.init?.method === 'PUT')).toBe(false);
+    expect(await write).toMatchObject({ ok: false });
+    expect(client.getState().view).toEqual(current);
+  });
+
+  it.each([200, 404, 409, 500])(
+    'discards a late write response (%i) from the previous workspace without reloading the next one',
+    async (status) => {
+      const { fetchImpl, pending } = manualFetch();
+      const client = createModelSettingsClient(fetchImpl);
+      client.adopt(makeView({ revision: 20 }));
+      const write = client.apply({ kind: 'slots', clear: ['tts'] });
+      client.adopt(null);
+      const next = client.load();
+      const current = makeView({ revision: 1 });
+      pending[1].resolve(json(current));
+      await next;
+      pending[0].resolve(json(status === 200 ? makeView({ revision: 21 }) : {}, status));
+      await tick();
+      expect(pending).toHaveLength(2);
+      expect(await write).toMatchObject({ ok: false, reason: 'failed' });
+      expect(client.getState()).toEqual({ phase: 'ready', view: current });
+    },
+  );
+
+  it('cancels a previous workspace write while it waits for a conflict reload', async () => {
+    const { fetchImpl, pending } = manualFetch();
+    const client = createModelSettingsClient(fetchImpl);
+    client.adopt(makeView({ revision: 20 }));
+    const write = client.apply({ kind: 'slots', clear: ['tts'] });
+    pending[0].resolve(json({ error: { code: 'CONFLICT' } }, 409));
+    await tick();
+    expect(pending).toHaveLength(2);
+    client.adopt(null);
+    const next = client.load({ fresh: true });
+    const current = makeView({ revision: 1 });
+    pending[2].resolve(json(current));
+    await next;
+    pending[1].resolve(json(makeView({ revision: 25 })));
+    const result = await write;
+    expect(result).toMatchObject({ ok: false, reason: 'failed' });
+    expect(result).not.toHaveProperty('view');
+    expect(client.getState().view).toEqual(current);
+  });
 });
 
 describe('changes are bound to the view they were worked out from', () => {

@@ -60,6 +60,8 @@ export type SlotSource = 'default' | 'workspace' | 'locked';
 export interface ModelConfigLayer {
   source: ConfigSource;
   config: ModelConfigFile;
+  /** Stored workspace revision, when this layer came from the settings database. */
+  revision?: number;
 }
 
 /** Where a model comes from: one declared provider and one of its models. */

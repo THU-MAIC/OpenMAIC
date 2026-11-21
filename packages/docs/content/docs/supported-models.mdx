@@ -131,6 +131,12 @@ Voice registration uses the audio sample and does not require a transcript.
 
 Saved legacy profiles and their reference samples are retained, but there is no one-click sample migration. To recreate an incompatible voice, upload its original reference audio again through voice settings and create a new clone. Use a clean sample with at least five seconds of speech; older samples shorter than five seconds must be replaced with a longer recording. Keeping a sample in a profile does not automatically re-enroll it.
 
+### MiniMax custom voices
+
+In voice settings, upload a 10–60 second reference clip and give the voice a name. The saved voice is available in the agent voice picker immediately. MiniMax lists a new clone after its first synthesis, which can incur an activation fee.
+
+With your own MiniMax key, the picker also shows your account’s voices. An explicit `voices` list takes precedence. On a shared key, the picker shows the configured voices (or built-in presets) and your locally saved voices. Removing a saved entry only affects this browser. Deleting the voice at MiniMax is a separate action that requires your own key.
+
 ## ASR models
 
 | Provider           | Provider ID      | Built-in models                                                                                                                                                                                                                                |

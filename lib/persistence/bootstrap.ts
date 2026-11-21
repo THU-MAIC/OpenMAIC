@@ -65,6 +65,9 @@ export function getPersistenceLearnerKey(): Promise<string> {
  * branch; it constructs its own stores.
  */
 if (typeof window !== 'undefined') {
+  window.addEventListener?.('auth-change', () => {
+    learnerKeyPromise = undefined;
+  });
   const runtimeOptions = {
     store: () => new HttpRuntimeStore({ baseUrl: '/api/persistence' }),
     learnerKey: getPersistenceLearnerKey,

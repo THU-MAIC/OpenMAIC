@@ -120,6 +120,8 @@ export interface TTSProviderConfig {
   id: TTSProviderId;
   name: string;
   requiresApiKey: boolean;
+  /** The provider can list cloud voices when the caller supplies the account. */
+  supportsAccountVoices?: boolean;
   defaultBaseUrl?: string;
   icon?: string;
   /**
@@ -300,4 +302,8 @@ export interface ConfiguredTTSVoice {
   name: string;
   language?: string;
   gender?: 'male' | 'female' | 'neutral';
+}
+
+export interface AccountVoice extends ConfiguredTTSVoice {
+  kind: 'system' | 'clone' | 'designed';
 }

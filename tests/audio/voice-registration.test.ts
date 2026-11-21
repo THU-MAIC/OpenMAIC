@@ -9,6 +9,14 @@ describe('voice-registration provider dispatch', () => {
     expect(getVoiceRegistrationAdapter('voxcpm-tts')).toBeDefined();
   });
 
+  it('registers MiniMax reference cloning and account voice listing', () => {
+    const adapter = getVoiceRegistrationAdapter('minimax-tts');
+    expect(adapter?.supportsRegistration()).toBe(true);
+    expect(adapter?.supportsBootstrapReferenceClip).toBe(false);
+    expect(adapter?.minReferenceDurationSeconds).toBe(10);
+    expect(adapter?.listVoices).toBeTypeOf('function');
+  });
+
   it('returns undefined for providers without an adapter', () => {
     expect(getVoiceRegistrationAdapter('openai-tts')).toBeUndefined();
     expect(supportsVoiceRegistration('openai-tts')).toBe(false);

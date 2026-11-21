@@ -16,3 +16,18 @@ export class AudioProviderError extends Error {
 export function audioFailureKind(error: unknown): AudioFailureKind | undefined {
   return error instanceof AudioProviderError ? error.audioFailureKind : undefined;
 }
+
+/** Synthesis refused this voice for the active account. */
+export class TTSVoiceUnavailableError extends Error {
+  readonly code = 'TTS_VOICE_UNAVAILABLE';
+  readonly httpStatus = 404;
+
+  constructor() {
+    super('The selected voice is unavailable for this account.');
+  }
+}
+
+/** Also accept the existing public error returned for a missing Qwen clone. */
+export function isVoiceUnavailableCode(code: unknown): boolean {
+  return code === 'TTS_VOICE_UNAVAILABLE' || code === 'QWEN_VC_VOICE_NOT_FOUND';
+}

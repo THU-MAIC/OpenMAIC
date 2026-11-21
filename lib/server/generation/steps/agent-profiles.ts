@@ -9,7 +9,11 @@ import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
-import { isQwenCloneVoice, resolveTTSModelForVoice } from '@/lib/audio/constants';
+import {
+  isKnownTTSProviderId,
+  isProviderCloneVoice,
+  resolveTTSModelForVoice,
+} from '@/lib/audio/constants';
 
 import { StepRefusal, type StepContext, type StepLanguageModel } from './context';
 
@@ -33,6 +37,8 @@ export interface AgentProfilesInput {
     providerId: string;
     voiceId: string;
     modelId?: string;
+    /** The run's personal TTS connection permits an unlisted narrator pick. */
+    allowAccountVoice?: boolean;
   };
   /** The agent-profiles stage's model. */
   model: StepLanguageModel;
@@ -90,10 +96,8 @@ function findAdvertisedVoice(
 
 /**
  * Resolve the narrator (teacher) voice from the user's explicit global choice.
- * It is honored only when the provider/voice is present in the advertised list
- * (which contains only enabled providers) or when it is a self-contained Qwen
- * clone. The binding always carries the advertised entry's model resolution so
- * provider/model/voice stay bound together (model follows voice).
+ * Prefer the advertised model binding. A registered clone or a personal
+ * account pick can also be pinned without offering it to the other agents.
  */
 function resolveNarratorVoice(
   narratorVoice: NonNullable<AgentProfilesInput['narratorVoice']>,
@@ -113,10 +117,11 @@ function resolveNarratorVoice(
     };
   }
 
-  // Qwen clone IDs are account-scoped and self-contained: local profile storage
-  // is not authoritative, so honor them even when not advertised and let the
-  // model follow the voice.
-  if (narratorVoice.providerId === 'qwen-tts' && isQwenCloneVoice(narratorVoice.voiceId)) {
+  if (
+    isKnownTTSProviderId(narratorVoice.providerId) &&
+    (narratorVoice.allowAccountVoice ||
+      isProviderCloneVoice(narratorVoice.providerId, narratorVoice.voiceId))
+  ) {
     return {
       providerId: narratorVoice.providerId,
       modelId: resolveTTSModelForVoice(

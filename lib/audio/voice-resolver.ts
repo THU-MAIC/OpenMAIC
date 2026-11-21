@@ -1,8 +1,10 @@
-import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
+import uniqBy from 'lodash/uniqBy';
+import type { AccountVoice, TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   QWEN_VOICE_CLONE_GROUP_ID,
+  isProviderCloneVoice,
   isQwenCatalogVoice,
   isQwenCloneVoice,
   isQwenVoiceCloneModel,
@@ -95,7 +97,8 @@ export function resolveNarratorVoiceBinding(
  *
  * 1. If the user picked a voice for this agent (persisted `overrides`, keyed by
  *    agent id) whose provider is in `enabledProviders` (and the voiceId is
- *    known), use it; the agent's own voiceConfig is validated the same way next.
+ *    known), use it. Next try the saved roster voice, including a registered
+ *    clone or a custom voice whose personal catalogue is temporarily unavailable.
  * 2. Otherwise, deterministically pick the first provider in the given list.
  *    When the agent's gender is male or female and the catalogue lists that
  *    gender, the index is taken inside that subset. A catalogue with no
@@ -113,11 +116,11 @@ export function resolveAgentVoice(
   agentIndex: number,
   enabledProviders: ProviderWithVoices[],
   overrides?: AgentVoiceOverrides,
+  unverifiedProviderId?: string,
 ): ResolvedVoice | null {
   // Candidates in priority order: the user's persisted per-agent override
   // (settings store — survives reloads; registry records for default/generated
-  // agents do not), then the agent's own voiceConfig. Each is honored only
-  // when its provider is still enabled and the voice is known.
+  // agents do not), then the agent's own voiceConfig.
   const candidates = [overrides?.[agent.id], agent.voiceConfig];
   for (const choice of candidates) {
     if (!choice) continue;
@@ -187,7 +190,13 @@ export function resolveAgentVoice(
       configuredLegacyVoice ||
       !declaredVoice ||
       fromEnabled.voices.some((voice) => voice.id === choice.voiceId);
-    if (allVoiceIds.has(choice.voiceId) && modelCompatible && offered) {
+    // The server validated the roster when it was saved. A personal catalogue
+    // can be offline while synthesis still accepts that voice.
+    const rosterBinding =
+      choice === agent.voiceConfig &&
+      (isProviderCloneVoice(choice.providerId, choice.voiceId) ||
+        (!declaredVoice && choice.providerId === unverifiedProviderId && !!choice.voiceId.trim()));
+    if (rosterBinding || (allVoiceIds.has(choice.voiceId) && modelCompatible && offered)) {
       return {
         providerId: choice.providerId,
         ...(matchingModelGroup ? { modelId: choice.modelId } : {}),
@@ -260,22 +269,28 @@ export function narratorBindingDiffers(
 /** The deterministic last-resort narrator voice among the enabled providers, or null. */
 export function deterministicNarratorVoice(
   providerConfigs: ProviderConfigMap,
+  isUnavailable: (voice: ResolvedVoice) => boolean,
 ): ResolvedVoice | null {
+  const providers = getEnabledProvidersWithVoices(
+    providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
+  );
+  for (const provider of providers) {
+    provider.voices = provider.voices.filter(
+      (voice) => !isUnavailable({ providerId: provider.providerId, voiceId: voice.id }),
+    );
+  }
   return resolveDeterministicFallbackVoice(
-    getEnabledProvidersWithVoices(
-      providerConfigs as Parameters<typeof getEnabledProvidersWithVoices>[0],
-    ),
+    providers.filter((provider) => provider.voices.length),
     0,
   );
 }
 
 /**
  * The one voice a narration clip is retried with after the provider said the
- * voice clone it used does not exist (QWEN_VC_VOICE_NOT_FOUND), or null when
+ * voice it used is unavailable for the account, or null when
  * no retry applies. Only a clip that used the bound narrator voice is
- * retried: with the global voice when the binding differs from it, else (a
- * pinned narrator, bound == global) with the deterministic enabled-provider
- * pick — unless the clip already used an explicit fallback voice.
+ * retried. Prefer the global voice, then a voice from the enabled catalogue,
+ * skipping any voice the account already rejected.
  */
 export function narratorVoiceAfterMissingClone(input: {
   bound: AgentConfig['voiceConfig'] | undefined;
@@ -283,16 +298,21 @@ export function narratorVoiceAfterMissingClone(input: {
   failed: ResolvedVoice;
   providerConfigs: ProviderConfigMap;
   usedFallbackVoice: boolean;
+  isUnavailable?: (voice: ResolvedVoice) => boolean;
 }): ResolvedVoice | null {
   const { bound, globalVoice, failed } = input;
-  if (!bound || bound.providerId !== failed.providerId || bound.voiceId !== failed.voiceId) {
+  if (input.usedFallbackVoice || !bound || narratorBindingDiffers(bound, failed)) {
     return null;
   }
-  if (narratorBindingDiffers(bound, globalVoice)) {
+  const isUnavailable = (voice: ResolvedVoice) =>
+    !narratorBindingDiffers(failed, voice) || !!input.isUnavailable?.(voice);
+  if (
+    !isUnavailable(globalVoice) &&
+    isTTSProviderEnabled(globalVoice.providerId, input.providerConfigs[globalVoice.providerId])
+  ) {
     return resolveNarratorVoiceBinding(undefined, globalVoice, input.providerConfigs);
   }
-  if (input.usedFallbackVoice) return null;
-  return deterministicNarratorVoice(input.providerConfigs);
+  return deterministicNarratorVoice(input.providerConfigs, isUnavailable);
 }
 
 /**
@@ -399,6 +419,7 @@ export function getEnabledProvidersWithVoices(
       providerOptions?: Record<string, unknown>;
       customName?: string;
       voices?: ConfiguredTTSVoice[];
+      accountVoices?: AccountVoice[];
     }
   >,
   voiceProfiles: UserVoiceProfile[] = [],
@@ -459,7 +480,10 @@ export function getEnabledProvidersWithVoices(
           {
             modelId,
             modelName: modelId || config.name,
-            voices: providerId === VOXCPM_TTS_PROVIDER_ID ? allVoices : voices,
+            voices:
+              providerId === VOXCPM_TTS_PROVIDER_ID || config.supportsAccountVoices
+                ? allVoices
+                : voices,
           },
           ...(providerId === 'qwen-tts' && extraVoices.length
             ? [
@@ -476,6 +500,18 @@ export function getEnabledProvidersWithVoices(
     }
 
     {
+      // A browser-saved clone keeps its friendly name when the account lists
+      // the same ID. Registry voices retain their model compatibility metadata.
+      const additionalVoices = uniqBy(
+        [
+          ...userVoices,
+          ...(providerConfig?.accountVoices ?? []).map((voice) => ({
+            ...voice,
+            language: voice.language ?? 'auto',
+          })),
+        ],
+        'id',
+      ).filter((voice) => !config.voices.some((preset) => preset.id === voice.id));
       const allVoices = [
         ...config.voices.map((v) => ({
           id: v.id,
@@ -483,7 +519,7 @@ export function getEnabledProvidersWithVoices(
           language: v.language,
           ...(v.gender ? { gender: v.gender } : {}),
         })),
-        ...userVoices,
+        ...additionalVoices,
       ];
 
       // Build model groups
@@ -496,10 +532,8 @@ export function getEnabledProvidersWithVoices(
               : config.voices
                   .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
                   .map((v) => ({ id: v.id, name: v.name, language: v.language }));
-          if (providerId === VOXCPM_TTS_PROVIDER_ID) {
-            compatibleVoices.push(...userVoices);
-          } else if (providerId !== 'qwen-tts' || isQwenVoiceCloneModel(model.id)) {
-            compatibleVoices.push(...userVoices);
+          if (providerId !== 'qwen-tts' || isQwenVoiceCloneModel(model.id)) {
+            compatibleVoices.push(...additionalVoices);
           }
           modelGroups.push({
             modelId: model.id,
@@ -586,14 +620,7 @@ export interface BrowserVoiceLike {
  * client layer; server-side generation uses getEnabledProvidersWithVoices).
  */
 export function getSelectableProvidersWithVoices(
-  ttsProvidersConfig: Record<
-    string,
-    TTSEnablementConfig & {
-      modelId?: string;
-      providerOptions?: Record<string, unknown>;
-      customName?: string;
-    }
-  >,
+  ttsProvidersConfig: Parameters<typeof getEnabledProvidersWithVoices>[0],
   voiceProfiles: UserVoiceProfile[] = [],
   browserVoices: BrowserVoiceLike[] = [],
 ): ProviderWithVoices[] {

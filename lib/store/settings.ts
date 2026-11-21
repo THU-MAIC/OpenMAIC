@@ -20,6 +20,8 @@ import type { ASRProviderId } from '@/lib/audio/types';
 import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, CUSTOM_ASR_DEFAULT_LANGUAGES } from '@/lib/audio/constants';
+import { ownedVoiceScope, voiceAccountScope } from '@/lib/audio/voice-account';
+import { modelSettingsClient } from '@/lib/model-settings/client';
 import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 import {
   normalizeLegacyModelSettings,
@@ -97,6 +99,8 @@ export interface SettingsState {
    */
   ttsVoice: string;
   ttsVoiceProviderId: string;
+  /** The service a private voice was selected from. Older and portable picks omit it. */
+  ttsVoiceAccount?: string;
   ttsSpeed: number;
   /** Speech input language; empty uses auto-detection when supported, otherwise the UI locale. */
   asrLanguage: string;
@@ -192,6 +196,7 @@ export interface SettingsState {
 const PERSISTED_FIELDS = [
   'ttsVoice',
   'ttsVoiceProviderId',
+  'ttsVoiceAccount',
   'ttsSpeed',
   'asrLanguage',
   'reviewOutlineEnabled',
@@ -301,7 +306,17 @@ export const useSettingsStore = create<SettingsState>()(
       dockHeight: DOCK_DEFAULT_HEIGHT,
       dockCollapsed: false,
 
-      setTTSVoice: (voice, providerId) => set({ ttsVoice: voice, ttsVoiceProviderId: providerId }),
+      setTTSVoice: (voice, providerId) => {
+        const service = voiceAccountScope(modelSettingsClient.getState().view, providerId, voice);
+        const account = ownedVoiceScope(service);
+        // The picker releases private choices once their owner has been read.
+        if (service && !account) return;
+        set({
+          ttsVoice: voice,
+          ttsVoiceProviderId: providerId,
+          ttsVoiceAccount: account,
+        });
+      },
       setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
       setASRLanguage: (language) => set({ asrLanguage: language }),
       setReviewOutlineEnabled: (enabled) => set({ reviewOutlineEnabled: enabled }),

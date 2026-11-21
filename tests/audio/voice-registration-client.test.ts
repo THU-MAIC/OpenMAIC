@@ -109,6 +109,9 @@ describe('ensureRegisteredVoice memoization', () => {
     });
     expect(
       JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body)),
+    ).toMatchObject({ expectedProviderId: 'qwen-tts' });
+    expect(
+      JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body)),
     ).not.toHaveProperty('refText');
     await deleteRegisteredVoice('qwen-tts', 'x');
     for (const call of f.mock.calls as unknown as [string, RequestInit][]) {

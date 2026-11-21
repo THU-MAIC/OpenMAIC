@@ -17,7 +17,6 @@ import { slotVoxCPMBackend } from '@/lib/audio/tts-selection';
 import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { DEFAULT_TTS_VOICES, qwenVoiceNeedsReclone } from '@/lib/audio/constants';
 import {
-  Volume2,
   Loader2,
   Plus,
   Trash2,
@@ -46,6 +45,7 @@ import {
   getVoxCPMProfileVoiceId,
   voxCPMBackendSupportsReferenceAudio,
 } from '@/lib/audio/voxcpm';
+import { VoicePreviewButton } from './voice-preview-button';
 
 export function VoxCPMVoiceManager() {
   const { t, locale } = useI18n();
@@ -929,23 +929,7 @@ function VoiceProfileRow({
           </div>
         )}
       </div>
-      {onPreview && (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => onPreview()}
-          aria-label={
-            previewing ? t('settings.voxcpmStopPreview') : t('settings.voxcpmPreviewVoice')
-          }
-          className="h-8 w-8 text-muted-foreground opacity-70 hover:text-foreground group-hover:opacity-100"
-        >
-          {previewing ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Volume2 className="h-3.5 w-3.5" />
-          )}
-        </Button>
-      )}
+      {onPreview && <VoicePreviewButton previewing={previewing} onClick={onPreview} />}
       {onDelete && (
         <Button
           variant="ghost"
