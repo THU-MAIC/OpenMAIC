@@ -52,6 +52,10 @@ const ENV_PREFIXES_TO_CLEAR = [
   'IMAGE_NANO_BANANA',
   'IMAGE_MINIMAX',
   'IMAGE_GROK',
+  'IMAGE_GLM',
+  'IMAGE_LEMONADE',
+  'IMAGE_OPENROUTER',
+  'IMAGE_COMFYUI',
   'VIDEO_SEEDANCE',
   'VIDEO_KLING',
   'VIDEO_VEO',
@@ -672,7 +676,7 @@ pdf:
       });
     });
 
-    it('activates keyless image providers (lemonade) from a base URL alone', async () => {
+    it('activates keyless image providers (lemonade, comfyui) from a base URL alone', async () => {
       vi.stubEnv('IMAGE_LEMONADE_BASE_URL', 'http://localhost:13305/v1');
       const { getServerImageProviders, resolveImageApiKey, isServerConfiguredProvider } =
         await import('@/lib/server/provider-config');
@@ -680,6 +684,16 @@ pdf:
       expect(isServerConfiguredProvider('image', 'lemonade')).toBe(true);
       expect(getServerImageProviders().lemonade).toBeDefined();
       expect(resolveImageApiKey('lemonade')).toBe('');
+    });
+
+    it('activates comfyui-image from IMAGE_COMFYUI_BASE_URL with no API key', async () => {
+      vi.stubEnv('IMAGE_COMFYUI_BASE_URL', 'http://localhost:8188');
+      const { getServerImageProviders, resolveImageApiKey, resolveImageBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(getServerImageProviders()['comfyui-image']).toBeDefined();
+      expect(resolveImageApiKey('comfyui-image')).toBe('');
+      expect(resolveImageBaseUrl('comfyui-image')).toBe('http://localhost:8188');
     });
   });
 
@@ -925,8 +939,8 @@ video:
       vi.stubEnv('IMAGE_COMFYUI_ENABLED', 'true');
       const { getServerImageProviders, resolveServerImageProviderId } =
         await import('@/lib/server/provider-config');
-      // ComfyUI has no credential env, so a truthy _ENABLED must not conjure a
-      // configured/enabled entry out of thin air — it can only disable (#665).
+      // A truthy _ENABLED must not conjure a configured entry without a base
+      // URL — it can only disable (#665).
       expect(getServerImageProviders()['comfyui-image']).toBeUndefined();
       expect(resolveServerImageProviderId()).toBeUndefined();
     });

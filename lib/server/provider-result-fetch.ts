@@ -4,17 +4,26 @@
  *
  * The URL comes from the provider, not from configuration, so it is held to
  * the strict public policy whatever address policy the provider's own base URL
- * runs under: HTTPS only, public addresses only (never the operator's
- * ALLOW_LOCAL_NETWORKS opt-in). The strict transport re-validates every
- * redirect hop under the same policy and pins connect-time DNS to the vetted
- * answers. A `data:` URL (some adapters inline their result) is decoded locally
- * and never touches the network.
+ * runs under: HTTPS only, public addresses only. The operator's
+ * `ALLOW_LOCAL_NETWORKS` opt-in does not unlock public HTTP or private HTTPS.
+ * It unlocks one narrower case: an `http:` result URL whose host the strict
+ * policy would refuse as a local, private, link-local, or CGNAT target
+ * (a self-hosted ComfyUI on a private or overlay address). Public `http:`
+ * stays refused, and cloud-metadata addresses stay refused either way.
+ * The transport re-validates every redirect hop under the same policy and
+ * pins connect-time DNS to the vetted answers. A `data:` URL (some adapters
+ * inline their result) is decoded locally and never touches the network.
  *
  * Callers pass their byte limit: a `data:` URL is refused over it before it is
  * decoded, and a network body must still be read with a bounded reader.
  */
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
-import { UnsafeNetworkTargetError, validateUrlForSSRFWithPolicy } from '@/lib/server/ssrf-guard';
+import {
+  allowLocalNetworksEnabled,
+  isStrictLocalNetworkRefusal,
+  UnsafeNetworkTargetError,
+  validateUrlForSSRFWithPolicy,
+} from '@/lib/server/ssrf-guard';
 import { isBase64Payload } from '@/lib/utils/base64';
 
 export const PROVIDER_RESULT_URL_POLICY: ProviderFetchPolicy = {
@@ -75,6 +84,9 @@ export async function fetchProviderResultUrl(
   } catch {
     throw new Error('Download failed: invalid URL');
   }
+  if (parsed.protocol === 'http:') {
+    return fetchOptInLocalHttpResult(parsed, init.signal);
+  }
   if (parsed.protocol !== 'https:') {
     throw new Error(`Download failed: URL must use https (${parsed.protocol})`);
   }
@@ -83,4 +95,32 @@ export async function fetchProviderResultUrl(
   if (ssrfError) throw new UnsafeNetworkTargetError(ssrfError);
 
   return providerFetch(url, init.signal ? { signal: init.signal } : {}, PROVIDER_RESULT_URL_POLICY);
+}
+
+/**
+ * HTTP result URLs are refused unless the operator opted into local networks
+ * AND the strict policy's only objection is that the target is local/CGNAT.
+ * A public HTTP URL fails the second test. A metadata or reserved address
+ * fails the opted-in re-check and is never fetched.
+ */
+async function fetchOptInLocalHttpResult(parsed: URL, signal: AbortSignal | undefined) {
+  if (!allowLocalNetworksEnabled()) {
+    throw new Error(`Download failed: URL must use https (${parsed.protocol})`);
+  }
+  const strictReason = await validateUrlForSSRFWithPolicy(parsed.href, {
+    allowLocalNetworks: false,
+  });
+  if (!isStrictLocalNetworkRefusal(strictReason)) {
+    if (strictReason) throw new UnsafeNetworkTargetError(strictReason);
+    throw new Error(`Download failed: URL must use https (${parsed.protocol})`);
+  }
+  const allowed = await validateUrlForSSRFWithPolicy(parsed.href, { allowLocalNetworks: true });
+  if (allowed) throw new UnsafeNetworkTargetError(allowed);
+  // The origin may be HTTP. A redirect hop may not: otherwise a private HTTP
+  // result could bounce onto a public http:// URL. HTTPS hops are still
+  // re-checked by the guard.
+  return providerFetch(parsed.href, signal ? { signal } : {}, {
+    allowLocalNetworks: true,
+    requireHttps: true,
+  });
 }
