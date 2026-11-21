@@ -13,7 +13,11 @@ import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { mediaFailureNoticeKey } from '@/lib/media/media-failure';
-import { mediaResolutionCanRetry, type MediaResolution } from '@/lib/media/resolve-media-ref';
+import {
+  mediaResolutionCanRetry,
+  resolveMediaRef,
+  type MediaResolution,
+} from '@/lib/media/resolve-media-ref';
 import { SCREEN_ELEMENT_ID_PREFIX } from '../element-dom';
 
 const log = createLogger('RendererScreenCanvas');
@@ -209,8 +213,11 @@ export function PlaybackImageContent({
 }) {
   const { t } = useI18n();
   const task = media?.task;
-  const state = getPlaybackImageState(media?.resolution ?? { kind: 'placeholder' });
-  const canRetry = mediaResolutionCanRetry(media?.resolution);
+  // A missing media-map entry must not paint the generation skeleton over an
+  // image the slide already resolved (a concrete URL, or a committed asset).
+  const resolution = media?.resolution ?? resolveMediaRef(element.src, task);
+  const state = getPlaybackImageState(resolution);
+  const canRetry = mediaResolutionCanRetry(resolution);
   // A refusal shows why instead of a Retry that would fail the same way.
   const failureNotice = mediaFailureNoticeKey(task?.errorCode);
 

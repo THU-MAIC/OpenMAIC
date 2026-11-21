@@ -77,9 +77,11 @@ export interface ResolveStoredBytesOptions {
   readonly taskUrlFallback?: boolean;
   /**
    * Gate every level through the media-resolution state machine, keyed by the
-   * ref's current task: an in-flight regeneration then suppresses stale pool
-   * and compatibility bytes, so the export cannot ship media the classroom no
-   * longer shows. Off for callers that resolve the pool unconditionally.
+   * ref's current task. A placeholder still being generated is suppressed, so
+   * the export does not ship media the classroom is not showing. A committed
+   * pool id stays visible during a regeneration — the classroom keeps the last
+   * good image — and the export keeps those bytes too. Off for callers that
+   * resolve the pool unconditionally.
    */
   readonly resolutionGating?: boolean;
   /** Validation applied to every fetched byte source. */

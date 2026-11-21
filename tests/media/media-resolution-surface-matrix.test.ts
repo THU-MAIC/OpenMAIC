@@ -155,9 +155,9 @@ const cases: readonly ResolutionCase[] = [
     expected: 'disabled',
   },
   {
-    name: 'missing opaque allocation',
+    name: 'missing opaque allocation still binds the persistence URL',
     ref: 'ast_missing_ref',
-    expected: 'skeleton',
+    expected: 'concrete',
   },
 ];
 
@@ -447,7 +447,8 @@ describe('real media consumer matrix', () => {
     const markup = renderToStaticMarkup(
       createElement(MediaStageProvider, { value: stageId }, createElement(ImageBindingProbe)),
     );
-    expect(markup).toContain('data-resolution="pending"');
+    expect(markup).toContain('data-resolution="url"');
+    expect(markup).toContain('/api/persistence/assets/ast_shared_image/content');
     expect(markup).not.toContain('blob:shared-image');
   });
 
@@ -469,7 +470,8 @@ describe('real media consumer matrix', () => {
       element,
       createElement(BaseVideoElement, { elementInfo: element }),
     );
-    expect(markup).toContain('vid-pulse-ring');
+    expect(markup).toContain('/api/persistence/assets/ast_shared_base_video/content');
+    expect(markup).not.toContain('vid-pulse-ring');
     expect(markup).not.toContain('blob:shared-base-video');
   });
 
@@ -491,7 +493,8 @@ describe('real media consumer matrix', () => {
       element,
       createElement(VideoElement, { elementInfo: element }),
     );
-    expect(markup).toContain('animate-pulse');
+    expect(markup).toContain('/api/persistence/assets/ast_video_poster/content');
+    expect(markup).not.toContain('animate-pulse');
     expect(markup).not.toContain('blob:shared-editor-video');
   });
 
@@ -520,7 +523,9 @@ describe('real media consumer matrix', () => {
     );
 
     expect(playback).toContain('src="blob:recovered-video"');
-    expect(editor).toContain('src="blob:recovered-video"');
+    // Edit mode shows the committed poster when it has one, rather than the
+    // video element. A missing poster lease used to hide that poster.
+    expect(editor).toContain('/api/persistence/assets/ast_video_poster/content');
     expect(playback).not.toContain('vid-pulse-ring');
     expect(editor).not.toContain('animate-pulse');
   });
