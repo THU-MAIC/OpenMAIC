@@ -551,3 +551,64 @@ lock: [course.content]
     });
   });
 });
+
+describe('declared context windows', () => {
+  it('attach to the model and fallback a chat slot resolves to', () => {
+    const cfg = layer(
+      'deployment',
+      'providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://host/v1\n    models: [m1, m2, m3]\n    modelContextWindows:\n      m1: 1000000\n      m3: 50000\nslots:\n  agent:\n    model: local:m1\n    fallback: local:m3\n',
+    );
+    expect(resolveSlot('agent', [cfg])).toMatchObject({
+      modelId: 'm1',
+      declaredContextWindow: 1000000,
+      fallback: { modelId: 'm3', declaredContextWindow: 50000 },
+    });
+    // A model without a declaration carries none.
+    const agent = resolveSlot('agent', [
+      layer(
+        'deployment',
+        'providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://host/v1\n    models: [m2]\nslots:\n  agent: local:m2\n',
+      ),
+    ]);
+    expect(agent).not.toHaveProperty('declaredContextWindow');
+  });
+
+  it('do not attach outside chat', () => {
+    // A map on a non-chat provider never passes the file's checks; the target
+    // still guards against one a hand-built layer carries.
+    const hand = {
+      source: 'deployment' as const,
+      config: {
+        providers: {
+          mm: {
+            preset: 'minimax',
+            apiKey: 'k',
+            modelContextWindows: { 'speech-2.8-turbo': 1000000 },
+          },
+        },
+        slots: { tts: 'mm:speech-2.8-turbo' },
+      },
+    };
+    expect(resolveSlot('tts', [hand])).not.toHaveProperty('declaredContextWindow');
+  });
+
+  it('ignores Object.prototype keys used as model ids', () => {
+    // A model id that is an inherited property name (e.g. 'constructor') must
+    // not read the prototype function and attach it as declaredContextWindow.
+    const hand = {
+      source: 'deployment' as const,
+      config: {
+        providers: {
+          local: {
+            preset: 'openai-compatible',
+            baseUrl: 'http://host/v1',
+            models: ['constructor'],
+            modelContextWindows: {},
+          },
+        },
+        slots: { agent: 'local:constructor' },
+      },
+    };
+    expect(resolveSlot('agent', [hand])).not.toHaveProperty('declaredContextWindow');
+  });
+});

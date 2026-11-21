@@ -82,7 +82,13 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
     [view, apply, entry, t],
   );
 
-  const saveModels = (ids: string[] | null) => save({ models: ids && ids.length ? ids : null });
+  const saveModels = (ids: string[] | null, windows?: Record<string, number> | null) =>
+    save({
+      models: ids && ids.length ? ids : null,
+      ...(windows !== undefined
+        ? { modelContextWindows: windows && Object.keys(windows).length ? windows : null }
+        : {}),
+    });
 
   const handleTestApi = useCallback(async () => {
     setTestStatus('testing');
@@ -486,14 +492,30 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
         modelId={editing?.id ?? ''}
         isNew={editing?.index === null}
         providerId={provider ? entry.id : undefined}
-        onSave={async (id) => {
+        contextWindow={
+          editing?.id &&
+          provider?.modelContextWindows &&
+          Object.hasOwn(provider.modelContextWindows, editing.id)
+            ? provider.modelContextWindows[editing.id]
+            : undefined
+        }
+        onSave={async (id, contextWindow) => {
           const ids = models.map((model) => model.id);
+          // The declared windows travel with the list: the edited model's entry
+          // moves to its (possibly new) id; the server prunes keys the list no
+          // longer holds. Build from entries so no model id (including
+          // '__proto__') can invoke a prototype setter or delete the prototype.
+          const prevWindows = provider?.modelContextWindows ?? {};
+          const baseEntries = Object.entries(prevWindows).filter(([k]) => k !== editing?.id);
+          const windowEntries: [string, number][] =
+            contextWindow !== undefined ? [...baseEntries, [id, contextWindow]] : baseEntries;
+          const windows = Object.fromEntries(windowEntries);
           if (editing?.index === null || editing === null) {
             if (!ids.includes(id)) ids.push(id);
           } else {
             ids[editing.index] = id;
           }
-          await saveModels([...new Set(ids)]);
+          await saveModels([...new Set(ids)], windows);
           setEditing(null);
         }}
       />

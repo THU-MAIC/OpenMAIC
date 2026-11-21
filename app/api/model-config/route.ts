@@ -72,6 +72,10 @@ const bodySchema = z
           apiKey: z.string().optional(),
           baseUrl: z.string().min(1).nullable().optional(),
           models: z.array(z.string().min(1)).nullable().optional(),
+          modelContextWindows: z
+            .record(z.string().min(1), z.number().int().positive())
+            .nullable()
+            .optional(),
         })
         .strict(),
       z.object({ kind: z.literal('remove-provider'), id }).strict(),

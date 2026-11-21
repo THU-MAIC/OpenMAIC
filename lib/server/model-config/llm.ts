@@ -110,9 +110,22 @@ export async function languageModelFor(
     proxy: target.proxy,
     fetchImpl: userEndpoint ? clientBaseUrlLlmFetch : fetchWithRedirectValidation,
   });
+  // A context window the configuration declared for a model the catalogue may
+  // not describe. The catalogue still wins where it has a value; the
+  // declaration fills the gap when the row exists but omits contextWindow, and
+  // wins outright on a preset that distrusts the catalogue.
+  const declared = target.declaredContextWindow;
+  const resolvedInfo =
+    declared === undefined
+      ? modelInfo
+      : modelInfo === null
+        ? { id: modelId, name: modelId, contextWindow: declared }
+        : target.catalogue === false || modelInfo.contextWindow === undefined
+          ? { ...modelInfo, contextWindow: declared }
+          : modelInfo;
   return {
     model,
-    modelInfo,
+    modelInfo: resolvedInfo,
     modelString: `${registryId}:${modelId}`,
     providerId: registryId,
     modelId,

@@ -18,13 +18,24 @@ interface ModelEditDialogProps {
   isNew: boolean;
   /** The saved provider, for testing the model; undefined until the service is saved. */
   providerId?: string;
-  onSave: (modelId: string) => void | Promise<void>;
+  /** The context window declared for this model, if any. */
+  contextWindow?: number;
+  onSave: (modelId: string, contextWindow?: number) => void | Promise<void>;
+}
+
+/** A context-window input as a positive integer, or undefined when left empty. */
+function parseContextWindow(text: string): number | undefined {
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value > 0 ? value : Number.NaN;
 }
 
 /**
- * Add or edit a model of a language model service: its id, and a test of it
- * on the server. A model's name, capabilities and context window come from
- * the built-in catalogue; a service's model list holds ids only.
+ * Add or edit a model of a language model service: its id, an optional
+ * declared context window, and a test of it on the server. A model's name and
+ * capabilities come from the built-in catalogue; a service's model list holds
+ * ids (with the declared windows) only.
  */
 export function ModelEditDialog({
   open,
@@ -32,10 +43,14 @@ export function ModelEditDialog({
   modelId,
   isNew,
   providerId,
+  contextWindow,
   onSave,
 }: ModelEditDialogProps) {
   const { t } = useI18n();
   const [id, setId] = useState(modelId);
+  const [contextWindowText, setContextWindowText] = useState(
+    contextWindow !== undefined ? String(contextWindow) : '',
+  );
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
 
@@ -44,10 +59,13 @@ export function ModelEditDialog({
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset state when dialog opens
       setId(modelId);
+      setContextWindowText(contextWindow !== undefined ? String(contextWindow) : '');
       setTestStatus('idle');
       setTestMessage('');
     }
-  }, [open, modelId]);
+  }, [open, modelId, contextWindow]);
+
+  const parsedContextWindow = parseContextWindow(contextWindowText);
 
   const handleTestModel = useCallback(async () => {
     if (!providerId || !id.trim()) return;
@@ -99,6 +117,29 @@ export function ModelEditDialog({
             </p>
           </div>
 
+          {/* Declared context window */}
+          <div className="space-y-2">
+            <Label>{t('settings.contextWindowTokens')}</Label>
+            <Input
+              inputMode="numeric"
+              placeholder={t('settings.contextWindowTokensPlaceholder')}
+              value={contextWindowText}
+              onChange={(e) => setContextWindowText(e.target.value)}
+              aria-invalid={Number.isNaN(parsedContextWindow) || undefined}
+              className="h-8"
+            />
+            <p
+              className={cn(
+                'text-xs',
+                Number.isNaN(parsedContextWindow) ? 'text-destructive' : 'text-muted-foreground',
+              )}
+            >
+              {Number.isNaN(parsedContextWindow)
+                ? t('settings.contextWindowInvalid')
+                : t('settings.contextWindowHint')}
+            </p>
+          </div>
+
           {/* Test Model */}
           <div className="space-y-3 pt-3 border-t">
             <div className="flex items-center justify-between">
@@ -143,12 +184,12 @@ export function ModelEditDialog({
             </Button>
             <Button
               size="sm"
-              disabled={!id.trim()}
+              disabled={!id.trim() || Number.isNaN(parsedContextWindow)}
               onClick={() => {
-                if (!id.trim()) {
+                if (!id.trim() || Number.isNaN(parsedContextWindow)) {
                   return;
                 }
-                void onSave(id.trim());
+                void onSave(id.trim(), parsedContextWindow);
               }}
             >
               {t('settings.saveModel')}
