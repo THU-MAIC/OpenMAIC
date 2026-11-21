@@ -160,6 +160,31 @@ test.describe('Course end', () => {
     }
   });
 
+  test('closes the interactive completion card after rotating the phone classroom', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(Element.prototype, 'requestFullscreen', { value: undefined });
+    });
+    const { lastSceneId } = await openCourse(page, 'interactive');
+    await page.setViewportSize({ width: 390, height: 844 });
+    const next = page.locator('[data-mobile-toolbar]').getByRole('button', { name: 'Next scene' });
+    await next.click();
+    await next.click();
+    const frame = page.frameLocator(`iframe[title="Interactive Scene ${lastSceneId}"]`);
+    await frame.getByRole('button', { name: 'Increment' }).click();
+    await page.locator('.mobile-canvas-menu').click();
+    await page.locator('.mobile-canvas-footer button').last().click();
+    await expect(page.locator('[data-playback-stage]')).toHaveAttribute('data-landscape', 'true');
+    await next.click();
+    await expect(page.locator('[data-classroom-stage]').getByTestId('course-end')).toBeVisible();
+    await page.getByTestId('course-end-close').click();
+    await expect(page.getByTestId('course-end')).toHaveCount(0);
+    await expect(frame.locator('#count')).toHaveText('1');
+    await frame.getByRole('button', { name: 'Increment' }).click();
+    await expect(frame.locator('#count')).toHaveText('2');
+  });
+
   for (const fullscreen of [false, true]) {
     test(`closes and restarts over an interactive last page (${fullscreen ? 'fullscreen' : 'windowed'})`, async ({
       page,

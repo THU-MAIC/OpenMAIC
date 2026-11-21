@@ -1176,6 +1176,13 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     talkAboutCourseRef.current = talkAboutCourse;
   });
   const [talkAboutCourseStable] = useState(() => () => talkAboutCourseRef.current());
+  // Same for the phone classroom's exit: `goHome` is rebuilt every render, and a
+  // fresh identity would rerender the memoised pane and its panel context.
+  const goHomeRef = useRef(goHome);
+  useLayoutEffect(() => {
+    goHomeRef.current = goHome;
+  });
+  const [goHomeStable] = useState(() => () => goHomeRef.current());
 
   // ⌘J / Ctrl+J: a new chat from anywhere, exactly as the rail's button.
   const startNewConversationRef = useRef(startNewConversation);
@@ -2228,6 +2235,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
 
         {panes.courseId ? (
           <WorkspaceClassroomPane
+            onMobileExit={goHomeStable}
             browser={classroomBrowser}
             hidden={!classroomOpen || previewShowing}
             readOnly={readOnlyCourse}

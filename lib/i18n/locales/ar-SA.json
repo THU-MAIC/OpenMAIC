@@ -805,7 +805,11 @@
     "restore": "استعادة",
     "noHistory": "لا يوجد سجل بعد",
     "restored": "تمت استعادة السبورة",
-    "elementCount": "{{count}} عنصر"
+    "elementCount": "{{count}} عنصر",
+    "mobileEmpty": "لا توجد ملاحظات على السبورة بعد",
+    "mobileEmptyHint": "ستظهر هنا الاشتقاقات والمعادلات والرسوم التي يضيفها المعلم",
+    "zoomIn": "تكبير",
+    "zoomOut": "تصغير"
   },
   "quiz": {
     "title": "اختبار",
@@ -3443,5 +3447,32 @@
       },
       "close": "إغلاق الدليل"
     }
+  },
+  "mobileClassroom": {
+    "soundSettings": "إعدادات الصوت",
+    "playSound": "تشغيل الصوت",
+    "materials": "مواد الدرس",
+    "classroom": "الصف",
+    "directory": "المحتويات",
+    "lecture": "ملاحظات",
+    "volume": "مستوى الصوت",
+    "mute": "كتم الصوت",
+    "roundtable": "المشاركون",
+    "captions": "الترجمة",
+    "controls": "عناصر التشغيل",
+    "send": "إرسال",
+    "join": "انضمام",
+    "skip": "تخطي",
+    "play": "تشغيل",
+    "pause": "إيقاف مؤقت",
+    "pblDesktop": "المعاينة غير متاحة على الهاتف. افتح هذا المشروع على جهاز كمبيوتر لتجربته.",
+    "chat": "محادثة",
+    "askTeacher": "اسأل المعلم…",
+    "viewInNotes": "عرض في الملاحظات",
+    "viewInChat": "عرض في المحادثة",
+    "fullSpeech": "الرسالة كاملة",
+    "me": "أنا",
+    "listening": "يستمع",
+    "whiteboardTitle": "سبورة الدرس"
   }
 }

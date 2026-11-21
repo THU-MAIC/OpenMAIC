@@ -805,7 +805,11 @@
     "restore": "Restaurar",
     "noHistory": "Aún no hay historial",
     "restored": "Pizarrón restaurado",
-    "elementCount": "{{count}} elementos"
+    "elementCount": "{{count}} elementos",
+    "mobileEmpty": "Aún no hay notas en el pizarrón",
+    "mobileEmptyHint": "Las deducciones, fórmulas y diagramas que agregue el docente aparecerán aquí",
+    "zoomIn": "Acercar",
+    "zoomOut": "Alejar"
   },
   "quiz": {
     "title": "Cuestionario",
@@ -3443,5 +3447,32 @@
       },
       "close": "Cerrar guía"
     }
+  },
+  "mobileClassroom": {
+    "soundSettings": "Configuración de sonido",
+    "playSound": "Reproducir sonido",
+    "materials": "Material del curso",
+    "classroom": "Clase",
+    "directory": "Índice",
+    "lecture": "Notas",
+    "volume": "Volumen",
+    "mute": "Silenciar",
+    "roundtable": "Participantes",
+    "captions": "Subtítulos",
+    "controls": "Controles de reproducción",
+    "send": "Enviar",
+    "join": "Unirse",
+    "skip": "Omitir",
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "pblDesktop": "La vista previa no está disponible en teléfonos. Abre este proyecto en una computadora para probarlo.",
+    "chat": "Chat",
+    "askTeacher": "Pregunta al docente…",
+    "viewInNotes": "Ver en las notas",
+    "viewInChat": "Ver en el chat",
+    "fullSpeech": "Mensaje completo",
+    "me": "Yo",
+    "listening": "Escuchando",
+    "whiteboardTitle": "Pizarrón de la clase"
   }
 }

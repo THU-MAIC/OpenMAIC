@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+  routerPush: vi.fn(),
   sendMessage: vi.fn(),
   whiteboardOpen: false,
   runtimeProjection: null as {
@@ -35,6 +36,10 @@ const mocks = vi.hoisted(() => ({
   engineStart: vi.fn(),
   engineContinuePlayback: vi.fn(),
   handleUserInterrupt: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mocks.routerPush }),
 }));
 
 const textElement = {

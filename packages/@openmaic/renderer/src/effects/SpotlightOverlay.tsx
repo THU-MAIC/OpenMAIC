@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useLayoutEffect, useCallback } from 'react';
+import { measureSpotlightRect } from '../utils/spotlight-rect';
 import { motion, AnimatePresence } from 'motion/react';
 import type { SpotlightEffectOptions } from '../types/effects';
 
@@ -44,20 +45,7 @@ export function SpotlightOverlay({
     const contentEl = domElement.querySelector('.element-content');
     const targetEl = contentEl ?? domElement;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const targetRect = targetEl.getBoundingClientRect();
-
-    if (containerRect.width === 0 || containerRect.height === 0) {
-      setRect(null);
-      return;
-    }
-
-    setRect({
-      x: ((targetRect.left - containerRect.left) / containerRect.width) * 100,
-      y: ((targetRect.top - containerRect.top) / containerRect.height) * 100,
-      w: (targetRect.width / containerRect.width) * 100,
-      h: (targetRect.height / containerRect.height) * 100,
-    });
+    setRect(measureSpotlightRect(containerRef.current, targetEl));
   }, [spotlightElementId, elementIdPrefix]);
 
   useLayoutEffect(() => {

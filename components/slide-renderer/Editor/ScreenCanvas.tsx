@@ -14,6 +14,7 @@ import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, SlideBackground } from '@openmaic/dsl';
 import type { PercentageGeometry } from '@/lib/types/action';
 import { useViewportSize } from './Canvas/hooks/useViewportSize';
+import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import { useRef, useMemo } from 'react';
 import { isPlaybackRendererEnabled } from '@/lib/config/feature-flags';
 import { createTextProseStyles } from '@openmaic/renderer';
@@ -23,6 +24,7 @@ const LEGACY_SHAPE_PROSE_STYLES = createTextProseStyles(
 );
 
 export function ScreenCanvas() {
+  const mobile = useMobileLayout();
   useSyncCanvasViewportFromSlide();
   const canvasScale = useCanvasStore.use.canvasScale();
   const elements = useSceneSelector<SlideContent, PPTElement[]>(
@@ -31,7 +33,7 @@ export function ScreenCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null);
 
   // Viewport size and positioning
-  const { viewportStyles } = useViewportSize(canvasRef);
+  const { viewportStyles } = useViewportSize(canvasRef, mobile ? 100 : undefined);
 
   // Get background style
   const background = useSceneSelector<SlideContent, SlideBackground | undefined>(

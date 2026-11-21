@@ -805,7 +805,11 @@
     "restore": "Phục hồi",
     "noHistory": "Chưa có lịch sử",
     "restored": "Đã phục hồi bảng",
-    "elementCount": "{{count}} phần tử"
+    "elementCount": "{{count}} phần tử",
+    "mobileEmpty": "Chưa có nội dung trên bảng",
+    "mobileEmptyHint": "Các bước suy luận, công thức và sơ đồ giáo viên thêm sẽ hiển thị ở đây",
+    "zoomIn": "Phóng to",
+    "zoomOut": "Thu nhỏ"
   },
   "quiz": {
     "title": "Câu đố",
@@ -3443,5 +3447,32 @@
       },
       "close": "Đóng hướng dẫn"
     }
+  },
+  "mobileClassroom": {
+    "soundSettings": "Cài đặt âm thanh",
+    "playSound": "Phát âm thanh",
+    "materials": "Tài liệu lớp học",
+    "classroom": "Lớp học",
+    "directory": "Mục lục",
+    "lecture": "Ghi chú",
+    "volume": "Âm lượng",
+    "mute": "Tắt tiếng",
+    "roundtable": "Người tham gia",
+    "captions": "Phụ đề",
+    "controls": "Điều khiển phát",
+    "send": "Gửi",
+    "join": "Tham gia",
+    "skip": "Bỏ qua",
+    "play": "Phát",
+    "pause": "Tạm dừng",
+    "pblDesktop": "Chưa hỗ trợ xem trước trên điện thoại. Hãy mở dự án trên máy tính để trải nghiệm.",
+    "chat": "Trò chuyện",
+    "askTeacher": "Hỏi giáo viên…",
+    "viewInNotes": "Xem trong ghi chú",
+    "viewInChat": "Xem trong trò chuyện",
+    "fullSpeech": "Phát biểu đầy đủ",
+    "me": "Tôi",
+    "listening": "Đang nghe",
+    "whiteboardTitle": "Bảng lớp học"
   }
 }

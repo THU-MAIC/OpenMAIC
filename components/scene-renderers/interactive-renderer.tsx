@@ -5,6 +5,31 @@ import type { InteractiveContent } from '@/lib/types/stage';
 import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import { visibleClientRect } from '@/lib/edit/visible-client-rect';
 
+// The mobile portal rotates with the classroom. Measure its untransformed layout
+// so the iframe and its placeholder undergo the same transform exactly once.
+function stageLayoutBox(element: HTMLElement, stage: HTMLElement) {
+  let left = 0;
+  let top = 0;
+  for (
+    let node: HTMLElement | null = element;
+    node && node !== stage;
+    node = node.offsetParent as HTMLElement | null
+  ) {
+    const parent = node.offsetParent as HTMLElement | null;
+    left += node.offsetLeft + (parent?.clientLeft ?? 0);
+    top += node.offsetTop + (parent?.clientTop ?? 0);
+  }
+  for (
+    let parent = element.parentElement;
+    element !== stage && parent && parent !== stage;
+    parent = parent.parentElement
+  ) {
+    left -= parent.scrollLeft;
+    top -= parent.scrollTop;
+  }
+  return { left, top, width: element.offsetWidth, height: element.offsetHeight };
+}
+
 interface InteractiveRendererProps {
   readonly content: InteractiveContent;
   readonly sceneId: string;
@@ -51,8 +76,16 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
     const measure = () => {
       const node = slotRef.current;
       if (node) {
-        const r = node.getBoundingClientRect();
-        const clip = visibleClientRect(node);
+        const stage = node.closest<HTMLElement>('[data-classroom-stage][data-mobile="true"]');
+        const measure = stage
+          ? (element: Element) => stageLayoutBox(element as HTMLElement, stage)
+          : undefined;
+        const r = measure ? measure(node) : node.getBoundingClientRect();
+        const clip = visibleClientRect(
+          node,
+          measure,
+          stage ?? node.ownerDocument.fullscreenElement,
+        );
         setRect(sceneId, { left: r.left, top: r.top, width: r.width, height: r.height }, clip);
       }
       raf = requestAnimationFrame(measure);

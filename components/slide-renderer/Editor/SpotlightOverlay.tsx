@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useLayoutEffect, useCallback } from 'react';
+import { measureSpotlightRect } from '@openmaic/renderer';
 import { motion, AnimatePresence } from 'motion/react';
 import { spotlightV1 } from '@/lib/choreography';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
@@ -62,27 +63,20 @@ export function SpotlightOverlay({
     const contentEl = domElement.querySelector('.element-content');
     const targetEl = contentEl ?? domElement;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const targetRect = targetEl.getBoundingClientRect();
-
-    if (containerRect.width === 0 || containerRect.height === 0) {
-      setRect(null);
-      return;
-    }
-
-    // Convert to SVG viewBox 0-100 coordinates
-    setRect({
-      x: ((targetRect.left - containerRect.left) / containerRect.width) * 100,
-      y: ((targetRect.top - containerRect.top) / containerRect.height) * 100,
-      w: (targetRect.width / containerRect.width) * 100,
-      h: (targetRect.height / containerRect.height) * 100,
-    });
+    setRect(measureSpotlightRect(containerRef.current, targetEl));
   }, [spotlightElementId, domIdPrefix]);
 
   useLayoutEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- DOM measurement requires effect
     measure();
-  }, [measure, elements]);
+    const container = containerRef.current;
+    const root = spotlightElementId && document.getElementById(domIdPrefix + spotlightElementId);
+    if (!container || !root) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(root.querySelector('.element-content') ?? root);
+    return () => observer.disconnect();
+  }, [measure, elements, spotlightElementId, domIdPrefix]);
 
   const active = !!spotlightElementId && !!spotlightOptions && !!rect;
   const resolvedLayers = rect

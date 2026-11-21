@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ChatSessionComponent } from './chat-session';
 
 interface SessionListProps {
+  mobile?: boolean;
+  revealMessageId?: string | null;
   sessions: ChatSession[];
   expandedSessionIds: Set<string>;
   isStreaming: boolean;
@@ -44,6 +46,8 @@ function getStatusIcon(status: SessionStatus) {
 }
 
 export function SessionList({
+  mobile = false,
+  revealMessageId,
   sessions,
   expandedSessionIds,
   isStreaming,
@@ -58,6 +62,17 @@ export function SessionList({
       {sessions.map((session) => {
         const isExpanded = expandedSessionIds.has(session.id);
         const isActive = session.status === 'active' || session.status === 'soft-closing';
+        const firstQuestion =
+          mobile && session.type === 'qa'
+            ? session.messages
+                .find(
+                  (message) => message.role === 'user' || message.metadata?.originalRole === 'user',
+                )
+                ?.parts.filter((part) => part.type === 'text')
+                .map((part) => part.text)
+                .join(' ')
+                .trim()
+            : undefined;
         const dotColor =
           session.type === 'lecture'
             ? 'bg-purple-500'
@@ -68,6 +83,7 @@ export function SessionList({
         return (
           <div
             key={session.id}
+            data-chat-session={mobile || undefined}
             className={cn(
               'rounded-xl border transition-all duration-500 overflow-hidden',
               isActive
@@ -77,30 +93,40 @@ export function SessionList({
           >
             {/* Session Header */}
             <button
+              aria-expanded={isExpanded}
               onClick={() => onToggleExpand(session.id)}
               className="w-full flex items-center gap-1.5 px-3 py-2 text-left hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
             >
-              <span className="relative flex h-2.5 w-2.5 shrink-0">
-                <span className={cn(dotColor, 'relative inline-flex rounded-full h-2.5 w-2.5')} />
-                {isActive && (
-                  <span
-                    className={cn(
-                      dotColor,
-                      'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
-                    )}
-                  />
-                )}
-              </span>
+              {!mobile && (
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className={cn(dotColor, 'relative inline-flex rounded-full h-2.5 w-2.5')} />
+                  {isActive && (
+                    <span
+                      className={cn(
+                        dotColor,
+                        'animate-ping absolute inline-flex h-full w-full rounded-full opacity-75',
+                      )}
+                    />
+                  )}
+                </span>
+              )}
+              {(!mobile || firstQuestion) && (
+                <span
+                  className={cn(
+                    'text-[8px] font-extrabold uppercase tracking-wider px-1.5 py-px rounded shrink-0',
+                    sessionBadgeStyles[session.type],
+                  )}
+                >
+                  {t(`chat.badge.${session.type}`)}
+                </span>
+              )}
               <span
                 className={cn(
-                  'text-[8px] font-extrabold uppercase tracking-wider px-1.5 py-px rounded shrink-0',
-                  sessionBadgeStyles[session.type],
+                  'flex-1 font-semibold text-gray-700 dark:text-gray-300 truncate',
+                  mobile ? 'text-sm' : 'text-[11px]',
                 )}
               >
-                {t(`chat.badge.${session.type}`)}
-              </span>
-              <span className="flex-1 text-[11px] font-semibold text-gray-700 dark:text-gray-300 truncate">
-                {session.title}
+                {firstQuestion || session.title}
               </span>
               <div className="flex items-center gap-1 text-[9px] text-gray-400 dark:text-gray-500">
                 {getStatusIcon(session.status)}
@@ -128,6 +154,8 @@ export function SessionList({
                 >
                   <div className="px-2 pb-2 pt-1">
                     <ChatSessionComponent
+                      mobile={mobile}
+                      revealMessageId={revealMessageId}
                       session={session}
                       isActive={isActive}
                       isStreaming={isStreaming && isActive}

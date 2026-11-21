@@ -12,7 +12,10 @@ export interface ViewportStyles {
  * Hook for managing Canvas viewport size and position
  * Handles viewport scaling, positioning, and Canvas dragging
  */
-export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
+export function useViewportSize(
+  canvasRef: RefObject<HTMLElement | null>,
+  percentageOverride?: number,
+) {
   const [viewportLeft, setViewportLeft] = useState(0);
   const [viewportTop, setViewportTop] = useState(0);
   // Local mirror of the computed scale. `canvasScale` in the store is GLOBAL:
@@ -23,7 +26,8 @@ export function useViewportSize(canvasRef: RefObject<HTMLElement | null>) {
   // value; the store keeps being written for out-of-tree consumers.
   const [fitScale, setFitScale] = useState(() => useCanvasStore.getState().canvasScale);
 
-  const canvasPercentage = useCanvasStore.use.canvasPercentage();
+  const storedCanvasPercentage = useCanvasStore.use.canvasPercentage();
+  const canvasPercentage = percentageOverride ?? storedCanvasPercentage;
   const canvasDragged = useCanvasStore.use.canvasDragged();
   const setCanvasScale = useCanvasStore.use.setCanvasScale();
   const setCanvasDragged = useCanvasStore.use.setCanvasDragged();

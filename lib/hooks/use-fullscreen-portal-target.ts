@@ -9,10 +9,16 @@ export function observeFullscreenPortalTarget(onTarget: (target: Element) => voi
   return () => document.removeEventListener('fullscreenchange', sync);
 }
 
-export function useFullscreenPortalTarget() {
+export function useFullscreenPortalTarget(container?: HTMLElement | null) {
   const [target, setTarget] = useState<Element | null>(null);
 
-  useEffect(() => observeFullscreenPortalTarget(setTarget), []);
+  useEffect(
+    () =>
+      observeFullscreenPortalTarget((target) => {
+        setTarget(target === document.body && container !== undefined ? container : target);
+      }),
+    [container],
+  );
 
   return target;
 }

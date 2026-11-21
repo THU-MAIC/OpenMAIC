@@ -805,7 +805,11 @@
     "restore": "Wiederherstellen",
     "noHistory": "Noch kein Verlauf",
     "restored": "Whiteboard wiederhergestellt",
-    "elementCount": "Elemente: {{count}}"
+    "elementCount": "Elemente: {{count}}",
+    "mobileEmpty": "Noch kein Tafelanschrieb",
+    "mobileEmptyHint": "Herleitungen, Formeln und Skizzen der Lehrkraft erscheinen hier",
+    "zoomIn": "Vergrößern",
+    "zoomOut": "Verkleinern"
   },
   "quiz": {
     "title": "Quiz",
@@ -3443,5 +3447,32 @@
       },
       "close": "Anleitung schließen"
     }
+  },
+  "mobileClassroom": {
+    "soundSettings": "Toneinstellungen",
+    "playSound": "Ton wiedergeben",
+    "materials": "Kursmaterial",
+    "classroom": "Unterricht",
+    "directory": "Inhalt",
+    "lecture": "Notizen",
+    "volume": "Lautstärke",
+    "mute": "Stumm",
+    "roundtable": "Teilnehmer",
+    "captions": "Untertitel",
+    "controls": "Wiedergabesteuerung",
+    "send": "Senden",
+    "join": "Teilnehmen",
+    "skip": "Überspringen",
+    "play": "Abspielen",
+    "pause": "Pause",
+    "pblDesktop": "Die Vorschau ist auf Smartphones nicht verfügbar. Öffne das Projekt auf einem Computer, um es auszuprobieren.",
+    "chat": "Chat",
+    "askTeacher": "Frage an die Lehrkraft…",
+    "viewInNotes": "In den Notizen ansehen",
+    "viewInChat": "Im Chat ansehen",
+    "fullSpeech": "Vollständige Nachricht",
+    "me": "Ich",
+    "listening": "Hört zu",
+    "whiteboardTitle": "Unterrichtstafel"
   }
 }
