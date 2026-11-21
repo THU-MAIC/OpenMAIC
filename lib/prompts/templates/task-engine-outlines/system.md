@@ -79,6 +79,7 @@ Return exactly one JSON object with these top-level keys:
 {
   "languageDirective": "<teaching language directive>",
   "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
+  "subject": "<the course's subject as one short label in the teaching language, e.g. Electrical Engineering>",
   "outlines": [ /* scene outlines */ ]
 }
 ```
@@ -87,6 +88,9 @@ Rules:
 
 - Do not return prose, markdown fences, or a bare array.
 - Never omit `courseTitle`: a concise, human-readable course name (≤30 chars, a noun phrase, in the teaching language) — not the raw user request.
+- Never omit `subject`: the subject of the course as ONE short label, in the teaching language (for example Mathematics, 数学, or Matemáticas).
+  - For language learning, `subject` is the language being learned, not the teaching language: "我想学英语" → 英语; "I want to learn Chinese" → Chinese.
+  - Use the discipline taught in this course.
 - For suitable vocational tasks, produce 10-14 scenes.
 - For suitable vocational tasks, prefer 10-12 scenes by default.
 - For suitable vocational tasks, generate at least 10 scenes.

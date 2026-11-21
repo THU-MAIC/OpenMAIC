@@ -31,6 +31,7 @@ import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useASRAvailable } from '@/lib/hooks/use-asr-available';
 import { ProactiveCard } from '@/components/chat/proactive-card';
 import { PresentationSpeechOverlay } from '@/components/roundtable/presentation-speech-overlay';
+import { CaptionMathText } from '@/components/common/CaptionMathText';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
@@ -2002,7 +2003,7 @@ export function Roundtable({
                             </div>
                           ) : (
                             <p className="whitespace-pre-wrap break-words" suppressHydrationWarning>
-                              {sourceText}
+                              <CaptionMathText text={sourceText} />
                               {isTopicPending && (
                                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 ml-1 align-middle" />
                               )}

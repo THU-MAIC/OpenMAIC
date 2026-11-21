@@ -477,6 +477,9 @@ export function useImportClassroom(onSuccess?: (importedStageId: string) => void
             name: manifest.stage.name || 'Imported Classroom',
             description: manifest.stage.description,
             languageDirective: manifest.stage.language,
+            ...(typeof manifest.stage.subject === 'string' && manifest.stage.subject.trim()
+              ? { subject: manifest.stage.subject.trim().slice(0, 20) }
+              : {}),
             style: manifest.stage.style,
             createdAt: manifest.stage.createdAt || now,
             updatedAt: now,

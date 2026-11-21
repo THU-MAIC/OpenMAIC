@@ -1788,6 +1788,14 @@ export async function generateSceneActions(
 ): Promise<Action[]> {
   const { ctx, agents, userProfile, languageDirective } = options;
   const log = options.logger ?? noopGenerationLogger;
+  // A directive may mention the language being studied. Only an explicit teaching
+  // language opts into Mandarin hints. Ambiguous and bilingual directives use generic guidance.
+  const directive = (outline.languageNote || languageDirective || '').trim();
+  const mandarinNarration =
+    !/bilingual|双语|\b(?:and|or)\s+(?:English|Chinese|Mandarin)\b/i.test(directive) &&
+    /^(?:zh(?:-[A-Za-z]+)*$|(?:teach(?: this course)? in |use )?(?:Mandarin(?: Chinese)?|Chinese)(?:[.!:,]|$| as the (?:teaching|instructional) language)|(?:本课(?:程)?|全程)?(?:使用|采用|用|以)?(?:简体中文|繁体中文|中文|普通话)(?:授课|讲解|教学|作为教学语言|[。，]|$))/i.test(
+      directive,
+    );
   const agentsText = formatAgentsForPrompt(agents);
 
   // Debug: Log content type for interactive scenes
@@ -1811,6 +1819,7 @@ export async function generateSceneActions(
       agents: agentsText,
       userProfile: userProfile || '',
       languageDirective: languageDirective || '',
+      mandarinNarration,
     });
 
     if (!prompts) {
@@ -1840,6 +1849,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      mandarinNarration,
     });
 
     if (!prompts) {
@@ -1877,6 +1887,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      mandarinNarration,
     });
 
     if (!prompts) {
@@ -1912,6 +1923,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      mandarinNarration,
     });
 
     if (!prompts) {
@@ -1948,22 +1960,56 @@ function generateDefaultPBLActions(_outline: SceneOutline): Action[] {
 /**
  * Format element list for AI to select elementId
  */
+function stripHtmlSummary(raw: unknown): string {
+  return (typeof raw === 'string' ? raw : '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function truncateSummary(text: string, maxLen: number): string {
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+}
+
 function formatElementsForPrompt(elements: PPTElement[]): string {
   return elements
     .map((el) => {
       let summary = '';
       if (el.type === 'text' && 'content' in el) {
-        // Extract text content summary (strip HTML tags)
-        const textContent = ((el.content as string) || '').replace(/<[^>]*>/g, '').substring(0, 50);
-        summary = `Content summary: "${textContent}${textContent.length >= 50 ? '...' : ''}"`;
+        const textContent = stripHtmlSummary(el.content);
+        summary = `Content summary: "${truncateSummary(textContent, 200)}"`;
       } else if (el.type === 'chart' && 'chartType' in el) {
         summary = `Chart type: ${el.chartType}`;
       } else if (el.type === 'image') {
         summary = 'Image element';
-      } else if (el.type === 'shape' && 'shapeName' in el) {
-        summary = `Shape: ${el.shapeName || 'unknown'}`;
+      } else if (el.type === 'shape') {
+        const shapeName =
+          'shapeName' in el && typeof el.shapeName === 'string' && el.shapeName
+            ? el.shapeName
+            : 'shape';
+        const label =
+          'text' in el && el.text && typeof el.text === 'object' && 'content' in el.text
+            ? stripHtmlSummary(el.text.content)
+            : '';
+        summary = label
+          ? `Shape: ${shapeName} ("${truncateSummary(label, 120)}")`
+          : `Shape: ${shapeName}`;
       } else if (el.type === 'latex' && 'latex' in el) {
-        summary = `Formula: ${((el.latex as string) || '').substring(0, 30)}`;
+        const latex = (typeof el.latex === 'string' ? el.latex : '').replace(/\s+/g, ' ').trim();
+        summary = `Formula: ${truncateSummary(latex, 500)}`;
+      } else if (el.type === 'table' && 'data' in el && Array.isArray(el.data)) {
+        const rows = el.data
+          .map((row) =>
+            Array.isArray(row)
+              ? row
+                  .map((cell) => stripHtmlSummary(cell?.text))
+                  .filter(Boolean)
+                  .join(' | ')
+              : '',
+          )
+          .filter(Boolean)
+          .join(' ; ');
+        summary = rows ? `Table: "${truncateSummary(rows, 600)}"` : 'table element';
       } else {
         summary = `${el.type} element`;
       }

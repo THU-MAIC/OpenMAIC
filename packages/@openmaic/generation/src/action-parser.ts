@@ -10,7 +10,7 @@
  */
 
 import type { Action, ActionType } from '@openmaic/dsl';
-import { SLIDE_ONLY_ACTIONS } from '@openmaic/dsl';
+import { SLIDE_ONLY_ACTIONS, splitSpeechFormulaPairs } from '@openmaic/dsl';
 import { nanoid } from 'nanoid';
 import { parse as parsePartialJson, Allow } from 'partial-json';
 import { jsonrepair } from 'jsonrepair';
@@ -59,24 +59,36 @@ export function parseActionsFromStructuredOutput(
 
   const jsonStr = endIdx > startIdx ? cleaned.slice(startIdx, endIdx + 1) : cleaned.slice(startIdx); // unclosed array — let partial-json handle it
 
-  // Step 3: Parse — try JSON.parse first, then jsonrepair, fallback to partial-json
+  // Step 3: Parse — try JSON.parse first, then LaTeX-escape repair + jsonrepair, fallback to partial-json
   let items: unknown[];
   try {
     items = JSON.parse(jsonStr);
   } catch {
+    // Double-escape non-JSON LaTeX commands (e.g. \pi, \sqrt, \Delta) before
+    // jsonrepair, which otherwise strips unknown backslashes (`\pi` -> `pi`).
+    const latexSafe = jsonStr.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (_m, inner: string) => {
+      const escaped = inner.replace(/(\\+)([A-Za-z])/g, (seq, slashes: string, ch: string) =>
+        slashes.length % 2 === 0 || 'bfnrtu'.includes(ch) ? seq : '\\' + seq,
+      );
+      return `"${escaped}"`;
+    });
     // Try jsonrepair to fix malformed JSON (e.g. unescaped quotes in Chinese text)
     try {
-      items = JSON.parse(jsonrepair(jsonStr));
-      log.info('Recovered malformed JSON via jsonrepair');
+      items = JSON.parse(latexSafe);
     } catch {
       try {
-        items = parsePartialJson(
-          jsonStr,
-          Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
-        );
-      } catch (e) {
-        log.warn('Failed to parse JSON array:', (e as Error).message);
-        return [];
+        items = JSON.parse(jsonrepair(latexSafe));
+        log.info('Recovered malformed JSON via jsonrepair');
+      } catch {
+        try {
+          items = parsePartialJson(
+            latexSafe,
+            Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
+          );
+        } catch (e) {
+          log.warn('Failed to parse JSON array:', (e as Error).message);
+          return [];
+        }
       }
     }
   }
@@ -94,12 +106,14 @@ export function parseActionsFromStructuredOutput(
     const typedItem = item as Record<string, unknown>;
 
     if (typedItem.type === 'text') {
-      const text = ((typedItem.content as string) || '').trim();
+      const rawContent = typeof typedItem.content === 'string' ? typedItem.content : '';
+      const { text, spokenText } = splitSpeechFormulaPairs(rawContent);
       if (text) {
         actions.push({
           id: `action_${nanoid(8)}`,
           type: 'speech',
           text,
+          ...(spokenText ? { spokenText } : {}),
         });
       }
     } else if (typedItem.type === 'action') {

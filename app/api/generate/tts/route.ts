@@ -23,6 +23,7 @@ import {
   TTSModelNotAllowedError,
 } from '@/lib/server/provider-config';
 import type { TTSProviderId } from '@/lib/audio/types';
+import { mossSubjectParam } from '@/lib/audio/moss-tts';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
@@ -109,6 +110,13 @@ export async function POST(req: NextRequest) {
     const narration = await synthesizeNarration(
       {
         text,
+        previousTexts: Array.isArray(body.previousTexts)
+          ? body.previousTexts
+              .filter((line: unknown): line is string => typeof line === 'string')
+              .slice(-3)
+              .map((line: string) => line.slice(-4096))
+          : undefined,
+        subject: mossSubjectParam(body.subject),
         audioId,
         connection,
         requestedProviderId,

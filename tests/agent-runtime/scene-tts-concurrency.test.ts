@@ -101,6 +101,49 @@ describe('agent TTS in-flight cap', () => {
     mocks.persist.mockResolvedValue('/api/classroom-media/stage-a/media/tts.mp3');
   });
 
+  it('defaults to 16 concurrent MOSS clips per page and keeps each clip with its speech', async () => {
+    mocks.providers.mockResolvedValue({
+      ...connection,
+      providerId: 'openai-tts',
+      apiKey: 'test',
+      modelId: 'hosted-classroom-voice',
+      options: { backend: 'moss', defaultVoice: 'teacher' },
+      voices: [{ id: 'teacher', name: 'Teacher', gender: 'female' }],
+    });
+    vi.stubEnv('MOSS_TTS_CONCURRENCY', undefined);
+    vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', undefined);
+    vi.stubEnv('OPENMAIC_AGENT_TTS_CONCURRENCY', undefined);
+    const page = scene('moss');
+    const texts = Array.from({ length: 17 }, (_, i) => `Line ${i + 1}`);
+    page.actions = texts.map((text, i) => ({ type: 'speech', id: `s-${i}`, text }));
+    const hold = Promise.withResolvers<void>();
+    const sixteenth = Promise.withResolvers<void>();
+    mocks.generate.mockImplementation(async (_config, text: string) => {
+      const i = texts.indexOf(text);
+      if (i === 15) await sixteenth.promise;
+      if (i < 15) await hold.promise;
+      return { audio: Uint8Array.of(i), format: 'mp3' };
+    });
+    mocks.persist.mockImplementation(async ({ bytes }) => `audio-${bytes[0]}`);
+
+    const pending = synthesizeSceneNarration({ scene: page, force: true, ownerId: 'user:alice' });
+    try {
+      await vi.waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(16));
+      sixteenth.resolve();
+      await vi.waitFor(() => expect(mocks.generate).toHaveBeenCalledTimes(17));
+    } finally {
+      sixteenth.resolve();
+      hold.resolve();
+      await pending;
+      vi.unstubAllEnvs();
+    }
+    for (const [config, text] of mocks.generate.mock.calls) {
+      const i = texts.indexOf(text);
+      expect(config.previousTexts).toEqual(texts.slice(Math.max(0, i - 3), i));
+    }
+    expect(page.actions).toMatchObject(texts.map((text, i) => ({ text, audioId: `audio-${i}` })));
+  });
+
   it('never has more provider calls in flight than the shared cap', async () => {
     expect(IN_FLIGHT_CAP).toBeLessThan(PARALLEL_CALLS);
 

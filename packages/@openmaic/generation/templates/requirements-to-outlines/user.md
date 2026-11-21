@@ -55,11 +55,12 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "subject": "the course's school subject as one short label in the teaching language, e.g. Mathematics or 数学",
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 ```
 
-Never return a bare array. Never omit `languageDirective` or `courseTitle`. All three keys are required.
+Never return a bare array. Never omit `languageDirective`, `courseTitle`, or `subject`. All four keys are required.
 
 **Each scene inside the `outlines` array has this minimum shape:**
 
@@ -95,4 +96,4 @@ Never return a bare array. Never omit `languageDirective` or `courseTitle`. All 
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — `languageDirective` (string), `courseTitle` (string, ≤30 chars, in the teaching language), and `outlines` (array). Do not return a bare array. Do not wrap in prose or code fences.
+**Final reminder**: your entire response must be a JSON **object** with exactly four top-level keys — `languageDirective` (string), `courseTitle` (string, ≤30 chars, in the teaching language), `subject` (string, one short subject label in the teaching language; for language learning, the language being learned), and `outlines` (array). Do not return a bare array. Do not wrap in prose or code fences.

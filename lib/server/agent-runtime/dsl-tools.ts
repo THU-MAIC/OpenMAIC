@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import { speechForTts, splitSpeechFormulaPairs } from '@openmaic/generation';
 import type { Action } from '@/lib/types/action';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { validateAppScene } from '@/lib/document-store/validators';
@@ -921,8 +922,29 @@ function clearUnverifiedSpeechAudio(start: Scene, after: Scene): void {
   for (const action of after.actions as Array<Action | null>) {
     if (action?.type !== 'speech') continue;
     const original = typeof action.id === 'string' ? startById.get(action.id) : undefined;
-    if (original?.type === 'speech' && original.text === action.text) continue;
-    const legacy = action as typeof action & { audioUrl?: string };
+    const legacy = action as typeof action & { audioUrl?: string; spokenText?: string };
+    if (typeof legacy.text === 'string' && legacy.text.includes('[[')) {
+      const split = splitSpeechFormulaPairs(legacy.text);
+      legacy.text = split.text;
+      if (split.spokenText) legacy.spokenText = split.spokenText;
+      else delete legacy.spokenText;
+    } else if (
+      original?.type === 'speech' &&
+      original.text !== legacy.text &&
+      original.spokenText === legacy.spokenText
+    ) {
+      // Text changed without explicit new spokenText -> clear stale spokenText.
+      delete legacy.spokenText;
+    } else if (typeof legacy.spokenText === 'string' && !legacy.spokenText.trim()) {
+      delete legacy.spokenText;
+    }
+    if (
+      original?.type === 'speech' &&
+      original.text === legacy.text &&
+      speechForTts(original) === speechForTts(legacy)
+    ) {
+      continue;
+    }
     delete legacy.audioId;
     delete legacy.audioUrl;
   }

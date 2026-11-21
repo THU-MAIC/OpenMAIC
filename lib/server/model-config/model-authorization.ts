@@ -1,6 +1,7 @@
 import { getSlot, isSlotId, type SlotCapability } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
 import { TTS_PROVIDERS, ASR_PROVIDERS } from '@/lib/audio/constants';
+import { isManagedMossTts } from '@/lib/audio/moss-tts';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { CLAUDE_WEB_SEARCH_DEFAULT_MODEL } from '@/lib/web-search/constants';
@@ -40,11 +41,18 @@ export class ModelAuthorizationError extends Error {
 export function deploymentDefaultModel(
   presetId: string,
   capability: SlotCapability,
+  provider?: { models?: string[]; options?: Record<string, unknown> },
 ): string | undefined {
   const target = getProviderPreset(presetId)?.capabilities[capability];
   if (!target) return undefined;
   if (target.defaultModel) return target.defaultModel;
   const id = target.registryId;
+  if (
+    capability === 'tts' &&
+    isManagedMossTts({ providerId: id, managed: true, options: provider?.options })
+  ) {
+    return provider?.models?.[0];
+  }
   if (capability === 'tts')
     return TTS_PROVIDERS[id as keyof typeof TTS_PROVIDERS]?.defaultModelId || undefined;
   if (capability === 'asr')
@@ -79,7 +87,7 @@ export function deploymentAuthorizedModels(
   const addReference = (reference: string | undefined) => {
     if (reference?.startsWith(prefix)) models.add(reference.slice(prefix.length));
     else if (reference === providerId) {
-      const model = deploymentDefaultModel(provider.preset, capability);
+      const model = deploymentDefaultModel(provider.preset, capability, provider);
       if (model) models.add(model);
     }
   };

@@ -21,6 +21,8 @@
  * missing `text` field is tolerated instead of throwing (the old code called
  * `.trim()` on `undefined`). Well-typed scenes are unaffected.
  */
+import { plainSpeechText } from '@openmaic/dsl';
+
 export interface SpeechTextOptions {
   /** Keep speech actions whose `text` is empty or whitespace-only. */
   readonly keepWhitespaceOnly?: boolean;
@@ -32,6 +34,7 @@ export interface SpeechTextOptions {
 interface SpeechLike {
   readonly type: string;
   readonly text?: string;
+  readonly spokenText?: string;
 }
 
 /** Minimal structural shape of a scene for the walk. */
@@ -56,7 +59,7 @@ export function collectSpeechText(
   const parts: string[] = [];
   for (const action of actions) {
     if (action.type !== 'speech') continue;
-    const text = action.text ?? '';
+    const text = plainSpeechText(action);
     if (!keepWhitespaceOnly && !text.trim()) continue;
     parts.push(trim ? text.trim() : text);
   }

@@ -180,6 +180,7 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
   if (body.voice !== undefined) {
     const value = record(body.voice);
     const speed = value?.speed;
+    const explicit = value?.explicit;
     if (
       !value ||
       typeof value.providerId !== 'string' ||
@@ -187,17 +188,19 @@ export function parseRunInput(raw: unknown): Parsed<GenerationRunInput> {
       typeof value.voiceId !== 'string' ||
       !value.voiceId.trim() ||
       value.voiceId.length > MAX_VOICE_ID_CHARS ||
-      (speed !== undefined && (typeof speed !== 'number' || !(speed > 0) || speed > 4))
+      (speed !== undefined && (typeof speed !== 'number' || !(speed > 0) || speed > 4)) ||
+      (explicit !== undefined && typeof explicit !== 'boolean')
     ) {
       return {
         ok: false,
-        message: `voice must be { providerId, voiceId (at most ${MAX_VOICE_ID_CHARS} characters), speed? } with a speed above 0 and at most 4`,
+        message: `voice must be { providerId, voiceId (at most ${MAX_VOICE_ID_CHARS} characters), speed?, explicit? } with a speed above 0 and at most 4`,
       };
     }
     voice = {
       providerId: value.providerId,
       voiceId: value.voiceId.trim(),
       ...(speed !== undefined ? { speed: speed as number } : {}),
+      ...(explicit !== undefined ? { explicit } : {}),
     };
   }
 

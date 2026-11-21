@@ -76,6 +76,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   const globalTtsProviderId = (ttsSelectionValue?.providerId ??
     'browser-native-tts') as TTSProviderId;
   const globalTtsVoice = ttsSelectionValue?.voice ?? 'default';
+  const globalTtsExplicit = ttsSelectionValue?.explicit === true;
   const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
   const { profiles: voiceProfiles } = useAllVoiceProfiles();
 
@@ -186,6 +187,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
           providerId: globalTtsProviderId,
           voiceId: globalTtsVoice,
           modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+          explicit: globalTtsExplicit,
         },
         ttsProvidersConfig,
       );
@@ -202,8 +204,10 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
             providerId: globalTtsProviderId,
             voiceId: globalTtsVoice,
             modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+            explicit: globalTtsExplicit,
           },
           ttsProvidersConfig,
+          agent.voiceDesign,
         );
         const preferred = isTTSProviderEnabled(
           resolved.providerId,
@@ -245,6 +249,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       browserVoices,
       globalTtsProviderId,
       globalTtsVoice,
+      globalTtsExplicit,
       agentVoiceOverrides,
     ],
   );
@@ -473,6 +478,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
                 providerId: globalTtsProviderId,
                 voiceId: globalTtsVoice,
                 modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+                explicit: globalTtsExplicit,
               },
               ttsProvidersConfig,
             )
@@ -501,6 +507,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       enabled,
       globalTtsProviderId,
       globalTtsVoice,
+      globalTtsExplicit,
       resolveVoiceForAgent,
       ttsMuted,
       ttsProvidersConfig,

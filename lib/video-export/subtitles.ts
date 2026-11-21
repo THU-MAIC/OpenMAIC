@@ -9,6 +9,8 @@
  *
  * Pure: depends only on the IR types.
  */
+import { plainSpeechText } from '@openmaic/dsl';
+import { splitCue } from './split-cue';
 import type { SubtitleCue } from './ir';
 
 /** Clamp + format a millisecond offset as `HH:MM:SS,mmm` (SRT) or `HH:MM:SS.mmm` (VTT). */
@@ -36,7 +38,13 @@ function normalizeText(text: string): string {
  * invalid cue, so it is dropped here rather than emitted malformed.
  */
 export function usableCues(cues: readonly SubtitleCue[]): SubtitleCue[] {
-  return cues.filter((cue) => cue.endMs > cue.startMs && normalizeText(cue.text).length > 0);
+  return cues.flatMap((cue) => {
+    const text = plainSpeechText(cue);
+    if (cue.endMs <= cue.startMs || !normalizeText(text).length) return [];
+    return cue.spokenText !== undefined || text !== cue.text
+      ? splitCue({ ...cue, text, spokenText: undefined })
+      : [cue];
+  });
 }
 
 /** Serialize cues to SubRip (`.srt`). Indices are re-numbered 1-based over the usable cues. */

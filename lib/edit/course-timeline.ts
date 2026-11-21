@@ -14,6 +14,7 @@
  */
 
 import { create } from 'zustand';
+import { speechForTts } from '@openmaic/dsl';
 import { collectStageAssetRefs } from '@/lib/media/collect-stage-asset-refs';
 import { pblSceneAsPersisted } from '@/lib/pbl/v2/runtime/persisted-scene';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -505,10 +506,24 @@ export function pushEntry(line: CourseLine, entry: TimelineEntry): CourseLine {
   };
 }
 
+export function sameSpeechAudioTarget(
+  action: { text?: unknown; spokenText?: unknown },
+  text: string,
+  spokenText?: string,
+): boolean {
+  if (action.text !== text) return false;
+  const expectedReading = speechForTts({ text, spokenText });
+  const actualReading = speechForTts({
+    text: typeof action.text === 'string' ? action.text : '',
+    spokenText: typeof action.spokenText === 'string' ? action.spokenText : undefined,
+  });
+  return actualReading === expectedReading;
+}
+
 /**
  * Generated audio landed on a speech line. Stamping is not a step, but a step that
  * restores `actions` must not take the audio away: every recorded version of the
- * line with the same text gets it too.
+ * line with the same text and spoken reading gets it too.
  */
 export function stampAudioOnLine(
   line: CourseLine,
@@ -516,16 +531,22 @@ export function stampAudioOnLine(
   actionId: string,
   text: string,
   audioId: string,
+  spokenText?: string,
 ): CourseLine {
   const stamp = (fields: SceneFields | null): SceneFields | null => {
     if (!fields || !Array.isArray(fields.actions)) return fields;
     let stamped = false;
     const actions = (fields.actions as readonly Record<string, unknown>[]).map((action) => {
-      if (action.id !== actionId || action.text !== text || action.audioId === audioId) {
+      if (
+        action.id !== actionId ||
+        !sameSpeechAudioTarget(action, text, spokenText) ||
+        (action.audioId === audioId && !action.audioInvalidated)
+      ) {
         return action;
       }
       stamped = true;
-      return { ...action, audioId };
+      const { audioInvalidated: _cleared, ...rest } = action;
+      return { ...rest, audioId };
     });
     return stamped ? { ...fields, actions } : fields;
   };

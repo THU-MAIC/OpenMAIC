@@ -103,6 +103,47 @@ describe('outline step', () => {
     expect(mocks.capabilities).toHaveBeenCalledWith(null);
   });
 
+  it('extracts the top-level subject from the complete answer, trimmed and capped', async () => {
+    streams(
+      JSON.stringify({
+        languageDirective: '使用中文授课。',
+        courseTitle: '拼音入门',
+        subject: '  语文  ',
+        outlines: JSON.parse(OUTLINE_TEXT).outlines,
+      }),
+    );
+    const result = await generateOutlines({ ...body, model }, stepContext([]));
+    expect(result.subject).toBe('语文');
+
+    streams(
+      JSON.stringify({
+        languageDirective: 'Teach in English.',
+        outlines: JSON.parse(OUTLINE_TEXT).outlines,
+        subject: 'Behavioral Economics and Finance',
+      }),
+    );
+    const capped = await generateOutlines({ ...body, model }, stepContext([]));
+    expect(capped.subject).toBe('Behavioral Economics');
+  });
+
+  it('omits a missing, blank, or nested-only subject without failing', async () => {
+    const outlines = JSON.parse(OUTLINE_TEXT).outlines;
+    for (const answer of [
+      OUTLINE_TEXT,
+      JSON.stringify({ languageDirective: 'Teach in English.', subject: '   ', outlines }),
+      JSON.stringify({ languageDirective: 'Teach in English.', subject: 7, outlines }),
+      JSON.stringify({
+        languageDirective: 'Teach in English.',
+        outlines: [{ ...outlines[0], widgetOutline: { subject: '物理' } }, outlines[1]],
+      }),
+    ]) {
+      streams(answer);
+      const result = await generateOutlines({ ...body, model }, stepContext([]));
+      expect(result.outlines).toHaveLength(2);
+      expect(result).not.toHaveProperty('subject');
+    }
+  });
+
   it('retries an empty answer, reporting each retry, and then fails with the last error', async () => {
     streams('');
     const events: OutlineEvent[] = [];

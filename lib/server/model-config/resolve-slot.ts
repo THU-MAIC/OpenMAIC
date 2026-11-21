@@ -1,4 +1,5 @@
 import type { ConfiguredTTSVoice } from '@/lib/audio/types';
+import { isManagedMossTts } from '@/lib/audio/moss-tts';
 /**
  * Slot resolution (RFC #1701, tracked in #1725).
  *
@@ -225,7 +226,17 @@ function resolveTarget(
     );
   }
   const effectiveModel =
-    modelId ?? target.defaultModel ?? deploymentDefaultModel(provider.preset, capability);
+    modelId ?? target.defaultModel ?? deploymentDefaultModel(provider.preset, capability, provider);
+  if (
+    isManagedMossTts({
+      providerId: target.registryId,
+      managed: found.source === 'deployment',
+      options: provider.options,
+    }) &&
+    (!provider.baseUrl || !effectiveModel)
+  ) {
+    throw new SlotResolutionError(`${at}: configure the MOSS speech API baseUrl and model`);
+  }
   if (
     found.source === 'deployment' &&
     selectsUpstreamModel(provider.preset, capability) &&

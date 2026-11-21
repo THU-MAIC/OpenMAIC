@@ -23,6 +23,7 @@
  *                                 └────────────────────┘
  */
 
+import { speechForTts, stripInlineLatexForPlainTts } from '@openmaic/generation/browser';
 import type { Scene } from '@/lib/types/stage';
 import type { Action, SpeechAction, DiscussionAction } from '@/lib/types/action';
 import type {
@@ -607,6 +608,7 @@ export class PlaybackEngine {
     switch (action.type) {
       case 'speech': {
         const speechAction = action as SpeechAction;
+        const spoken = speechForTts(speechAction);
         this.callbacks.beforeSpeech?.();
         this.callbacks.onSpeechStart?.(speechAction.text);
 
@@ -620,7 +622,7 @@ export class PlaybackEngine {
         const scheduleReadingTimer = () => {
           if (!this.isCurrentGeneration(generation)) return;
           const speed = this.callbacks.getPlaybackSpeed?.() ?? 1;
-          const readingMs = estimateSpeechDurationMs(speechAction.text, { speed });
+          const readingMs = estimateSpeechDurationMs(spoken, { speed });
           this.speechTimerStart = Date.now();
           this.speechTimerRemaining = readingMs;
           this.speechTimer = setTimeout(() => {
@@ -637,7 +639,7 @@ export class PlaybackEngine {
         // route it straight to the reading timer for a short dwell. Speaking an
         // empty SpeechSynthesisUtterance doesn't reliably fire onend in Chromium,
         // which would hang playback on that slide.
-        const hasText = !!speechAction.text.trim();
+        const hasText = !!spoken;
 
         this.audioPlayer
           // The legacy URL of an unconverted pair rides along as the
@@ -653,7 +655,11 @@ export class PlaybackEngine {
                 ttsSelection()?.providerId === 'browser-native-tts' &&
                 this.browserSpeech.isSupported()
               ) {
-                this.playBrowserSpeech(speechAction.text, generation, scheduleReadingTimer);
+                this.playBrowserSpeech(
+                  stripInlineLatexForPlainTts(spoken),
+                  generation,
+                  scheduleReadingTimer,
+                );
               } else {
                 scheduleReadingTimer();
               }

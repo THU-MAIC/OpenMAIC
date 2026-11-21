@@ -352,10 +352,15 @@ export function prepareStandaloneActions(
         const audioRef =
           action.audioRef && shippedAudio?.has(action.audioRef) ? action.audioRef : undefined;
         if (audioRef) resolver?.usePlaybackMedia(audioRef);
+        const spokenText =
+          typeof action.spokenText === 'string' && action.spokenText.trim()
+            ? action.spokenText
+            : undefined;
         prepared.push({
           ...base,
           type: 'speech',
           text: typeof action.text === 'string' ? action.text : '',
+          ...(spokenText ? { spokenText } : {}),
           ...(audioRef ? { audioRef } : {}),
         });
         break;

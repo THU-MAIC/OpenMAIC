@@ -183,6 +183,28 @@ describe('runtime and assets are keyed by the resolved owner', () => {
     return ((await response.json()) as { id: string }).id;
   }
 
+  it('batches metadata with the same read permissions as HEAD', async () => {
+    const own = await allocate('alice');
+    const other = await allocate('bob');
+    const path = '/audio-presence?id=' + own + '&id=' + other + '&id=ast_missing';
+    const check = async (who: Who) => {
+      const res = await call(who, path);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toContain('no-store');
+      const found: string[] = (await res.json()).ids;
+      for (const id of [own, other, 'ast_missing']) {
+        const head = await call(who, '/assets/' + id + '/content', { method: 'HEAD' });
+        expect(found.includes(id)).toBe(head.ok);
+      }
+      return found;
+    };
+    expect(await check('alice')).toEqual([own]);
+    expect(await check('bob')).toEqual([other]);
+    expect(
+      (await call('alice', '/audio-presence?' + Array(65).fill('id=ast_x').join('&'))).status,
+    ).toBe(400);
+  });
+
   describe('runtime learner key', () => {
     it('tells the browser its learner key: the owner id, never a client-chosen value', async () => {
       const response = await call('alice', '/learner-key', {

@@ -77,6 +77,33 @@ describe('resolveSlot', () => {
     });
   });
 
+  it('uses the model and endpoint supplied by a hosted MOSS speech API', () => {
+    const provider = {
+      preset: 'openai-tts',
+      baseUrl: 'https://speech.example/v1',
+      options: { backend: 'moss' },
+      models: ['course-v3', 'course-v4'],
+    };
+    const deploymentFor = (p: typeof provider, slot: string): ModelConfigLayer => ({
+      source: 'deployment',
+      config: { providers: { speech: p }, slots: { tts: slot } },
+    });
+    expect(resolveSlot('tts', [deploymentFor(provider, 'speech')])).toMatchObject({
+      registryId: 'openai-tts',
+      modelId: 'course-v3',
+      baseUrl: provider.baseUrl,
+    });
+    expect(resolveSlot('tts', [deploymentFor(provider, 'speech:course-v4')])).toMatchObject({
+      modelId: 'course-v4',
+    });
+    expect(() =>
+      resolveSlot('tts', [deploymentFor({ ...provider, baseUrl: '' }, 'speech:course-v4')]),
+    ).toThrow('baseUrl and model');
+    expect(() =>
+      resolveSlot('tts', [deploymentFor({ ...provider, models: [] }, 'speech')]),
+    ).toThrow('baseUrl and model');
+  });
+
   it('prefers a provider’s own base URL over the preset’s', () => {
     const own = layer(
       'deployment',

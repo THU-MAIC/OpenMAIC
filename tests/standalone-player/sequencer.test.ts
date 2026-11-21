@@ -310,6 +310,29 @@ describe('SceneSequencer', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(result).toBe('completed');
   });
+
+  it('paces unvoiced paired formulas by their spokenText preserved through prepareStandaloneActions', async () => {
+    const { prepareStandaloneActions } =
+      await import('@/lib/export/standalone-html/prepare-manifest');
+    const spoken = 'the derivative of f at x equals the limit as h approaches zero of the quotient';
+    const prepared = prepareStandaloneActions(
+      [{ id: '1', type: 'speech', text: "$f'(x)$", spokenText: spoken }] as never,
+      undefined,
+    );
+    expect(prepared[0]).toMatchObject({ text: "$f'(x)$", spokenText: spoken });
+
+    const fake = fakePorts();
+    const sequencer = new SceneSequencer(fake.ports);
+    let result: string | undefined;
+    void sequencer.play(prepared).then((r) => (result = r));
+    await flush();
+    expect(fake.view.caption).toBe("$f'(x)$");
+    const expectedMs = estimateSpeechDurationMs(spoken);
+    await vi.advanceTimersByTimeAsync(expectedMs - 1);
+    expect(result).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toBe('completed');
+  });
 });
 
 function scene(type: ManifestScene['type'], list: unknown[] = []): ManifestScene {

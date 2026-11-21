@@ -116,6 +116,20 @@ export function buildOutlinePrompt(
   return prompts;
 }
 
+/** Longest course subject label kept from the outline. */
+export const MAX_COURSE_SUBJECT_CHARS = 20;
+
+/**
+ * Normalize the outline's optional `subject` label: trimmed and capped, or
+ * undefined when missing, blank, or not a string. A missing subject never
+ * fails generation; downstream consumers fall back to the course title.
+ */
+export function normalizeCourseSubject(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const subject = raw.trim().slice(0, MAX_COURSE_SUBJECT_CHARS).trim();
+  return subject || undefined;
+}
+
 /** Generate scene outlines from user requirements. */
 export async function generateSceneOutlinesFromRequirements(
   requirements: UserRequirements,
@@ -124,7 +138,12 @@ export async function generateSceneOutlinesFromRequirements(
   aiCall: AICallFn,
   options?: OutlineGenerationOptions,
 ): Promise<
-  GenerationResult<{ languageDirective: string; courseTitle?: string; outlines: SceneOutline[] }>
+  GenerationResult<{
+    languageDirective: string;
+    courseTitle?: string;
+    subject?: string;
+    outlines: SceneOutline[];
+  }>
 > {
   const logger = options?.logger ?? noopGenerationLogger;
   const context: OutlinePromptContext = { ...options, pdfText, pdfImages };
@@ -144,11 +163,18 @@ export async function generateSceneOutlinesFromRequirements(
   try {
     const response = await aiCall(prompts.system, prompts.user, visionImages);
     const parsed = parseJsonResponse<
-      { languageDirective: string; courseTitle?: string; outlines: SceneOutline[] } | SceneOutline[]
+      | {
+          languageDirective: string;
+          courseTitle?: string;
+          subject?: unknown;
+          outlines: SceneOutline[];
+        }
+      | SceneOutline[]
     >(response, { logger });
 
     let languageDirective: string;
     let courseTitle: string | undefined;
+    let subject: string | undefined;
     let rawOutlines: SceneOutline[];
 
     if (Array.isArray(parsed)) {
@@ -159,6 +185,7 @@ export async function generateSceneOutlinesFromRequirements(
       const rawTitle = parsed.courseTitle;
       courseTitle =
         typeof rawTitle === 'string' && rawTitle.trim() ? rawTitle.trim().slice(0, 120) : undefined;
+      subject = normalizeCourseSubject(parsed.subject);
       rawOutlines = parsed.outlines;
     } else {
       return { success: false, error: 'Failed to parse scene outlines response' };
@@ -179,7 +206,10 @@ export async function generateSceneOutlinesFromRequirements(
 
     const result = uniquifyMediaElementIds(enriched);
 
-    return { success: true, data: { languageDirective, courseTitle, outlines: result } };
+    return {
+      success: true,
+      data: { languageDirective, courseTitle, ...(subject ? { subject } : {}), outlines: result },
+    };
   } catch (error) {
     return { success: false, error: String(error) };
   }

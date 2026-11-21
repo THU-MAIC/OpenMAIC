@@ -2,6 +2,7 @@
 interface OptionsSource {
   /** The provider's non-secret options (openmaic.yml `options`). */
   options?: Record<string, string | number | boolean>;
+  providerId?: string;
   /** Where the connection came from: a configured slot, or the deprecated request path. */
   origin: 'configuration' | 'request' | 'default';
 }
@@ -18,7 +19,14 @@ export function adapterOptions(
   request?: Record<string, unknown>,
 ): Record<string, unknown> {
   const own = connection?.options ?? {};
-  return connection?.origin === 'configuration'
-    ? { ...(request ?? {}), ...own }
-    : { ...own, ...(request ?? {}) };
+  const merged =
+    connection?.origin === 'configuration'
+      ? { ...(request ?? {}), ...own }
+      : { ...own, ...(request ?? {}) };
+  if (connection?.providerId === 'openai-tts') {
+    delete merged.backend;
+    if (connection.origin === 'configuration' && own.backend !== undefined)
+      merged.backend = own.backend;
+  }
+  return merged;
 }

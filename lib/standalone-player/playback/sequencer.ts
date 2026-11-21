@@ -19,6 +19,7 @@
  *
  * DOM work (audio/video elements, the iframe) sits behind {@link SequencerPorts}.
  */
+import { speechForTts } from '@openmaic/dsl';
 import type { SlideEffects } from '@openmaic/renderer';
 import type { ManifestAction } from '@/lib/export/classroom-zip-types';
 import type { StandaloneAction } from '@/lib/export/standalone-html/prepare-manifest';
@@ -146,7 +147,7 @@ export class SceneSequencer {
           ? await this.ports.playAudio(action.audioRef, control).catch(() => false)
           : false;
         if (!played && !control.signal.aborted) {
-          await pausableDelay(estimateSpeechDurationMs(text), control);
+          await pausableDelay(estimateSpeechDurationMs(speechForTts(action)), control);
         }
         // The line is over: its caption must not linger over what follows
         // (a video, or a quiz the scene now holds on).

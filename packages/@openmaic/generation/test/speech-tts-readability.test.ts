@@ -30,6 +30,8 @@ describe('speech TTS readability snippet', () => {
     // The blanket "spell every symbol out" rule is what wrote π as 派.
     expect(snippet).not.toContain('Spell out symbols');
     expect(snippet).not.toContain('Everything else in speech must be pronounceable words');
+    expect(snippet).toContain('NEVER flatten a mathematical expression into prose-only words');
+    expect(snippet).not.toContain('either explain what it means in spoken words or pair it');
   });
 
   test('inlines the symbol-form rule into every actions prompt', () => {
@@ -40,4 +42,15 @@ describe('speech TTS readability snippet', () => {
       expect(prompt!.systemPrompt, promptId).toContain('负派到正派');
     }
   });
+});
+
+test('uses language-conditional pronunciation guidance in all action prompts', () => {
+  for (const promptId of ACTION_PROMPTS) {
+    const prompt = loadPrompt(promptId, PACKAGE_ROOT)!.systemPrompt;
+    expect(prompt).toContain('including the opening sentence');
+    expect(prompt).toContain('For Mandarin narration only');
+    expect(prompt).not.toMatch(
+      /no digits, formulas, pinyin, or English|40 Chinese characters|three lines before it/,
+    );
+  }
 });
