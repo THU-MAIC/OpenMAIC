@@ -24,4 +24,26 @@ describe('model-visible child outcomes', () => {
       }).text,
     ).toContain('execution error');
   });
+
+  it.each(['completed', 'failed', 'exhausted'] as const)(
+    'preserves the %s outcome while reporting rejected drawing actions',
+    (status) => {
+      for (const text of ['', 'The diagram is updated.']) {
+        const opts = { agentName: 'Teacher', actionCount: 1, status, text };
+        const original = formatChildResult(opts);
+        expect(formatChildResult({ ...opts, rejectedDrawingActions: [] })).toEqual(original);
+        expect(
+          formatChildResult({
+            ...opts,
+            rejectedDrawingActions: ['wb_draw_line requires params.startY number'],
+          }),
+        ).toEqual({
+          text:
+            original.text +
+            '\n[Drawing actions rejected, not applied: wb_draw_line requires params.startY number]',
+          isError: original.isError,
+        });
+      }
+    },
+  );
 });

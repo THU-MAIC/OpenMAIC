@@ -354,6 +354,59 @@ describe('Pi call_agent JSON action output', () => {
     });
   });
 
+  it('reports rejected drawing params to the Director alongside successful actions and speech', async () => {
+    mockChildWithJsonOutput(
+      JSON.stringify([
+        { type: 'action', name: 'wb_open', params: {} },
+        { type: 'action', name: 'wb_draw_line', params: { startX: 100, endX: 300, endY: 80 } },
+        { type: 'text', content: 'The diagram is updated.' },
+        {
+          type: 'action',
+          name: 'wb_draw_text',
+          params: { content: 'Diagram label', x: 80, y: 120 },
+        },
+      ]),
+    );
+    const { buildCallAgentTool } = await import('@/lib/chat/pi/tools/call-agent');
+    const events: StatelessEvent[] = [];
+    const tool = buildCallAgentTool({
+      body: makeBody(),
+      agentConfigs: [slideTeacher],
+      send: async (event) => {
+        events.push(event);
+      },
+      languageModel: {} as never,
+      onAgentDone: vi.fn(),
+      onActionDone: vi.fn(),
+      thinkingConfig: { mode: 'disabled', enabled: false },
+      abortSignal: new AbortController().signal,
+      getAgentResponses: () => [],
+      getWhiteboardLedger: () => [],
+      enableWhiteboardTools: true,
+    });
+    const result = await tool.execute('call-1', {
+      agentId: slideTeacher.id,
+      instruction: 'Draw a line and explain it.',
+    });
+    expect(
+      events.filter((event) => event.type === 'action').map((event) => event.data.actionName),
+    ).toEqual(['wb_open', 'wb_draw_text']);
+    const directorText = result.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
+    expect(directorText).toContain('The diagram is updated.');
+    expect(directorText).toContain('Drawing actions rejected, not applied');
+    expect(directorText).toContain('wb_draw_line requires params.startY number');
+    expect(result).not.toHaveProperty('isError');
+    expect(
+      events
+        .filter((event) => event.type === 'text_delta')
+        .map((event) => event.data.content)
+        .join(''),
+    ).toBe('The diagram is updated.');
+  });
+
   it('does not surface malformed structured JSON fallback as visible speech', async () => {
     mockChildWithJsonOutput('[{"type":"action","name":"wb_open","params":{}');
 
@@ -765,7 +818,7 @@ describe('Pi call_agent JSON action output', () => {
     mockChildWithJsonOutput(
       JSON.stringify([
         { type: 'action', name: 'play_video', params: {} },
-        { type: 'text', content: '缺少视频元素 id 时不会播放。' },
+        { type: 'text', content: 'Playback is skipped when the video element ID is missing.' },
       ]),
     );
 
@@ -808,7 +861,7 @@ describe('Pi call_agent JSON action output', () => {
 
     expect(events.filter((event) => event.type === 'action')).toEqual([]);
     expect(result.details).toMatchObject({
-      text: '缺少视频元素 id 时不会播放。',
+      text: 'Playback is skipped when the video element ID is missing.',
       actionWarnings: [
         {
           actionName: 'play_video',
@@ -817,6 +870,12 @@ describe('Pi call_agent JSON action output', () => {
         },
       ],
     });
+    expect(result.content).toEqual([
+      {
+        type: 'text',
+        text: 'AI teacher: Playback is skipped when the video element ID is missing.',
+      },
+    ]);
   });
 
   it('does not expose play_video outside slide scenes', async () => {

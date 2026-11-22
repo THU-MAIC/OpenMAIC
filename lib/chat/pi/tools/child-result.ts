@@ -5,11 +5,15 @@ export function formatChildResult(opts: {
   actionCount: number;
   status: 'completed' | 'failed' | 'exhausted';
   stopReason?: string;
+  rejectedDrawingActions?: readonly string[];
 }): { text: string; isError: boolean } {
   const isError = opts.status !== 'completed';
+  const drawingFailures = opts.rejectedDrawingActions?.length
+    ? `\n[Drawing actions rejected, not applied: ${opts.rejectedDrawingActions.join('; ')}]`
+    : '';
   let outcome: string;
   if (!isError) {
-    if (opts.text) return { text: `${opts.agentName}: ${opts.text}`, isError };
+    if (opts.text) return { text: `${opts.agentName}: ${opts.text}${drawingFailures}`, isError };
     outcome =
       opts.actionCount > 0
         ? `completed ${opts.actionCount} classroom action(s) without visible speech`
@@ -28,7 +32,7 @@ export function formatChildResult(opts: {
     outcome = `${opts.status}: ${reason}`;
   }
   return {
-    text: `${opts.agentName}: [${outcome}]${opts.text ? `\nPartial visible response: ${opts.text}` : ''}`,
+    text: `${opts.agentName}: [${outcome}]${opts.text ? `\nPartial visible response: ${opts.text}` : ''}${drawingFailures}`,
     isError,
   };
 }
