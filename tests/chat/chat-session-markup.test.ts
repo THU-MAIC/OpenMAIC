@@ -38,7 +38,7 @@ describe('ChatSessionComponent markup contract', () => {
     expect(html).toContain('first line\nsecond line');
   });
 
-  it('renders the Native Child web calls as inline tags alongside its text', () => {
+  it('renders the Native Child web calls as named icon-only markers alongside its text', () => {
     const session: ChatSession = {
       id: 'session',
       type: 'qa',
@@ -65,7 +65,12 @@ describe('ChatSessionComponent markup contract', () => {
     const html = renderToStaticMarkup(
       createElement(ChatSessionComponent, { session, isActive: false }),
     );
-    expect(html).toMatch(/>Search<.*>Read<.*The page describes the procedure\./);
+    expect(html).toMatch(
+      /title="Searched the web".*title="Read a web page".*The page describes the procedure\./,
+    );
+    expect(html).toContain('w-4 h-4 rounded-full border align-middle mr-0.5');
+    expect(html).not.toContain('mx-1 rounded-full border');
+    expect(html).not.toMatch(/>(Search|Read)</);
   });
 
   it('renders separate stop and continue controls during soft-closing', () => {

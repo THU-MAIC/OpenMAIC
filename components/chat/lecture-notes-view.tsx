@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LectureNoteEntry } from '@/lib/types/chat';
+import { InlineActionIcon } from './inline-action-icon';
 
 const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string }> = {
   spotlight: {
@@ -232,18 +233,7 @@ export function LectureNotesView({
                       {actions.map((a, j) => {
                         const cfg = ACTION_ICON_ONLY[a];
                         if (!cfg) return null;
-                        const { Icon, style } = cfg;
-                        return (
-                          <span
-                            key={j}
-                            className={cn(
-                              'inline-flex items-center justify-center w-4 h-4 rounded-full border align-middle mr-0.5',
-                              style,
-                            )}
-                          >
-                            <Icon className="w-2.5 h-2.5" />
-                          </span>
-                        );
+                        return <InlineActionIcon key={j} icon={cfg.Icon} style={cfg.style} />;
                       })}
                       {isSpeech ? row.text : null}
                     </>
