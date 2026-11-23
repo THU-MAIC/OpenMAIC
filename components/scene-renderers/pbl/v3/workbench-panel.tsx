@@ -478,15 +478,15 @@ export function LearningWorkbenchPanel({
                       <span className="max-w-48 truncate whitespace-nowrap">
                         {t('pblV3.ide.draftRetained')}
                       </span>
-                    ) : editor.saving || editor.dirty(path) ? (
-                      <>
-                        <LoaderCircle size={12} className="animate-spin" />
-                        <span className="sr-only">{t('pblV3.ide.saving')}</span>
-                      </>
                     ) : savedNotice ? (
                       <>
                         <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
                         {t('pblV3.ide.saved')}
+                      </>
+                    ) : editor.saving || editor.dirty(path) ? (
+                      <>
+                        <LoaderCircle size={12} className="animate-spin" />
+                        <span className="sr-only">{t('pblV3.ide.saving')}</span>
                       </>
                     ) : null}
                   </span>

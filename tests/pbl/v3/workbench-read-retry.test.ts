@@ -175,6 +175,24 @@ it('shows saving for a healthy dirty file during the debounce while another file
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 });
 
+it('shows the active file save confirmation for 2.4 seconds while a background write is pending', async () => {
+  await fixture();
+  const background = Promise.withResolvers<{ hash: string }>();
+  onSave.mockResolvedValueOnce({ hash: 'b'.repeat(64) }).mockReturnValueOnce(background.promise);
+  await edit('Background plan');
+  await act(async () => button('main.py').click());
+  await edit('Active code');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(onSave.mock.calls.map(([path]) => path)).toEqual(['main.py', 'PLAN.md']);
+  expect(host.textContent).toContain('pblV3.ide.saved');
+  await act(async () => vi.advanceTimersByTimeAsync(2399));
+  expect(host.textContent).toContain('pblV3.ide.saved');
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
+  await act(async () => background.resolve({ hash: 'c'.repeat(64) }));
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
+});
+
 it('a healthy tab retains a visible retry action while another file pauses the save queue', async () => {
   await fixture();
   onSave.mockRejectedValueOnce(new Error('Plan acknowledgement lost'));
