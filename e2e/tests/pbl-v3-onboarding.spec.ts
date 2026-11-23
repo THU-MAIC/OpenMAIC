@@ -747,16 +747,14 @@ test('five essential regions preserve focus and perform no learning actions', as
   await page.getByRole('button', { name: 'Start Project', exact: true }).click();
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
   await expect(tour(page)).toHaveCount(0);
-  await page.locator('[data-pbl-tour="workspace-toggle"]').click();
-  await expect(page.locator('[data-pbl-tour="workspace-toggle"]')).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
+  const workspaceToggle = 'button[aria-label="Toggle code workspace"]';
+  await page.locator(workspaceToggle).click();
+  await expect(page.locator(workspaceToggle)).toHaveAttribute('aria-pressed', 'false');
   await page.locator('[data-pbl-tour="replay"]').click();
   await next(page).click();
   await next(page).click();
   await expect(tour(page)).toHaveAttribute('data-step', 'code');
-  await correctSpotlight(page, '[data-pbl-tour="workspace-toggle"]');
+  await correctSpotlight(page, workspaceToggle);
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeFocused();
