@@ -60,9 +60,9 @@ for (const locale of ['en-US', 'de-DE', 'fr-FR']) {
         });
       });
       await page.goto(`/classroom/${id}`);
-      const input = page.locator('.mobile-roundtable-input textarea');
-      await input.fill('Could you explain this signal?');
-      await input.press('Enter');
+      const composer = page.locator('.mobile-roundtable-input');
+      await composer.getByRole('textbox').fill('Could you explain this signal?');
+      await composer.locator('button[type="submit"]').click();
       const discussion = page.locator('[data-mobile-toolbar] [data-toolbar-control="discussion"]');
       await expect(discussion).toBeVisible();
       await expect(discussion.getByRole('button')).toHaveCount(softClosing ? 2 : 1);
