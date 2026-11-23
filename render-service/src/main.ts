@@ -540,6 +540,11 @@ export function createApp(deps: AppDeps): Hono {
     if (!ownerId) return c.json({ error: 'Invalid render identity' }, 400);
     const job = await jobs.getForOwner(c.req.param('jobId'), ownerId);
     if (!job) return c.json({ error: 'Job not found' }, 404);
+    // Only attach position when the job store still says queued AND the coordinator
+    // confirms the slot exists. If pump() has already shifted the job but run()
+    // hasn't written `running` to the store yet, the gap produces null and we omit
+    // rather than show a stale 0.
+    const queuePosition = job.status === 'queued' ? coordinator.getQueuePosition(job.id) : null;
     return c.json({
       jobId: job.id,
       status: job.status,
@@ -557,6 +562,7 @@ export function createApp(deps: AppDeps): Hono {
       },
       error: job.error,
       done: isTerminal(job.status),
+      ...(queuePosition !== null ? { queuePosition } : {}),
     });
   });
 

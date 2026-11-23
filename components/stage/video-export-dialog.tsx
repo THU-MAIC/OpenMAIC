@@ -102,7 +102,8 @@ export function VideoExportDialog({
 }) {
   const { t } = useI18n();
   const { exporting: isExportingVideo, exportVideo } = useExportVideo();
-  const { rendering, percent, etaMs, options, setOptions, renderVideo } = useRenderVideo();
+  const { rendering, status, percent, etaMs, queuePosition, options, setOptions, renderVideo } =
+    useRenderVideo();
   const { downloading, downloadSubtitles } = useDownloadSubtitles();
   const { resolution, fps, quality, burnInSubtitles } = options;
   // undefined = unknown (still probing); true/false = capability answer.
@@ -218,17 +219,33 @@ export function VideoExportDialog({
           </div>
 
           {/* Progress */}
-          {rendering && (
+          {(rendering || status === 'queued' || status === 'uploading') && (
             <div>
-              <Progress value={percent} />
-              <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
-                {etaMs != null
-                  ? t('export.videoProgressWithEta', {
-                      percent,
-                      remaining: formatRemaining(etaMs, t),
-                    })
-                  : t('export.videoProgress', { percent })}
-              </div>
+              {status === 'queued' ? (
+                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500" role="status">
+                  {queuePosition != null
+                    ? t('export.videoQueuePosition', { position: queuePosition + 1 })
+                    : t('export.videoQueued')}
+                </div>
+              ) : status === 'uploading' || status === 'compiling' ? (
+                <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                  {t(status === 'uploading' ? 'export.videoUploading' : 'export.videoCompiling')}
+                </div>
+              ) : (
+                <>
+                  <Progress value={percent} />
+                  <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                    {percent === 0
+                      ? t('export.videoRendering')
+                      : etaMs != null
+                        ? t('export.videoProgressWithEta', {
+                            percent,
+                            remaining: formatRemaining(etaMs, t),
+                          })
+                        : t('export.videoProgress', { percent })}
+                  </div>
+                </>
+              )}
             </div>
           )}
 

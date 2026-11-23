@@ -472,6 +472,17 @@ export class RenderCoordinator {
     }
   }
 
+  /**
+   * Position of a queued job in the wait list, 0-indexed (0 = next to run).
+   * Returns null when the job is not in the queue (running, terminal, or not found).
+   * The HTTP layer only emits this when the job store also says `queued`; once
+   * `pump()` shifts a job its position is stale, so callers omit it then.
+   */
+  getQueuePosition(id: string): number | null {
+    const idx = this.queue.findIndex((j) => j.record.id === id);
+    return idx === -1 ? null : idx;
+  }
+
   /** Best-effort recursive delete of a job's unzipped project dir. */
   async cleanupProject(dir: string): Promise<void> {
     // Quarantined objects outlive HTTP/TTL bookkeeping and belong to the platform.

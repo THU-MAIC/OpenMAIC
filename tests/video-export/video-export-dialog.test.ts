@@ -8,17 +8,21 @@ const mocks = vi.hoisted(() => ({
   render: vi.fn(),
   zip: vi.fn(),
   subtitles: vi.fn(),
+  renderVideoOverride: null as null | Record<string, unknown>,
 }));
 vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/lib/video-export-app/use-render-video', () => ({
-  useRenderVideo: () => ({
-    rendering: false,
-    percent: 0,
-    etaMs: null,
-    options: { resolution: '1080p', fps: 30, quality: 'standard', burnInSubtitles: false },
-    setOptions: vi.fn(),
-    renderVideo: mocks.render,
-  }),
+  useRenderVideo: () =>
+    mocks.renderVideoOverride ?? {
+      rendering: false,
+      status: 'idle',
+      percent: 0,
+      etaMs: null,
+      queuePosition: null,
+      options: { resolution: '1080p', fps: 30, quality: 'standard', burnInSubtitles: false },
+      setOptions: vi.fn(),
+      renderVideo: mocks.render,
+    },
 }));
 vi.mock('@/lib/video-export-app/use-export-video', () => ({
   useExportVideo: () => ({ exporting: false, exportVideo: mocks.zip }),
@@ -128,5 +132,40 @@ describe('video export queue preflight', () => {
     expect(document.body.textContent).not.toContain('export.videoRenderMp4');
     expect(document.body.textContent).toContain('export.videoServiceHint');
     expect(button('export.videoDownloadZip').disabled).toBe(false);
+  });
+});
+
+describe('video export queued state display', () => {
+  function queuedOverride(queuePosition: number | null) {
+    return {
+      rendering: true,
+      status: 'queued',
+      percent: 0,
+      etaMs: null,
+      queuePosition,
+      options: { resolution: '1080p', fps: 30, quality: 'standard', burnInSubtitles: false },
+      setOptions: vi.fn(),
+      renderVideo: mocks.render,
+    };
+  }
+
+  afterEach(() => {
+    mocks.renderVideoOverride = null;
+  });
+
+  it('shows queue position text and no progress bar when queued with known position', async () => {
+    mocks.renderVideoOverride = queuedOverride(2);
+    mocks.fetch.mockResolvedValue(response(true));
+    await show(true);
+    expect(document.body.textContent).toContain('export.videoQueuePosition');
+    expect(document.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it('shows generic queued text when position is unknown', async () => {
+    mocks.renderVideoOverride = queuedOverride(null);
+    mocks.fetch.mockResolvedValue(response(true));
+    await show(true);
+    expect(document.querySelector('[role="status"]')?.textContent).toBe('export.videoQueued');
+    expect(document.querySelector('[role="progressbar"]')).toBeNull();
   });
 });
