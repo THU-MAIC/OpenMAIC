@@ -464,6 +464,52 @@ describe('runner context budget block', () => {
     }
   });
 
+  it('blocks without a summary call when one history message is too large to summarize', async () => {
+    // A single message larger than any summary chunk, followed by a short tail
+    // that fits in the kept suffix. The plan rejects before paying for any
+    // summary call; `summary_input_too_large` (not `summary_failed`) is used
+    // so the runner does not schedule an unattended retry.
+    const history: AgentMessage[] = [
+      {
+        role: 'user',
+        content: `giant ${'g'.repeat(CONTEXT_WINDOW * 4)}`,
+        timestamp: 1,
+      } as AgentMessage,
+      assistant('ack', 2),
+      ...conversation(4, 50),
+    ];
+    const tree = await seedTree(history);
+    const meta = makeMeta();
+    const store = makeStore(meta);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const seen = await runOnce(tree, store, meta);
+
+      // Planned, not attempted: no summary call is paid for.
+      expect(summaryCalls).toBe(0);
+      expect(seen.views).toHaveLength(0);
+      expect(await entriesOf(tree, 'compaction')).toHaveLength(0);
+      expectBlockedOnce(store, 'summary_input_too_large');
+      const blockedLine = String(
+        warn.mock.calls.find(([line]) => String(line).includes('context admission blocked'))?.[0],
+      );
+      const blocked = JSON.parse(blockedLine.slice(blockedLine.indexOf('{')));
+      expect(blocked).toMatchObject({
+        reason: 'summary_input_too_large',
+        summaryFailure: {
+          errorName: 'SummaryInputTooLargeError',
+          timeoutOrAbort: false,
+          modelRoute: 'agent slot model test:driver-model',
+        },
+      });
+    } finally {
+      error.mockRestore();
+      warn.mockRestore();
+    }
+  });
+
   it('blocks when the context is still over budget after compaction, with a non-retryable settle', async () => {
     const tree = await seedTree(conversation(2, 50));
     const meta = makeMeta();

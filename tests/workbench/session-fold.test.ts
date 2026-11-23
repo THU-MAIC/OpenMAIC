@@ -57,6 +57,7 @@ const blankFold: WorkbenchFold = {
   waitingKey: null,
   waitingArmed: false,
   stageId: null,
+  contextBlocked: false,
 };
 
 function foldAll(events: WorkbenchEvent[], initial: WorkbenchFold = blankFold): WorkbenchFold {
@@ -74,6 +75,7 @@ const contentOf = (state: WorkbenchFold) => state.chat.filter((n) => n.kind !== 
 describe('lifecycle events', () => {
   it.each([
     'summary_failed',
+    'summary_input_too_large',
     'no_compaction_boundary',
     'still_oversized',
     'invalid_output_budget',
@@ -97,10 +99,18 @@ describe('lifecycle events', () => {
         summary_failed: {
           en: 'This conversation reached the context limit and summarizing its earlier messages failed, so this turn was stopped',
           zh: '此会话已超出上下文上限，且早期消息的摘要生成失败，本轮已停止',
-          // Not the plain retry hint: a history too large to summarize fails
-          // the same way every time, so the advice names the way out too.
+          // Not the plain retry hint: if the summary keeps failing, the advice
+          // names the way out too.
           hintEn: 'Send another message to retry, or start a new chat if it keeps failing',
           hintZh: '可以再说一句让它重试；如果反复失败，请开始新聊天',
+        },
+        // summary_input_too_large reuses contextStillTooLarge: the history is
+        // too large to send to the summary model, which is a permanent block.
+        summary_input_too_large: {
+          en: "This conversation is too long for the model's context limit",
+          zh: '此会话过长，超出了模型上下文上限',
+          hintEn: 'Shorten the message or attachments, or start a new chat',
+          hintZh: '请精简消息或附件，或开始新聊天',
         },
         // These two share one hint: either can come from a single oversized
         // input, which a new chat alone cannot fix.
@@ -137,8 +147,45 @@ describe('lifecycle events', () => {
         expect.objectContaining({ kind: 'user', text: 'keep my request' }),
       );
       expect(foldAll(events).chat).toEqual(state.chat);
+      // Only summary_input_too_large closes the composer: its history is too
+      // large even to be summarized and a resend only adds to it.
+      const blocks = reason === 'summary_input_too_large';
+      expect(state.contextBlocked).toBe(blocks);
+      expect(foldAll(events).contextBlocked).toBe(blocks);
     },
   );
+
+  it('keeps a blocked conversation blocked across replay and lifts it on a later clean end', () => {
+    const error = new ContextBudgetError('summary_input_too_large').message;
+    const blocked = [
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('session_end', { status: 'failed', error, errorCode: 'CONTEXT_BUDGET_EXCEEDED' }),
+    ];
+    // Same prefix, folded again: the block is part of the record, not a
+    // live-run artefact, so a cold replay blocks exactly the same way.
+    expect(foldAll(blocked).contextBlocked).toBe(true);
+    // Another client ran on after a model switch and the run succeeded: the
+    // conversation works again, and the fold says so rather than holding the
+    // block forever.
+    const recovered = foldAll([
+      ...blocked,
+      ev('user_message', { text: 'again', delivery: 'queued' }),
+      ev('session_resumed', {}),
+      ev('session_end', { status: 'succeeded' }),
+    ]);
+    expect(recovered.contextBlocked).toBe(false);
+    // An ordinary failure never blocks.
+    const ordinary = foldAll([
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('session_end', { status: 'failed', error: 'provider 502' }),
+    ]);
+    expect(ordinary.contextBlocked).toBe(false);
+    const cancelled = foldAll([
+      ev('session_start', { prompt: 'keep my request' }),
+      ev('session_end', { status: 'cancelled' }),
+    ]);
+    expect(cancelled.contextBlocked).toBe(false);
+  });
 
   it('silently clears a deleted Skill binding without changing the conversation or course', () => {
     const initial = foldAll([

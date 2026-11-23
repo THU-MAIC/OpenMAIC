@@ -1184,6 +1184,18 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   });
   const [goHomeStable] = useState(() => () => goHomeRef.current());
 
+  /**
+   * The context-limit notice's "Start a new chat": opens an ordinary new
+   * conversation. Stable, so `WorkbenchChat` publishes it to the host store
+   * once rather than on every render; the ref keeps it calling the current
+   * `startNewConversation`.
+   */
+  const startChatOutOfBlockedRef = useRef(startNewConversation);
+  useLayoutEffect(() => {
+    startChatOutOfBlockedRef.current = startNewConversation;
+  });
+  const [startChatOutOfBlockedStable] = useState(() => () => startChatOutOfBlockedRef.current());
+
   // ⌘J / Ctrl+J: a new chat from anywhere, exactly as the rail's button.
   const startNewConversationRef = useRef(startNewConversation);
   useEffect(() => {
@@ -2184,6 +2196,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             newConversation={composerReset}
             conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
             draftConversation={draftConversation}
+            onStartNewChat={startChatOutOfBlockedStable}
             onRename={
               // Only a conversation that exists can be named. A draft one has no
               // id to PATCH — its first message mints the session, and the title

@@ -27,6 +27,13 @@ import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n
  */
 export type NoticeTone = SystemTone | 'stopped';
 
+/**
+ * What the notice offers to DO. Derived, not persisted: the node's copyKey
+ * already names the situation, and an affordance is presentation — the fold
+ * stays a faithful record and a replayed log renders the same button.
+ */
+export type NoticeAction = 'newChat';
+
 export interface SystemNotice {
   tone: NoticeTone;
   /** One statement of what happened. Never carries the technical cause. */
@@ -35,6 +42,8 @@ export interface SystemNotice {
   hint?: string;
   /** The raw cause, verbatim, for the disclosure. */
   detail?: string;
+  /** The way out, when the notice itself is the only place it can be offered. */
+  action?: NoticeAction;
 }
 
 /** Notice-shaped nodes: everything the run says about itself. */
@@ -59,6 +68,17 @@ const oneLine = (value: string): string =>
  */
 const cleanDetail = (value: string): string => value.trim().replace(/[\s:：]+$/u, '');
 
+/**
+ * The context-limit notices that offer a "Start a new chat" action — every
+ * recoverable and non-recoverable length-limit reason. `contextBudgetInvalid`
+ * is a misconfiguration an operator fixes; a new chat does not help there.
+ */
+const CONTEXT_LIMIT_NEW_CHAT_KEYS = new Set([
+  'workbench.system.contextSummaryFailed',
+  'workbench.system.contextStillTooLarge',
+  'workbench.system.contextNoBoundary',
+]);
+
 export function presentSystemNotice(
   node: ChatNode,
   t: WorkbenchTranslator = defaultWorkbenchTranslator,
@@ -71,11 +91,18 @@ export function presentSystemNotice(
       ? oneLine(node.hint)
       : '';
   const detail = node.detail ? cleanDetail(node.detail) : '';
+  // The length-limit notices carry the way out. `invalid_output_budget` is an
+  // operator misconfiguration — a new chat hits the same limit, so no button.
+  const action: NoticeAction | undefined =
+    node.kind === 'system' && node.copyKey && CONTEXT_LIMIT_NEW_CHAT_KEYS.has(node.copyKey)
+      ? 'newChat'
+      : undefined;
   return {
     tone,
     summary,
     ...(hint ? { hint } : {}),
     ...(detail ? { detail } : {}),
+    ...(action ? { action } : {}),
   };
 }
 

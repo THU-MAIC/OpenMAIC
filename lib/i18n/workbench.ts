@@ -43,6 +43,8 @@ export const workbenchEn = {
     jumpToBottom: 'Jump to bottom',
     interruptPlaceholder: 'Add a note, then press Enter to send',
     continuePlaceholder: 'Say what to do next, then press Enter to send',
+    contextBlockedPlaceholder:
+      'This conversation reached its length limit; start a new chat to continue',
     refsNeedInstruction: 'Type an instruction for the selected elements',
     stopping: 'Stopping…',
     stoppingAria: 'Stopping',
@@ -225,6 +227,7 @@ export const workbenchEn = {
     contextStillTooLarge: "This conversation is too long for the model's context limit",
     contextNoBoundary: "A single message or attachment is too large for the model's context limit",
     shortenOrNewChatHint: 'Shorten the message or attachments, or start a new chat',
+    startNewChat: 'Start a new chat',
     contextBudgetInvalid:
       "The current model's context budget is misconfigured. This turn has been stopped.",
     stopped: 'This build was stopped',
@@ -460,6 +463,7 @@ export const workbenchZh = {
     jumpToBottom: '回到底部',
     interruptPlaceholder: '可以插话，回车发送',
     continuePlaceholder: '继续说点什么，回车发送',
+    contextBlockedPlaceholder: '此会话已达长度上限，开始新聊天以继续',
     refsNeedInstruction: '输入对已选元素的指令后发送',
     stopping: '正在停止…',
     stoppingAria: '正在停止',
@@ -603,6 +607,7 @@ export const workbenchZh = {
     contextStillTooLarge: '此会话过长，超出了模型上下文上限',
     contextNoBoundary: '单条消息或附件过大，超出了模型上下文上限',
     shortenOrNewChatHint: '请精简消息或附件，或开始新聊天',
+    startNewChat: '开始新聊天',
     contextBudgetInvalid: '当前模型的上下文预算配置异常，本轮已停止。',
     stopped: '本轮生成已停止',
     workerInterrupted: '被 worker 重启打断，这次调用没有产生结果；agent 会在新一次尝试里按需重发。',

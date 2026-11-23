@@ -48,6 +48,7 @@ export function WorkspaceChatPane({
   onMaterialSeedConsumed,
   newConversation,
   conversation,
+  onStartNewChat,
 }: {
   /**
    * The pane's width in px. The conversation keeps ITS OWN column in every
@@ -99,6 +100,8 @@ export function WorkspaceChatPane({
   readonly newConversation?: number;
   /** The conversation this pane was navigated to, passed through to the composer. */
   readonly conversation?: string | null;
+  /** The workspace's new-chat exit for the context-limit notice, passed through to the chat. */
+  readonly onStartNewChat?: () => void;
 }) {
   const { t } = useI18n();
   const sessionPrompt = useWorkbenchStore((s) => s.sessionPrompt);
@@ -280,6 +283,7 @@ export function WorkspaceChatPane({
               onMaterialSeedConsumed={onMaterialSeedConsumed}
               newConversation={newConversation}
               conversation={conversation}
+              onStartNewChat={onStartNewChat}
             />
           </WorkbenchDraftConversationProvider>
         </WorkbenchCourseNavigationProvider>
