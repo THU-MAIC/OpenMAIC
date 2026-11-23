@@ -139,17 +139,13 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         // upload format and the language follow the provider it resolves to.
         // onstop 持有开始录音时的回调；转录时读取最新语言，避免录音期间切换界面后仍用旧值。
         const setup = typeof window !== 'undefined' ? await asrSetup(localeRef.current) : null;
-        if (setup) {
-          const uploadAudio = await normalizeASRUploadAudio(
-            setup.providerId,
-            audioBlob,
-            setup.modelId,
-          );
-          formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
-          formData.append('language', setup.language);
-        } else {
-          formData.append('audio', audioBlob, 'recording.webm');
-        }
+        const uploadAudio = await normalizeASRUploadAudio(
+          setup?.providerId ?? '',
+          audioBlob,
+          setup?.modelId,
+        );
+        formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
+        if (setup) formData.append('language', setup.language);
 
         if (!isCurrentSession(session)) return;
         const response = await fetch('/api/transcription', {
@@ -330,10 +326,10 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       }
       streamRef.current = stream;
 
-      // Create MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm',
-      });
+      const recorderOptions = MediaRecorder.isTypeSupported?.('audio/webm')
+        ? { mimeType: 'audio/webm' }
+        : undefined;
+      const mediaRecorder = new MediaRecorder(stream, recorderOptions);
 
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -355,7 +351,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
         // Merge audio chunks
         const audioBlob = new Blob(audioChunksRef.current, {
-          type: 'audio/webm',
+          type: audioChunksRef.current[0]?.type || mediaRecorder.mimeType || 'audio/webm',
         });
 
         // Send to server for transcription

@@ -81,21 +81,22 @@ export async function normalizeASRUploadAudio(
   audioBlob: Blob,
   modelId?: string,
 ): Promise<{ blob: Blob; fileName: string }> {
-  // Browser recordings are WebM/Opus. A provider whose documented input
-  // formats do not include webm gets a client-side WAV transcode (a blob
-  // already in WAV passes through unchanged); everyone else receives the
-  // recording as-is. The decision comes from the provider registry, so this
-  // shared upload path holds no vendor ids.
+  // Prefer WebM/Opus, but a browser may record another container (for example
+  // MP4 on older Safari). Send those recordings as WAV so the server's ASR
+  // adapters get a container they can recognise. Providers that cannot use
+  // WebM also get WAV.
+  if (isWavBlob(audioBlob)) return { blob: audioBlob, fileName: 'recording.wav' };
+  const isWebM = audioBlob.type.split(';', 1)[0] === 'audio/webm';
   const provider = ASR_PROVIDERS[providerId as BuiltInASRProviderId];
-  // Unknown ids (custom providers) pass through; a known provider whose
-  // formats lack webm transcodes.
+  // WebM passes through for custom providers. The registry identifies built-in
+  // providers that need WAV in its place.
   const registryTranscode = provider !== undefined && !provider.supportedFormats.includes('webm');
   // Qwen3 behind a compatible transcription endpoint decodes PCM/WAV, but
   // cannot decode the browser's WebM/Opus recording container. Model IDs may
   // include a namespace and mixed case, e.g. Qwen/Qwen3-ASR-1.7B.
   const qwenCompatible =
     providerId === 'openai-whisper' && /^(?:[^/]+\/)?qwen3-asr(?:$|-)/i.test(modelId ?? '');
-  if (!registryTranscode && !qwenCompatible) {
+  if (isWebM && !registryTranscode && !qwenCompatible) {
     return { blob: audioBlob, fileName: 'recording.webm' };
   }
   return { blob: await audioBlobToWav(audioBlob), fileName: 'recording.wav' };

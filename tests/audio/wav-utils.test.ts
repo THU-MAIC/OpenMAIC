@@ -37,6 +37,28 @@ describe('normalizeASRUploadAudio', () => {
     expect(result.fileName).toBe('recording.webm');
   });
 
+  it('converts an MP4 microphone recording before upload', async () => {
+    const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/mp4' });
+    const decodeAudioData = vi.fn().mockResolvedValue({
+      sampleRate: 16_000,
+      length: 1,
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array([0.5]),
+    });
+    vi.stubGlobal('window', {
+      AudioContext: class {
+        decodeAudioData = decodeAudioData;
+        close = vi.fn().mockResolvedValue(undefined);
+      },
+    });
+
+    const { blob, fileName } = await normalizeASRUploadAudio('openai-whisper', input);
+
+    expect(fileName).toBe('recording.wav');
+    expect(blob.type).toBe('audio/wav');
+    expect(decodeAudioData).toHaveBeenCalledWith(await input.arrayBuffer());
+  });
+
   it('keeps WAV blobs unchanged for lemonade-asr', async () => {
     const input = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/wav' });
     const result = await normalizeASRUploadAudio('lemonade-asr', input);
