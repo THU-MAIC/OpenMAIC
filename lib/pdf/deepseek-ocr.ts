@@ -33,7 +33,7 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { DEEPSEEK_OCR_DEFAULT_BASE } from './constants';
 import { createLogger } from '@/lib/logger';
-import { MAX_DERIVED_IMAGES } from '@/lib/document/extractors/images';
+import { MAX_DOCUMENT_IMAGES } from '@/lib/document/extractors/images';
 import { providerFetch, type ProviderFetchPolicy } from '@/lib/server/provider-fetch';
 import {
   MaterialExtractionError,
@@ -180,14 +180,14 @@ export function deepseekOCRToMarkdown(
       if (DROPPED_LABELS.has(block.label)) return;
       if (FIGURE_LABELS.has(block.label)) {
         if (block.content) parts.push(block.content);
-        if (!withFigures || figures.length >= MAX_DERIVED_IMAGES) return;
+        if (!withFigures || figures.length >= MAX_DOCUMENT_IMAGES) return;
         const next = blocks[i + 1];
         const caption =
           next && FIGURE_CAPTION_LABELS.has(next.label)
             ? plainLine(next.content) || undefined
             : undefined;
         for (const box of block.boxes) {
-          if (figures.length >= MAX_DERIVED_IMAGES) break;
+          if (figures.length >= MAX_DOCUMENT_IMAGES) break;
           figureOnPage += 1;
           const path = `images/deepseek-ocr-p${page.index + 1}-${figureOnPage}.png`;
           figures.push({ pageIndex: page.index, box, path, ...(caption ? { caption } : {}) });

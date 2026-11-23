@@ -11,6 +11,30 @@ import { base64ImageMimeType } from '@/lib/utils/base64';
 
 const log = createLogger('MinerUParser');
 
+/**
+ * Whether an equation's recognized LaTeX holds the equation itself, not only
+ * its delimiters, spacing and number (`$$ \tag{2.7} $$`, `(2.7a)`,
+ * `\left(2.7\right)`). When unsure it answers no, and the crop stays.
+ */
+function hasEquationContent(text: unknown): boolean {
+  if (typeof text !== 'string') return false;
+  const body = text
+    .replace(/\\tag\*?\{[^}]*\}/g, '')
+    .replace(/\\(?:left|right|[bB]igg?[lr]?)\b/g, '')
+    .replace(/\\(?:qquad|quad|[,;:! [\]])/g, '')
+    .replace(/[\s$~{}]/g, '');
+  // What is left of a number-only equation is its number: `2.7`, `(2.7a)`, `(A.3)`.
+  return body.length > 0 && !/^\(?[A-Za-z]?[\d.]*\d[\w.-]*\)?$/.test(body);
+}
+
+/** The name a markdown target names a file by: no `./`, attribute name or query. */
+function targetNames(token: string): string[] {
+  const target = token.replace(/^[a-z-]+=/i, '').replace(/^\.\//, '');
+  if (/^https?:\/\//i.test(target)) return [target];
+  const path = target.replace(/[?#].*$/, '');
+  return [path, path.split('/').pop()!];
+}
+
 /** Extract ParsedPdfContent from a single MinerU file result */
 export function extractMinerUResult(fileResult: Record<string, unknown>): ParsedPdfContent {
   const markdown: string = (fileResult.md_content as string) || '';
@@ -31,7 +55,18 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   }
 
   // Parse content_list to build image metadata lookup (img_path → metadata)
-  const imageMetaLookup = new Map<string, { pageIdx: number; bbox: number[]; caption?: string }>();
+  const imageMetaLookup = new Map<
+    string,
+    { pageIdx: number; bbox: number[]; caption?: string; latexEquation?: boolean }
+  >();
+  // Names two content_list entries share: an image found by one of them is
+  // never left out, whichever entry it belongs to.
+  const ambiguousNames = new Set<string>();
+  const remember = (name: string, entry: NonNullable<ReturnType<typeof imageMetaLookup.get>>) => {
+    const previous = imageMetaLookup.get(name);
+    if (previous && previous !== entry) ambiguousNames.add(name);
+    imageMetaLookup.set(name, entry);
+  };
   let contentList: unknown;
   try {
     contentList =
@@ -49,22 +84,31 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     );
     pageCount = pages.size;
 
-    // Tables and display equations are cropped into images too and referenced by img_path
-    const imageTypes = new Set(['image', 'table', 'equation']);
+    // Charts, tables and display equations are cropped into images too and
+    // referenced by img_path
+    const imageTypes = new Set(['image', 'chart', 'table', 'equation']);
     for (const item of contentList) {
       if (imageTypes.has(item.type) && item.img_path) {
-        const captions = item.type === 'table' ? item.table_caption : item.image_caption;
+        const captions =
+          item.type === 'table'
+            ? item.table_caption
+            : item.type === 'chart'
+              ? item.chart_caption
+              : item.image_caption;
         const metaEntry = {
           pageIdx: item.page_idx ?? 0,
           bbox: item.bbox || [0, 0, 1000, 1000],
           caption: Array.isArray(captions) ? captions[0] : undefined,
+          ...(item.type === 'equation' && hasEquationContent(item.text)
+            ? { latexEquation: true }
+            : {}),
         };
         // Store under both the full path and basename so lookup works
         // regardless of whether images dict uses "abc.jpg" or "images/abc.jpg"
-        imageMetaLookup.set(item.img_path, metaEntry);
+        remember(item.img_path, metaEntry);
         const basename = item.img_path.split('/').pop();
         if (basename && basename !== item.img_path) {
-          imageMetaLookup.set(basename, metaEntry);
+          remember(basename, metaEntry);
         }
       }
     }
@@ -82,15 +126,49 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
     path?: string;
   }> = [];
 
+  // A display equation's crop is left out when its LaTeX is already in the
+  // markdown and the markdown does not name the crop: it would only take one
+  // of the document's image places. A crop of an equation MinerU recognized
+  // no content for (only its number, say) stays.
+  let markdownTargets: Set<string> | undefined;
+  // A file name names an image only when one image has it, as when the text
+  // is rewritten (`imagePathIndex`): a chunk's image paths
+  // (`images/chunk-N/image-M`) repeat theirs, so they are matched whole.
+  const fileNameCounts = new Map<string, number>();
+  for (const key of Object.keys(imageData)) {
+    const name = key.split('/').pop()!;
+    fileNameCounts.set(name, (fileNameCounts.get(name) ?? 0) + 1);
+  }
+  const namedByMarkdown = (key: string, value: string): boolean => {
+    // Every name the markdown could give a file, split once, with and without
+    // the parentheses a file name may hold. A word that only looks like a
+    // name keeps a crop, never drops one.
+    // Only a token with a `.` or `/` can name a file.
+    const files = (tokens: string[]) => tokens.filter((t) => t.includes('.') || t.includes('/'));
+    markdownTargets ??= new Set([
+      ...files(markdown.split(/[\s()<>"'[\]]+/)).flatMap(targetNames),
+      ...files(markdown.split(/[\s<>"'[\]]+/)).flatMap((token) =>
+        targetNames(token.replace(/^\(/, '').replace(/\)$/, '')),
+      ),
+    ]);
+    const fileName = key.split('/').pop()!;
+    const names = [key, `images/${key}`, ...(fileNameCounts.get(fileName) === 1 ? [fileName] : [])];
+    if (/^https?:\/\//i.test(value)) names.push(value);
+    return names.some((name) => markdownTargets!.has(name));
+  };
+  let equationCrops = 0;
+
   Object.entries(imageData).forEach(([key, base64Url], index) => {
-    const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
-    imageMapping[imageId] = base64Url;
     // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths).
     // A gateway that hosts the images names them by their URL in content_list too.
-    const meta =
-      imageMetaLookup.get(key) ||
-      imageMetaLookup.get(`images/${key}`) ||
-      imageMetaLookup.get(base64Url);
+    const name = [key, `images/${key}`, base64Url].find((n) => imageMetaLookup.has(n));
+    const meta = name === undefined ? undefined : imageMetaLookup.get(name);
+    if (meta?.latexEquation && !ambiguousNames.has(name!) && !namedByMarkdown(key, base64Url)) {
+      equationCrops += 1;
+      return;
+    }
+    const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
+    imageMapping[imageId] = base64Url;
     pdfImages.push({
       id: imageId,
       src: base64Url,
@@ -106,8 +184,11 @@ export function extractMinerUResult(fileResult: Record<string, unknown>): Parsed
   const images = Object.values(imageMapping);
 
   log.info(
-    `[MinerU] Parsed successfully: ${images.length} images, ` +
-      `${markdown.length} chars of markdown`,
+    `[MinerU] Parsed successfully: ${images.length} images` +
+      (equationCrops
+        ? ` (${equationCrops} equation crop(s) whose LaTeX is in the text left out)`
+        : '') +
+      `, ${markdown.length} chars of markdown`,
   );
 
   return withChapterSource(

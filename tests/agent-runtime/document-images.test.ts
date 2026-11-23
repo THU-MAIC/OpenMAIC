@@ -255,10 +255,32 @@ describe('ownerDocumentOutcome', () => {
         String.raw`![](openmaic-derivative:img-1)` + '\n\n' + String.raw`\[image\]`,
       );
       expect(outcome.stats.diagnostics).toEqual([
-        '1 document image(s) not kept (limit 100, or unreadable)',
+        '1 document image(s) not kept (limit 300, or unreadable)',
         '1 document image(s) could not be downloaded',
       ]);
       expect(outcome.imagesNotDownloaded).toBe(1);
+    });
+
+    it('downloads and keeps more than a hundred images of one document', async () => {
+      const png = await sharp({
+        create: { width: 4, height: 2, channels: 3, background: { r: 0, g: 128, b: 255 } },
+      })
+        .png()
+        .toBuffer();
+      vi.spyOn(providerResultFetch, 'fetchProviderResultUrl').mockImplementation(
+        async () => new Response(new Uint8Array(png), { headers: { 'content-type': 'image/png' } }),
+      );
+      const images = Object.fromEntries(
+        Array.from({ length: 150 }, (_, i) => [
+          `f${i}.jpg`,
+          `https://files.example.com/media/${i}`,
+        ]),
+      );
+
+      const outcome = await ownerDocumentOutcome(linked(images), provider);
+
+      expect(outcome.images).toHaveLength(150);
+      expect(outcome.stats.diagnostics ?? []).toEqual([]);
     });
 
     it('does not count as not downloaded what would be left out again', async () => {
@@ -288,7 +310,7 @@ describe('ownerDocumentOutcome', () => {
       // Too large: the same answer drops it again, so the result stays cacheable.
       expect(outcome.imagesNotDownloaded).toBeUndefined();
       expect(outcome.stats.diagnostics).toEqual([
-        '1 document image(s) not kept (limit 100, or unreadable)',
+        '1 document image(s) not kept (limit 300, or unreadable)',
       ]);
     });
 
@@ -473,10 +495,10 @@ describe('MinerU parser', () => {
     ]);
   });
 
-  it('keeps page, size and caption for table and equation crops', () => {
+  it('keeps page, size and caption for chart, table and equation crops', () => {
     const parsed = extractMinerUResult({
-      md_content: '',
-      images: { 'fig.jpg': 'AAAA', 'tab.jpg': 'BBBB', 'eq.jpg': 'CCCC' },
+      md_content: '![](images/fig.jpg)\n\n![](images/chart.jpg)',
+      images: { 'fig.jpg': 'AAAA', 'chart.jpg': 'DDDD', 'tab.jpg': 'BBBB', 'eq.jpg': 'CCCC' },
       content_list: [
         {
           type: 'image',
@@ -484,6 +506,13 @@ describe('MinerU parser', () => {
           page_idx: 0,
           bbox: [10, 20, 110, 220],
           image_caption: ['Figure 1: Overview'],
+        },
+        {
+          type: 'chart',
+          img_path: 'images/chart.jpg',
+          page_idx: 1,
+          bbox: [0, 0, 200, 100],
+          chart_caption: ['Figure 2: Trend'],
         },
         {
           type: 'table',
@@ -494,11 +523,12 @@ describe('MinerU parser', () => {
           table_footnote: ['* p < 0.05'],
         },
         {
+          // MinerU recognized only the number: the crop is all there is.
           type: 'equation',
           img_path: 'images/eq.jpg',
           page_idx: 5,
           bbox: [100, 400, 400, 460],
-          text: '$$E = mc^2$$',
+          text: '$$\n\\tag{2.7}\n$$',
         },
       ],
     });
@@ -511,6 +541,12 @@ describe('MinerU parser', () => {
       width: 100,
       height: 200,
     });
+    expect(byPath['chart.jpg']).toMatchObject({
+      pageNumber: 2,
+      description: 'Figure 2: Trend',
+      width: 200,
+      height: 100,
+    });
     expect(byPath['tab.jpg']).toMatchObject({
       pageNumber: 4,
       description: 'Table 2: Results',
@@ -519,5 +555,105 @@ describe('MinerU parser', () => {
     });
     expect(byPath['eq.jpg']).toMatchObject({ pageNumber: 6, width: 300, height: 60 });
     expect(byPath['eq.jpg'].description).toBeUndefined();
+  });
+
+  it('leaves out the crop of an equation whose LaTeX is in the text, unless the text names it', () => {
+    const latex = '$$\nE = m c ^ { 2 } \\tag{1.1}\n$$';
+    const parsed = extractMinerUResult({
+      md_content: `${latex}\n\n![](images/named.jpg)\n\n<img src="images/html.jpg">\n\n![eq][r]\n\n[r]: images/ref.jpg`,
+      images: {
+        'eq.jpg': 'AAAA',
+        'named.jpg': 'BBBB',
+        'html.jpg': 'DDDD',
+        'ref.jpg': 'EEEE',
+        'number.jpg': 'CCCC',
+        'linked.jpg': 'https://files.example.com/media/eq',
+      },
+      content_list: [
+        { type: 'equation', img_path: 'images/eq.jpg', page_idx: 0, text: latex },
+        { type: 'equation', img_path: 'images/named.jpg', page_idx: 0, text: latex },
+        { type: 'equation', img_path: 'images/html.jpg', page_idx: 0, text: latex },
+        { type: 'equation', img_path: 'images/ref.jpg', page_idx: 0, text: latex },
+        { type: 'equation', img_path: 'images/number.jpg', page_idx: 1, text: '(1.2)' },
+        {
+          type: 'equation',
+          img_path: 'https://files.example.com/media/eq',
+          page_idx: 1,
+          text: '$$\\int_0^1 x \\, dx$$',
+        },
+      ],
+    });
+    expect(parsed.metadata?.pdfImages?.map((image) => image.path)).toEqual([
+      'named.jpg',
+      'html.jpg',
+      'ref.jpg',
+      'number.jpg',
+    ]);
+    expect(parsed.images).toEqual(
+      ['BBBB', 'DDDD', 'EEEE', 'CCCC'].map((data) => expect.stringContaining(data)),
+    );
+    expect(Object.keys(parsed.metadata?.imageMapping ?? {})).toHaveLength(4);
+  });
+
+  it('keeps an equation crop the text names by a query URL or a ./ path', () => {
+    const latex = '$$x^2 + y^2 = 1$$';
+    const url = 'https://files.example.com/media/eq?sig=abc&t=1';
+    const parsed = extractMinerUResult({
+      md_content: `![](${url})\n\n<img src=./images/dot.jpg>`,
+      images: { 'q.jpg': url, 'dot.jpg': 'AAAA' },
+      content_list: [
+        { type: 'equation', img_path: url, page_idx: 0, text: latex },
+        { type: 'equation', img_path: 'images/dot.jpg', page_idx: 0, text: latex },
+      ],
+    });
+    expect(parsed.metadata?.pdfImages?.map((image) => image.path)).toEqual(['q.jpg', 'dot.jpg']);
+  });
+
+  it('keeps an equation crop the text names with parentheses or by its unique file name', () => {
+    const latex = '$$x^2 + y^2 = 1$$';
+    const parsed = extractMinerUResult({
+      md_content: '![](./images/eq(1).jpg)\n\n![](./eq.jpg)',
+      images: { 'eq(1).jpg': 'AAAA', 'images/eq.jpg': 'BBBB' },
+      content_list: [
+        { type: 'equation', img_path: 'images/eq(1).jpg', page_idx: 0, text: latex },
+        { type: 'equation', img_path: 'images/eq.jpg', page_idx: 0, text: latex },
+      ],
+    });
+    expect(parsed.metadata?.pdfImages?.map((image) => image.path)).toEqual([
+      'eq(1).jpg',
+      'images/eq.jpg',
+    ]);
+  });
+
+  it.each(['$$(2.7a)$$', '$$\\left(2.7\\right)$$', '$$\\qquad (A.3)$$', '2'])(
+    'keeps the crop of an equation recognized as its number only: %s',
+    (text) => {
+      const parsed = extractMinerUResult({
+        md_content: text,
+        images: { 'eq.jpg': 'AAAA' },
+        content_list: [{ type: 'equation', img_path: 'images/eq.jpg', page_idx: 0, text }],
+      });
+      expect(parsed.images).toHaveLength(1);
+    },
+  );
+
+  it('keeps an image whose name a figure and an equation share', () => {
+    const parsed = extractMinerUResult({
+      md_content: '$$E = mc^2$$',
+      images: { 'eq.jpg': 'AAAA' },
+      content_list: [
+        { type: 'image', img_path: 'images/eq.jpg', page_idx: 0 },
+        { type: 'equation', img_path: 'else/eq.jpg', page_idx: 0, text: '$$E = mc^2$$' },
+      ],
+    });
+    expect(parsed.images).toHaveLength(1);
+  });
+
+  it('keeps every image when there is no content_list to tell equations apart', () => {
+    const parsed = extractMinerUResult({
+      md_content: '$$E = mc^2$$',
+      images: { 'eq.jpg': 'AAAA' },
+    });
+    expect(parsed.images).toHaveLength(1);
   });
 });

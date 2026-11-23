@@ -534,6 +534,66 @@ describe('MinerU chunk merge', () => {
     expect(result.text.match(/prose images\/same.png/g)).toHaveLength(2);
   });
 
+  it('leaves out equation crops whose LaTeX each chunk already has in its text', async () => {
+    const chunk = (startPage: number) => ({
+      startPage,
+      result: {
+        md_content: `$$x + ${startPage}$$\n\n![figure](images/fig.png)`,
+        images: { 'eq.png': 'data:image/png;base64,EQ', 'fig.png': 'data:image/png;base64,FIG' },
+        content_list: [
+          {
+            type: 'equation',
+            img_path: 'images/eq.png',
+            page_idx: 0,
+            text: `$$x + ${startPage}$$`,
+          },
+          { type: 'image', img_path: 'images/fig.png', page_idx: 0 },
+        ],
+      },
+    });
+    const result = await mergeMinerUChunks([chunk(0), chunk(2)]);
+    expect(
+      result.metadata?.pdfImages?.map(({ path, pageNumber }) => ({ path, pageNumber })),
+    ).toEqual([
+      { path: 'images/chunk-1/image-2', pageNumber: 1 },
+      { path: 'images/chunk-3/image-2', pageNumber: 3 },
+    ]);
+    expect(result.text).toContain('![figure](images/chunk-3/image-2)');
+  });
+
+  it('keeps an equation crop a chunk names, matched by its own chunk path', async () => {
+    const result = await mergeMinerUChunks([
+      {
+        startPage: 0,
+        result: {
+          md_content: '![](images/fig.png)',
+          images: { 'fig.png': 'data:image/png;base64,FIG' },
+          content_list: [{ type: 'image', img_path: 'images/fig.png', page_idx: 0 }],
+        },
+      },
+      {
+        startPage: 2,
+        result: {
+          md_content: '$$x$$\n\n![](images/named.png)',
+          images: {
+            'eq.png': 'data:image/png;base64,EQ',
+            'named.png': 'data:image/png;base64,NAMED',
+          },
+          content_list: [
+            { type: 'equation', img_path: 'images/eq.png', page_idx: 0, text: '$$x + 1$$' },
+            { type: 'equation', img_path: 'images/named.png', page_idx: 0, text: '$$x + 2$$' },
+          ],
+        },
+      },
+    ]);
+    // `images/chunk-1/image-1` shares its file name with chunk 3's equation
+    // crop; only chunk 3's own paths decide.
+    expect(result.metadata?.pdfImages?.map(({ path }) => path)).toEqual([
+      'images/chunk-1/image-1',
+      'images/chunk-3/image-2',
+    ]);
+  });
+
   it('handles URL-backed images and optional missing or malformed content lists', async () => {
     const result = await mergeMinerUChunks([
       {
