@@ -24,6 +24,7 @@ async function project(
     opening = false,
     openingText = '',
     finishedWork,
+    explanationBoard = false,
   }: {
     started?: boolean;
     secondScene?: boolean;
@@ -37,6 +38,7 @@ async function project(
     opening?: boolean;
     openingText?: string;
     finishedWork?: string;
+    explanationBoard?: boolean;
   } = {},
 ) {
   await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
@@ -80,6 +82,7 @@ async function project(
     ...(guideCompleted === null ? {} : { onboardingCompleted: guideCompleted }),
     completedFilesAvailable: false,
     environmentId: 'fixture-environment',
+    ...(explanationBoard ? { explainBoard: { whiteboard: null, lastSeq: null, pages: [] } } : {}),
     environment: { state: environmentReady ? 'running' : 'creating', ready: environmentReady },
     recovery: null,
     state: {
@@ -222,6 +225,38 @@ async function project(
   await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'true');
   return { view, workbench, commands, calls, applicationCalls, publish, publishRaw, stageId };
 }
+
+test('the tutor companion opens a board and moves its conversation between window and dock', async ({
+  page,
+  learningEvents,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await project(page, learningEvents, {
+    started: true,
+    explanationBoard: true,
+    openingText: 'We will design a greeting before writing it.',
+  });
+  const avatar = page.getByTestId('pbl-companion-avatar');
+  await expect(avatar).toBeVisible();
+  const boardToggle = page.getByTestId('pbl-board-toggle');
+  await boardToggle.click();
+  await expect(page.getByTestId('pbl-explain-board')).toBeVisible();
+  await testInfo.attach('tutor-and-board', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await boardToggle.click();
+  await expect(page.getByTestId('pbl-explain-board')).toBeHidden();
+  await avatar.click();
+  const conversation = page.getByTestId('pbl-assistant');
+  await expect(conversation).toBeVisible();
+  await expect(conversation.locator('[data-window-drag]')).toHaveCount(1);
+  await page.getByTestId('pbl-assistant-dock').click();
+  await expect(conversation).toBeVisible();
+  await expect(conversation.locator('[data-window-drag]')).toHaveCount(0);
+  await page.getByTestId('pbl-assistant-close').click();
+  await expect(avatar).toBeVisible();
+});
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();

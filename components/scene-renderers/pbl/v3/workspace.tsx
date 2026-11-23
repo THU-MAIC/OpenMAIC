@@ -6,12 +6,11 @@ import { ApplicationPreview, ApplicationPreviewToggle } from './application-prev
 import { useApplicationPreview } from './use-application-preview';
 import { usePblActivityGeneration } from './activity-provider';
 import {
-  ArrowUp,
   ArrowRight,
   ArrowLeft,
-  Square,
   MessageSquareText,
   RefreshCw,
+  RotateCcw,
   ChevronDown,
   Moon,
   Sun,
@@ -19,8 +18,9 @@ import {
   PanelRight,
   LoaderCircle,
   BookOpen,
-  Check,
-  ClipboardCheck,
+  Minus,
+  PencilLine,
+  Minimize2,
 } from 'lucide-react';
 import { useLearningStream } from './use-learning-stream';
 import { DecisionResponseForm } from './decision-response';
@@ -29,7 +29,15 @@ import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { acknowledgeDecisionDraft, hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  useMemo,
+} from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -50,15 +58,29 @@ import { ProjectOverview } from './project-overview';
 import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
+import { WorkspaceTour } from '@/components/workbench/workspace/WorkspaceTour';
+import { PBL_TOUR_STEPS } from './tour-steps';
 import { WorkbenchLoading } from './workbench-loading';
 import { pblRequest } from './request';
 import { continueActionLabel, needsInitialStart } from '@/lib/pbl/v3/presentation';
 export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
+import { CompanionLayer, type AssistantMode } from './companion-layer';
+import { LearnerComposer } from './learner-composer';
+import { QuizForm } from './quiz-form';
+import {
+  toldConversation,
+  type NarrationProgress,
+  type NarrationTarget,
+} from '@/lib/pbl/v3/narration';
+import { ROLE_PERSONAS } from '@/lib/pbl/v3/personas';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
 
 interface WorkspaceProps {
   sceneId: string;
   projectHero?: ProjectHeroDetails;
+  /** The project is taught by companions: the workbench holds its loading from the first frame. */
+  companions?: boolean;
   onReturnToHero?: () => void;
   autoOnboarding?: boolean;
   initialEntry?: boolean;
@@ -70,6 +92,7 @@ interface WorkspaceProps {
 function PBLV3WorkspaceContent({
   sceneId,
   projectHero,
+  companions = false,
   onReturnToHero,
   autoOnboarding = false,
   initialEntry = false,
@@ -95,6 +118,8 @@ function PBLV3WorkspaceContent({
     (FileReference & { studyId: string; requestId: number }) | null
   >(null);
   const fileTargetSequence = useRef(0);
+  // Lines the role points at while speaking; the whiteboard steps aside so they can be seen.
+  const [pointer, setPointer] = useState<NarrationTarget | null>(null);
   const taskDock = useRef<{ open: () => void }>(null);
   const [error, setError] = useState(''),
     [pending, setPending] = useState(false);
@@ -120,6 +145,25 @@ function PBLV3WorkspaceContent({
     observe: observeMessage,
   } = useLearnerMessage(view, storageError, savedMessage);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  // Explanation-board mode: the code keeps the whole work area; the board floats over it
+  // like the classroom whiteboard, and the role lives at the corner as a companion whose
+  // conversation opens as a window or docks into the side panel.
+  // The whiteboard is out of view until the role calls for it, and away again when the role
+  // or the learner puts it away. The toolbar pen is the learner's switch: off, it stays away.
+  const [boardOff, setBoardOff] = useState(false);
+  const [boardShown, setBoardShown] = useState(false);
+  const boardOpen = !boardOff && boardShown;
+  // Each stage begins with the board put away: it comes out when the role writes on it,
+  // not as an empty window left over from the stage before.
+  const boardStage = view
+    ? `${view.id}:${view.state.position.milestoneId}:${view.state.position.stageIndex}`
+    : '';
+  const [boardFor, setBoardFor] = useState(boardStage);
+  if (boardFor !== boardStage) {
+    setBoardFor(boardStage);
+    setBoardShown(false);
+  }
+  const [assistantMode, setAssistantMode] = useState<AssistantMode>('closed');
   const [pendingDecision, setPendingDecision] = useState<{ id: string; chosen: string } | null>(
     null,
   );
@@ -132,7 +176,10 @@ function PBLV3WorkspaceContent({
     workbench,
     dirtyFiles,
     true,
-    pending || !!view?.needsOpening,
+    // With a whiteboard the learner starts from the running application, so it launches
+    // while the role waits to be started; otherwise it waits for the opening to be delivered.
+    pending ||
+      (!!view?.needsOpening && !(view.explainBoard && needsInitialStart(view) && !pending)),
   );
   const answerKey = `${view?.id}:${view?.state.position.milestoneId}:${view?.state.position.stageIndex}`;
   const recordedAnswers =
@@ -327,6 +374,57 @@ function PBLV3WorkspaceContent({
       ['unknown', 'unavailable'].includes(view.evaluation.state));
   const initialStart = !!view && needsInitialStart(view);
   const waitingToStart = initialStart && pendingAction !== 'begin';
+  // One playhead for both presentations: where the telling has got to in the live reply.
+  const [told, setTold] = useState<NarrationProgress | null>(null);
+  const toldView = useMemo(
+    () =>
+      view?.conversation && told
+        ? { ...view, conversation: [...toldConversation(view.conversation, told)] }
+        : null,
+    [view, told],
+  );
+  // The stage's decisions, answered in the task drawer of the conversation or, with the
+  // conversation put away, in a card by the avatar: the same form on the same draft.
+  const decisionForms = () =>
+    !view
+      ? null
+      : view.decisions.map((decision) => {
+          const draftKey = `${view.state.position.milestoneId}:${decision.id}`;
+          const selected = view.state.collected[
+            view.state.position.milestoneId ?? ''
+          ]?.decisions.find((d) => d.id === decision.id);
+          return (
+            <DecisionResponseForm
+              key={`${view.id}:${draftKey}`}
+              decision={decision}
+              selected={selected}
+              draft={decisionDrafts[draftKey]}
+              disabled={disabled}
+              pendingChosen={
+                pendingDecision?.id === decision.id ? pendingDecision.chosen : undefined
+              }
+              onDraftChange={(draft) =>
+                setDecisionDrafts((previous) => ({ ...previous, [draftKey]: draft }))
+              }
+              onSubmit={(chosen, rationale) =>
+                command('decide', {
+                  decisionId: decision.id,
+                  chosen,
+                  ...(rationale === undefined ? {} : { rationale }),
+                })
+              }
+            />
+          );
+        });
+  const undecided =
+    !!view &&
+    view.decisions.some(
+      (decision) =>
+        !view.state.collected[view.state.position.milestoneId ?? '']?.decisions.find(
+          (made) => made.id === decision.id,
+        ),
+    );
+
   const opening = useRef('');
   useEffect(() => {
     if (
@@ -348,6 +446,28 @@ function PBLV3WorkspaceContent({
     !!recordedAnswers &&
     answers.length === recordedAnswers.length &&
     answers.every((answer, index) => answer === recordedAnswers[index]);
+  // The stage's quiz, answered in the task drawer or in a card by the avatar: the same
+  // questions on the same answers.
+  const quizForm = () =>
+    !view ? null : (
+      <QuizForm
+        questions={view.questions}
+        answers={answers}
+        quiz={quiz}
+        canSubmit={view.actions.includes('quiz')}
+        disabled={disabled}
+        unchanged={quizUnchanged}
+        submitting={pendingAction === 'quiz'}
+        onAnswer={(question, option) =>
+          setQuizAnswers((previous) => {
+            const next = previous.key === answerKey ? [...previous.values] : [...answers];
+            next[question] = option;
+            return { key: answerKey, values: next };
+          })
+        }
+        onSubmit={() => void command('quiz', { answers })}
+      />
+    );
   // All teaching actions share their prerequisites, with an explicit path out
   // of each blocked state. Draft input stays editable during recovery.
   const blockedReason =
@@ -432,6 +552,19 @@ function PBLV3WorkspaceContent({
       quizAnswers.values.some((answer) => answer !== null) ||
       Object.values(decisionDrafts).some((draft) => !!draft.chosen || !!draft.rationale),
   });
+  // Keep the initial overview/start action and guided panel targets visible in Live.
+  const boardMode = !!view?.explainBoard;
+  // Before the learner starts there is only the work to look at: the running application,
+  // with the role introducing the project from its bubble.
+  const openedOnPreview = useRef('');
+  const startsOnPreview = boardMode && waitingToStart && draftsRestored && !!view?.application;
+  const startKey = view?.id ?? '';
+  useEffect(() => {
+    // The preview opens itself for a declared application; only the code steps aside.
+    if (!startsOnPreview || openedOnPreview.current === startKey) return;
+    openedOnPreview.current = startKey;
+    setShowWorkspace(false);
+  }, [startsOnPreview, startKey, setShowWorkspace]);
   useEffect(() => {
     onOnboardingChange?.(onboarding.active || entryLoading);
     return () => onOnboardingChange?.(false);
@@ -456,6 +589,113 @@ function PBLV3WorkspaceContent({
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
     'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
+  // The role points at lines of a file or at something in the running application: whichever
+  // it is comes into view, and the whiteboard steps aside for it.
+  const pointAt = (point: NarrationTarget | null) => {
+    if (!view) return;
+    if (point && 'selector' in point) {
+      if (!view.application) return setPointer(null);
+      setPointer(point);
+      if (!applicationPreview.open) applicationPreview.toggle();
+      return;
+    }
+    const known = !!point && view.files.includes(point.path);
+    setPointer(known ? point : null);
+    if (!point || !known) return;
+    setShowWorkspace(true);
+    setFileTarget({
+      path: point.path,
+      studyId: view.id,
+      requestId: ++fileTargetSequence.current,
+    });
+  };
+  // What the stage asks of the learner, as the card by the avatar shows it: a decision, the
+  // quiz, or the tests and what they found. The task drawer holds the same forms.
+  const stageTask = !view ? undefined : undecided ? (
+    decisionForms()
+  ) : view.questions.length > 0 && view.actions.includes('quiz') ? (
+    <div className="grid gap-3" data-testid="pbl-companion-quiz">
+      {quizForm()}
+    </div>
+  ) : testStage &&
+    (pendingAction === 'evaluate' ||
+      pendingAction === 'collect' ||
+      !!view.evaluation ||
+      !!view.state.collected[view.state.position.milestoneId ?? '']?.tests) ? (
+    <div data-testid="pbl-companion-tests">
+      <TestEvaluation
+        view={view}
+        mode="details"
+        collectionFailed={resultUnavailable}
+        pendingAction={pendingAction}
+        beside
+      />
+    </div>
+  ) : undefined;
+  // The project's introduction and its start action: in the assistant pane, or said by the
+  // role from its bubble where the workbench teaches with a whiteboard.
+  const startAction =
+    view && waitingToStart ? (
+      // Beside the avatar the reason stays out of sight: a tooltip, and still read aloud.
+      <div className="space-y-2" title={boardMode ? (startBlockedReason ?? undefined) : undefined}>
+        <button
+          ref={startButtonRef}
+          type="button"
+          className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground transition-colors enabled:hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={startDisabled}
+          aria-describedby={startBlockedReason ? `pbl-start-blocked-${sceneId}` : undefined}
+          onClick={() => {
+            // Keep focus in the assistant when this button is replaced.
+            restoreStartFocus.current = true;
+            assistant.current?.focus({ preventScroll: true });
+            void command('begin').then((ok) => {
+              if (ok) restoreStartFocus.current = false;
+            });
+          }}
+        >
+          <ArrowRight size={18} aria-hidden="true" />
+          {t('pblV3.overview.startLearning')}
+        </button>
+        {startBlockedReason && (
+          <p
+            id={`pbl-start-blocked-${sceneId}`}
+            className={boardMode ? 'sr-only' : 'text-xs text-muted-foreground'}
+          >
+            {startBlockedReason}
+          </p>
+        )}
+      </div>
+    ) : undefined;
+  const overview = view ? (
+    <ProjectOverview key={view.id} view={view} hero={projectHero} startAction={startAction} />
+  ) : null;
+  const finishOnboarding = () => {
+    if (!view) return;
+    onboarding.close();
+    if (view.onboardingCompleted !== true) {
+      void pblRequest(
+        '/api/pbl/v3/onboarding',
+        { studyId: view.id },
+        AbortSignal.timeout(10_000),
+      ).catch(() => {
+        // Optional UI metadata must not block learning. A later entry can retry.
+      });
+    }
+  };
+  // While the application is coming up for the first time in this visit, the workbench waits
+  // with it. A launch that takes too long gives the workbench back instead of holding it.
+  // Held from the first frame: before the study is known, and then until its application has
+  // come up once in this visit. Closing the preview later does not bring the hold back.
+  const [launchedStudy, setLaunchedStudy] = useState<string | null>(null);
+  if (view && applicationPreview.document && launchedStudy !== view.id) setLaunchedStudy(view.id);
+  const applicationComing = !view
+    ? companions
+    : boardMode &&
+      !!view.application &&
+      launchedStudy !== view.id &&
+      !applicationPreview.error &&
+      !applicationPreview.expired;
+  const launchingApplication = useLaunchHold(applicationComing, 90_000);
   return (
     <section
       ref={workspaceRoot}
@@ -578,13 +818,56 @@ function PBLV3WorkspaceContent({
         >
           <RefreshCw size={14} className={refreshing ? 'animate-spin' : undefined} />
         </button>
+        {view?.canReset && (
+          <button
+            type="button"
+            data-testid="pbl-progress-reset"
+            className={button}
+            disabled={pending || refreshing}
+            aria-label={t('pblV3.resetProgress')}
+            title={t('pblV3.resetProgress')}
+            onClick={() => {
+              if (!window.confirm(t('pblV3.resetProgressConfirm'))) return;
+              setPending(true);
+              // The study leaves this scene on the server; reloading lands on the entrance,
+              // where the next start opens a new one.
+              void pblRequest('/api/pbl/v3', { action: 'reset', studyId: view.id })
+                .then(() => window.location.reload())
+                .catch((e) => {
+                  setError(e.message);
+                  setPending(false);
+                });
+            }}
+          >
+            <RotateCcw size={14} />
+          </button>
+        )}
+        {boardMode && (
+          <button
+            type="button"
+            data-testid="pbl-board-toggle"
+            className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+            data-pbl-tour="layout"
+            aria-label={t('whiteboard.title')}
+            title={t('whiteboard.title')}
+            aria-pressed={boardOpen}
+            onClick={() => {
+              setBoardOff(boardOpen);
+              setBoardShown(!boardOpen);
+            }}
+          >
+            <PencilLine size={14} />
+          </button>
+        )}
         <button
-          data-pbl-tour="workspace-toggle"
+          data-pbl-tour="layout"
+          data-pbl-tour-legacy="workspace-toggle"
           className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
           aria-label={t('pblV3.ide.toggleWorkspace')}
           aria-pressed={showWorkspace}
           onClick={() => {
-            if (showWorkspace) setShowAssistant(true);
+            // The companion stays over an empty work area; only the docked layout needs a pane.
+            if (showWorkspace && !boardMode) setShowAssistant(true);
             setShowWorkspace(!showWorkspace);
           }}
         >
@@ -592,9 +875,14 @@ function PBLV3WorkspaceContent({
         </button>
         <button
           className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+          data-pbl-tour="layout"
           aria-label={t('pblV3.ide.toggleAssistant')}
-          aria-pressed={showAssistant}
+          aria-pressed={boardMode ? assistantMode === 'docked' : showAssistant}
           onClick={() => {
+            if (boardMode) {
+              setAssistantMode(assistantMode === 'docked' ? 'closed' : 'docked');
+              return;
+            }
             if (showAssistant) setShowWorkspace(true);
             setShowAssistant(!showAssistant);
           }}
@@ -744,6 +1032,7 @@ function PBLV3WorkspaceContent({
                   application={view.application}
                   preview={applicationPreview}
                   inputPaused={onboarding.active || entryLoading}
+                  pointer={pointer && 'selector' in pointer ? pointer : null}
                 />
               ) : undefined
             }
@@ -751,20 +1040,57 @@ function PBLV3WorkspaceContent({
             onCollapseApplication={applicationPreview.close}
             onCollapseWorkspace={() => {
               // Keep the persisted draft valid before hiding its other pane.
-              setShowAssistant(true);
+              if (!boardMode) setShowAssistant(true);
               setShowWorkspace(false);
             }}
             onCollapseAssistant={() => {
               setShowWorkspace(true);
-              setShowAssistant(false);
+              if (boardMode) setAssistantMode('closed');
+              else setShowAssistant(false);
             }}
             showWorkspace={showWorkspace}
-            showAssistant={showAssistant}
+            showAssistant={boardMode ? assistantMode !== 'closed' : showAssistant}
+            assistantWindow={boardMode && assistantMode === 'window'}
+            overlay={
+              boardMode && view.explainBoard ? (
+                <CompanionLayer
+                  view={view}
+                  board={view.explainBoard}
+                  // The whiteboard steps aside while the role points at code or the application.
+                  boardOpen={boardOpen && !pointer}
+                  onBoard={setBoardShown}
+                  onPoint={pointAt}
+                  onTold={setTold}
+                  waitingToStart={waitingToStart}
+                  startAction={startAction}
+                  task={stageTask}
+                  onOpenTask={() => {
+                    if (assistantMode === 'closed') setAssistantMode('window');
+                    // The drawer lives in the conversation; open it once that is mounted.
+                    setTimeout(() => taskDock.current?.open(), 0);
+                  }}
+                  assistantMode={assistantMode}
+                  onAssistantMode={setAssistantMode}
+                  introducing={onboarding.active}
+                  pendingAction={pendingAction}
+                  pendingMessage={pendingMessage}
+                  pending={pending}
+                  disabled={disabled}
+                  blockedReason={blockedReason}
+                  inputId={`pbl-companion-chat-${sceneId}`}
+                  text={text}
+                  onTextChange={setText}
+                  command={command}
+                />
+              ) : undefined
+            }
             workspace={
               <LearningWorkbenchPanel
                 key={view.id}
                 view={view}
                 fileTarget={fileTarget?.studyId === view.id ? fileTarget : null}
+                pointer={pointer && 'path' in pointer ? pointer : null}
+                onCloseLastFile={boardMode ? () => setShowWorkspace(false) : undefined}
                 onFileTargetConsumed={(requestId) =>
                   setFileTarget((current) =>
                     current?.studyId === view.id && current.requestId === requestId
@@ -827,511 +1153,354 @@ function PBLV3WorkspaceContent({
               />
             }
             assistant={
-              <section
-                ref={assistant}
-                tabIndex={-1}
-                aria-label={t('pblV3.learning')}
-                data-testid="pbl-assistant"
-                data-pbl-tour="conversation"
-                className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none focus-visible:[&>header]:ring-2 focus-visible:[&>header]:ring-inset focus-visible:[&>header]:ring-ring"
-              >
-                <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
-                  <MessageSquareText size={15} />
-                  <h3 className="font-semibold">{t('pblV3.learning')}</h3>
-                  <span className="ml-auto text-muted-foreground">
-                    {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
-                  </span>
-                </header>
-                <TeachingRunNotice
-                  run={view.roleRun}
-                  disabled={disabled}
-                  retrying={pendingAction === 'retry'}
-                  blockedReason={blockedReason}
-                  onRetry={() => void command('retry')}
-                />
-
-                <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
-                  <LearningConversation
-                    waitingToStart={waitingToStart}
-                    overview={
-                      <ProjectOverview
-                        key={view.id}
-                        view={view}
-                        hero={projectHero}
-                        startAction={
-                          waitingToStart ? (
-                            <div className="space-y-2">
-                              <button
-                                ref={startButtonRef}
-                                type="button"
-                                className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground transition-colors enabled:hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                                disabled={startDisabled}
-                                aria-describedby={
-                                  startBlockedReason ? `pbl-start-blocked-${sceneId}` : undefined
-                                }
-                                onClick={() => {
-                                  // Keep focus in the assistant when this button is replaced.
-                                  restoreStartFocus.current = true;
-                                  assistant.current?.focus({ preventScroll: true });
-                                  void command('begin').then((ok) => {
-                                    if (ok) restoreStartFocus.current = false;
-                                  });
-                                }}
-                              >
-                                <ArrowRight size={18} aria-hidden="true" />
-                                {t('pblV3.overview.startLearning')}
-                              </button>
-                              {startBlockedReason && (
-                                <p
-                                  id={`pbl-start-blocked-${sceneId}`}
-                                  className="text-xs text-muted-foreground"
-                                >
-                                  {startBlockedReason}
-                                </p>
-                              )}
-                            </div>
-                          ) : undefined
-                        }
-                      />
-                    }
-                    modalActive={onboarding.active || entryLoading}
-                    view={view}
-                    onOpenFile={(reference) => {
-                      setShowWorkspace(true);
-                      setFileTarget({
-                        ...reference,
-                        studyId: view.id,
-                        requestId: ++fileTargetSequence.current,
-                      });
-                    }}
-                    onOpenReport={
-                      view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
-                    }
-                    onOpenTask={() => taskDock.current?.open()}
-                    sent={sent}
-                    pendingMessage={pendingMessage}
-                    requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
-                  />
-                  <TaskDock
-                    actionDisabled={disabled}
-                    modalActive={onboarding.active || entryLoading}
-                    key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
-                    view={view}
-                    ref={taskDock}
-                    working={
-                      buildWorking ||
-                      (testStage &&
-                        (pendingAction === 'evaluate' ||
-                          pendingAction === 'collect' ||
-                          (!!view.evaluation && !resultUnavailable)))
-                    }
-                    summary={
-                      testStage ? (
-                        <TestEvaluation
-                          view={view}
-                          mode="summary"
-                          collectionFailed={resultUnavailable}
-                          pendingAction={pendingAction}
-                        />
-                      ) : buildWorking ? (
-                        <PendingAction
-                          action={pendingAction === 'collect' ? 'collect' : 'compile'}
-                        />
-                      ) : undefined
-                    }
-                    action={
-                      testStage && !view.actions.includes('next') ? (
-                        <button
-                          className="pbl-stage-action inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold"
-                          disabled={
-                            disabled ||
-                            (!!view.evaluation && !resultUnavailable) ||
-                            (!view.evaluation && !view.actions.includes('evaluate'))
+              <>
+                <section
+                  ref={assistant}
+                  tabIndex={-1}
+                  aria-label={t('pblV3.learning')}
+                  data-testid="pbl-assistant"
+                  data-pbl-tour="conversation"
+                  className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none focus-visible:[&>header]:ring-2 focus-visible:[&>header]:ring-inset focus-visible:[&>header]:ring-ring"
+                >
+                  <header
+                    data-window-drag={assistantMode === 'window' ? '' : undefined}
+                    className={cn(
+                      'pbl-chrome relative z-30 flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs',
+                      boardMode &&
+                        assistantMode === 'window' &&
+                        'cursor-grab active:cursor-grabbing',
+                    )}
+                  >
+                    {boardMode && view.role ? (
+                      <>
+                        <span
+                          className="size-8 shrink-0 overflow-hidden rounded-full bg-muted ring-2"
+                          style={
+                            { '--tw-ring-color': ROLE_PERSONAS[view.role].color } as CSSProperties
                           }
-                          data-state={
-                            disabled ||
-                            (!!view.evaluation && !resultUnavailable) ||
-                            (!view.evaluation && !view.actions.includes('evaluate'))
-                              ? 'pending'
-                              : 'ready'
-                          }
-                          onClick={() => {
-                            if (view.evaluation) {
-                              collectionAttempt.current = '';
-                              setCollectionFailed('');
-                              void command('collect', { evaluationId: view.evaluation.id }).then(
-                                (ok) => {
-                                  if (!ok) setCollectionFailed(evaluationKey);
-                                },
-                              );
-                            } else void command('evaluate');
-                          }}
                         >
-                          {((view.evaluation && !resultUnavailable) ||
-                            pendingAction === 'evaluate' ||
-                            pendingAction === 'collect') && (
-                            <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+                          <AvatarDisplay src={ROLE_PERSONAS[view.role].avatar} alt="" />
+                        </span>
+                        <h3 className="min-w-0 leading-tight">
+                          <span className="block text-sm font-semibold">
+                            {t(`pblV3.personas.${view.role}`)}
+                          </span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {t(`pblV3.roles.${view.role}`)}
+                          </span>
+                        </h3>
+                        <span className="ml-auto" />
+                      </>
+                    ) : (
+                      <>
+                        <MessageSquareText size={15} />
+                        <h3 className="font-semibold">{t('pblV3.learning')}</h3>
+                        <span className="ml-auto text-muted-foreground">
+                          {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
+                        </span>
+                      </>
+                    )}
+                    {boardMode && (
+                      <>
+                        <button
+                          type="button"
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          data-testid="pbl-assistant-dock"
+                          aria-label={t(
+                            assistantMode === 'window' ? 'pblV3.board.dock' : 'pblV3.board.float',
                           )}
-                          {t(
-                            pendingAction === 'evaluate'
-                              ? 'pblV3.testResult.running'
-                              : pendingAction === 'collect'
-                                ? 'pblV3.testResult.collecting'
-                                : resultUnavailable
-                                  ? 'pblV3.testResult.retryCollect'
-                                  : view.evaluation
-                                    ? view.evaluation.purpose === 'compile'
-                                      ? 'pblV3.build'
-                                      : 'pblV3.testResult.running'
-                                    : 'pblV3.runTests',
+                          title={t(
+                            assistantMode === 'window' ? 'pblV3.board.dock' : 'pblV3.board.float',
+                          )}
+                          onClick={() =>
+                            setAssistantMode(assistantMode === 'window' ? 'docked' : 'window')
+                          }
+                        >
+                          {assistantMode === 'window' ? (
+                            <PanelRight size={14} />
+                          ) : (
+                            <Minimize2 size={14} />
                           )}
                         </button>
-                      ) : (
-                        view.actions.includes('next') && (
-                          <button
-                            className="pbl-stage-action flex h-10 w-full min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-center text-xs font-semibold transition-colors disabled:cursor-not-allowed"
-                            data-state={disabled ? 'disabled' : 'ready'}
-                            disabled={disabled}
-                            aria-busy={pendingAction === 'next'}
-                            onClick={() => void command('next')}
-                          >
-                            {pendingAction === 'next' && (
-                              <LoaderCircle size={13} className="shrink-0 animate-spin" />
-                            )}
-                            <span className="line-clamp-2 min-w-0 break-words leading-4">
-                              {continueActionLabel(view, t)}
-                            </span>
-                            <ArrowRight
-                              size={15}
-                              className="shrink-0 rtl:-scale-x-100"
-                              aria-hidden="true"
-                            />
-                          </button>
-                        )
-                      )
-                    }
-                  >
-                    {view.stage.kind === 'produce' && <ProductionContext view={view} />}
+                        <button
+                          type="button"
+                          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          data-testid="pbl-assistant-close"
+                          aria-label={t('pblV3.board.collapse')}
+                          title={t('pblV3.board.collapse')}
+                          onClick={() => setAssistantMode('closed')}
+                        >
+                          <Minus size={14} />
+                        </button>
+                      </>
+                    )}
+                  </header>
+                  <TeachingRunNotice
+                    run={view.roleRun}
+                    disabled={disabled}
+                    retrying={pendingAction === 'retry'}
+                    blockedReason={blockedReason}
+                    onRetry={() => void command('retry')}
+                  />
 
-                    {(view.actions.includes('compile') ||
-                      (view.stage.kind !== 'check' && view.evaluation?.purpose === 'compile')) && (
-                      <div className="space-y-2" data-testid="pbl-build-controls">
-                        {view.actions.includes('compile') && (
+                  <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
+                    <LearningConversation
+                      waitingToStart={waitingToStart}
+                      overview={overview}
+                      modalActive={onboarding.active || entryLoading}
+                      // The conversation shows the reply as far as it has been told, the same
+                      // place the bubble is at.
+                      view={toldView ?? view}
+                      onOpenFile={(reference) => {
+                        setShowWorkspace(true);
+                        setFileTarget({
+                          ...reference,
+                          studyId: view.id,
+                          requestId: ++fileTargetSequence.current,
+                        });
+                      }}
+                      onOpenReport={
+                        view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
+                      }
+                      onOpenTask={() => taskDock.current?.open()}
+                      sent={sent}
+                      pendingMessage={pendingMessage}
+                      requesting={['chat', 'begin', 'retry'].includes(pendingAction ?? '')}
+                    />
+                    <TaskDock
+                      actionDisabled={disabled}
+                      modalActive={onboarding.active || entryLoading}
+                      key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
+                      view={view}
+                      ref={taskDock}
+                      working={
+                        buildWorking ||
+                        (testStage &&
+                          (pendingAction === 'evaluate' ||
+                            pendingAction === 'collect' ||
+                            (!!view.evaluation && !resultUnavailable)))
+                      }
+                      summary={
+                        testStage ? (
+                          <TestEvaluation
+                            view={view}
+                            mode="summary"
+                            collectionFailed={resultUnavailable}
+                            pendingAction={pendingAction}
+                          />
+                        ) : buildWorking ? (
+                          <PendingAction
+                            action={pendingAction === 'collect' ? 'collect' : 'compile'}
+                          />
+                        ) : undefined
+                      }
+                      action={
+                        testStage && !view.actions.includes('next') ? (
                           <button
-                            className={button}
-                            disabled={disabled || !!view.evaluation}
-                            aria-busy={pendingAction === 'compile'}
-                            onClick={() => void command('compile')}
+                            className="pbl-stage-action inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-3 text-xs font-semibold"
+                            disabled={
+                              disabled ||
+                              (!!view.evaluation && !resultUnavailable) ||
+                              (!view.evaluation && !view.actions.includes('evaluate'))
+                            }
+                            data-state={
+                              disabled ||
+                              (!!view.evaluation && !resultUnavailable) ||
+                              (!view.evaluation && !view.actions.includes('evaluate'))
+                                ? 'pending'
+                                : 'ready'
+                            }
+                            onClick={() => {
+                              if (view.evaluation) {
+                                collectionAttempt.current = '';
+                                setCollectionFailed('');
+                                void command('collect', { evaluationId: view.evaluation.id }).then(
+                                  (ok) => {
+                                    if (!ok) setCollectionFailed(evaluationKey);
+                                  },
+                                );
+                              } else void command('evaluate');
+                            }}
                           >
-                            {pendingAction === 'compile' && (
+                            {((view.evaluation && !resultUnavailable) ||
+                              pendingAction === 'evaluate' ||
+                              pendingAction === 'collect') && (
                               <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
                             )}
-                            {t('pblV3.build')}
+                            {t(
+                              pendingAction === 'evaluate'
+                                ? 'pblV3.testResult.running'
+                                : pendingAction === 'collect'
+                                  ? 'pblV3.testResult.collecting'
+                                  : resultUnavailable
+                                    ? 'pblV3.testResult.retryCollect'
+                                    : view.evaluation
+                                      ? view.evaluation.purpose === 'compile'
+                                        ? 'pblV3.build'
+                                        : 'pblV3.testResult.running'
+                                      : 'pblV3.runTests',
+                            )}
                           </button>
-                        )}
-                        {view.evaluation && view.stage.kind !== 'check' && (
-                          <>
-                            {(['starting', 'running'].includes(view.evaluation.state) ||
-                              pendingAction === 'collect') && (
-                              <span
-                                role="status"
-                                aria-busy="true"
-                                data-testid="pbl-build-status"
-                                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
-                              >
+                        ) : (
+                          view.actions.includes('next') && (
+                            <button
+                              className="pbl-stage-action flex h-10 w-full min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-center text-xs font-semibold transition-colors disabled:cursor-not-allowed"
+                              data-state={disabled ? 'disabled' : 'ready'}
+                              disabled={disabled}
+                              aria-busy={pendingAction === 'next'}
+                              onClick={() => void command('next')}
+                            >
+                              {pendingAction === 'next' && (
+                                <LoaderCircle size={13} className="shrink-0 animate-spin" />
+                              )}
+                              <span className="line-clamp-2 min-w-0 break-words leading-4">
+                                {continueActionLabel(view, t)}
+                              </span>
+                              <ArrowRight
+                                size={15}
+                                className="shrink-0 rtl:-scale-x-100"
+                                aria-hidden="true"
+                              />
+                            </button>
+                          )
+                        )
+                      }
+                    >
+                      {view.stage.kind === 'produce' && <ProductionContext view={view} />}
+
+                      {(view.actions.includes('compile') ||
+                        (view.stage.kind !== 'check' &&
+                          view.evaluation?.purpose === 'compile')) && (
+                        <div className="space-y-2" data-testid="pbl-build-controls">
+                          {view.actions.includes('compile') && (
+                            <button
+                              className={button}
+                              disabled={disabled || !!view.evaluation}
+                              aria-busy={pendingAction === 'compile'}
+                              onClick={() => void command('compile')}
+                            >
+                              {pendingAction === 'compile' && (
                                 <LoaderCircle
                                   size={13}
                                   className="animate-spin"
                                   aria-hidden="true"
                                 />
-                                {t(
-                                  pendingAction === 'collect'
-                                    ? 'pblV3.activity.collect'
-                                    : 'pblV3.activity.build',
-                                )}
-                              </span>
-                            )}
-                            <button
-                              className={button}
-                              disabled={disabled}
-                              onClick={() => void command('collect')}
-                            >
-                              {t('pblV3.collect')}
+                              )}
+                              {t('pblV3.build')}
                             </button>
-                            <pre className="whitespace-pre-wrap text-xs">
-                              {view.evaluation.stdout}
-                              {view.evaluation.stderr}
-                            </pre>
-                          </>
-                        )}
-                      </div>
-                    )}
-
-                    {testStage && (
-                      <TestEvaluation
-                        view={view}
-                        mode="details"
-                        collectionFailed={resultUnavailable}
-                        pendingAction={pendingAction}
-                      />
-                    )}
-                    {view.decisions.map((decision) => {
-                      const draftKey = `${view.state.position.milestoneId}:${decision.id}`;
-                      const selected = view.state.collected[
-                        view.state.position.milestoneId ?? ''
-                      ]?.decisions.find((d) => d.id === decision.id);
-                      return (
-                        <DecisionResponseForm
-                          key={`${view.id}:${draftKey}`}
-                          decision={decision}
-                          selected={selected}
-                          draft={decisionDrafts[draftKey]}
-                          disabled={disabled}
-                          pendingChosen={
-                            pendingDecision?.id === decision.id ? pendingDecision.chosen : undefined
-                          }
-                          onDraftChange={(draft) =>
-                            setDecisionDrafts((previous) => ({ ...previous, [draftKey]: draft }))
-                          }
-                          onSubmit={(chosen, rationale) =>
-                            command('decide', {
-                              decisionId: decision.id,
-                              chosen,
-                              ...(rationale === undefined ? {} : { rationale }),
-                            })
-                          }
-                        />
-                      );
-                    })}
-                    {view.questions.map((question, index) => (
-                      <fieldset
-                        key={index}
-                        className="min-w-0 rounded-xl border border-border bg-background/70 p-3"
-                      >
-                        <legend className="sr-only">{question.q}</legend>
-                        <div className="mb-3 flex items-start gap-2.5" aria-hidden="true">
-                          <span className="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 px-1.5 text-xs font-semibold tabular-nums text-primary">
-                            {String(index + 1).padStart(2, '0')}
-                          </span>
-                          <p className="min-w-0 break-words pt-0.5 font-semibold leading-6">
-                            {question.q}
-                          </p>
-                        </div>
-                        <div className="grid gap-2">
-                          {question.options.map((option, i) => (
-                            <label
-                              className="group relative block"
-                              data-selected={answers[index] === i}
-                              key={i}
-                            >
-                              <input
-                                type="radio"
-                                className="peer absolute inset-0 z-10 m-0 size-full cursor-pointer opacity-0 disabled:cursor-default"
-                                name={`quiz-${index}`}
-                                disabled={pendingAction === 'quiz'}
-                                checked={answers[index] === i}
-                                onChange={() =>
-                                  setQuizAnswers((previous) => {
-                                    const next =
-                                      previous.key === answerKey
-                                        ? [...previous.values]
-                                        : [...answers];
-                                    next[index] = i;
-                                    return { key: answerKey, values: next };
-                                  })
-                                }
-                              />
-                              <span className="grid grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-start gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-card-foreground transition-colors peer-hover:border-primary/40 peer-hover:bg-accent/40 peer-checked:border-primary/65 peer-checked:bg-primary/10 peer-focus-visible:border-primary peer-disabled:cursor-default peer-disabled:opacity-65 motion-reduce:transition-none">
+                          )}
+                          {view.evaluation && view.stage.kind !== 'check' && (
+                            <>
+                              {(['starting', 'running'].includes(view.evaluation.state) ||
+                                pendingAction === 'collect') && (
                                 <span
-                                  aria-hidden="true"
-                                  className="inline-flex size-7 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground group-data-[selected=true]:bg-primary group-data-[selected=true]:text-primary-foreground"
+                                  role="status"
+                                  aria-busy="true"
+                                  data-testid="pbl-build-status"
+                                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
                                 >
-                                  {i < 26 ? String.fromCharCode(65 + i) : i + 1}
+                                  <LoaderCircle
+                                    size={13}
+                                    className="animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                  {t(
+                                    pendingAction === 'collect'
+                                      ? 'pblV3.activity.collect'
+                                      : 'pblV3.activity.build',
+                                  )}
                                 </span>
-                                <span className="min-w-0 whitespace-pre-wrap break-words py-1 leading-5 group-has-[:focus-visible]:underline group-has-[:focus-visible]:decoration-2 group-has-[:focus-visible]:underline-offset-4">
-                                  {option}
-                                </span>
-                                <Check
-                                  aria-hidden="true"
-                                  size={16}
-                                  className="invisible mt-1.5 text-primary group-data-[selected=true]:visible"
-                                />
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        {question.feedback && (
-                          <div
-                            data-testid="pbl-quiz-feedback"
-                            role="status"
-                            className={cn(
-                              'mt-3 rounded-lg border p-3 text-sm',
-                              question.feedback.passed
-                                ? 'border-emerald-500/30 bg-emerald-500/10'
-                                : 'border-amber-500/30 bg-amber-500/10',
-                            )}
-                          >
-                            <p className="font-semibold">
-                              {t(
-                                question.feedback.passed
-                                  ? 'pblV3.quizCorrect'
-                                  : 'pblV3.quizIncorrect',
                               )}
-                            </p>
-                            <p>{question.feedback.explanation ?? t('pblV3.quizReviewHint')}</p>
-                            {question.feedback.selectedAnswer !== undefined &&
-                              answers[index] !== question.feedback.selectedAnswer && (
-                                <p className="mt-1 text-muted-foreground">
-                                  {t('pblV3.quizChanged')}
-                                </p>
-                              )}
-                          </div>
-                        )}
-                      </fieldset>
-                    ))}
-                    {view.questions.length > 0 && quiz && (
-                      <p
-                        role="status"
-                        className="rounded-lg border border-border bg-muted/45 px-3 py-2 text-xs font-medium text-foreground"
-                      >
-                        {t(quiz.passed ? 'pblV3.quizPassed' : 'pblV3.quizRetry', {
-                          score: quiz.score,
-                          total: quiz.total,
-                        })}
-                      </p>
-                    )}
-                    {view.actions.includes('quiz') && (
-                      <button
-                        type="button"
-                        className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-transparent bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none disabled:cursor-default disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none motion-reduce:transition-none sm:w-auto sm:justify-self-end"
-                        disabled={
-                          disabled ||
-                          quizUnchanged ||
-                          view.questions.some(
-                            (question, index) =>
-                              !Number.isInteger(answers[index]) ||
-                              answers[index]! < 0 ||
-                              answers[index]! >= question.options.length,
-                          )
-                        }
-                        aria-busy={pendingAction === 'quiz'}
-                        onClick={() => void command('quiz', { answers })}
-                      >
-                        {pendingAction === 'quiz' ? (
-                          <LoaderCircle aria-hidden="true" size={16} className="animate-spin" />
-                        ) : quizUnchanged ? (
-                          <Check aria-hidden="true" size={16} />
-                        ) : (
-                          <ClipboardCheck aria-hidden="true" size={16} />
-                        )}
-                        {t(
-                          pendingAction === 'quiz'
-                            ? 'pblV3.submitting'
-                            : quizUnchanged
-                              ? 'pblV3.submitted'
-                              : quiz
-                                ? 'pblV3.resubmit'
-                                : 'pblV3.submitQuiz',
-                        )}
-                      </button>
-                    )}
-                  </TaskDock>
-                </div>
-                {!waitingToStart && view.actions.includes('chat') && (
-                  <form
-                    data-pbl-tour="composer"
-                    className="shrink-0 border-t bg-background p-3"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (!disabled && text.trim()) void command('chat', { text });
-                    }}
-                  >
-                    {blockedReason &&
-                      blockedReason !== 'busy' &&
-                      blockedReason !== 'unsaved' &&
-                      blockedReason !== 'pending' && (
-                        <div
-                          id={blockedId}
-                          role="status"
-                          data-testid="pbl-input-blocked"
-                          className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
-                        >
-                          <p className="min-w-0 flex-1">
-                            {t(`pblV3.inputBlocked.${blockedReason}`)}
-                          </p>
-                          {blockedReason === 'opening' && (
-                            <button
-                              type="button"
-                              className={button}
-                              onClick={() => void command('begin')}
-                            >
-                              {t('pblV3.retryOpening')}
-                            </button>
+                              <button
+                                className={button}
+                                disabled={disabled}
+                                onClick={() => void command('collect')}
+                              >
+                                {t('pblV3.collect')}
+                              </button>
+                              <pre className="whitespace-pre-wrap text-xs">
+                                {view.evaluation.stdout}
+                                {view.evaluation.stderr}
+                              </pre>
+                            </>
                           )}
                         </div>
                       )}
-                    {(blockedReason === 'busy' ||
-                      blockedReason === 'unsaved' ||
-                      blockedReason === 'pending') && (
-                      <span id={blockedId} className="sr-only">
-                        {t(`pblV3.inputBlocked.${blockedReason}`)}
-                      </span>
-                    )}
-                    <label className="sr-only" htmlFor={`pbl-chat-${sceneId}`}>
-                      {t('pblV3.message')}
-                    </label>
-                    <div className="rounded-xl border bg-muted/20 p-2 focus-within:ring-1 focus-within:ring-primary">
-                      <textarea
-                        id={`pbl-chat-${sceneId}`}
-                        className="h-20 w-full resize-none bg-transparent p-1 text-sm outline-none"
-                        placeholder={t('pblV3.ide.messagePlaceholder')}
-                        value={text}
-                        aria-describedby={blockedReason ? blockedId : undefined}
-                        onChange={(e) => setText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            if (!disabled && text.trim()) void command('chat', { text });
-                          }
-                        }}
-                      />
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-muted-foreground">
-                          {t('pblV3.ide.sendHint')}
-                        </span>
-                        {view.busy ? (
-                          <button
-                            type="button"
-                            className="rounded-full bg-red-600 p-2 text-white hover:bg-red-700 disabled:opacity-40"
-                            aria-label={t('pblV3.cancel')}
-                            disabled={pending}
-                            onClick={() => void command('cancel')}
+
+                      {testStage && (
+                        <TestEvaluation
+                          view={view}
+                          mode="details"
+                          collectionFailed={resultUnavailable}
+                          pendingAction={pendingAction}
+                        />
+                      )}
+                      {decisionForms()}
+                      {quizForm()}
+                    </TaskDock>
+                  </div>
+                  {!waitingToStart && view.actions.includes('chat') && (
+                    <form
+                      data-pbl-tour="composer"
+                      className="shrink-0 border-t bg-background p-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!disabled && text.trim()) void command('chat', { text });
+                      }}
+                    >
+                      {blockedReason &&
+                        blockedReason !== 'busy' &&
+                        blockedReason !== 'unsaved' &&
+                        blockedReason !== 'pending' && (
+                          <div
+                            id={blockedId}
+                            role="status"
+                            data-testid="pbl-input-blocked"
+                            className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
                           >
-                            <Square size={15} />
-                          </button>
-                        ) : (
-                          <button
-                            className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-40"
-                            aria-label={t('pblV3.send')}
-                            aria-busy={pendingAction === 'chat'}
-                            disabled={disabled || !text.trim()}
-                            title={
-                              blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
-                            }
-                            aria-describedby={blockedReason ? blockedId : undefined}
-                          >
-                            {pendingAction === 'chat' ? (
-                              <LoaderCircle size={16} className="animate-spin" />
-                            ) : (
-                              <ArrowUp size={16} />
+                            <p className="min-w-0 flex-1">
+                              {t(`pblV3.inputBlocked.${blockedReason}`)}
+                            </p>
+                            {blockedReason === 'opening' && (
+                              <button
+                                type="button"
+                                className={button}
+                                onClick={() => void command('begin')}
+                              >
+                                {t('pblV3.retryOpening')}
+                              </button>
                             )}
-                          </button>
+                          </div>
                         )}
-                      </div>
-                    </div>
-                  </form>
-                )}
-              </section>
+                      {(blockedReason === 'busy' ||
+                        blockedReason === 'unsaved' ||
+                        blockedReason === 'pending') && (
+                        <span id={blockedId} className="sr-only">
+                          {t(`pblV3.inputBlocked.${blockedReason}`)}
+                        </span>
+                      )}
+                      <LearnerComposer
+                        id={`pbl-chat-${sceneId}`}
+                        text={text}
+                        onTextChange={setText}
+                        onSend={() => void command('chat', { text })}
+                        busy={view.busy}
+                        onStop={() => void command('cancel')}
+                        stopDisabled={pending}
+                        sending={pendingAction === 'chat'}
+                        disabled={disabled}
+                        blockedTitle={
+                          blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
+                        }
+                        describedBy={blockedReason ? blockedId : undefined}
+                        // With the role as a companion, speaking is offered wherever typing is.
+                        voice={boardMode}
+                        classic={!boardMode}
+                      />
+                    </form>
+                  )}
+                </section>
+              </>
             }
           />
         </>
@@ -1342,24 +1511,38 @@ function PBLV3WorkspaceContent({
           onReturnToHero={entrySlow ? onReturnToHero : undefined}
         />
       )}
-      {view && onboarding.active && (
+      {launchingApplication && (
+        // The work is the first thing to look at: nothing else is offered until it is up.
+        <div
+          role="status"
+          aria-live="polite"
+          data-testid="pbl-application-launching"
+          className="absolute inset-0 z-[70] grid place-items-center bg-background/75 backdrop-blur-sm"
+        >
+          <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
+            <span className="size-9 animate-spin rounded-full border-[3px] border-primary/25 border-t-primary" />
+            {t('pblV3.application.starting')}
+          </div>
+        </div>
+      )}
+      {view && onboarding.active && boardMode && (
+        <WorkspaceTour
+          key={view.id}
+          steps={PBL_TOUR_STEPS}
+          copy="pblV3.tour"
+          doneLabel="pblV3.tour.done"
+          onNavigate={() => {}}
+          onSendExample={() => {}}
+          onEnd={finishOnboarding}
+        />
+      )}
+      {view && onboarding.active && !boardMode && (
         <WorkbenchOnboarding
           key={view.id}
           view={view}
           root={workspaceRoot}
           returnFocus={onboarding.returnFocus}
-          onFinish={() => {
-            onboarding.close();
-            if (view.onboardingCompleted !== true) {
-              void pblRequest(
-                '/api/pbl/v3/onboarding',
-                { studyId: view.id },
-                AbortSignal.timeout(10_000),
-              ).catch(() => {
-                // Optional UI metadata must not block learning. A later entry can retry.
-              });
-            }
-          }}
+          onFinish={finishOnboarding}
         />
       )}
     </section>
@@ -1372,4 +1555,18 @@ export function PBLV3Workspace({ sceneId, ...props }: WorkspaceProps) {
       <PBLV3WorkspaceContent sceneId={sceneId} {...props} />
     </WorkspaceFrame>
   );
+}
+
+/** True while `active` holds, for at most `limit` ms: a stuck launch never locks the page. */
+function useLaunchHold(active: boolean, limit: number) {
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => setExpired(true), limit);
+    return () => {
+      clearTimeout(timer);
+      setExpired(false);
+    };
+  }, [active, limit]);
+  return active && !expired;
 }
