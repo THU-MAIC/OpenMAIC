@@ -38,6 +38,41 @@ describe('ChatSessionComponent markup contract', () => {
     expect(html).toContain('first line\nsecond line');
   });
 
+  it('renders the Native Child web calls as named icon-only markers alongside its text', () => {
+    const session: ChatSession = {
+      id: 'session',
+      type: 'qa',
+      title: 'Q&A',
+      status: 'active',
+      messages: [
+        {
+          id: 'answer',
+          role: 'assistant',
+          parts: [
+            { type: 'action-web_search', actionName: 'web_search', state: 'result' },
+            { type: 'action-fetch_url', actionName: 'fetch_url', state: 'result' },
+            { type: 'text', text: 'The page describes the procedure.' },
+          ] as unknown as ChatSession['messages'][number]['parts'],
+          metadata: { agentId: 'teacher', originalRole: 'agent' },
+        },
+      ],
+      config: { agentIds: ['teacher'] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const html = renderToStaticMarkup(
+      createElement(ChatSessionComponent, { session, isActive: false }),
+    );
+    expect(html).toMatch(
+      /title="Searched the web".*title="Read a web page".*The page describes the procedure\./,
+    );
+    expect(html).toContain('w-4 h-4 rounded-full border align-middle mr-0.5');
+    expect(html).not.toContain('mx-1 rounded-full border');
+    expect(html).not.toMatch(/>(Search|Read)</);
+  });
+
   it('renders separate stop and continue controls during soft-closing', () => {
     const session: ChatSession = {
       id: 'session-1',

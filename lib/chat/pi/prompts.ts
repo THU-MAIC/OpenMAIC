@@ -72,6 +72,8 @@ export function buildDirectorPrompt(
   agents: AgentConfig[],
   native = false,
   hasWhiteboardService = false,
+  /** Set only when Native Children get fetch_url; `webFetch: null` omits the section. */
+  childFetch?: { searchConfigured: boolean },
 ): string {
   const agentList = agents
     .map(
@@ -102,6 +104,15 @@ export function buildDirectorPrompt(
     'Finish when the classroom answer is clear. Prefer 1-2 classroom agents; call another agent only when it would help answer the user.',
     'Do not write the classroom response yourself. The selected agent should produce the visible response.',
     'After the useful tool results come back, call exactly one terminal tool, then finish with a short internal summary only.',
+    ...(childFetch
+      ? [
+          '',
+          '# Actual classroom Child web capabilities for this request',
+          `Child web_search: ${childFetch.searchConfigured ? 'configured and available' : 'not configured'}.`,
+          'Child fetch_url: available.',
+          'These tools belong to the Native Child, not your own Director inventory. Delegate requested research to a teacher with call_agent; absence of a web tool in your own inventory does not mean the classroom cannot access the web.',
+        ]
+      : []),
     '',
     '# Terminal Tool Policy',
     'Use exactly one terminal tool per loop.',
@@ -267,6 +278,15 @@ export function buildNativeChildPrompt(
     '',
     '# Available Native tools',
     nativeToolInventory,
+    ...(availableTools.includes('fetch_url')
+      ? [
+          '',
+          '# Reading web evidence',
+          '- Use fetch_url when the learner asks about a link or a search excerpt is insufficient.',
+          '- Base your answer on the returned preview. Cite only what it shows.',
+          '- If the read fails, say you could not verify the page and ask for the relevant text.',
+        ]
+      : []),
     ...nativeWhiteboardGuidance,
     ...(availableTools.includes('wb_draw_shape')
       ? [
