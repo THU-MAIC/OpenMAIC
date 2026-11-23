@@ -59,6 +59,7 @@ export interface HtmlTextElement {
 
 export interface HtmlAssetInventory {
   attributeAssets: HtmlAttributeAsset[];
+  classicScripts: HtmlTextElement[];
   moduleScripts: HtmlTextElement[];
   importmaps: HtmlTextElement[];
   styles: HtmlTextElement[];
@@ -177,6 +178,7 @@ function attributeRange(
 export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
   const inventory: HtmlAssetInventory = {
     attributeAssets: [],
+    classicScripts: [],
     moduleScripts: [],
     importmaps: [],
     styles: [],
@@ -257,6 +259,13 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
 
     const text = textElement(html, element);
     if (text?.tagName === 'style') inventory.styles.push(text);
+    if (
+      text?.tagName === 'script' &&
+      attrs.src === undefined &&
+      (!type || /^(?:application|text)\/(?:java|ecma)script$/.test(type))
+    ) {
+      inventory.classicScripts.push(text);
+    }
     if (text?.tagName === 'script' && type === 'module') inventory.moduleScripts.push(text);
     if (text?.tagName === 'script' && type === 'importmap') inventory.importmaps.push(text);
 

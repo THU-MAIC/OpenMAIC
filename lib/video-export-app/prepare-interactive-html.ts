@@ -5,7 +5,7 @@
  * self-contained pages ready for the pure video compiler and byte collector.
  */
 import type { Scene } from '@/lib/types/stage';
-import { inlineHtmlAssets, type FetchAsset } from '@/lib/export/inline-assets';
+import { createAssetFetcher, inlineHtmlAssets, type FetchAsset } from '@/lib/export/inline-assets';
 import { injectIntoDocumentHead } from '@/lib/utils/html-document';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 import type { InteractiveHtmlMeta, InteractiveHtmlSource } from '@/lib/video-export/deps';
@@ -14,6 +14,7 @@ import {
   INTERACTIVE_SETTLE_MS,
   INTERACTIVE_STATIC_MESSAGE_FLAG,
 } from '@/lib/video-export/interactive-static';
+import { MAX_VIDEO_CAPTURE_ASSET_BYTES, prepareCaptureAssets } from './prepare-capture-assets';
 
 const DEFAULT_MAX_HTML_BYTES = 32 * 1024 * 1024;
 
@@ -41,13 +42,33 @@ function staticCaptureInjection(): string {
   var frozen = false;
   var timeouts = new Set();
   var intervals = new Set();
-  var rafs = new Set();
+  var rafs = new Map();
+  var runtimes = [];
   var nativeSetTimeout = window.setTimeout.bind(window);
   var nativeClearTimeout = window.clearTimeout.bind(window);
   var nativeSetInterval = window.setInterval.bind(window);
   var nativeClearInterval = window.clearInterval.bind(window);
   var nativeRaf = window.requestAnimationFrame.bind(window);
   var nativeCancelRaf = window.cancelAnimationFrame.bind(window);
+
+  window.__openmaicWaitForStaticRuntime = function (ready) {
+    var result = Promise.resolve(ready);
+    // Capture waits for startup to settle. The author-owned promise still
+    // rejects normally so the scene can handle it or report an unhandled error.
+    runtimes.push(result.then(function () {}, function () {}));
+    return result.then(function (value) { return value; });
+  };
+
+  function settle() {
+    return new Promise(function (resolve) { nativeSetTimeout(resolve, ${settleMs}); });
+  }
+
+  function settleRuntimes(readyCount) {
+    var count = runtimes.length;
+    return Promise.all(runtimes.slice(readyCount, count)).then(settle).then(function () {
+      if (count !== runtimes.length) return settleRuntimes(count);
+    });
+  }
 
   function disabledWorker() { throw new Error('interactive-worker-disabled'); }
   try { window.Worker = disabledWorker; } catch (_) {}
@@ -98,7 +119,7 @@ function staticCaptureInjection(): string {
       rafs.delete(id);
       if (!frozen) fn(time);
     });
-    rafs.add(id);
+    rafs.set(id, fn);
     return id;
   };
   window.cancelAnimationFrame = function (id) { rafs.delete(id); nativeCancelRaf(id); };
@@ -136,12 +157,21 @@ function staticCaptureInjection(): string {
     }));
   }
 
-  function freeze() {
+  function freeze(drawPendingFrame) {
     if (frozen) return;
     frozen = true;
     timeouts.forEach(nativeClearTimeout); timeouts.clear();
     intervals.forEach(nativeClearInterval); intervals.clear();
-    rafs.forEach(nativeCancelRaf); rafs.clear();
+    // A renderer can hold animation frames until its timeline is ready.
+    // Paint one pending frame so the initial canvas state is available before
+    // signaling readiness. Requeued frames are ignored once frozen.
+    var drewFrame = drawPendingFrame && rafs.size > 0;
+    var frameTime = performance.now();
+    rafs.forEach(function (callback, id) {
+      nativeCancelRaf(id);
+      if (drawPendingFrame) callback(frameTime);
+    });
+    rafs.clear();
     try { document.getAnimations().forEach(function (animation) { animation.pause(); }); } catch (_) {}
     Array.from(document.querySelectorAll('video,audio')).forEach(function (media) {
       try { media.pause(); } catch (_) {}
@@ -151,12 +181,19 @@ function staticCaptureInjection(): string {
     style.textContent = '*,*::before,*::after{animation-play-state:paused!important;transition:none!important;caret-color:transparent!important}';
     (document.head || document.documentElement).appendChild(style);
     document.documentElement.setAttribute('data-openmaic-static-state', 'frozen');
+    return drewFrame;
   }
 
   window.__openmaicFreezeInteractive = freeze;
   window.addEventListener('load', function () {
     var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
-    var readiness = Promise.all([fonts, waitForImages(), waitForVideos()]);
+    var readiness = Promise.all([fonts, waitForImages(), waitForVideos()])
+      .then(function () { return settleRuntimes(0); })
+      .then(function () {
+        // A final frame can surface an asynchronous error. Give the error
+        // bridge a settling window before the parent closes its listener.
+        if (freeze(true)) return settle();
+      });
     var deadlineTimer;
     var deadline = new Promise(function (_, reject) {
       deadlineTimer = nativeSetTimeout(function () { reject(new Error('interactive-readiness-timeout')); }, ${internalTimeoutMs});
@@ -164,9 +201,8 @@ function staticCaptureInjection(): string {
     Promise.race([readiness, deadline])
       .then(function () {
         nativeClearTimeout(deadlineTimer);
-        return new Promise(function (resolve) { nativeSetTimeout(resolve, ${settleMs}); });
+        post('frozen', 'interactive-static-ready', 'ready');
       })
-      .then(function () { freeze(); post('frozen', 'interactive-static-ready', 'ready'); })
       .catch(function (error) {
         nativeClearTimeout(deadlineTimer);
         freeze();
@@ -217,6 +253,8 @@ export async function prepareInteractiveHtmlScenes(
   const bySceneId = new Map<string, InteractiveHtmlMeta>();
   const byAssetId = new Map<string, string>();
   const maxBytes = options.maxHtmlBytes ?? DEFAULT_MAX_HTML_BYTES;
+  const fetcher =
+    options.fetcher ?? createAssetFetcher({ maxAssetBytes: MAX_VIDEO_CAPTURE_ASSET_BYTES });
 
   for (const scene of scenes) {
     if (scene.content.type !== 'interactive') continue;
@@ -232,12 +270,13 @@ export async function prepareInteractiveHtmlScenes(
     }
 
     try {
+      const capture = await prepareCaptureAssets(authored, fetcher);
       const {
         html: inlined,
         report,
         unresolved,
-      } = await inlineHtmlAssets(authored, {
-        fetcher: options.fetcher,
+      } = await inlineHtmlAssets(capture, {
+        fetcher,
         baseUrl: options.baseUrl,
         keepImportmapFallbacks: false,
       });

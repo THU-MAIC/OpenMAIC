@@ -91,6 +91,127 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(prepared.content('interactive:widget')).not.toContain('https://cdn.test/pixel.png');
   });
 
+  it('drops connection hints and still inlines the actual stylesheet and font', async () => {
+    const css = 'https://fonts.test/roboto.css';
+    const font = 'https://files.test/roboto.woff2';
+    const fetched = new Set<string>();
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<link rel="preconnect" href="https://fonts.test">\n` +
+            `<link rel="DNS-PREFETCH" href="//files.test">\n` +
+            `<link rel="stylesheet" href="${css}">`,
+        ),
+      ],
+      {
+        fetcher: async (url) => {
+          fetched.add(url);
+          if (url === css) {
+            return {
+              bytes: new TextEncoder().encode(`@font-face{font-family:Roboto;src:url(${font})}`),
+              contentType: 'text/css',
+            };
+          }
+          return url === font ? { bytes: new Uint8Array([1]), contentType: 'font/woff2' } : null;
+        },
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(fetched).toEqual(new Set([css, font]));
+    const html = prepared.content('interactive:widget');
+    expect(html).toContain('data:font/woff2;base64,');
+    expect(html).not.toMatch(/preconnect|dns-prefetch/i);
+  });
+
+  it('inlines a literal URL assigned to a dynamically created script', async () => {
+    const scriptUrl = 'https://cdn.test/dayjs.js';
+    const authored = `<script>
+      if (!window.dayjs) {
+        var script = document.createElement('script');
+        script.src = '${scriptUrl}';
+        document.head.appendChild(script);
+      }
+      const image = document.createElement('img');
+      image.src = 'https://cdn.test/not-a-script.js';
+    </script>`;
+    const fetched = new Set<string>();
+    const prepared = await prepareInteractiveHtmlScenes([scene(authored)], {
+      fetcher: async (url) => {
+        fetched.add(url);
+        return {
+          bytes: new TextEncoder().encode('window.dayjs = () => 42;'),
+          contentType: 'text/javascript',
+        };
+      },
+    });
+
+    expect(fetched).toEqual(new Set([scriptUrl]));
+    const html = prepared.content('interactive:widget');
+    expect(html).toContain('script.src = "data:text/javascript;base64,');
+    expect(html).toContain("image.src = 'https://cdn.test/not-a-script.js'");
+    expect(html).not.toContain(scriptUrl);
+  });
+
+  it('preserves the scene when a conditional script cannot be prefetched', async () => {
+    const url = 'https://cdn.test/optional-fallback.js';
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(`<script>
+          window.dayjs = () => 42;
+          if (!window.dayjs) {
+            const script = document.createElement('script');
+            script.src = '${url}';
+            document.head.appendChild(script);
+          }
+        </script>`),
+      ],
+      { fetcher: async () => null },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(prepared.content('interactive:widget')).toContain(`script.src = '${url}'`);
+  });
+
+  it('packages the startup files of the Pyodide loader with the capture page', async () => {
+    const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+    const fetched = new Set<string>();
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script defer id="python" src="${root}pyodide.js" onload="loadPyodide()"></script>` +
+            `<script src="${root}pyodide.js"></script>`,
+        ),
+      ],
+      {
+        fetcher: async (url) => {
+          fetched.add(url);
+          return {
+            bytes: new TextEncoder().encode(new URL(url).pathname),
+            contentType: 'application/octet-stream',
+          };
+        },
+      },
+    );
+
+    expect(fetched).toEqual(
+      new Set(
+        [
+          'pyodide.js',
+          'pyodide.asm.js',
+          'pyodide.asm.wasm',
+          'python_stdlib.zip',
+          'pyodide-lock.json',
+        ].map((file) => root + file),
+      ),
+    );
+    const html = prepared.content('interactive:widget');
+    expect(html?.match(/data-openmaic-pyodide-runtime/g)).toHaveLength(1);
+    expect(html).toMatch(/<script defer id="python" src="data:[^"]+" onload="loadPyodide\(\)">/);
+    expect(html).toContain("connect-src 'none'");
+    expect(html).not.toContain(`src="${root}pyodide.js"`);
+  });
+
   it('accepts bare module imports resolved by the final offline import map', async () => {
     const prepared = await prepareInteractiveHtmlScenes(
       [

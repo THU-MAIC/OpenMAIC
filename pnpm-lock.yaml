@@ -170,6 +170,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.10.0
         version: 12.10.1(@types/react@19.2.14)(immer@11.1.4)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
+      acorn:
+        specifier: ^8.16.0
+        version: 8.16.0
       ai:
         specifier: ^6.0.168
         version: 6.0.168(zod@4.3.6)

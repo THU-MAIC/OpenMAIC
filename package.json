@@ -87,6 +87,7 @@
     "@streamdown/math": "^1.0.2",
     "@types/js-yaml": "^4.0.9",
     "@xyflow/react": "^12.10.0",
+    "acorn": "^8.16.0",
     "ai": "^6.0.168",
     "animate.css": "^4.1.1",
     "class-variance-authority": "^0.7.1",

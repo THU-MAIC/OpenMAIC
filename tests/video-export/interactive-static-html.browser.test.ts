@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import { prepareInteractiveHtmlScenes } from '@/lib/video-export-app/prepare-interactive-html';
+import type { FetchAsset } from '@/lib/export/inline-assets-shared';
 import type { Scene } from '@/lib/types/stage';
 import { NO_ASSETS, NO_PROBE } from './helpers';
 
@@ -24,9 +25,12 @@ function interactiveScene(html: string): Scene {
   } as Scene;
 }
 
-async function emittedFixture(html: string): Promise<{ index: string; child: string }> {
+async function emittedFixture(
+  html: string,
+  fetcher?: FetchAsset,
+): Promise<{ index: string; child: string }> {
   const scene = interactiveScene(html);
-  const prepared = await prepareInteractiveHtmlScenes([scene]);
+  const prepared = await prepareInteractiveHtmlScenes([scene], { fetcher });
   const ir = compileVideoTimeline(
     { stage: { id: 'stage', name: 'Interactive smoke' }, scenes: [scene] },
     { timing: NO_PROBE, assets: NO_ASSETS, interactive: prepared },
@@ -145,6 +149,151 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
       await page.close();
     }
   });
+
+  it('draws a queued initial canvas frame when the renderer suspends animation frames', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await page.addInitScript(() => {
+        if (window.parent === window) return;
+        let id = 0;
+        window.requestAnimationFrame = () => ++id;
+        window.cancelAnimationFrame = () => {};
+      });
+      await load(
+        page,
+        await emittedFixture(`
+          <canvas width="10" height="10"></canvas>
+          <script>
+            const canvas = document.querySelector('canvas');
+            const context = canvas.getContext('2d');
+            function frame() {
+              context.fillStyle = 'red';
+              context.fillRect(0, 0, 10, 10);
+              requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+          </script>`),
+      );
+
+      await page.waitForFunction(() => {
+        const host = document.querySelector('[data-interactive-static-host]');
+        return host?.getAttribute('data-interactive-static-state') === 'frozen';
+      });
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      const pixel = await child.evaluate(() => [
+        ...document.querySelector('canvas')!.getContext('2d')!.getImageData(0, 0, 1, 1).data,
+      ]);
+
+      expect(pixel).toEqual([255, 0, 0, 255]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits for a runtime started during the scene settling window', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`
+          <output>Loading</output>
+          <script>
+            window.addEventListener('load', () => {
+              setTimeout(() => {
+                const ready = new Promise((resolve) => setTimeout(resolve, 400));
+                window.__openmaicWaitForStaticRuntime(ready).then(() => setTimeout(() => {
+                  document.querySelector('output').textContent = 'Ready';
+                }, 0));
+              }, 100);
+            });
+          </script>`),
+      );
+
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-interactive-static-host]')
+            ?.getAttribute('data-interactive-static-state') === 'frozen',
+      );
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      expect(await child.locator('output').textContent()).toBe('Ready');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('runs an authored Pyodide load handler and serves its explicit core URL offline', async () => {
+    const page = await browser.newPage();
+    try {
+      const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+      await load(
+        page,
+        await emittedFixture(
+          `<script defer src="${root}pyodide.js"
+             onload="loadPyodide({lockFileURL: '${root}pyodide-lock.json'}).then((value) => { document.querySelector('output').textContent = value; })">
+           </script><output>Loading</output>`,
+          async (url) => ({
+            bytes: new TextEncoder().encode(
+              url.endsWith('/pyodide.js')
+                ? 'globalThis.loadPyodide = async (options) => (await fetch(options.lockFileURL)).text();'
+                : '42',
+            ),
+            contentType: 'text/javascript',
+          }),
+        ),
+      );
+
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-interactive-static-host]')
+            ?.getAttribute('data-interactive-static-state') === 'frozen',
+      );
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      expect(await child.locator('output').textContent()).toBe('42');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.each([
+    { handled: true, state: 'frozen', delay: 400 },
+    { handled: false, state: 'fallback', delay: 0 },
+    { handled: false, state: 'fallback', delay: 400 },
+  ])(
+    'preserves the scene runtime error outcome ($state, $delay ms)',
+    async ({ handled, state, delay }) => {
+      const page = await browser.newPage();
+      try {
+        await load(
+          page,
+          await emittedFixture(`
+          <output>Loading</output>
+          <script>
+            const ready = new Promise((resolve, reject) => {
+              setTimeout(() => reject(new Error('Startup failed')), ${delay});
+            });
+            const result = window.__openmaicWaitForStaticRuntime(ready);
+            ${handled ? "result.catch(() => { document.querySelector('output').textContent = 'Preview'; });" : ''}
+          </script>`),
+        );
+        await page.waitForFunction(
+          (expected) =>
+            document
+              .querySelector('[data-interactive-static-host]')
+              ?.getAttribute('data-interactive-static-state') === expected,
+          state,
+          { timeout: 2500 },
+        );
+        if (handled) {
+          const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+          expect(await child.locator('output').textContent()).toBe('Preview');
+        }
+      } finally {
+        await page.close();
+      }
+    },
+  );
 
   it('switches a runtime failure to the visible placeholder without failing the composition', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
