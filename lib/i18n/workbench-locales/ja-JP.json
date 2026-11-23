@@ -234,7 +234,12 @@
       "createMaterialFolder": "ナレッジベースにフォルダを作成",
       "renameMaterialFolder": "ナレッジベースのフォルダ名を変更",
       "moveMaterials": "素材を移動",
-      "renameMaterial": "素材の名前を変更"
+      "renameMaterial": "素材の名前を変更",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} 秒",

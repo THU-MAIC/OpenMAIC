@@ -234,7 +234,12 @@
       "createMaterialFolder": "Tạo thư mục trong kho kiến thức",
       "renameMaterialFolder": "Đổi tên thư mục kho kiến thức",
       "moveMaterials": "Di chuyển tài liệu",
-      "renameMaterial": "Đổi tên tài liệu"
+      "renameMaterial": "Đổi tên tài liệu",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} giây",

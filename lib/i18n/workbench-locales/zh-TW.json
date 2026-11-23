@@ -240,7 +240,12 @@
       "createMaterialFolder": "新增知識庫資料夾",
       "renameMaterialFolder": "重新命名知識庫資料夾",
       "moveMaterials": "移動材料",
-      "renameMaterial": "重新命名材料"
+      "renameMaterial": "重新命名材料",
+      "cueUser": "給出推薦回覆",
+      "openBoard": "開啟白板",
+      "closeBoard": "收起白板",
+      "pointAtCode": "指向程式碼",
+      "pointAtPreview": "指向作品"
     },
     "chip": {
       "seconds": "{{count}} 秒",

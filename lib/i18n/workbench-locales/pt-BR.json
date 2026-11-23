@@ -234,7 +234,12 @@
       "createMaterialFolder": "Criar pasta na base de conhecimento",
       "renameMaterialFolder": "Renomear pasta da base de conhecimento",
       "moveMaterials": "Mover materiais",
-      "renameMaterial": "Renomear material"
+      "renameMaterial": "Renomear material",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} s",

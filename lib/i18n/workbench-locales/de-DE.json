@@ -234,7 +234,12 @@
       "createMaterialFolder": "Ordner in der Wissensbasis erstellen",
       "renameMaterialFolder": "Ordner der Wissensbasis umbenennen",
       "moveMaterials": "Materialien verschieben",
-      "renameMaterial": "Material umbenennen"
+      "renameMaterial": "Material umbenennen",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} Sek.",

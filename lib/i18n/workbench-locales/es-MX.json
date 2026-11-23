@@ -234,7 +234,12 @@
       "createMaterialFolder": "Crear carpeta en la base de conocimientos",
       "renameMaterialFolder": "Renombrar carpeta de la base de conocimientos",
       "moveMaterials": "Mover materiales",
-      "renameMaterial": "Renombrar material"
+      "renameMaterial": "Renombrar material",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} s",

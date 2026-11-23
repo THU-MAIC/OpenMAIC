@@ -234,7 +234,12 @@
       "createMaterialFolder": "Créer un dossier dans la base de connaissances",
       "renameMaterialFolder": "Renommer un dossier de la base de connaissances",
       "moveMaterials": "Déplacer des documents",
-      "renameMaterial": "Renommer le document"
+      "renameMaterial": "Renommer le document",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} s",

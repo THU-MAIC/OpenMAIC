@@ -234,7 +234,12 @@
       "createMaterialFolder": "إنشاء مجلد في قاعدة المعرفة",
       "renameMaterialFolder": "إعادة تسمية مجلد في قاعدة المعرفة",
       "moveMaterials": "نقل المواد",
-      "renameMaterial": "إعادة تسمية المادة"
+      "renameMaterial": "إعادة تسمية المادة",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} ثانية",
