@@ -2,7 +2,7 @@
 
 // Port of OpenPBL's ToolCard/ToolGroup (MoonshotAI/kimi-code, MIT), using host tokens.
 // Full input/output/display are plain text; each card starts folded, its group open.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown, ChevronRight, List, X } from 'lucide-react';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import type { useI18n } from '@/lib/hooks/use-i18n';
@@ -24,6 +24,7 @@ const names = {
   manage: 'manage_file',
   skill: 'read_next_skill',
   tool: 'tool',
+  board: 'tool',
 };
 
 /** Same salient-field order and 80-character collapsed preview as OpenPBL. */
@@ -217,5 +218,71 @@ export function ToolActivity({ tools, t }: { tools: ToolPart[]; t: Translator })
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Tool calls as the speech bubble shows them: under the words they follow, one light line
+ * each in the bubble's own type, with the same name and icon the conversation gives them.
+ * One call is in view at a time; the newest rolls into place and the rest scroll.
+ */
+export function BubbleTools({ tools, t }: { tools: readonly ToolPart[]; t: Translator }) {
+  // One line is in view: each new call rolls up into it, and the earlier ones are a scroll
+  // away. Only a new call moves the line, so scrolling back to read is left alone.
+  const list = useRef<HTMLUListElement>(null);
+  const count = tools.length;
+  useEffect(() => {
+    list.current?.scrollTo({ top: list.current.scrollHeight, behavior: 'smooth' });
+  }, [count]);
+  if (!count) return null;
+  return (
+    <ul
+      ref={list}
+      data-testid="pbl-bubble-tools"
+      className="flex h-6 snap-y snap-mandatory flex-col overflow-y-auto overscroll-contain scrollbar-hide"
+    >
+      {tools.map((part) => {
+        const { icon: Icon, label } = presentTool(
+          { key: part.id, kind: 'tool', text: '', toolName: part.name ?? names[part.action] },
+          [],
+          t,
+        );
+        // A whiteboard call is named by what it puts on the board, not by its tool name or
+        // the first argument it happens to carry.
+        const drawn =
+          part.action === 'board'
+            ? (part.display as { op?: string; label?: string } | undefined)
+            : undefined;
+        const name = drawn?.op
+          ? `${t('whiteboard.title')} · ${t(`pblV3.board.ops.${drawn.op}`)}`
+          : label;
+        const summary = drawn ? (drawn.label ?? '') : inputSummary(part.args);
+        const running = part.status === 'running';
+        return (
+          <li
+            key={part.id}
+            data-status={part.status}
+            className="flex h-6 min-w-0 shrink-0 snap-start items-center gap-2 text-[13px] leading-6 text-gray-500 dark:text-gray-400"
+          >
+            <span className="grid size-4 shrink-0 place-items-center">
+              {running ? (
+                <span className="size-3 animate-spin rounded-full border-[1.5px] border-purple-300 border-t-purple-600 dark:border-purple-700 dark:border-t-purple-300" />
+              ) : part.status === 'succeeded' ? (
+                <Check size={13} className="text-emerald-500" />
+              ) : (
+                <X size={13} className="text-red-500" />
+              )}
+            </span>
+            <Icon size={13} className="shrink-0 opacity-70" aria-hidden="true" />
+            <span
+              className={`shrink-0 ${running ? 'font-medium text-gray-800 dark:text-gray-100' : ''}`}
+            >
+              {name}
+            </span>
+            {summary ? <span className="truncate opacity-70">{summary}</span> : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
