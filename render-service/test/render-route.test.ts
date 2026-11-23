@@ -339,6 +339,18 @@ describe('render HTTP contract through a replaceable executor', () => {
     expect(body.queuePosition).toBe(0);
   });
 
+  it('omits queuePosition for a succeeded job', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-queue-pos-run-'));
+    scratch.push(dir);
+    const { app } = testApp(succeedingExecutor, {
+      makeProjectDir: async () => dir,
+    });
+    const submit = await app.fetch(renderRequest());
+    const { jobId } = (await submit.json()) as { jobId: string };
+    const body = await waitForPoll(app, jobId, 'succeeded');
+    expect(body.queuePosition).toBeUndefined();
+  });
+
   it('preserves queued cancellation and its polling shape', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'render-route-queued-cancel-'));
     scratch.push(dir);

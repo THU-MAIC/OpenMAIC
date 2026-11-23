@@ -404,7 +404,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
           toast.info(t('export.videoServiceUnavailable'), { id: toastId });
         } else {
           if (submitStatus === 400 || submitStatus === 413) invalidateCachedZip();
-          set({ status: 'failed', error: message });
+          set({ status: 'failed', error: message, queuePosition: null });
           const key = rejectionMessageKey(submitStatus, submitReason);
           toast.error(t(key ?? 'export.videoFailed'), { id: toastId });
         }
@@ -415,7 +415,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
           () => {},
         );
         log.error('Video render failed:', error);
-        set({ status: 'failed', error: message });
+        set({ status: 'failed', error: message, queuePosition: null });
         toast.error(t('export.videoFailed'), { id: toastId });
       }
     } finally {

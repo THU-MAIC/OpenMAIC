@@ -261,7 +261,7 @@ export function VideoExportDialog({
                 {t('export.videoRenderMp4')}
               </button>
             )}
-            {serviceEnabled && accepting === false && (
+            {serviceEnabled && accepting === false && !rendering && (
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span role="status">{t('export.videoQueueBusy')}</span>
                 <button

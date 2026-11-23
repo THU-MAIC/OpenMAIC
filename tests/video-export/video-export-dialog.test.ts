@@ -54,6 +54,7 @@ function response(accepting?: boolean, enabled = true) {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.renderVideoOverride = null;
   vi.stubGlobal('fetch', mocks.fetch);
   host = document.createElement('div');
   document.body.append(host);
