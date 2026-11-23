@@ -1405,13 +1405,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // A quiz on the last page opens it once handed in: it is what the page was waiting for.
     useEffect(
       () =>
-        onQuizReviewed(() => {
+        onQuizReviewed((sceneId) => {
           window.setTimeout(() => {
+            if (useStageStore.getState().currentSceneId !== sceneId) return;
             if (opensOnQuizSubmit(courseEndContextRef.current)) void openCourseEnd();
-            else {
-              const sceneId = useStageStore.getState().currentSceneId;
-              if (sceneId) beginWaitRef.current?.(sceneId, false);
-            }
+            else beginWaitRef.current?.(sceneId, false);
           }, COURSE_END_GAP_MS);
         }),
       [openCourseEnd],
