@@ -219,6 +219,55 @@ it('seeds the DeepSeek plan models with the registry metadata', () => {
   expect(models[1].capabilities).toMatchObject({ tools: true, vision: false });
 });
 
+it.each([
+  ['xiaomi-token-plan', 'https://token-plan-cn.xiaomimimo.com/v1'],
+  ['xiaomi-intl', 'https://token-plan-sgp.xiaomimimo.com/v1'],
+])('serves chat, TTS and ASR of %s from its own cluster', (id, baseUrl) => {
+  const preset = getProviderPreset(id)!;
+  expect(preset.kind).toBe('token-plan');
+  expect(preset.capabilities).toEqual({
+    chat: {
+      registryId: 'xiaomi',
+      baseUrl,
+      models: ['mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro-ultraspeed'],
+      defaultModel: 'mimo-v2.6-pro',
+    },
+    tts: {
+      registryId: 'xiaomi-tts',
+      baseUrl,
+      models: ['mimo-v2.5-tts'],
+      defaultModel: 'mimo-v2.5-tts',
+    },
+    asr: {
+      registryId: 'xiaomi-asr',
+      baseUrl,
+      models: ['mimo-v2.5-asr'],
+      defaultModel: 'mimo-v2.5-asr',
+    },
+  });
+  expect(preset.recommended).toEqual({
+    llm: 'mimo-v2.6-pro',
+    tts: 'mimo-v2.5-tts',
+    asr: 'mimo-v2.5-asr',
+  });
+  const ultraspeed = presetModels(preset, 'chat')[2];
+  expect(ultraspeed).toMatchObject({
+    name: 'MiMo V2.6 Pro UltraSpeed',
+    capabilities: { tools: true, vision: true, thinking: { toggleable: true } },
+  });
+});
+
+it('keeps the pay-as-you-go Xiaomi preset and its model list', () => {
+  const preset = getProviderPreset('xiaomi')!;
+  expect(preset).toMatchObject({
+    kind: 'single',
+    capabilities: { chat: { registryId: 'xiaomi' } },
+  });
+  expect(presetModels(preset, 'chat').map((model) => model.id)).not.toContain(
+    'mimo-v2.6-pro-ultraspeed',
+  );
+});
+
 describe('token plan regions', () => {
   const idsIn = (region: 'domestic' | 'international') =>
     TOKEN_PLAN_PRESETS.filter((plan) => tokenPlanInRegion(plan, region)).map((plan) => plan.id);
@@ -229,12 +278,18 @@ describe('token plan regions', () => {
       ),
     );
 
-  it('lists only the plans tested with international keys on the international side', () => {
-    expect(idsIn('international')).toEqual(['minimax-intl', 'kimi-intl', 'deepseek']);
+  it('lists only the plans for international keys on the international side', () => {
+    expect(idsIn('international')).toEqual([
+      'minimax-intl',
+      'xiaomi-intl',
+      'kimi-intl',
+      'deepseek',
+    ]);
     expect(idsIn('domestic')).toEqual([
       'tokendance',
       'minimax',
       'volcengine-ark',
+      'xiaomi',
       'kimi',
       'deepseek',
     ]);
@@ -243,8 +298,10 @@ describe('token plan regions', () => {
   it('serves every capability of an international plan from the international site', () => {
     expect([...hosts('minimax-intl')]).toEqual(['api.minimax.io']);
     expect([...hosts('kimi-intl')]).toEqual(['api.kimi.ai']);
+    expect([...hosts('xiaomi-intl')]).toEqual(['token-plan-sgp.xiaomimimo.com']);
     expect([...hosts('minimax')]).toEqual(['api.minimaxi.com']);
     expect([...hosts('kimi')]).toEqual(['api.kimi.com']);
+    expect([...hosts('xiaomi')]).toEqual(['token-plan-cn.xiaomimimo.com']);
   });
 
   it('keeps the domestic capabilities on the international plans', () => {
@@ -252,6 +309,7 @@ describe('token plan regions', () => {
       Object.keys(TOKEN_PLAN_PRESETS.find((plan) => plan.id === id)!.modalities);
     expect(modalities('minimax-intl')).toEqual(modalities('minimax'));
     expect(modalities('kimi-intl')).toEqual(modalities('kimi'));
+    expect(modalities('xiaomi-intl')).toEqual(modalities('xiaomi'));
   });
 
   it('offers international MiniMax only the models the international site serves', () => {

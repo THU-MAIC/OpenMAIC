@@ -299,7 +299,7 @@ describe('Token Plan → mainland and international sides', () => {
   it('opens on the international side outside the Simplified Chinese interface', () => {
     i18n.locale = 'en-US';
     mountPanel(null);
-    expect(planNames()).toEqual(['MiniMax', 'Kimi', 'DeepSeek']);
+    expect(planNames()).toEqual(['MiniMax', 'Xiaomi MiMo', 'Kimi', 'DeepSeek']);
     expect(byText('settings.providerLinks.international').getAttribute('aria-pressed')).toBe(
       'true',
     );
@@ -314,10 +314,17 @@ describe('Token Plan → mainland and international sides', () => {
 
   it('opens on the mainland side in Simplified Chinese and switches sides', () => {
     mountPanel(null);
-    expect(planNames()).toEqual(['TokenDance', 'MiniMax', 'Seed', 'Kimi', 'DeepSeek']);
+    expect(planNames()).toEqual([
+      'TokenDance',
+      'MiniMax',
+      'Seed',
+      'Xiaomi MiMo',
+      'Kimi',
+      'DeepSeek',
+    ]);
     expect(document.body.textContent).toContain('settings.tokenPlan.regionHintDomestic');
     act(() => byText('settings.providerLinks.international').click());
-    expect(planNames()).toEqual(['MiniMax', 'Kimi', 'DeepSeek']);
+    expect(planNames()).toEqual(['MiniMax', 'Xiaomi MiMo', 'Kimi', 'DeepSeek']);
     expect(document.body.textContent).toContain('settings.tokenPlan.regionHintInternational');
     expect(document.body.textContent).not.toContain('settings.tokenPlan.regionHintDomestic');
     expect(

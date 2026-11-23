@@ -635,6 +635,15 @@ describe('international token plans', () => {
         webFetch: 'https://api.kimi.ai/coding/v1',
       },
     ],
+    [
+      'xiaomi-intl',
+      'llm: p:mimo-v2.6-pro\n  tts: p:mimo-v2.5-tts\n  asr: p:mimo-v2.5-asr',
+      {
+        llm: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        tts: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        asr: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      },
+    ],
   ] as const)('resolves every %s slot to the international endpoint', (preset, slots, expected) => {
     const workspace = layer(
       'workspace',
