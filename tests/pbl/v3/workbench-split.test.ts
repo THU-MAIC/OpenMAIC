@@ -23,7 +23,17 @@ vi.mock('react-resizable-panels', () => ({
     layout.set(children[0]!.props.id, onLayoutChanged);
     return createElement('div', null, children as unknown as ReactNode);
   },
-  Panel: ({ children }: { children: ReactNode }) => createElement('div', null, children),
+  Panel: ({
+    children,
+    id,
+    inert,
+    'aria-hidden': hidden,
+  }: {
+    children: ReactNode;
+    id: string;
+    inert?: boolean;
+    'aria-hidden'?: boolean;
+  }) => createElement('div', { id, inert, 'aria-hidden': hidden }, children),
   Separator: () => createElement('div'),
 }));
 import { WorkbenchSplit } from '@/components/scene-renderers/pbl/v3/workbench-split';
@@ -128,8 +138,12 @@ it('synchronizes assistant and inner workspace collapses while keeping a valid p
   try {
     const assistant = f.host.querySelector<HTMLButtonElement>('[aria-label="assistant"]')!;
     const workspace = f.host.querySelector<HTMLButtonElement>('[aria-label="workspace"]')!;
+    const panel = f.host.querySelector('#assistant')!;
+    expect(panel.hasAttribute('inert')).toBe(false);
     await act(async () => commit('work-area', { 'work-area': 100, assistant: 0 }));
     expect(assistant.getAttribute('aria-pressed')).toBe('false');
+    expect(panel.hasAttribute('inert')).toBe(true);
+    expect(panel.getAttribute('aria-hidden')).toBe('true');
     await act(async () => commit('workspace', { workspace: 0, application: 100 }));
     expect(workspace.getAttribute('aria-pressed')).toBe('false');
     expect(assistant.getAttribute('aria-pressed')).toBe('true');

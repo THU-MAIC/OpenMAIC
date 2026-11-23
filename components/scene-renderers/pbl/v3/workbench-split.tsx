@@ -158,6 +158,8 @@ export function WorkbenchSplit({
         />
         <Panel
           id="assistant"
+          inert={!assistantInPanel}
+          aria-hidden={!assistantInPanel || undefined}
           panelRef={assistantPanel}
           collapsible
           defaultSize="45%"

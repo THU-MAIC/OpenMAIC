@@ -445,7 +445,7 @@ export function Companion({
             <TeachingExit
               view={view}
               nextLabel={continueLabel}
-              disabled={disabled || active}
+              disabled={disabled || (active && view.teachingVisit.learnerTurns === 0)}
               onNext={onContinue}
               onAsk={onSend}
             />
