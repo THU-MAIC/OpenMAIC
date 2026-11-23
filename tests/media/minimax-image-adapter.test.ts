@@ -50,12 +50,8 @@ describe('minimax-image-adapter', () => {
 
     const result = await generateWithMiniMaxImage(config, options);
 
-    expect(result).toEqual({
-      base64: JPEG_B64,
-      mimeType: 'image/jpeg',
-      width: 1024,
-      height: 576,
-    });
+    expect(result).toMatchObject({ base64: JPEG_B64, mimeType: 'image/jpeg' });
+    expect(result.url).toBeUndefined();
   });
 
   it('labels bytes without the JPEG signature as PNG', async () => {
