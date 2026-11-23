@@ -18,6 +18,7 @@ import {
 } from '@/lib/whiteboard/runtime/store';
 import {
   LEGACY_WHITEBOARD_SOURCE_KIND,
+  PBL_WHITEBOARD_RUNTIME_KIND,
   WHITEBOARD_RUNTIME_PAYLOAD_VERSION,
   WhiteboardRuntimeCodeLineIdConflictError,
   WhiteboardRuntimeCodeLineNotFoundError,
@@ -1189,5 +1190,89 @@ describe('whiteboard RuntimeStore service', () => {
       whiteboard: null,
       lastSeq: null,
     });
+  });
+  it('keeps scoped boards apart from each other and from the classroom board', async () => {
+    const store = runtimeStore();
+    const scoped = (sessionId: string) =>
+      createWhiteboardRuntimeService({
+        store,
+        scope: { kind: PBL_WHITEBOARD_RUNTIME_KIND, sessionId },
+        resolveLearnerKey: () => 'learner-1',
+        now: () => '2026-08-06T00:00:00.000Z',
+        withMaintenanceLock: (work) => work(),
+      });
+    const classroom = service(store);
+    const first = scoped('pbl-board:study-1:m1:0');
+    const second = scoped('pbl-board:study-1:m1:1');
+
+    await classroom.append({ stageId: 'stage-1', expectedLastSeq: null, payload: payload() });
+    await first.append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload('first-operation', textElement('first-text')),
+    });
+    await second.append({
+      stageId: 'stage-1',
+      expectedLastSeq: null,
+      payload: elementPayload('second-operation', textElement('second-text')),
+    });
+    await first.append({
+      stageId: 'stage-1',
+      expectedLastSeq: 0,
+      payload: elementPayload('first-operation-2', textElement('first-text-2')),
+    });
+
+    const firstState = await first.read('stage-1');
+    expect(firstState.sessionId).toBe('pbl-board:study-1:m1:0');
+    expect(firstState.lastSeq).toBe(1);
+    expect(firstState.whiteboard?.elements.map((element) => element.id)).toEqual([
+      'first-text',
+      'first-text-2',
+    ]);
+    const secondState = await second.read('stage-1');
+    expect(secondState.whiteboard?.elements.map((element) => element.id)).toEqual(['second-text']);
+    const classroomState = await classroom.read('stage-1');
+    expect(classroomState.sessionId).toBe(whiteboardRuntimeSessionId('stage-1', 'learner-1'));
+    expect(classroomState.whiteboard?.id).toBe('board-1');
+    expect(classroomState.lastSeq).toBe(0);
+    await expect(scoped('pbl-board:study-1:m2:0').read('stage-1')).resolves.toEqual({
+      sessionId: null,
+      whiteboard: null,
+      lastSeq: null,
+    });
+    expect(await store.getSession('pbl-board:study-1:m1:0')).toMatchObject({
+      kind: PBL_WHITEBOARD_RUNTIME_KIND,
+      stageId: 'stage-1',
+      learnerKey: 'learner-1',
+    });
+
+    await deleteStageRuntimeSafely('stage-1', store);
+    await expect(first.read('stage-1')).resolves.toMatchObject({ whiteboard: null });
+  });
+
+  it('rejects a scope that would shadow the classroom board or another kind', async () => {
+    const store = runtimeStore();
+    const build = (scope: { kind: string; sessionId: string }) =>
+      createWhiteboardRuntimeService({
+        store,
+        scope,
+        resolveLearnerKey: () => 'learner-1',
+        withMaintenanceLock: (work) => work(),
+      });
+    expect(() => build({ kind: 'whiteboard', sessionId: 'x' })).toThrow(
+      'WHITEBOARD_RUNTIME_SCOPE_KIND_INVALID',
+    );
+    expect(() => build({ kind: PBL_WHITEBOARD_RUNTIME_KIND, sessionId: '' })).toThrow(
+      'WHITEBOARD_RUNTIME_SCOPE_SESSION_ID_INVALID',
+    );
+
+    await service(store).append({ stageId: 'stage-1', expectedLastSeq: null, payload: payload() });
+    const squatting = build({
+      kind: PBL_WHITEBOARD_RUNTIME_KIND,
+      sessionId: whiteboardRuntimeSessionId('stage-1', 'learner-1'),
+    });
+    await expect(squatting.read('stage-1')).rejects.toBeInstanceOf(
+      WhiteboardRuntimeSessionInvariantError,
+    );
   });
 });

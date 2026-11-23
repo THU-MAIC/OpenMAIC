@@ -34,4 +34,5 @@ export const APP_RUNTIME_PAYLOAD_VALIDATORS = Object.freeze({
   chat,
   quizAttempt,
   whiteboard: whiteboardRuntimePayloadValidator,
+  pblWhiteboard: whiteboardRuntimePayloadValidator,
 }) satisfies Readonly<Record<string, RuntimePayloadValidator>>;

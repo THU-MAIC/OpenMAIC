@@ -171,6 +171,34 @@ export async function foldWhiteboardRuntimeRecords(
   sessionId: string,
   records: readonly RuntimeRecord[],
 ): Promise<FoldedWhiteboardRuntimeDetails> {
+  return foldRecords(sessionId, records);
+}
+
+export interface WhiteboardRuntimeHistoryPage {
+  /** Tail sequence of the nonempty board immediately before a clear. */
+  beforeClearSeq: number;
+  whiteboard: Whiteboard;
+}
+
+/**
+ * Replay with exactly the normal fold's validation and duplicate handling.
+ * Capture immutable nonempty boards before successful clears, in seq order;
+ * the final/current board is returned in state and is never a history page.
+ */
+export async function foldWhiteboardRuntimeRecordsWithHistory(
+  sessionId: string,
+  records: readonly RuntimeRecord[],
+): Promise<{ state: FoldedWhiteboardRuntimeDetails; pages: WhiteboardRuntimeHistoryPage[] }> {
+  const pages: WhiteboardRuntimeHistoryPage[] = [];
+  const state = await foldRecords(sessionId, records, (page) => pages.push(page));
+  return { state, pages };
+}
+
+async function foldRecords(
+  sessionId: string,
+  records: readonly RuntimeRecord[],
+  onClear?: (page: WhiteboardRuntimeHistoryPage) => void,
+): Promise<FoldedWhiteboardRuntimeDetails> {
   let whiteboard: FoldedWhiteboardRuntimeState['whiteboard'] = null;
   const operations: Record<string, Readonly<{ digest: Sha256Digest; seq: number }>> = Object.create(
     null,
@@ -204,7 +232,11 @@ export async function foldWhiteboardRuntimeRecords(
       continue;
     }
     operations[payload.operationId] = Object.freeze({ digest, seq: record.seq });
+    const previousBoard = whiteboard;
     whiteboard = await applyWhiteboardRuntimeOperation(sessionId, whiteboard, payload.operation);
+    if (payload.operation.kind === 'elements_cleared' && previousBoard?.elements.length) {
+      onClear?.({ beforeClearSeq: record.seq - 1, whiteboard: previousBoard });
+    }
   }
 
   return Object.freeze({

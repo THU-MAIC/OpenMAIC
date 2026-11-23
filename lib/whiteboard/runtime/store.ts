@@ -33,8 +33,23 @@ export class WhiteboardRuntimeSessionInvariantError extends Error {
   readonly code = 'WHITEBOARD_RUNTIME_SESSION_INVARIANT';
 }
 
+/**
+ * A board that is not the classroom's own. The classroom keeps exactly one
+ * active `whiteboard` session per stage and learner; a scoped board lives in
+ * the same stage and learner partition under its own kind and a caller-chosen
+ * session id, so several can coexist there without touching the classroom's.
+ */
+export interface WhiteboardRuntimeScope {
+  /** App-defined RuntimeSession kind; never the classroom's `whiteboard`. */
+  kind: string;
+  /** Deterministic RuntimeSession id of this one board. */
+  sessionId: string;
+}
+
 export interface WhiteboardRuntimeServiceDeps {
   store: RuntimeStore;
+  /** Omitted for the classroom board. */
+  scope?: WhiteboardRuntimeScope;
   resolveLearnerKey: () => string | Promise<string>;
   now?: () => string;
   withMaintenanceLock?: <T>(work: () => Promise<T>) => Promise<T>;
@@ -66,13 +81,21 @@ function assertLearnerKey(learnerKey: string): void {
   if (learnerKey.length === 0) throw new Error('WHITEBOARD_RUNTIME_LEARNER_KEY_INVALID');
 }
 
+function assertScope(scope: WhiteboardRuntimeScope | undefined): void {
+  if (!scope) return;
+  if (scope.kind.length === 0 || scope.kind === WHITEBOARD_RUNTIME_KIND) {
+    throw new Error('WHITEBOARD_RUNTIME_SCOPE_KIND_INVALID');
+  }
+  if (scope.sessionId.length === 0) throw new Error('WHITEBOARD_RUNTIME_SCOPE_SESSION_ID_INVALID');
+}
+
 function assertSessionIdentity(
   session: RuntimeSession,
-  expected: { id?: string; stageId: string; learnerKey: string },
+  expected: { id?: string; kind?: string; stageId: string; learnerKey: string },
 ): void {
   if (
     (expected.id !== undefined && session.id !== expected.id) ||
-    session.kind !== WHITEBOARD_RUNTIME_KIND ||
+    session.kind !== (expected.kind ?? WHITEBOARD_RUNTIME_KIND) ||
     session.stageId !== expected.stageId ||
     session.learnerKey !== expected.learnerKey ||
     session.status !== 'active'
@@ -87,7 +110,24 @@ async function selectSession(
   store: RuntimeStore,
   stageId: string,
   learnerKey: string,
+  scope?: WhiteboardRuntimeScope,
 ): Promise<RuntimeSession | undefined> {
+  if (scope) {
+    // A scoped board is addressed by its id alone: sibling boards of the same
+    // kind share the partition, so only this id is ever selected or checked.
+    const session = (await store.listSessions(stageId, learnerKey)).find(
+      (candidate) => candidate.id === scope.sessionId,
+    );
+    if (session) {
+      assertSessionIdentity(session, {
+        id: scope.sessionId,
+        kind: scope.kind,
+        stageId,
+        learnerKey,
+      });
+    }
+    return session;
+  }
   // The partition listing is the only read: an absent session is the normal
   // state of a board nobody has drawn on yet, and a point read of the
   // deterministic id would answer it with a 404 on every hydration. A corrupt
@@ -125,27 +165,29 @@ async function ensureSession(
   stageId: string,
   learnerKey: string,
   now: () => string,
+  scope?: WhiteboardRuntimeScope,
 ): Promise<RuntimeSession> {
-  const selected = await selectSession(store, stageId, learnerKey);
+  const selected = await selectSession(store, stageId, learnerKey, scope);
   if (selected) return selected;
-  const id = whiteboardRuntimeSessionId(stageId, learnerKey);
+  const id = scope?.sessionId ?? whiteboardRuntimeSessionId(stageId, learnerKey);
+  const kind = scope?.kind ?? WHITEBOARD_RUNTIME_KIND;
   const timestamp = now();
   try {
     const created = await store.createSession({
       id,
-      kind: WHITEBOARD_RUNTIME_KIND,
+      kind,
       stageId,
       learnerKey,
       status: 'active',
       createdAt: timestamp,
       updatedAt: timestamp,
     });
-    assertSessionIdentity(created, { id, stageId, learnerKey });
+    assertSessionIdentity(created, { id, kind, stageId, learnerKey });
     return created;
   } catch (error) {
     const winner = await store.getSession(id);
     if (!winner) throw error;
-    assertSessionIdentity(winner, { id, stageId, learnerKey });
+    assertSessionIdentity(winner, { id, kind, stageId, learnerKey });
     return winner;
   }
 }
@@ -174,13 +216,15 @@ export function createWhiteboardRuntimeService(
 ): WhiteboardRuntimeService {
   const now = deps.now ?? (() => new Date().toISOString());
   const lock = deps.withMaintenanceLock ?? withRuntimeStorageSharedLock;
+  const scope = deps.scope;
+  assertScope(scope);
 
   const read = async (stageId: string): Promise<FoldedWhiteboardRuntimeState> => {
     assertStageId(stageId);
     const learnerKey = await deps.resolveLearnerKey();
     assertLearnerKey(learnerKey);
     return lock(async () => {
-      const session = await selectSession(deps.store, stageId, learnerKey);
+      const session = await selectSession(deps.store, stageId, learnerKey, scope);
       return session
         ? publicWhiteboardRuntimeState(await foldSession(deps.store, session))
         : EMPTY_WHITEBOARD_RUNTIME_STATE;
@@ -203,7 +247,7 @@ export function createWhiteboardRuntimeService(
     assertLearnerKey(learnerKey);
 
     return lock(async () => {
-      const session = await ensureSession(deps.store, input.stageId, learnerKey, now);
+      const session = await ensureSession(deps.store, input.stageId, learnerKey, now, scope);
       const before = await foldSession(deps.store, session);
       const replaySeq = await findExactReplay(before, payload);
       if (replaySeq !== null) {
@@ -293,7 +337,7 @@ export function createWhiteboardRuntimeService(
     assertLearnerKey(learnerKey);
 
     return lock(async () => {
-      const session = await selectSession(deps.store, stageId, learnerKey);
+      const session = await selectSession(deps.store, stageId, learnerKey, scope);
       if (!session) return { status: 'empty', state: EMPTY_WHITEBOARD_RUNTIME_STATE };
       const details = await foldSession(deps.store, session);
       const state = publicWhiteboardRuntimeState(details);

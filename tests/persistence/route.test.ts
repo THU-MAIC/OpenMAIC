@@ -922,6 +922,7 @@ describe('embedded persistence route', () => {
       'chat',
       'quizAttempt',
       'whiteboard',
+      'pblWhiteboard',
     ]);
   });
 

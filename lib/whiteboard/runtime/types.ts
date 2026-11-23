@@ -1,6 +1,8 @@
 import type { CodeLine, PPTElement, RuntimeRecord, Whiteboard } from '@openmaic/dsl';
 
 export const WHITEBOARD_RUNTIME_KIND = 'whiteboard';
+/** Explanation boards of a PBL study: one per study stage, beside the classroom board. */
+export const PBL_WHITEBOARD_RUNTIME_KIND = 'pblWhiteboard';
 export const WHITEBOARD_RUNTIME_PAYLOAD_VERSION = 1;
 export const LEGACY_WHITEBOARD_SOURCE_KIND = 'stage.whiteboard';
 export const LEGACY_WHITEBOARD_SOURCE_VERSION = 'maic.stage-whiteboard.v1';
