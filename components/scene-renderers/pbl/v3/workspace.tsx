@@ -128,7 +128,7 @@ function PBLV3WorkspaceContent({
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const observeComposer = useCallback((field: HTMLTextAreaElement | null) => {
     composerRef.current = field;
-    if (!field) return;
+    if (!field || typeof ResizeObserver === 'undefined') return;
     let lastWidth = 0;
     let frame = 0;
     const observer = new ResizeObserver(([entry]) => {
