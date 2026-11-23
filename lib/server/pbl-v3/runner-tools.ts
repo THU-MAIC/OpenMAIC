@@ -1,3 +1,6 @@
+import { studyWhiteboard } from './whiteboard';
+import { pblWhiteboardEnabled, pblWhiteboardTeachingRole } from './whiteboard-config';
+import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { changedLineRanges } from './file-changes';
@@ -79,6 +82,8 @@ export async function teachingRunnerConfig(input: {
   const binding = foundBinding;
   if (!binding) throw sandboxConflict('Teaching session binding is missing.');
   const bound = binding;
+  // With the whiteboard on, the reply is what the role says beside it; the lesson is on the board.
+  const boardTeaching = pblWhiteboardEnabled() && pblWhiteboardTeachingRole(bound.role);
   const row = await store.get(bound.study_id, input.ownerId),
     project = projectFor(row),
     stage = stageFor(row);
@@ -619,7 +624,17 @@ export async function teachingRunnerConfig(input: {
       tool(
         'respond_to_learner',
         'Answer an assistance-only product, background or project-knowledge question, or ask the necessary clarification. Preserve the pending teaching/review question and end this turn without advancing, crediting understanding or approving an artifact. Use before opening/advancing a Skill; do not repeat the response in prose. For a mixed review answer plus help request, use normal review tools for the actual review evidence instead.',
-        Type.Object({ response: Type.String({ minLength: 1 }) }),
+        Type.Object({
+          response: Type.String({
+            minLength: 1,
+            ...(boardTeaching
+              ? {
+                  description:
+                    'What you say aloud to close the turn: at most three plain sentences. Anything the learner needs to look at goes on the whiteboard first, explained in the ordinary spoken text around those wb calls; no headings, lists, tables or code here.',
+                }
+              : {}),
+          }),
+        }),
         async (_current, p) => {
           if (!latest || latest.pblOpening)
             throw sandboxConflict('Automatic entry must deliver the project/stage opening.');
@@ -740,8 +755,9 @@ export async function teachingRunnerConfig(input: {
         Type.Object({
           response: Type.String({
             minLength: 1,
-            description:
-              'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
+            description: boardTeaching
+              ? 'How you close the turn, nothing more: at most one plain sentence that sums up, then ONE closing question or invitation in its own final paragraph. You already gave the explanation as ordinary spoken text between your whiteboard calls, and the welcome, lesson and file guidance are on the whiteboard; none of that is repeated here: no headings, lists, tables or code. Write the question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question.'
+              : 'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
           }),
           approval: Type.Optional(Type.Boolean()),
         }),
@@ -897,6 +913,122 @@ export async function teachingRunnerConfig(input: {
       ),
     );
   }
+  // The whiteboard comes into view when the role calls for it and goes when the role puts it
+  // away, as in the classroom.
+  if (boardTeaching)
+    tools.push(
+      tool(
+        'wb_open',
+        'Bring the whiteboard into view for the learner. It starts out of view; drawing on it also brings it into view, so call this only to show a board that is already written.',
+        Type.Object({}),
+        async () => ({ value: { open: true } }),
+      ),
+      tool(
+        'wb_close',
+        "Put the whiteboard away, leaving the learner's code and running application in full view. Call it once you have finished explaining what is on the board and the turn moves on to their work.",
+        Type.Object({}),
+        async () => ({ value: { open: false } }),
+      ),
+    );
+  // Replies the learner can pick instead of typing, offered the way the classroom offers them.
+  if (boardTeaching)
+    tools.push(
+      tool(
+        'cue_user',
+        "Offer the learner replies they could give to your closing question, as the classroom does. Call it just before you record the closing, and only when that question can be answered by one of two to four clear, mutually exclusive short replies in the learner's own voice; leave it out for a question that needs their own reasoning. The learner may pick one or write their own.",
+        Type.Object({
+          options: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
+            minItems: 2,
+            maxItems: 4,
+          }),
+        }),
+        async (_current, p) => ({ value: { options: normalizeCueUserOptions(p.options) ?? [] } }),
+      ),
+    );
+  // Pointing needs what only reading gives: current line numbers and the page's own names.
+  if (boardTeaching && row.environment_id && canReadFiles)
+    tools.push(
+      tool(
+        'point_at_code',
+        'Point at lines of a project file while you speak, the way a teacher points at a line on screen. The workbench opens the file, brings the lines into view and keeps a spotlight or a laser dot on them while you say what follows. Call it immediately before the sentence about those lines; use the whiteboard for anything that needs explaining beside the code. Read the file first so the line numbers are current.',
+        Type.Object({
+          path,
+          startLine: Type.Integer({ minimum: 1 }),
+          endLine: Type.Optional(Type.Integer({ minimum: 1 })),
+          pointer: Type.Union([Type.Literal('spotlight'), Type.Literal('laser')], {
+            description:
+              'spotlight dims everything but a block of lines; laser marks one line with a dot.',
+          }),
+        }),
+        async (_current, p) => {
+          assertProjectSource(project, p.path);
+          if (p.endLine !== undefined && p.endLine < p.startLine)
+            throw sandboxInvalid('endLine must not precede startLine.');
+          return { value: { pointed: true } };
+        },
+      ),
+      ...(project.application
+        ? [
+            tool(
+              'point_at_preview',
+              "Point at one element of the learner's running application while you speak. The workbench opens the application preview, scrolls the element into view and keeps a spotlight or a laser dot on it while you say what follows. Call it immediately before the sentence about that element, to show where on the page something happens or where the learner should click. Take the selector from the page source file, read with read_file in this turn (an id, a class, or a short attribute selector); it must match an element that exists on the page as it is first shown.",
+              Type.Object({
+                selector: Type.String({ minLength: 1, maxLength: 200 }),
+                pointer: Type.Union([Type.Literal('spotlight'), Type.Literal('laser')], {
+                  description:
+                    'spotlight dims everything but the element; laser marks it with a dot.',
+                }),
+              }),
+              async (_current, p) => {
+                // The page is the learner's own source. Every name the selector relies on must
+                // be in a file read this turn, or the pointer lands on nothing while it speaks.
+                const read = [...observedText.values()];
+                const missing = [
+                  ...p.selector.matchAll(/[#.]([\w-]+)|\[[\w-]+[~|^$*]?=["']?([^"'\]]+)/g),
+                ]
+                  .map((match) => match[1] ?? match[2])
+                  .find((name) => !read.some((text) => text.includes(name)));
+                if (missing)
+                  throw sandboxInvalid(
+                    `"${missing}" is not in any file read this turn. Read the page source with read_file (${
+                      Object.keys(project.files)
+                        .filter((file) => /\.(html?|jsx?|tsx?|vue)$/.test(file))
+                        .slice(0, 5)
+                        .join(', ') || 'the frontend files'
+                    }) and take the selector from it.`,
+                  );
+                return { value: { pointed: true } };
+              },
+            ),
+          ]
+        : []),
+    );
+  const board = boardTeaching ? studyWhiteboard(row) : undefined;
+  if (board) {
+    tools.push(
+      ...(await board.tools(`${input.sessionId}:${input.attempt}`, (work, toolSignal) => {
+        const signal = toolSignal ? AbortSignal.any([input.signal, toolSignal]) : input.signal;
+        return store.waitForExclusive(
+          row.id,
+          async () => {
+            assertActive(signal);
+            const current = await store.get(row.id, input.ownerId);
+            if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+              throw sandboxConflict('The teaching stage changed.');
+            await agents.assertActiveLease(
+              input.sessionId,
+              input.workerId,
+              input.attempt,
+              store.pool,
+            );
+            assertActive(signal);
+            return work();
+          },
+          signal,
+        );
+      })),
+    );
+  }
   let planText: string | undefined;
   if (row.environment_id && 'reads' in stage && stage.reads.includes('plan')) {
     planText = await (await service(input.signal)).readText(row.environment_id, 'PLAN.md');
@@ -1036,7 +1168,13 @@ export async function teachingRunnerConfig(input: {
             (await store.binding(input.sessionId)) ?? undefined,
           );
           assertActive(input.signal);
-          return teachingLiveContext(currentPromptInput(), initialPrompt.welcome === 'pending');
+          const live = teachingLiveContext(
+            currentPromptInput(),
+            initialPrompt.welcome === 'pending',
+          );
+          return board
+            ? JSON.stringify({ ...JSON.parse(live), pblWhiteboardTail: await board.tail() })
+            : live;
         })(),
         input.signal,
       ),

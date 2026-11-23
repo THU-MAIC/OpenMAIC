@@ -1,3 +1,9 @@
+import {
+  pblExplanationSkill,
+  pblWhiteboardEnabled,
+  pblWhiteboardProductWording,
+  pblWhiteboardTeachingRole,
+} from './whiteboard-config';
 import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
 import 'server-only';
 import { communicationRules, type ResponseLanguage } from './communication';
@@ -142,6 +148,8 @@ function buildTeachingPrompt({
   workspace,
   communication = { uiLocale: 'en-US', responseLanguage: null },
 }: TeachingPromptInput) {
+  // The role teaches at a whiteboard: it gets the explanation skill and the companion layout.
+  const boardTeaching = pblWhiteboardEnabled() && pblWhiteboardTeachingRole(role);
   const finalRecap = isFinalProjectRecap(definition, { milestoneIndex, stageIndex }, stage);
   const confirmation =
     welcome === 'pending'
@@ -301,7 +309,8 @@ function buildTeachingPrompt({
     '\n' +
     productHelpRules +
     '\n' +
-    HOST_STATE_TAIL_RULES;
+    HOST_STATE_TAIL_RULES +
+    (boardTeaching ? '\n' + pblExplanationSkill() : '');
   const initialContext =
     '\nInitial teaching state: ' +
     JSON.stringify({
@@ -332,6 +341,11 @@ function buildTeachingPrompt({
           }
         : {}),
     });
+  if (boardTeaching)
+    return {
+      systemPrompt: pblWhiteboardProductWording(systemPrompt, true),
+      initialContext: pblWhiteboardProductWording(initialContext),
+    };
   return { systemPrompt, initialContext };
 }
 
@@ -440,10 +454,11 @@ export function teachingLiveContext(
 
 export function teachingLiveSuffix(live: string): string {
   if (!live) return '';
-  const { decisionsChosen, ...hostContext } = JSON.parse(live);
+  const { decisionsChosen, pblWhiteboardTail, ...hostContext } = JSON.parse(live);
   return (
     `\nAuthoritative live teaching state (current facts override earlier state; the static product guide still applies): ${JSON.stringify(hostContext)}` +
-    (decisionsChosen === undefined ? '' : quotedDecisionContext(decisionsChosen))
+    (decisionsChosen === undefined ? '' : quotedDecisionContext(decisionsChosen)) +
+    (pblWhiteboardTail ? '\n' + pblWhiteboardTail : '')
   );
 }
 

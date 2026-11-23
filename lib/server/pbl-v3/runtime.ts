@@ -1,3 +1,4 @@
+import { studyExplainBoard } from './whiteboard';
 import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { completedProjectFiles } from './completed-files';
 import { recordLearningEvidence } from './evidence';
@@ -262,6 +263,54 @@ export function invalidateWorkspace(row: Study, changedPath?: string): EngineTra
     collected.recapCompleted = false;
   }
   return { state, events: [] };
+}
+/** Off unless the deployment asks for it: starting a project over is a testing aid for now. */
+function pblProgressResetEnabled() {
+  return ['true', '1'].includes(process.env.OPENMAIC_PBL_V3_PROGRESS_RESET ?? '');
+}
+/**
+ * Starts the learner over on this scene: the running turn is asked to stop, the study leaves
+ * the scene (its records are kept), and its environment is released so it holds no quota.
+ */
+export async function resetStudy(principal: OwnerPrincipal, id: string) {
+  if (!pblProgressResetEnabled())
+    throw new SandboxError('PBL_NOT_FOUND', 404, 'Progress reset is unavailable.');
+  const store = await LearningStore.open();
+  const row = await store.get(id, principal.ownerId);
+  const agents = await getAgentSessionStore();
+  for (const role of await store.roles(id)) await agents.requestCancel(role.session_id);
+  if (!(await store.detachFromScene(row)))
+    throw sandboxConflict('This learning session was already reset.');
+  const environments = [row.environment_id, row.environment_recovery?.requestId].filter(
+    (value): value is string => typeof value === 'string' && !!value,
+  );
+  if (environments.length) {
+    // Best effort: an environment that outlives this call is still released by idle upkeep.
+    try {
+      for (const environmentId of new Set(environments)) {
+        const service = await SandboxService.forLearningMaintenance(
+          id,
+          principal.ownerId,
+          environmentId,
+        );
+        await withLearningWorkspaceAccess(
+          {
+            ownerId: principal.ownerId,
+            workspaceId: learningWorkspaceId(id),
+            environmentIds: () => [environmentId],
+            operations: ['destroy'],
+          },
+          () => service.destroy(environmentId),
+        );
+      }
+    } catch (error) {
+      console.warn('[pbl] Reset left an environment to idle release', {
+        studyId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { reset: true };
 }
 export async function openStudy(principal: OwnerPrincipal, stageId: string, sceneId: string) {
   const studies = await LearningStore.open();
@@ -1387,6 +1436,8 @@ export async function learningView(
     conversation,
     conversationHistory,
     activitySequence,
+    ...(await studyExplainBoard(row)),
+    ...(pblProgressResetEnabled() ? { canReset: true } : {}),
     task: { title: milestone.title, goal: milestone.goal ?? milestone.title },
     roleRun,
     needsOpening: !!role && !binding && row.state.status !== 'completed',

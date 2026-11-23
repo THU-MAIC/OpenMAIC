@@ -407,6 +407,19 @@ export class LearningStore {
     });
   }
 
+  /**
+   * Takes a study off its scene so the learner's next visit starts a new one. Everything the
+   * study recorded stays in place under its own id; only the (owner, classroom, scene) slot is
+   * freed, and the revision moves so a command already in flight cannot land on it.
+   */
+  async detachFromScene(row: Pick<Study, 'id' | 'owner_id'>) {
+    const result = await this.pool.query(
+      `UPDATE pbl_v3_studies SET scene_id=scene_id||'#reset:'||to_char(clock_timestamp(),'YYYYMMDDHH24MISSUS'),
+         revision=revision+1 WHERE id=$1 AND owner_id=$2 AND scene_id NOT LIKE '%#reset:%'`,
+      [row.id, row.owner_id],
+    );
+    return result.rowCount === 1;
+  }
   async create(
     input: {
       ownerId: string;

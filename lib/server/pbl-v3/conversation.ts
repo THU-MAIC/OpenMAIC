@@ -1,7 +1,11 @@
 import 'server-only';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
-import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3/conversation';
+import type {
+  LearningConversationEntry,
+  LearningRunFailure,
+  LearningBoardDisplay,
+} from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
 import { LEARNER_HANDOFF_EVENT, reviewQuestions, canonicalReview } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
@@ -44,6 +48,81 @@ const visibleTools = {
   manage_file: 'manage',
   read_next_skill: 'skill',
 } as const;
+const boardOps: Record<string, LearningBoardDisplay['op']> = {
+  wb_draw_text: 'text',
+  wb_draw_table: 'table',
+  wb_draw_code: 'code',
+  wb_draw_shape: 'shape',
+  wb_draw_line: 'line',
+  wb_draw_latex: 'latex',
+  wb_draw_chart: 'chart',
+  wb_edit_code: 'edit',
+  wb_delete: 'delete',
+  wb_clear: 'clear',
+  wb_read: 'read',
+  wb_open: 'open',
+  wb_close: 'close',
+  point_at_code: 'point',
+  point_at_preview: 'point',
+};
+function boardDisplay(
+  name: string,
+  args: unknown,
+  result?: unknown,
+  failed = false,
+): LearningBoardDisplay {
+  const input = record(args);
+  const details = record(record(result).details);
+  const text = (value: unknown) => (typeof value === 'string' ? value : '');
+  const label =
+    name === 'wb_draw_text'
+      ? text(input.content)
+      : name === 'wb_draw_table' && Array.isArray(input.data) && Array.isArray(input.data[0])
+        ? input.data[0].map(text).join(' / ')
+        : name === 'wb_draw_code'
+          ? text(input.fileName) || text(input.code).split('\n')[0]
+          : name === 'point_at_code'
+            ? `${text(input.path)}:${input.startLine}`
+            : name === 'point_at_preview'
+              ? text(input.selector)
+              : '';
+  const ids = Array.isArray(details.elements)
+    ? details.elements.flatMap((element) => {
+        const id = record(element).id;
+        return typeof id === 'string' ? [id] : [];
+      })
+    : [];
+  return {
+    ...(name.startsWith('wb_draw_') && ids.length ? { ids } : {}),
+    ...(name === 'wb_delete' && !failed && text(input.elementId)
+      ? { removes: [text(input.elementId)] }
+      : {}),
+    ...(name === 'point_at_code' && typeof input.startLine === 'number' && text(input.path)
+      ? {
+          target: {
+            path: text(input.path),
+            line: input.startLine,
+            ...(typeof input.endLine === 'number' ? { end: input.endLine } : {}),
+            pointer: input.pointer === 'laser' ? ('laser' as const) : ('spotlight' as const),
+          },
+        }
+      : {}),
+    ...(name === 'point_at_preview' && text(input.selector)
+      ? {
+          target: {
+            selector: text(input.selector),
+            pointer: input.pointer === 'laser' ? ('laser' as const) : ('spotlight' as const),
+          },
+        }
+      : {}),
+    op: boardOps[name],
+    label: name === 'wb_draw_text' ? Array.from(label).slice(0, 24).join('') : label,
+    seq:
+      !failed && details.ok !== false && typeof details.lastSeq === 'number'
+        ? details.lastSeq
+        : null,
+  };
+}
 const runEvents = new Set([
   'session_start',
   'session_resumed',
@@ -265,7 +344,9 @@ export function projectConversation(
     ) {
       settleThinking(event.ts);
       const name = String(data.toolName ?? '');
-      const action = visibleTools[name as keyof typeof visibleTools] ?? 'tool';
+      const action = boardOps[name]
+        ? 'board'
+        : (visibleTools[name as keyof typeof visibleTools] ?? 'tool');
       if (name && typeof data.toolCallId === 'string') {
         let tool = tools.get(data.toolCallId);
         if (!tool) {
@@ -282,6 +363,7 @@ export function projectConversation(
         }
         if (data.pblContentOmitted) tool.omitted = true;
         if (data.args !== undefined) tool.args = data.args;
+        if (boardOps[name]) tool.display = boardDisplay(name, tool.args);
         if (event.type === 'tool_execution_update') {
           tool.progress =
             data.progress !== undefined
@@ -289,7 +371,9 @@ export function projectConversation(
               : { kind: 'custom', data: data.partialResult };
         } else if (event.type === 'tool_execution_end') {
           tool.result = data.result;
-          tool.display = data.display ?? record(data.result).details;
+          tool.display = boardOps[name]
+            ? boardDisplay(name, tool.args, data.result, !!data.isError)
+            : (data.display ?? record(data.result).details);
           tool.status = data.isError ? 'failed' : 'succeeded';
           tool.endedAt = event.ts;
           if (!data.isError) {
