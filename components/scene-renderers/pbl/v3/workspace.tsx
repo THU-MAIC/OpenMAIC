@@ -120,6 +120,14 @@ function PBLV3WorkspaceContent({
     finish: finishMessage,
     observe: observeMessage,
   } = useLearnerMessage(view, storageError, savedMessage);
+  // The composer grows with what is typed instead of reserving a fixed block.
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const field = composerRef.current;
+    if (!field) return;
+    field.style.height = 'auto';
+    field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
+  }, [text]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingDecision, setPendingDecision] = useState<{ id: string; chosen: string } | null>(
     null,
@@ -1284,7 +1292,9 @@ function PBLV3WorkspaceContent({
                     <div className="rounded-xl border bg-muted/20 p-2 focus-within:ring-1 focus-within:ring-primary">
                       <textarea
                         id={`pbl-chat-${sceneId}`}
-                        className="h-20 w-full resize-none bg-transparent p-1 text-sm outline-none"
+                        ref={composerRef}
+                        rows={1}
+                        className="max-h-40 min-h-[52px] w-full resize-none overflow-y-auto bg-transparent p-1 text-sm outline-none"
                         placeholder={t('pblV3.ide.messagePlaceholder')}
                         value={text}
                         aria-describedby={blockedReason ? blockedId : undefined}

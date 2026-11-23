@@ -66,6 +66,23 @@
 .pbl-tab-strip::-webkit-scrollbar {
   display: none;
 }
+
+/* Fade only the edge where more tabs continue, so hidden overflow stays discoverable. */
+.pbl-tab-strip[data-overflow-start='true'] {
+  mask-image: linear-gradient(to right, transparent, #000 16px);
+}
+.pbl-tab-strip[data-overflow-end='true'] {
+  mask-image: linear-gradient(to left, transparent, #000 16px);
+}
+.pbl-tab-strip[data-overflow-start='true'][data-overflow-end='true'] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 16px,
+    #000 calc(100% - 16px),
+    transparent
+  );
+}
 :is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble {
   background: var(--pbl-assistant-bubble);
   font-size: var(--wb-text-base);

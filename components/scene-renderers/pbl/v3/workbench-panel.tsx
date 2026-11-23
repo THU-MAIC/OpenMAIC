@@ -138,6 +138,8 @@ export function LearningWorkbenchPanel({
     [],
   );
   const tabList = useRef<HTMLDivElement>(null);
+  // Fade the strip's edge only where tabs continue, so hidden scrollbars still show there is more.
+  const [tabOverflow, setTabOverflow] = useState({ start: false, end: false });
   useEffect(() => {
     const rail = tabList.current;
     if (!rail) return;
@@ -149,10 +151,25 @@ export function LearningWorkbenchPanel({
       if (active.left < bounds.left) rail.scrollLeft += active.left - bounds.left;
       else if (active.right > bounds.right) rail.scrollLeft += active.right - bounds.right;
     };
+    const syncOverflow = () => {
+      const start = rail.scrollLeft > 0;
+      const end = rail.scrollLeft + rail.clientWidth < rail.scrollWidth - 1;
+      setTabOverflow((current) =>
+        current.start === start && current.end === end ? current : { start, end },
+      );
+    };
     revealActiveTab();
-    const observer = new ResizeObserver(revealActiveTab);
+    syncOverflow();
+    rail.addEventListener('scroll', syncOverflow, { passive: true });
+    const observer = new ResizeObserver(() => {
+      revealActiveTab();
+      syncOverflow();
+    });
     observer.observe(rail);
-    return () => observer.disconnect();
+    return () => {
+      rail.removeEventListener('scroll', syncOverflow);
+      observer.disconnect();
+    };
   }, [path, editor.tabs.length]);
   const selectedTarget = useRef<number | null>(null);
   const selectFile = useRef(editor.select);
@@ -422,6 +439,8 @@ export function LearningWorkbenchPanel({
                 ref={tabList}
                 role="tablist"
                 aria-label={t('pblV3.ide.openFiles')}
+                data-overflow-start={tabOverflow.start}
+                data-overflow-end={tabOverflow.end}
                 className="pbl-tab-strip flex h-full min-w-0 flex-1 flex-nowrap items-stretch overflow-x-auto overflow-y-hidden"
               >
                 {editor.tabs.map((p) => {

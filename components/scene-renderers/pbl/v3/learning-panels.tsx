@@ -67,7 +67,7 @@ export function LearningPanels({
             aria-label={t('pblV3.learningPath')}
             className="absolute right-0 top-[calc(100%+6px)] z-30 max-h-[min(24rem,60dvh)] w-max min-w-64 max-w-[min(32rem,80vw)] overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
           >
-            <h3 className="border-b px-3 py-2 text-xs font-semibold text-muted-foreground">
+            <h3 className="pbl-pane-header flex items-center border-b px-3 text-xs font-semibold text-muted-foreground">
               {t('pblV3.learningPath')}
             </h3>
             <ol className="py-1">
