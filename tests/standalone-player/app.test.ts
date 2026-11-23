@@ -122,6 +122,18 @@ describe('standalone player Space key', () => {
   });
 });
 
+describe('standalone player quiz grading', () => {
+  it('scores an unanswered choice question zero when its answer key is empty', () => {
+    render();
+    act(() => (overlay() as HTMLDivElement).click());
+    act(() => (host.querySelector('[data-testid=quiz-submit]') as HTMLButtonElement).click());
+    expect(host.querySelector('[data-testid=quiz-verdict]')?.textContent).toContain(
+      '[quizIncorrect]',
+    );
+    expect(host.querySelector('[data-testid=quiz-score]')?.textContent).toBe('[quizScore]: 0 / 1');
+  });
+});
+
 describe('standalone player linked media', () => {
   let table: HTMLScriptElement | undefined;
   afterEach(() => {
