@@ -574,7 +574,7 @@ describe('MinerU chunk merge', () => {
       {
         startPage: 2,
         result: {
-          md_content: '$$x$$\n\n![](images/named.png)',
+          md_content: '$$x + 1$$\n\n$$x + 2$$\n\n![](images/named.png)',
           images: {
             'eq.png': 'data:image/png;base64,EQ',
             'named.png': 'data:image/png;base64,NAMED',

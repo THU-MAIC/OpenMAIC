@@ -560,7 +560,7 @@ describe('MinerU parser', () => {
   it('leaves out the crop of an equation whose LaTeX is in the text, unless the text names it', () => {
     const latex = '$$\nE = m c ^ { 2 } \\tag{1.1}\n$$';
     const parsed = extractMinerUResult({
-      md_content: `${latex}\n\n![](images/named.jpg)\n\n<img src="images/html.jpg">\n\n![eq][r]\n\n[r]: images/ref.jpg`,
+      md_content: `${latex}\n\n$$\\int_0^1 x \\, dx$$\n\n![](images/named.jpg)\n\n<img src="images/html.jpg">\n\n![eq][r]\n\n[r]: images/ref.jpg`,
       images: {
         'eq.jpg': 'AAAA',
         'named.jpg': 'BBBB',
@@ -599,7 +599,7 @@ describe('MinerU parser', () => {
     const latex = '$$x^2 + y^2 = 1$$';
     const url = 'https://files.example.com/media/eq?sig=abc&t=1';
     const parsed = extractMinerUResult({
-      md_content: `![](${url})\n\n<img src=./images/dot.jpg>`,
+      md_content: `${latex}\n\n![](${url})\n\n<img src=./images/dot.jpg>`,
       images: { 'q.jpg': url, 'dot.jpg': 'AAAA' },
       content_list: [
         { type: 'equation', img_path: url, page_idx: 0, text: latex },
@@ -612,7 +612,7 @@ describe('MinerU parser', () => {
   it('keeps an equation crop the text names with parentheses or by its unique file name', () => {
     const latex = '$$x^2 + y^2 = 1$$';
     const parsed = extractMinerUResult({
-      md_content: '![](./images/eq(1).jpg)\n\n![](./eq.jpg)',
+      md_content: `${latex}\n\n![](./images/eq(1).jpg)\n\n![](./eq.jpg)`,
       images: { 'eq(1).jpg': 'AAAA', 'images/eq.jpg': 'BBBB' },
       content_list: [
         { type: 'equation', img_path: 'images/eq(1).jpg', page_idx: 0, text: latex },
@@ -625,17 +625,42 @@ describe('MinerU parser', () => {
     ]);
   });
 
-  it.each(['$$(2.7a)$$', '$$\\left(2.7\\right)$$', '$$\\qquad (A.3)$$', '2'])(
-    'keeps the crop of an equation recognized as its number only: %s',
-    (text) => {
-      const parsed = extractMinerUResult({
-        md_content: text,
-        images: { 'eq.jpg': 'AAAA' },
-        content_list: [{ type: 'equation', img_path: 'images/eq.jpg', page_idx: 0, text }],
-      });
-      expect(parsed.images).toHaveLength(1);
-    },
-  );
+  it.each([
+    '$$(2.7a)$$',
+    '$$\\left(2.7\\right)$$',
+    '$$\\qquad (A.3)$$',
+    '$$\\mathrm{(2.7)}$$',
+    '$$\\text{(2.7)}$$',
+    '2',
+  ])('keeps the crop of an equation recognized as its number only: %s', (text) => {
+    const parsed = extractMinerUResult({
+      md_content: text,
+      images: { 'eq.jpg': 'AAAA' },
+      content_list: [{ type: 'equation', img_path: 'images/eq.jpg', page_idx: 0, text }],
+    });
+    expect(parsed.images).toHaveLength(1);
+  });
+
+  it('keeps an equation crop whose LaTeX the text does not hold', () => {
+    const parsed = extractMinerUResult({
+      md_content: '(2.7)',
+      images: { 'eq.jpg': 'AAAA' },
+      content_list: [
+        { type: 'equation', img_path: 'images/eq.jpg', page_idx: 0, text: '$$E=mc^2$$' },
+      ],
+    });
+    expect(parsed.images).toHaveLength(1);
+  });
+
+  it('keeps an equation crop the text names URL-encoded', () => {
+    const latex = '$$x^2 + y^2 = 1$$';
+    const parsed = extractMinerUResult({
+      md_content: `${latex}\n\n![fig](images/my%20eq.jpg)`,
+      images: { 'images/my eq.jpg': 'AAAA' },
+      content_list: [{ type: 'equation', img_path: 'images/my eq.jpg', page_idx: 0, text: latex }],
+    });
+    expect(parsed.images).toHaveLength(1);
+  });
 
   it('keeps an image whose name a figure and an equation share', () => {
     const parsed = extractMinerUResult({
