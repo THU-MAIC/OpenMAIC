@@ -1,5 +1,7 @@
 'use client';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { LaserOverlay } from '@/components/slide-renderer/Editor/LaserOverlay';
+import type { PreviewPointer } from '@/lib/pbl/v3/conversation';
 import { AppWindow, ChevronRight, ExternalLink, Info, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -39,10 +41,13 @@ export function ApplicationPreview({
   application,
   preview,
   inputPaused = false,
+  pointer,
 }: {
   application: NonNullable<LearningView['application']>;
   preview: ApplicationPreviewController;
   inputPaused?: boolean;
+  /** An element of the running application the role points at while speaking. */
+  pointer?: PreviewPointer | null;
 }) {
   return (
     <ApplicationPreviewContent
@@ -50,6 +55,7 @@ export function ApplicationPreview({
       application={application}
       preview={preview}
       inputPaused={inputPaused}
+      pointer={pointer ?? null}
     />
   );
 }
@@ -58,10 +64,12 @@ function ApplicationPreviewContent({
   application,
   preview,
   inputPaused,
+  pointer,
 }: {
   application: NonNullable<LearningView['application']>;
   preview: ApplicationPreviewController;
   inputPaused: boolean;
+  pointer: PreviewPointer | null;
 }) {
   const { t } = useI18n();
   const { pending, observation, expired, disabled } = preview;
@@ -260,6 +268,56 @@ function ApplicationPreviewContent({
     standalone,
     retryFrontendOnce,
   ]);
+  // Where the pointed element sits, as a share of the preview box. The isolated shell
+  // measures it; this page never reaches into the application's document.
+  const [spot, setSpot] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const selector = pointer?.selector;
+  useEffect(() => {
+    if (!selector || !available) return;
+    let requestId = 0;
+    const ask = (reveal: boolean) => {
+      const element = frame.current;
+      if (!element || new URL(element.src).pathname !== '/__openmaic_preview') return;
+      element.contentWindow?.postMessage(
+        { type: 'openmaic-preview-measure', selector, requestId: ++requestId, reveal },
+        new URL(element.src).origin,
+      );
+    };
+    const receive = (event: MessageEvent) => {
+      const element = frame.current;
+      if (
+        !element ||
+        event.source !== element.contentWindow ||
+        event.origin !== new URL(element.src).origin ||
+        event.data?.type !== 'openmaic-preview-rect' ||
+        event.data.requestId !== requestId
+      )
+        return;
+      const { rect, viewport } = event.data as {
+        rect: { x: number; y: number; width: number; height: number } | null;
+        viewport: { width: number; height: number };
+      };
+      setSpot(
+        rect && viewport.width > 0 && viewport.height > 0
+          ? {
+              x: (rect.x / viewport.width) * 100,
+              y: (rect.y / viewport.height) * 100,
+              w: (rect.width / viewport.width) * 100,
+              h: (rect.height / viewport.height) * 100,
+            }
+          : null,
+      );
+    };
+    window.addEventListener('message', receive);
+    ask(true);
+    // The application scrolls and reflows on its own; keep the pointer on the element.
+    const timer = setInterval(() => ask(false), 300);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('message', receive);
+      setSpot(null);
+    };
+  }, [selector, available, displayed]);
   const status = !available && !updating && (!standalone || !currentReady || expired) && (
     <div
       role="status"
@@ -467,6 +525,33 @@ function ApplicationPreviewContent({
                 />
               );
             })}
+        {pointer && spot && (
+          <div
+            className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+            data-testid={`pbl-preview-${pointer.pointer}`}
+          >
+            {pointer.pointer === 'spotlight' ? (
+              <div
+                className="absolute rounded-lg ring-2 ring-purple-400/80 transition-all duration-300"
+                style={{
+                  left: `calc(${spot.x}% - 6px)`,
+                  top: `calc(${spot.y}% - 6px)`,
+                  width: `calc(${spot.w}% + 12px)`,
+                  height: `calc(${spot.h}% + 12px)`,
+                  boxShadow: '0 0 0 9999px rgba(15, 23, 42, 0.45)',
+                }}
+              />
+            ) : (
+              <LaserOverlay
+                geometry={{
+                  ...spot,
+                  centerX: spot.x + spot.w / 2,
+                  centerY: spot.y + spot.h / 2,
+                }}
+              />
+            )}
+          </div>
+        )}
         {status}
       </div>
     </section>

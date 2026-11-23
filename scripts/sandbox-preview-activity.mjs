@@ -49,6 +49,15 @@ export function installPreviewActivity(frame, activityKey, appOrigin, controlled
         root: nativeGet(Document.prototype, 'documentElement'),
       }
     : null;
+  // Geometry for the workbench's pointer overlay. Read with natives captured before app code
+  // runs; the app cannot answer for itself, and only the owning workbench may ask.
+  const measure = controlled
+    ? {
+        query: Function.prototype.call.bind(Document.prototype.querySelector),
+        bounds: Function.prototype.call.bind(Element.prototype.getBoundingClientRect),
+        reveal: Function.prototype.call.bind(Element.prototype.scrollIntoView),
+      }
+    : null;
   const prevent = Function.prototype.call.bind(Event.prototype.preventDefault);
   const stop = Function.prototype.call.bind(Event.prototype.stopImmediatePropagation);
   let changed = false;
@@ -140,6 +149,36 @@ export function installPreviewActivity(frame, activityKey, appOrigin, controlled
           changed = true;
           void flush();
         }
+        return;
+      }
+      if (data?.type === 'openmaic-preview-measure') {
+        if (
+          typeof data.selector !== 'string' ||
+          data.selector.length > 200 ||
+          typeof data.requestId !== 'number'
+        )
+          return;
+        let rect = null;
+        try {
+          const app = message.document(frame);
+          const element = app && measure.query(app, data.selector);
+          if (element) {
+            if (data.reveal === true)
+              measure.reveal(element, { block: 'center', inline: 'nearest' });
+            const box = measure.bounds(element);
+            rect = { x: box.x, y: box.y, width: box.width, height: box.height };
+          }
+        } catch {}
+        // The nested app fills this shell, so its viewport is the shell's.
+        notify(
+          {
+            type: 'openmaic-preview-rect',
+            requestId: data.requestId,
+            rect,
+            viewport: { width: innerWidth, height: innerHeight },
+          },
+          appOrigin,
+        );
         return;
       }
       if (data?.type !== 'openmaic-preview-input' || typeof data.enabled !== 'boolean') return;
