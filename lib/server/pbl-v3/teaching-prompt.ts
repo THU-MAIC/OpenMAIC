@@ -168,7 +168,16 @@ function buildLiteTeachingPrompt(
       seed: {
         productContext: productGuide,
         communication,
-        projectContext: { title: definition.title, language: definition.language },
+        projectContext: {
+          title: definition.title,
+          language: definition.language,
+          ...(input.automaticEntry &&
+            input.milestoneIndex === 0 && {
+              overview: definition.presentation?.hero.description ?? definition.intro.say,
+              finishedWork: definition.presentation?.hero.finishedWork,
+              milestones: definition.milestones.map(({ title, goal }) => ({ title, goal })),
+            }),
+        },
         stageEntry: {
           firstMilestone: input.milestoneIndex === 0,
           step: input.stageIndex + 1,
@@ -196,7 +205,8 @@ function buildLiteTeachingPrompt(
     productHelpRulesFor(boardTeaching, true) +
     '\n' +
     HOST_STATE_TAIL_RULES +
-    (boardTeaching ? '\n' + pblExplanationSkill() + '\n' + teachingLayout(true).note : '');
+    (boardTeaching && !input.automaticEntry ? '\n' + pblExplanationSkill() : '') +
+    (boardTeaching ? '\n' + teachingLayout(true).note : '');
   return { systemPrompt, initialContext: '' };
 }
 

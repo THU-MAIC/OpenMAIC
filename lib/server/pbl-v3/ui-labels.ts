@@ -33,7 +33,6 @@ export function visibleProductLabels(locale = 'en-US', nextStep?: string, nextMi
   return {
     projectFiles: p.files,
     task: p.journey.taskTitle,
-    explainMore: p.journey.explainMore,
     submitDecision: p.submitDecision,
     runTests: p.runTests,
     submitQuiz: p.submitQuiz,

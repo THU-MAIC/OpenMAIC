@@ -1,5 +1,4 @@
 'use client';
-import { TeachingExit } from './teaching-exit';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowRight, LoaderCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -412,59 +411,62 @@ export function Companion({
           </div>
         )}
       {/* The learner's turn: the classroom's input under the bubble, to type or to speak. */}
-      {answering && (
+      {(answering || (view.teachingVisit && continueLabel && !historyOpen)) && (
         <div
           ref={inputRoot}
           data-testid="pbl-companion-input"
           // Above the bubble's shadow, which would otherwise grey the top of the box.
           className="pointer-events-auto relative z-10 me-6 w-full shrink-0"
         >
-          <LearnerComposer
-            id={inputId}
-            text={text}
-            onTextChange={onTextChange}
-            onSend={() => onSend(text)}
-            // While the role has the floor the send button stops it, as in the conversation.
-            busy={active}
-            onStop={onStop}
-            sending={sending}
-            disabled={disabled}
-            voice
-            compact
-            // A light lift of its own; the bubble above casts the heavy shadow.
-            className="shadow-[0_6px_20px_-12px_rgba(15,23,42,0.35)]"
-          />
+          {view.teachingVisit && continueLabel && onContinue && (
+            <button
+              type="button"
+              data-testid="pbl-companion-continue"
+              className="pbl-stage-action mb-2 flex h-10 w-full items-center justify-center gap-2 rounded-lg border px-3 text-xs font-semibold disabled:cursor-not-allowed"
+              data-state={disabled ? 'disabled' : 'ready'}
+              disabled={disabled}
+              aria-busy={continuing}
+              onClick={onContinue}
+            >
+              {continuing && <LoaderCircle size={13} className="animate-spin" />}
+              {continueLabel}
+              <ArrowRight size={15} className="rtl:-scale-x-100" aria-hidden="true" />
+            </button>
+          )}
+          {answering && (
+            <LearnerComposer
+              id={inputId}
+              text={text}
+              onTextChange={onTextChange}
+              onSend={() => onSend(text)}
+              // While the role has the floor the send button stops it, as in the conversation.
+              busy={active}
+              onStop={onStop}
+              sending={sending}
+              disabled={disabled}
+              voice
+              compact
+              // A light lift of its own; the bubble above casts the heavy shadow.
+              className="shadow-[0_6px_20px_-12px_rgba(15,23,42,0.35)]"
+            />
+          )}
         </div>
       )}
-      {continueLabel &&
-        onContinue &&
-        !historyOpen &&
-        (!bubbleAway || !!view.teachingVisit) &&
-        (view.teachingVisit ? (
-          <div className="pointer-events-auto me-6 w-full max-w-80">
-            <TeachingExit
-              view={view}
-              nextLabel={continueLabel}
-              disabled={disabled || (active && view.teachingVisit.learnerTurns === 0)}
-              onNext={onContinue}
-              onAsk={onSend}
-            />
-          </div>
-        ) : (
-          <button
-            type="button"
-            data-testid="pbl-companion-continue"
-            className="pbl-stage-action pointer-events-auto me-6 flex h-9 max-w-full shrink-0 items-center gap-2 rounded-full border px-4 text-xs font-semibold shadow-md transition-colors disabled:cursor-not-allowed"
-            data-state={disabled ? 'disabled' : 'ready'}
-            disabled={disabled}
-            aria-busy={continuing}
-            onClick={onContinue}
-          >
-            {continuing && <LoaderCircle size={13} className="shrink-0 animate-spin" />}
-            <span className="truncate">{continueLabel}</span>
-            <ArrowRight size={15} className="shrink-0 rtl:-scale-x-100" aria-hidden="true" />
-          </button>
-        ))}
+      {!view.teachingVisit && continueLabel && onContinue && !historyOpen && !bubbleAway && (
+        <button
+          type="button"
+          data-testid="pbl-companion-continue"
+          className="pbl-stage-action pointer-events-auto me-6 flex h-9 max-w-full shrink-0 items-center gap-2 rounded-full border px-4 text-xs font-semibold shadow-md transition-colors disabled:cursor-not-allowed"
+          data-state={disabled ? 'disabled' : 'ready'}
+          disabled={disabled}
+          aria-busy={continuing}
+          onClick={onContinue}
+        >
+          {continuing && <LoaderCircle size={13} className="shrink-0 animate-spin" />}
+          <span className="truncate">{continueLabel}</span>
+          <ArrowRight size={15} className="shrink-0 rtl:-scale-x-100" aria-hidden="true" />
+        </button>
+      )}
       {/* The ring around the avatar already shows progress. Its wording and the two ways to
           answer orbit the avatar, and come out when the learner reaches for it. */}
       <div

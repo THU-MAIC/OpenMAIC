@@ -248,6 +248,16 @@ describe('host-driven teaching', () => {
             : []) as never[],
         }));
         const config = await teachingRunnerConfig(request);
+        const names = config.tools.map((tool) => tool.name);
+        expect(names).not.toContain('cue_user');
+        expect(names.includes('wb_open')).toBe(board && followUp);
+        if (!followUp) {
+          expect(config.systemPrompt).toContain(
+            'what the learner will build across the whole project',
+          );
+          expect(config.systemPrompt).toContain('above the message input');
+          expect(config.systemPrompt).not.toContain('visibleLabels.explainMore');
+        }
         const send = withTeachingTurnBoundary(
           createCallLlmStreamFn({ languageModel: wire }),
           config.isTurnComplete,
@@ -363,7 +373,12 @@ describe('host-driven teaching', () => {
       {
         type: 'message_end',
         attempt: 1,
-        data: { message: { role: 'assistant', content: [{ type: 'text', text: 'The goal is to return a greeting.' }] } },
+        data: {
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'The goal is to return a greeting.' }],
+          },
+        },
       },
       { type: 'session_end', attempt: 1, data: { status: 'succeeded' } },
       { type: 'user_message', data: { text: 'Can you show an example?' } },

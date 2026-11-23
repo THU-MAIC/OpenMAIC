@@ -30,6 +30,7 @@ function useHeld(value: string | undefined, ms: number) {
 function Segment({
   role,
   speech,
+  readingOpening,
   tools,
   working,
   paused,
@@ -40,6 +41,7 @@ function Segment({
 }: {
   role: AgentRole;
   speech?: Speech;
+  readingOpening?: boolean;
   tools: readonly ToolPart[];
   /** The reply is still being produced or told. */
   working: boolean;
@@ -66,7 +68,7 @@ function Segment({
         // empty. A reply that is over is never shown as waiting.
         isLoading: !speech && working,
         isTopicPending: false,
-        follow: true,
+        follow: readingOpening ? 'manual' : true,
       }}
       audioIndicatorState={audio}
       isPaused={paused}
@@ -100,6 +102,7 @@ function Segment({
 export function NarrationBubble({
   role,
   speech,
+  readingOpening,
   learner,
   tools,
   playing,
@@ -112,6 +115,7 @@ export function NarrationBubble({
 }: {
   role: AgentRole;
   speech?: Speech;
+  readingOpening?: boolean;
   /** What the learner just sent, held until the role's reply has its first words. */
   learner?: string;
   tools: readonly ToolPart[];
@@ -138,7 +142,11 @@ export function NarrationBubble({
     transition: { duration: 0.22, ease: [0.21, 1, 0.36, 1] as const },
   };
   return (
-    <div className="relative flex flex-col items-end gap-1.5" data-playing={playing || undefined}>
+    <div
+      className="relative flex flex-col items-end gap-1.5"
+      data-playing={playing || undefined}
+      data-paused={paused || undefined}
+    >
       <AnimatePresence mode="wait" initial={false}>
         {mine ? (
           <motion.div
@@ -177,6 +185,7 @@ export function NarrationBubble({
               // Until the reply to what was just sent has words, the role is at work: its tool
               // calls show as they are made.
               speech={learner ? undefined : speech}
+              readingOpening={readingOpening}
               tools={tools}
               working={playing || waiting || !!learner}
               paused={paused}

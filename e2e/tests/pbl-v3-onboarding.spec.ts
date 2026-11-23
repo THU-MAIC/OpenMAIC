@@ -519,6 +519,82 @@ for (const [target, key] of [['overview summary', 'PageDown']] as const) {
   });
 }
 
+for (const board of [false, true]) {
+  test(`shows the tutor opening before the decision bar and accepts free chat (board: ${board})`, async ({
+    page,
+    learningEvents,
+  }, testInfo) => {
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: board });
+    const { view } = fixture;
+    const intro = 'You will build a greeting page that shows the reply to a name you type.';
+    view.state.hostTeachingStage = 'greeting:0';
+    view.roleRun = { status: 'running', canRetry: false, failure: null };
+    view.busy = true;
+    view.conversation = [
+      {
+        id: 'intro',
+        speaker: 'discussion',
+        at: 1,
+        status: 'running',
+        parts: [{ id: 'thinking', kind: 'thinking', text: 'Preparing the introduction.' }],
+      },
+    ];
+    view.revision++;
+    await fixture.publish();
+    const surface = board ? page.getByTestId('pbl-companion') : page.getByTestId('pbl-assistant');
+    const next = surface.getByRole('button', { name: 'Continue to Make your decisions' });
+    await expect(next).toHaveCount(0);
+    if (board) {
+      // A learner can pause the voice during thinking, before the first words arrive.
+      const bubble = surface.getByTestId('pbl-companion-speech');
+      await bubble.locator('[data-playing] [aria-live="polite"]').click();
+      await expect(bubble.locator('[data-playing]')).toHaveAttribute('data-paused', 'true');
+    }
+    view.conversation[0]!.parts.push({
+      id: 'intro-text',
+      kind: 'text',
+      text: intro,
+      streaming: true,
+    });
+    view.activitySequence++;
+    await fixture.publish();
+    await expect(surface.getByText(intro, { exact: true })).toBeVisible();
+    await expect(next).toHaveCount(0);
+    await testInfo.attach('opening-before-decision', {
+      body: await surface.screenshot(),
+      contentType: 'image/png',
+    });
+    view.conversation[0]!.status = 'succeeded';
+    view.roleRun.status = 'succeeded';
+    view.busy = false;
+    view.teachingVisit = { learnerTurns: 0 };
+    view.actions = ['chat', 'next'];
+    view.revision++;
+    await fixture.publish();
+    await expect(next).toBeEnabled();
+    await expect(surface.getByText(intro, { exact: true })).toBeVisible();
+    await expect(surface.getByRole('button', { name: /example/i })).toHaveCount(0);
+    const input = surface.locator('textarea:visible');
+    const bar = (await next.boundingBox())!;
+    const composer = (await input.locator('..').boundingBox())!;
+    expect(bar.x).toBeCloseTo(composer.x, 0);
+    expect(bar.width).toBeCloseTo(composer.width, 0);
+    expect(bar.y + bar.height).toBeLessThanOrEqual(composer.y + 1);
+    await testInfo.attach('opening-with-decision', {
+      body: await surface.screenshot(),
+      contentType: 'image/png',
+    });
+    if (board) {
+      await input.fill('Where does the greeting appear?');
+      await input.press('Enter');
+      await expect.poll(() => fixture.commands).toEqual(['chat']);
+    } else {
+      await next.click();
+      await expect.poll(() => fixture.commands).toEqual(['next']);
+    }
+  });
+}
+
 test('highlights the existing next action only when progression is available', async ({
   page,
   learningEvents,

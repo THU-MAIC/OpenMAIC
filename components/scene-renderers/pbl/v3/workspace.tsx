@@ -1,5 +1,4 @@
 'use client';
-import { TeachingExit } from './teaching-exit';
 import { cn } from '@/lib/utils';
 import type { FileReference } from '@/lib/pbl/v3/file-reference';
 import { environmentNotice, environmentNoticeKeys } from '@/lib/pbl/v3/environment-status';
@@ -1342,14 +1341,6 @@ function PBLV3WorkspaceContent({
                                       : 'pblV3.runTests',
                             )}
                           </button>
-                        ) : view.teachingVisit && view.actions.includes('next') ? (
-                          <TeachingExit
-                            view={view}
-                            nextLabel={continueActionLabel(view, t)}
-                            disabled={disabled}
-                            onAsk={(text) => void command('chat', { text })}
-                            onNext={() => void command('next')}
-                          />
                         ) : (
                           view.actions.includes('next') && (
                             <button

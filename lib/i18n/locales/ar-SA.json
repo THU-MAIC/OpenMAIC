@@ -3136,7 +3136,6 @@
       "closeDetails": "Close task details",
       "reviewDetails": "مراجعة التفاصيل",
       "milestoneSteps": "Milestone learning steps",
-      "explainMore": "اشرح بمثال",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "المرحلة التالية",
       "planArtifact": "Open PLAN.md in the IDE to read the current plan. Discuss, review and approve it in the conversation.",

@@ -103,6 +103,7 @@ export async function teachingRunnerConfig(input: {
   );
   const uiLocale = localeEvent.rows[0]?.locale ?? 'en-US';
   const liteTeaching = usesHostTeaching(row.state);
+  const boardTools = boardTeaching && !(liteTeaching && latest?.pblOpening);
   const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role, liteTeaching);
   const progression = skill.progression;
   const protocol = {
@@ -921,7 +922,7 @@ export async function teachingRunnerConfig(input: {
   }
   // The whiteboard comes into view when the role calls for it and goes when the role puts it
   // away, as in the classroom.
-  if (boardTeaching)
+  if (boardTools)
     tools.push(
       tool(
         'wb_open',
@@ -937,7 +938,7 @@ export async function teachingRunnerConfig(input: {
       ),
     );
   // Replies the learner can pick instead of typing, offered the way the classroom offers them.
-  if (boardTeaching)
+  if (boardTools && !liteTeaching)
     tools.push(
       tool(
         'cue_user',
@@ -952,7 +953,7 @@ export async function teachingRunnerConfig(input: {
       ),
     );
   // Pointing needs what only reading gives: current line numbers and the page's own names.
-  if (boardTeaching && row.environment_id && canReadFiles)
+  if (boardTools && row.environment_id && canReadFiles)
     tools.push(
       tool(
         'point_at_code',
@@ -1009,7 +1010,7 @@ export async function teachingRunnerConfig(input: {
           ]
         : []),
     );
-  const board = boardTeaching ? studyWhiteboard(row) : undefined;
+  const board = boardTools ? studyWhiteboard(row) : undefined;
   if (board) {
     tools.push(
       ...(await board.tools(`${input.sessionId}:${input.attempt}`, (work, toolSignal) => {

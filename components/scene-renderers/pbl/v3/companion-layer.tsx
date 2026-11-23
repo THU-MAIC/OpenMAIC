@@ -130,6 +130,7 @@ export function CompanionLayer({
                       narration.speaker && narration.speaker !== 'user' ? narration.speaker : role
                     }
                     speech={narration.speech}
+                    readingOpening={narration.readingOpening}
                     learner={learnerTurn(view.conversation ?? [], pendingMessage)}
                     tools={narration.tools}
                     playing={narration.playing}
@@ -172,7 +173,7 @@ export function CompanionLayer({
               continuing={pendingAction === 'next' || pendingAction === 'evaluate'}
               disabled={disabled}
               canChat={view.actions.includes('chat')}
-              active={narration.playing || view.busy || requesting}
+              active={(narration.playing && !view.teachingVisit) || view.busy || requesting}
               onStop={() => {
                 // Cut in: the telling ends here, and so does the run behind it.
                 narration.stop();
@@ -181,7 +182,10 @@ export function CompanionLayer({
               inputId={inputId}
               text={text}
               onTextChange={onTextChange}
-              onSend={(message) => void command('chat', { text: message })}
+              onSend={(message) => {
+                if (narration.playing) narration.stop();
+                void command('chat', { text: message });
+              }}
               sending={pendingAction === 'chat'}
               showControls={introducing}
               // What the stage asks of the learner comes once the role has said so.
@@ -189,7 +193,7 @@ export function CompanionLayer({
               suggestions={
                 // What is on offer answers the last reply; once something is sent it is gone
                 // at once, not when the server says so.
-                narration.playing || view.busy || pending || pendingMessage
+                view.teachingVisit || narration.playing || view.busy || pending || pendingMessage
                   ? []
                   : suggestedReplies(view.conversation ?? [])
               }

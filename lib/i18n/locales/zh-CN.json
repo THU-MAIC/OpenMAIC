@@ -3136,7 +3136,6 @@
       "closeDetails": "收起任务详情",
       "reviewDetails": "回看详情",
       "milestoneSteps": "当前阶段的学习步骤",
-      "explainMore": "举个例子，再讲讲",
       "enterStep": "进入{{step}}",
       "enterMilestone": "进入下一阶段",
       "planArtifact": "计划保存在左侧 PLAN.md。阅读当前版本，并在对话中完成理解、审阅和确认。",

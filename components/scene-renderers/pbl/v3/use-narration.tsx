@@ -73,6 +73,12 @@ export function useNarration(
   const steps = useMemo(() => (entry ? narrationSteps(entry) : []), [entry]);
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);
+  // The project introduction is also a readable chat reply. Pausing the voice must
+  // never hide its words or hold the conversation at a thinking-only frame.
+  const opening =
+    view.state.hostTeachingStage ===
+      `${view.state.position.milestoneId}:${view.state.position.stageIndex}` &&
+    !view.teachingVisit?.learnerTurns;
   const complete = !!entry && entry.status !== 'running';
   const ttsMuted = useSettingsStore((state) => state.ttsMuted);
   const [audio, setAudio] = useState<AudioIndicatorState>('idle');
@@ -259,7 +265,13 @@ export function useNarration(
   useEffect(() => {
     if (failed) stopRef.current();
   }, [failed]);
-  useEffect(() => () => run.current?.buffer.shutdown(), []);
+  useEffect(
+    () => () => {
+      run.current?.buffer.shutdown();
+      run.current = null;
+    },
+    [],
+  );
 
   const playing = !!active && !failed;
   const head = playing ? Math.min(active.head, steps.length - 1) : -1;
@@ -324,14 +336,15 @@ export function useNarration(
   });
   useEffect(() => {
     const { onTold, id } = told.current;
-    onTold?.(playing && id ? { id, part: toldPart, said } : null);
-  }, [playing, toldPart, said]);
+    onTold?.(!opening && playing && id ? { id, part: toldPart, said } : null);
+  }, [opening, playing, toldPart, said]);
   useEffect(() => () => told.current.onTold?.(null), []);
 
   const say = segment?.say;
   return {
     /** A live reply is being told; otherwise the bubble rests on the last thing said. */
     playing,
+    readingOpening: opening,
     paused: playing && active.paused,
     togglePause,
     /** Ends the telling of this reply where it is; what is left of it is not told later. */
@@ -344,8 +357,9 @@ export function useNarration(
      * The piece of text in the bubble, as far as the playhead has revealed it; none while the
      * reply has only called tools so far.
      */
-    speech:
-      say && playing && steps[head]?.id === say.id
+    speech: opening
+      ? (playing && say) || segments.find((item) => item.say)?.say
+      : say && playing && steps[head]?.id === say.id
         ? { ...say, text: active.text, streaming: true }
         : say,
     /** The calls that follow that text which the telling has reached, in order. */

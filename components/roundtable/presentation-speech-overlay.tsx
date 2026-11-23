@@ -47,8 +47,8 @@ export interface PresentationBubbleModel {
   isTopicPending: boolean;
   /** Names the speaker's part where it is neither the classroom's teacher nor a student. */
   roleLabel?: string;
-  /** Room for a longer piece of speech, kept scrolled to the words being said. */
-  follow?: boolean;
+  /** Room for a longer reply. Manual scrolling lets the learner read an introduction from its first line. */
+  follow?: boolean | 'manual';
 }
 
 export function buildPresentationBubbleModel({
@@ -235,14 +235,17 @@ export function PresentationBubbleCard({
   // back is left where they are, until the next piece of speech begins.
   const body = useRef<HTMLDivElement>(null);
   const reading = useRef({ pinned: true, length: 0 });
-  const follow = !!bubble.follow;
+  const follow = bubble.follow;
+  useLayoutEffect(() => {
+    if (follow === 'manual' && body.current) body.current.scrollTop = 0;
+  }, [follow, bubble.key]);
   const length = bubble.text.length;
   useLayoutEffect(() => {
     const node = body.current;
     if (!node || !follow) return;
     if (length < reading.current.length) reading.current.pinned = true;
     reading.current.length = length;
-    if (reading.current.pinned) node.scrollTop = node.scrollHeight;
+    if (follow === true && reading.current.pinned) node.scrollTop = node.scrollHeight;
     edges(node);
   }, [follow, length]);
   return (
