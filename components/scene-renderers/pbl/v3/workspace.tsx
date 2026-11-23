@@ -126,6 +126,7 @@ function PBLV3WorkspaceContent({
     observe: observeMessage,
   } = useLearnerMessage(view, storageError, savedMessage);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [speechActive, setSpeechActive] = useState(false);
   const observeComposer = useCallback((field: HTMLTextAreaElement | null) => {
     composerRef.current = field;
     if (!field || typeof ResizeObserver === 'undefined') return;
@@ -392,6 +393,7 @@ function PBLV3WorkspaceContent({
               ? 'opening'
               : null;
   const disabled = blockedReason !== null;
+  const canSend = !disabled && !speechActive && !!text.trim();
   const onboardingBlocked =
     !!error ||
     preparationFailed ||
@@ -661,7 +663,7 @@ function PBLV3WorkspaceContent({
           {retry.current && retry.current.type !== 'prepare' && (
             <button
               className={button}
-              disabled={pending}
+              disabled={pending || (retry.current.type === 'chat' && speechActive)}
               onClick={() => void command('', {}, true)}
             >
               {t('pblV3.retry')}
@@ -1272,7 +1274,7 @@ function PBLV3WorkspaceContent({
                     className="shrink-0 border-t bg-background p-3"
                     onSubmit={(event) => {
                       event.preventDefault();
-                      if (!disabled && text.trim()) void command('chat', { text });
+                      if (canSend) void command('chat', { text });
                     }}
                   >
                     {blockedReason &&
@@ -1322,7 +1324,7 @@ function PBLV3WorkspaceContent({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();
-                            if (!disabled && text.trim()) void command('chat', { text });
+                            e.currentTarget.form?.requestSubmit();
                           }
                         }}
                       />
@@ -1332,9 +1334,11 @@ function PBLV3WorkspaceContent({
                         </span>
                         <div className="flex shrink-0 items-center gap-1">
                           <SpeechButton
+                            key={view.id}
                             size="md"
                             disabled={disabled}
                             continuous
+                            onActiveChange={setSpeechActive}
                             onTranscription={(transcript) => {
                               const said = transcript.trim();
                               if (!said) return;
@@ -1358,7 +1362,7 @@ function PBLV3WorkspaceContent({
                               className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-40"
                               aria-label={t('pblV3.send')}
                               aria-busy={pendingAction === 'chat'}
-                              disabled={disabled || !text.trim()}
+                              disabled={!canSend}
                               title={
                                 blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
                               }
