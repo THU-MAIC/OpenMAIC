@@ -212,6 +212,48 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html).not.toContain(`src="${root}pyodide.js"`);
   });
 
+  it.each([
+    { startup: false, extraBytes: 0 },
+    { startup: true, extraBytes: 850 },
+  ])(
+    'gives the Pyodide core and startup archives priority under the HTML limit ($startup)',
+    async ({ startup, extraBytes }) => {
+      const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+      const widget = scene(
+        `<script src="${root}pyodide.js"></script>` +
+          `<button>Run</button><script>
+          document.querySelector('button').onclick = () => python.loadPackage('openblas');
+          ${startup ? "python.loadPackage('numpy');" : ''}
+        </script>`,
+      );
+      const lock = JSON.stringify({
+        packages: {
+          numpy: { file_name: 'numpy.whl', depends: [] },
+          openblas: { file_name: 'openblas.whl', depends: [] },
+        },
+      });
+      const fetcher = (archive: Uint8Array | null) => async (url: string) => {
+        const filename = url.slice(root.length);
+        const bytes = filename.endsWith('.whl')
+          ? archive
+          : new TextEncoder().encode(filename === 'pyodide-lock.json' ? lock : '42');
+        return bytes && { bytes, contentType: 'application/octet-stream' };
+      };
+      const core = await prepareInteractiveHtmlScenes([widget], { fetcher: fetcher(null) });
+      const coreHtml = core.content('interactive:widget')!;
+      const atLimit = await prepareInteractiveHtmlScenes([widget], {
+        fetcher: fetcher(new Uint8Array(512)),
+        maxHtmlBytes: new TextEncoder().encode(coreHtml).byteLength + extraBytes,
+      });
+
+      expect(atLimit.html(widget)).toMatchObject({ present: true });
+      const html = atLimit.content('interactive:widget');
+      expect(html).not.toContain('openblas.whl');
+      if (startup) expect(html).toContain('numpy.whl');
+      else expect(html).toBe(coreHtml);
+    },
+  );
+
   it('accepts bare module imports resolved by the final offline import map', async () => {
     const prepared = await prepareInteractiveHtmlScenes(
       [

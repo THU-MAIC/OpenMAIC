@@ -257,6 +257,119 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
   });
 
   it.each([
+    { distribution: 'full', missingAtStartup: 'unused' },
+    { distribution: 'npm', missingAtStartup: 'unused' },
+    { distribution: 'full', missingAtStartup: 'unhandled' },
+    { distribution: 'full', missingAtStartup: 'handled' },
+  ])(
+    'captures Pyodide packages offline ($distribution, unavailable package: $missingAtStartup)',
+    async ({ distribution, missingAtStartup }) => {
+      const page = await browser.newPage();
+      try {
+        const packageRoot = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+        const root =
+          distribution === 'npm' ? 'https://cdn.jsdelivr.net/npm/pyodide@0.26.2/' : packageRoot;
+        const fetched = new Set<string>();
+        const lockfile = {
+          packages: {
+            numpy: { file_name: 'numpy.whl', depends: [] },
+            micropip: { file_name: 'micropip.whl', depends: ['packaging'] },
+            packaging: { file_name: 'packaging.whl', depends: [] },
+            unused: { file_name: 'unused.whl', depends: [] },
+            optional: { file_name: 'optional.whl', depends: ['optional-runtime'] },
+            'optional-runtime': { file_name: 'optional-runtime.whl', depends: [] },
+          },
+        };
+        const entry = `globalThis.loadPyodide = async ({ indexURL }) => {
+        const { packages } = await (await fetch(indexURL + 'pyodide-lock.json')).json();
+        async function install(name) {
+          const { file_name, depends } = packages[name];
+          const dependencies = await Promise.all(depends.map(install));
+          const wheel = await (await fetch(indexURL + file_name)).text();
+          return [wheel, ...dependencies].join(' ');
+        }
+        return { async loadPackage(names, options) {
+          try {
+            const wheels = await Promise.all([names].flat().map(install));
+            await new Promise(resolve => setTimeout(resolve, 400));
+            return wheels.join(' ');
+          } catch (error) {
+            if (!options?.errorCallback) throw error;
+            options.errorCallback(error.message);
+          }
+        } };
+      };`;
+        const optionalLoad =
+          missingAtStartup === 'handled'
+            ? "await python.loadPackage('optional', { errorCallback: () => { document.querySelector('button').textContent = 'Handled'; } });"
+            : missingAtStartup === 'unhandled'
+              ? "await python.loadPackage('optional');"
+              : '';
+        await load(
+          page,
+          await emittedFixture(
+            `<script src="${root}pyodide.js"></script><output>Loading</output><button>Run</button>
+          <script nomodule>python.loadPackage(['unused']);</script>
+          <script>
+            async function init() {
+              const python = await loadPyodide();
+              const numpy = await python.loadPackage(['numpy']);
+              const micropip = await python.loadPackage('micropip');
+              document.querySelector('button').onclick = () => python.loadPackage('optional');
+              ${optionalLoad}
+              document.querySelector('output').textContent = numpy + ' ' + micropip;
+            }
+            init();
+          </script>`,
+            async (url) => {
+              const filename = new URL(url).pathname.split('/').at(-1)!;
+              if (filename.endsWith('.whl') && !url.startsWith(packageRoot)) return null;
+              fetched.add(filename);
+              if (filename === 'optional-runtime.whl') return null;
+              const content =
+                filename === 'pyodide.js'
+                  ? entry
+                  : filename === 'pyodide-lock.json'
+                    ? JSON.stringify(lockfile)
+                    : filename === 'pyodide.asm.js'
+                      ? '/* mock WebAssembly factory */'
+                      : filename;
+              return { bytes: new TextEncoder().encode(content), contentType: 'text/plain' };
+            },
+          ),
+        );
+
+        const host = page.locator('[data-interactive-static-host]');
+        await page
+          .locator(
+            '[data-interactive-static-state="frozen"], [data-interactive-static-state="fallback"]',
+          )
+          .waitFor({ state: 'attached' });
+        const diagnostic = await host.locator('[data-interactive-fallback]').textContent();
+        const expectsFallback = missingAtStartup === 'unhandled';
+        expect(
+          await host.getAttribute('data-interactive-static-state'),
+          diagnostic ?? undefined,
+        ).toBe(expectsFallback ? 'fallback' : 'frozen');
+        expect(fetched.has('unused.whl')).toBe(false);
+        if (expectsFallback) {
+          expect(diagnostic).toContain('Pyodide package unavailable offline: optional-runtime');
+          return;
+        }
+        const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+        expect(await child.locator('output').textContent()).toBe(
+          'numpy.whl micropip.whl packaging.whl',
+        );
+        if (missingAtStartup === 'handled') {
+          expect(await child.locator('button').textContent()).toBe('Handled');
+        }
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it.each([
     { handled: true, state: 'frozen', delay: 400 },
     { handled: false, state: 'fallback', delay: 0 },
     { handled: false, state: 'fallback', delay: 400 },

@@ -16,7 +16,8 @@ import {
 } from '@/lib/video-export/interactive-static';
 import { MAX_VIDEO_CAPTURE_ASSET_BYTES, prepareCaptureAssets } from './prepare-capture-assets';
 
-const DEFAULT_MAX_HTML_BYTES = 32 * 1024 * 1024;
+// Pyodide 0.26 with NumPy needs about 33 MiB after base64 encoding.
+const DEFAULT_MAX_HTML_BYTES = 40 * 1024 * 1024;
 
 export interface PreparedInteractiveHtmlSet extends InteractiveHtmlSource {
   /** Exact packaged HTML for an owning asset-plan entry. */
@@ -270,12 +271,12 @@ export async function prepareInteractiveHtmlScenes(
     }
 
     try {
-      const capture = await prepareCaptureAssets(authored, fetcher);
+      const capture = await prepareCaptureAssets(authored, fetcher, maxBytes);
       const {
         html: inlined,
         report,
         unresolved,
-      } = await inlineHtmlAssets(capture, {
+      } = await inlineHtmlAssets(capture.html, {
         fetcher,
         baseUrl: options.baseUrl,
         keepImportmapFallbacks: false,
@@ -299,9 +300,11 @@ export async function prepareInteractiveHtmlScenes(
         continue;
       }
 
-      const packaged = injectIntoDocumentHead(
-        patchHtmlForIframe(sanitized, undefined, { processed: true }),
-        staticCaptureInjection(),
+      const packaged = capture.embedRuntimes(
+        injectIntoDocumentHead(
+          patchHtmlForIframe(sanitized, undefined, { processed: true }),
+          staticCaptureInjection(),
+        ),
       );
       const size = new TextEncoder().encode(packaged).byteLength;
       if (size > maxBytes) {
