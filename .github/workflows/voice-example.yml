@@ -35,11 +35,15 @@ jobs:
         run: |
           mkdir -p app/review-voice
           cp fixture/page.tsx app/review-voice/page.tsx
+          cp fixture/layout.tsx app/layout.tsx
+          cp fixture/capture-next.config.ts next.config.ts
+          printf 'export function register() {}\n' > instrumentation.ts
+          printf 'import { NextResponse } from "next/server";\nexport function middleware() { return NextResponse.next() }\n' > middleware.ts
           cp fixture/capture.cjs fixture/recognize.py .
-          pnpm exec next dev --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/workbench.log" 2>&1 &
+          pnpm exec next dev --webpack --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/workbench.log" 2>&1 &
           server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
-          curl --retry 60 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://127.0.0.1:3000/review-voice
+          trap 'tail -65 "$RUNNER_TEMP/workbench.log"; kill "$server" 2>/dev/null || true' EXIT
+          curl --connect-timeout 2 --max-time 120 --retry 3 --retry-all-errors --retry-delay 2 -fsS -o /dev/null http://127.0.0.1:3000/review-voice
           PYTHON="$RUNNER_TEMP/recognition/bin/python" node capture.cjs
           sha256sum voice-draft.mp4 | tee SHA256SUMS
           ffprobe -v error -show_entries format=duration:stream=codec_type,width,height voice-draft.mp4
