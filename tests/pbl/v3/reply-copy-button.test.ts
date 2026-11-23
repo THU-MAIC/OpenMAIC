@@ -34,7 +34,9 @@ it('retries failed copies and locks each successful copy for its own 1.6 seconds
     await tick(2000);
     expect(writeText).toHaveBeenCalledTimes(2);
     await act(async () => pending.resolve());
-    expect(button.textContent).toBe('workbench.chat.copied');
+    expect(button.textContent).toBe('');
+    expect(button.getAttribute('aria-label')).toBe('workbench.chat.copied');
+    expect(button.querySelector('svg.lucide-check')).not.toBeNull();
     await tick(1599);
     await act(async () => button.click());
     expect(button.getAttribute('aria-disabled')).toBe('true');

@@ -34,13 +34,12 @@ export function ReplyCopyButton({ text }: { text: string }) {
     <div className="flex items-center">
       <button
         type="button"
-        className="inline-flex items-center gap-1 rounded p-1 text-xs leading-none text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+        className="inline-flex items-center rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
         aria-label={label}
         aria-disabled={copied}
         onClick={copy}
       >
         {copied ? <Check size={13} /> : <Copy size={13} />}
-        {copied && label}
       </button>
     </div>
   );
