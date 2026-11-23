@@ -483,6 +483,41 @@ body:has([data-classroom-stage][data-mobile='true']) {
   place-items: center;
   color: #8b5cf6;
 }
+.mobile-roundtable-input [hidden],
+.mobile-voice-status:empty {
+  display: none;
+}
+.mobile-voice-status {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mobile-recording-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #dc2626;
+}
+.mobile-roundtable-input .mobile-voice-control {
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.mobile-roundtable-input .mobile-voice-control[data-recording='true'] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  padding-inline: 12px;
+  color: #b91c1c;
+}
+.dark .mobile-roundtable-input .mobile-voice-control[data-recording='true'] {
+  color: #fca5a5;
+}
 .mobile-roundtable-input button:disabled {
   opacity: 0.35;
 }
@@ -583,8 +618,7 @@ body:has([data-classroom-stage][data-mobile='true']) {
   flex-shrink: 0;
   height: 44px;
   padding: 0 8px;
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
   background: var(--background);
 }
 .mobile-classroom-nav button {
@@ -977,56 +1011,57 @@ body:has([data-classroom-stage][data-mobile='true']) {
   padding-right: 44px;
 }
 @media (max-width: 700px) and (orientation: landscape) {
-  [data-mobile='true'] .mobile-roundtable:has([data-toolbar-control='discussion']) {
+  [data-mobile='true'][data-landscape='true']
+    .mobile-roundtable:has([data-toolbar-control='discussion']) {
     flex-wrap: wrap;
   }
-  [data-mobile='true']
+  [data-mobile='true'][data-landscape='true']
     .mobile-roundtable:has([data-toolbar-control='discussion'])
     .mobile-roundtable-toolbar {
     flex: 1;
     max-width: calc(100% - 44px);
   }
-  [data-mobile='true']
+  [data-mobile='true'][data-landscape='true']
     .mobile-roundtable:has([data-toolbar-control='discussion'])
     .mobile-roundtable-content {
     flex-basis: 100%;
     order: 2;
   }
-  [data-mobile='true']
+  [data-mobile='true'][data-landscape='true']
     .mobile-roundtable:has([data-toolbar-control='discussion'])
     .mobile-roundtable-fold {
     order: 1;
   }
 
-  [data-mobile='true'] .mobile-roundtable-speech {
+  [data-mobile='true'][data-landscape='true'] .mobile-roundtable-speech {
     display: none;
   }
-  [data-mobile='true'] .mobile-roundtable-roles {
+  [data-mobile='true'][data-landscape='true'] .mobile-roundtable-roles {
     flex: 1;
     overflow-x: auto;
   }
 }
 @media (max-width: 540px) and (orientation: landscape) {
-  [data-mobile='true'] .mobile-roundtable {
+  [data-mobile='true'][data-landscape='true'] .mobile-roundtable {
     flex-wrap: wrap;
   }
-  [data-mobile='true'] .mobile-roundtable-content {
+  [data-mobile='true'][data-landscape='true'] .mobile-roundtable-content {
     flex-basis: 100%;
     order: 2;
   }
-  [data-mobile='true'] .mobile-roundtable-toolbar {
+  [data-mobile='true'][data-landscape='true'] .mobile-roundtable-toolbar {
     flex: 1;
     max-width: calc(100% - 44px);
   }
-  [data-mobile='true'] .mobile-roundtable-fold {
+  [data-mobile='true'][data-landscape='true'] .mobile-roundtable-fold {
     order: 1;
   }
-  [data-mobile-toolbar],
-  [data-mobile-toolbar] > div:nth-child(3) > div {
+  [data-landscape='true'] [data-mobile-toolbar],
+  [data-landscape='true'] [data-mobile-toolbar] > div:nth-child(3) > div {
     height: auto;
     min-height: 44px;
   }
-  [data-mobile-toolbar] > div:nth-child(3) > div {
+  [data-landscape='true'] [data-mobile-toolbar] > div:nth-child(3) > div {
     flex-wrap: wrap;
   }
 }

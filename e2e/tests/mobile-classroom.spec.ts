@@ -117,8 +117,13 @@ test.describe('Mobile classroom with the shared playback surface', () => {
       .locator('.mobile-roundtable-input textarea')
       .fill('A question to keep across rotation');
     await page.screenshot({ path: testInfo.outputPath('lesson-390.png') });
-    await page.setViewportSize({ width: 390, height: 400 });
-    await expect(page.locator('.mobile-roundtable-input textarea')).toBeInViewport();
+    // A portrait phone can have a landscape-shaped viewport above its keyboard.
+    const composer = page.locator('.mobile-roundtable-input textarea');
+    await page.setViewportSize({ width: 390, height: 345 });
+    await expect(root).toHaveAttribute('data-landscape', 'false');
+    await expect(composer).toBeFocused();
+    await expect(composer).toBeInViewport({ ratio: 1 });
+    await expect(composer).toHaveValue('A question to keep across rotation');
     await expect(page.getByTestId('mobile-classroom-nav')).toBeInViewport();
     await page.setViewportSize({ width: 390, height: 844 });
 
@@ -318,6 +323,7 @@ test.describe('Mobile classroom with the shared playback surface', () => {
     await page.screenshot({ path: testInfo.outputPath('workspace-lesson-390.png') });
     await page.locator('.mobile-roundtable-input textarea').fill('Keep this workspace question');
     await page.setViewportSize({ width: 844, height: 390 });
+    await expect(page.locator('[data-playback-stage]')).toHaveAttribute('data-landscape', 'true');
     await page.screenshot({ path: testInfo.outputPath('workspace-lesson-844.png') });
     await page.getByTestId('mobile-nav-chat').click();
     await expect(page.locator('.mobile-roundtable-input textarea')).toHaveValue(

@@ -1,8 +1,16 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, MicOff, ArrowUp, ChevronDown, ChevronUp, ChevronRight } from 'lucide-react';
+import {
+  Mic,
+  Square,
+  LoaderCircle,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  ChevronRight,
+} from 'lucide-react';
 import { DEFAULT_STUDENT_AVATAR, DEFAULT_TEACHER_AVATAR } from './constants';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import type { ChatAreaRef, SpeechSource } from '@/components/chat/chat-area';
@@ -28,6 +36,8 @@ export function MobileRoundtable({
   onSend,
   onQuestionFocus,
   onVoice,
+  onFinishVoice,
+  starting,
   voiceAvailable,
   recording,
   processing,
@@ -61,6 +71,8 @@ export function MobileRoundtable({
   readonly onSend: () => void;
   readonly onQuestionFocus?: () => void;
   readonly onVoice: () => void;
+  readonly onFinishVoice: () => void;
+  readonly starting: boolean;
   readonly voiceAvailable: boolean;
   readonly recording: boolean;
   readonly processing: boolean;
@@ -106,6 +118,14 @@ export function MobileRoundtable({
     roles.addEventListener('scroll', update, { passive: true });
     return () => roles.removeEventListener('scroll', update);
   }, [activeId, speakerId, participants, hasSpeech]);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const held = useRef(false);
+  const clearHold = () => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+  useEffect(() => clearHold, []);
+  const voiceActive = recording || processing;
   const composer = (
     <form
       className="mobile-roundtable-input"
@@ -115,6 +135,7 @@ export function MobileRoundtable({
       }}
     >
       <textarea
+        hidden={voiceActive}
         rows={1}
         value={input}
         onFocus={() => {
@@ -124,25 +145,59 @@ export function MobileRoundtable({
         onChange={(event) => onInput(event.target.value)}
         placeholder={t('mobileClassroom.askTeacher')}
         aria-label={t('mobileClassroom.askTeacher')}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            onSend();
-          }
-        }}
       />
-      {(voiceAvailable || recording) && (
+      <span role="status" className="mobile-voice-status">
+        {recording && <span aria-hidden="true" className="mobile-recording-dot" />}
+        {processing && (
+          <LoaderCircle aria-hidden="true" size={17} className="motion-safe:animate-spin" />
+        )}
+        {voiceActive && t(recording ? 'settings.recording' : 'settings.transcribing')}
+      </span>
+      {(voiceAvailable || recording || starting) && (
         <button
           type="button"
-          disabled={!voiceAvailable || processing}
-          onClick={onVoice}
-          aria-pressed={recording}
+          className="mobile-voice-control"
+          data-recording={recording}
+          hidden={processing}
+          disabled={!recording && !voiceAvailable}
+          onPointerDown={(event) => {
+            if (!event.isPrimary || event.button !== 0) return;
+            held.current = false;
+            if (recording || starting) return;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            holdTimer.current = setTimeout(() => {
+              held.current = true;
+              onVoice();
+            }, 350);
+          }}
+          onPointerUp={(event) => {
+            if (!event.isPrimary) return;
+            clearHold();
+            if (held.current) onFinishVoice();
+          }}
+          onPointerCancel={() => {
+            clearHold();
+            if (held.current) onFinishVoice();
+          }}
+          onContextMenu={(event) => event.preventDefault()}
+          onClick={(event) => {
+            if (!starting && (!held.current || event.detail === 0)) onVoice();
+            held.current = false;
+          }}
           aria-label={t(recording ? 'roundtable.stopRecording' : 'roundtable.voiceInput')}
         >
-          {recording ? <MicOff size={19} /> : <Mic size={19} />}
+          {recording ? (
+            <>
+              <Square size={14} fill="currentColor" />
+              {t('roundtable.stopRecording')}
+            </>
+          ) : (
+            <Mic size={19} />
+          )}
         </button>
       )}
       <button
+        hidden={voiceActive}
         type="submit"
         disabled={sendDisabled || !input.trim()}
         aria-label={t('mobileClassroom.send')}
@@ -220,7 +275,7 @@ export function MobileRoundtable({
             }}
           >
             <span className="mobile-roundtable-speaker">{speakerName}</span>
-            <span className="mobile-roundtable-status">{status}</span>
+            {!voiceActive && <span className="mobile-roundtable-status">{status}</span>}
             <span className="mobile-roundtable-text">{speech}</span>
             {speech && (
               <span className="mobile-roundtable-full-speech">

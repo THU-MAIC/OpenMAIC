@@ -433,11 +433,20 @@ export function Roundtable({
   const userAvatar = userParticipant?.avatar || DEFAULT_USER_AVATAR;
 
   // Audio recording
-  const { isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
+  const { isStarting, isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
     useAudioRecorder({
       onTranscription: (text) => {
         if (!text.trim()) {
           toast.info(t('roundtable.noSpeechDetected'));
+          setIsVoiceOpen(false);
+          return;
+        }
+        if (mobile) {
+          const transcript = text.trim();
+          setInputValue((draft) => {
+            const separator = draft && !/\s$/.test(draft) ? ' ' : '';
+            return draft + separator + transcript;
+          });
           setIsVoiceOpen(false);
           return;
         }
@@ -1382,6 +1391,12 @@ export function Roundtable({
         onInputActivate={onInputActivate}
         onSend={handleSendMessage}
         onVoice={handleToggleVoice}
+        onFinishVoice={() => {
+          if (isRecording) stopRecording();
+          else if (!isProcessing) cancelRecording();
+          setIsVoiceOpen(false);
+        }}
+        starting={isStarting}
         voiceAvailable={asrEnabled}
         recording={isRecording}
         processing={isProcessing}

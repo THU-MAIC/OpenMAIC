@@ -1899,9 +1899,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         }
       : null;
 
-    const mobileLandscape = useMediaQuery('(orientation: landscape)');
-    const rotateClassroom = mobile && landscapeRequested && !mobileLandscape;
+    const viewportLandscape = useMediaQuery('(orientation: landscape)');
     const visibleViewport = useVisualViewport();
+    const [portraitComposerWidth, setPortraitComposerWidth] = useState<number | null>(null);
+    // The keyboard can shorten a portrait viewport past its width without rotating the phone.
+    const mobileLandscape = viewportLandscape && portraitComposerWidth !== visibleViewport?.width;
+    const rotateClassroom = mobile && landscapeRequested && !mobileLandscape;
     const router = useRouter();
     // `null` is the classroom (roundtable) tab. The choice persists across scenes,
     // so notes and chat keep following playback.
@@ -1968,6 +1971,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     return (
       <div
         ref={stageRef}
+        onBlurCapture={(event) => {
+          if (event.target.matches('.mobile-roundtable-input textarea'))
+            setPortraitComposerWidth(null);
+        }}
         data-playback-stage=""
         data-mobile={mobile}
         data-landscape={mobileLandscape || rotateClassroom}
@@ -2155,6 +2162,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 mobileComposerHost={mobileComposerHost}
                 mobileNav={mobileNav}
                 onQuestionFocus={() => {
+                  if (!viewportLandscape) {
+                    setPortraitComposerWidth(window.visualViewport?.width ?? window.innerWidth);
+                  }
                   setLandscapeRequested(false);
                   const stage = stageRef.current?.closest('[data-classroom-stage]');
                   if (stage && document.fullscreenElement === stage) void togglePresentation();
