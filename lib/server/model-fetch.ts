@@ -229,13 +229,19 @@ async function fetchModelsCandidate(
       throw new ModelFetchError(res.status, 'Redirects are not allowed');
     }
     if (res.ok) {
+      let json: unknown;
       try {
-        return modelsApiResponse.parse(await res.json());
+        json = await res.json();
       } catch (error) {
         if (controller.signal.aborted) throw error;
         // A SyntaxError quotes a snippet of the body; report the status only.
+        throw new ModelFetchError(res.status, 'The model list response is not valid JSON');
+      }
+      const parsed = modelsApiResponse.safeParse(json);
+      if (!parsed.success) {
         throw new ModelFetchError(res.status, 'The model list response is invalid');
       }
+      return parsed.data;
     }
     if (res.status === 404 || res.status === 405) return null;
     throw new ModelFetchError(res.status, `HTTP ${res.status}`);
