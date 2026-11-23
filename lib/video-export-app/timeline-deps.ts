@@ -210,7 +210,9 @@ export async function createVideoTimelineDeps(input: {
   const interactiveHtml = skipInteractiveHtml
     ? emptyPreparedInteractiveHtmlSet()
     : await prepareInteractiveHtmlScenes(scenes, {
-        fetcher: createAssetFetcher({ fetchImpl: createProxiedFetch({ crossOriginOnly: true }) }),
+        fetcher: createAssetFetcher({
+          fetchImpl: createProxiedFetch({ crossOriginOnly: true, directFirst: true }),
+        }),
       });
 
   // The standardized asset manifest names exactly the media references this
