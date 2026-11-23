@@ -215,3 +215,19 @@ it('clears the paused queue indicator on a clean healthy tab without authorizing
   expect(onSave.mock.calls[1]![3]).toBe(request);
   expect(host.textContent).not.toContain('pblV3.ide.saveFailed');
 });
+
+it('loads the updated file after discarding a draft without showing a save confirmation', async () => {
+  await fixture();
+  await edit('Unsent plan draft');
+  vi.mocked(fetch).mockResolvedValueOnce(
+    Response.json({ text: 'Updated by the tutor', hash: 'c'.repeat(64) }),
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="pblV3.workbench.discard"]')!.click(),
+  );
+  expect(window.confirm).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('textarea')!.value).toBe('Updated by the tutor');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(onSave).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
+});

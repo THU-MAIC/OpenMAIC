@@ -107,36 +107,7 @@ export function LearningWorkbenchPanel({
     setError,
     { enabled: !disabled && !!work?.canEdit, canEdit },
   );
-  const { path, buffer, stale } = editor;
-  // "Saved" is a confirmation, not a status light: flash it after a save lands, then clear it.
-  // A save lands when the file's stored snapshot advances to the buffer's text; watching that
-  // catches saves whose start and finish are batched into one render.
-  const [savedNotice, setSavedNotice] = useState(false);
-  const { saveError } = editor;
-  const savedTimer = useRef<number | null>(null);
-  const savedText = useRef(new Map<string, string>());
-  useEffect(() => {
-    if (!buffer || !path) return;
-    const previous = savedText.current.get(path);
-    savedText.current.set(path, buffer.saved);
-    if (previous === undefined || previous === buffer.saved) return;
-    if (buffer.text !== buffer.saved) return;
-    setSavedNotice(true);
-    if (savedTimer.current) window.clearTimeout(savedTimer.current);
-    savedTimer.current = window.setTimeout(() => {
-      savedTimer.current = null;
-      setSavedNotice(false);
-    }, 2400);
-  }, [buffer, path, saveError]);
-  useEffect(() => {
-    setSavedNotice(false);
-  }, [path]);
-  useEffect(
-    () => () => {
-      if (savedTimer.current) window.clearTimeout(savedTimer.current);
-    },
-    [],
-  );
+  const { path, buffer, stale, savedNotice } = editor;
   const tabList = useRef<HTMLDivElement>(null);
   // Fade the strip's edge only where tabs continue, so hidden scrollbars still show there is more.
   const [tabOverflow, setTabOverflow] = useState({ start: false, end: false });
