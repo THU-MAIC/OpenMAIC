@@ -10,11 +10,17 @@ export function TestEvaluation({
   mode,
   collectionFailed = false,
   pendingAction = null,
+  beside = false,
 }: {
   view: LearningView;
   mode: 'summary' | 'details';
   collectionFailed?: boolean;
   pendingAction?: string | null;
+  /**
+   * Shown in the card by the avatar, where the button to run or move on is right under it:
+   * the hints that only say where that button is are left out.
+   */
+  beside?: boolean;
 }) {
   const { t } = useI18n();
   const result = view.state.collected[view.state.position.milestoneId ?? '']?.tests;
@@ -128,11 +134,13 @@ export function TestEvaluation({
           {result.publicFeedback}
         </pre>
       ) : null}
-      <p className="text-xs text-muted-foreground">
-        {t(building ? 'pblV3.editAccess.building' : `pblV3.testResult.hints.${phase}`, {
-          action: continueActionLabel(view, t),
-        })}
-      </p>
+      {!(beside && !building && ['idle', 'passed', 'unavailable'].includes(phase)) && (
+        <p className="text-xs text-muted-foreground">
+          {t(building ? 'pblV3.editAccess.building' : `pblV3.testResult.hints.${phase}`, {
+            action: continueActionLabel(view, t),
+          })}
+        </p>
+      )}
     </section>
   );
 }
