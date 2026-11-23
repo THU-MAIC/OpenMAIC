@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
-import { Mic, Loader2 } from 'lucide-react';
+import { Mic, MicOff, Loader2 } from 'lucide-react';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useASRAvailable } from '@/lib/hooks/use-asr-available';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -91,19 +91,22 @@ export function SpeechButton({
 
   if (hiddenWhenIdle && !active) return null;
 
+  // Same wording as the classroom's mic, so every surface explains the same state.
+  const label = isProcessing
+    ? t('roundtable.processing')
+    : isRecording || isStarting
+      ? t('voice.stopListening')
+      : asrAvailable
+        ? t('roundtable.voiceInput')
+        : t('roundtable.voiceInputDisabled');
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <button
           type="button"
           data-state={active ? 'active' : 'idle'}
-          aria-label={
-            isProcessing
-              ? t('roundtable.processing')
-              : isRecording || isStarting
-                ? t('voice.stopListening')
-                : t('voice.startListening')
-          }
+          aria-label={label}
           disabled={isDisabled || isProcessing}
           onClick={handleClick}
           className={cn(
@@ -143,8 +146,10 @@ export function SpeechButton({
                 />
               ))}
             </span>
-          ) : (
+          ) : asrAvailable ? (
             <Mic className={cn(iconSize, 'relative z-10')} />
+          ) : (
+            <MicOff className={cn(iconSize, 'relative z-10')} />
           )}
 
           {/* Injected keyframes */}
@@ -172,11 +177,7 @@ export function SpeechButton({
         </button>
       </TooltipTrigger>
       <TooltipContent side="top" className="text-xs">
-        {isProcessing
-          ? t('roundtable.processing')
-          : isRecording || isStarting
-            ? t('voice.stopListening')
-            : t('voice.startListening')}
+        {label}
       </TooltipContent>
     </Tooltip>
   );
