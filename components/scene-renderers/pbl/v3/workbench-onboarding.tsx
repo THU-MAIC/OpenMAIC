@@ -10,7 +10,7 @@ import type { LearningView } from '@/lib/pbl/v3/types';
 const targets: Record<OnboardingStep, string> = {
   progress: '[data-pbl-tour="task"]',
   discussion: '[data-pbl-tour="conversation"]',
-  code: '[data-testid="pbl-ide"], [data-pbl-tour="workspace-toggle"]',
+  code: '[data-testid="pbl-ide"], [data-pbl-tour-legacy="workspace-toggle"]',
   application: '[data-testid="pbl-application-panel"], [data-testid="pbl-application-open"]',
   replay: '[data-pbl-tour="replay"]',
 };
