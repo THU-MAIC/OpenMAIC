@@ -164,7 +164,11 @@ export function HeaderControls({
   // Video render lives in a global store so its progress ring stays on the
   // export button even after the menu closes / scenes switch mid-render.
   const videoRendering = useVideoRenderStore(
-    (s) => s.status === 'compiling' || s.status === 'rendering',
+    (s) =>
+      s.status === 'compiling' ||
+      s.status === 'uploading' ||
+      s.status === 'queued' ||
+      s.status === 'rendering',
   );
   const videoRenderPercent = useVideoRenderStore((s) => s.percent);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);

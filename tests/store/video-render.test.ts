@@ -200,4 +200,57 @@ describe('video render failure presentation and lifecycle', () => {
     expect(mocks.success).toHaveBeenCalledWith('export.videoMp4Success', { id: 'render-toast' });
     expect(mocks.saveAs).toHaveBeenCalledWith(expect.any(Blob), 'Example.mp4');
   });
+
+  it('transitions to queued with queuePosition when the poll response says queued', async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ jobId: 'job-q' }, { status: 202 });
+      return Response.json({ status: 'queued', queuePosition: 2, progress: 0 });
+    });
+    const pending = start();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(useVideoRenderStore.getState()).toMatchObject({
+      status: 'queued',
+      queuePosition: 2,
+      percent: 0,
+      etaMs: null,
+    });
+    fetchMock.mockImplementation(async () => Response.json({ status: 'queued', queuePosition: 2 }));
+    pending.catch(() => {});
+  });
+
+  it('shows uploading toast after compile, then queued toast with position when polled', async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ jobId: 'job-toast' }, { status: 202 });
+      return Response.json({ status: 'queued', queuePosition: 1, progress: 0 });
+    });
+    const pending = start();
+    await vi.dynamicImportSettled();
+    expect(mocks.loading).toHaveBeenCalledWith('export.videoUploading', { id: 'render-toast' });
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.loading).toHaveBeenCalledWith('export.videoQueuePosition', { id: 'render-toast' });
+    fetchMock.mockImplementation(async () => Response.json({ status: 'queued', queuePosition: 1 }));
+    pending.catch(() => {});
+  });
+
+  it('updates toast to videoRendering when queued job transitions to running', async () => {
+    let calls = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ jobId: 'job-run' }, { status: 202 });
+      calls += 1;
+      if (calls <= 2) return Response.json({ status: 'queued', queuePosition: 0, progress: 0 });
+      return Response.json({ status: 'running', progress: 0.1 });
+    });
+    const pending = start();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.loading).toHaveBeenCalledWith('export.videoRendering', { id: 'render-toast' });
+    fetchMock.mockImplementation(async () => Response.json({ status: 'running', progress: 0.1 }));
+    pending.catch(() => {});
+  });
 });

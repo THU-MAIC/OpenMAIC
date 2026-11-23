@@ -324,6 +324,33 @@ describe('render HTTP contract through a replaceable executor', () => {
     expect(Buffer.from(await download.arrayBuffer()).toString()).toBe('fake-mp4');
   });
 
+  it('includes queuePosition for a queued job and omits it once running', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-queue-pos-'));
+    scratch.push(dir);
+    const { app } = testApp(succeedingExecutor, {
+      coordinator: { maxConcurrency: 0 },
+      makeProjectDir: async () => dir,
+    });
+    const submit = await app.fetch(renderRequest());
+    const { jobId } = (await submit.json()) as { jobId: string };
+    const poll = await app.fetch(jobRequest(`/owner-bound/render/${jobId}`));
+    const body = (await poll.json()) as Record<string, unknown>;
+    expect(body.status).toBe('queued');
+    expect(body.queuePosition).toBe(0);
+  });
+
+  it('omits queuePosition for a succeeded job', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'render-route-queue-pos-run-'));
+    scratch.push(dir);
+    const { app } = testApp(succeedingExecutor, {
+      makeProjectDir: async () => dir,
+    });
+    const submit = await app.fetch(renderRequest());
+    const { jobId } = (await submit.json()) as { jobId: string };
+    const body = await waitForPoll(app, jobId, 'succeeded');
+    expect(body.queuePosition).toBeUndefined();
+  });
+
   it('preserves queued cancellation and its polling shape', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'render-route-queued-cancel-'));
     scratch.push(dir);
