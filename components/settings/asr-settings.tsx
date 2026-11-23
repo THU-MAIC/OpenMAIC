@@ -35,6 +35,16 @@ import {
 
 const log = createLogger('ASRSettings');
 
+interface PreviewRecognition {
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
 /** Language names for the recognition language picker, in the UI language (codes as a fallback). */
 function languageName(code: string, locale: string): string {
   if (code === 'auto') return code;
@@ -76,11 +86,28 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recognitionRef = useRef<PreviewRecognition | null>(null);
+  useEffect(() => {
+    return () => {
+      const recognition = recognitionRef.current;
+      recognitionRef.current = null;
+      if (!recognition) return;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.abort();
+    };
+  }, []);
 
   const canTest = isBrowser || !!entry.provider;
 
   const handleToggleASRRecording = async () => {
     if (isRecording) {
+      if (recognitionRef.current) {
+        setIsProcessing(true);
+        recognitionRef.current.stop();
+        return;
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
@@ -92,33 +119,42 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
     setTestMessage('');
 
     if (isBrowser) {
-      const SpeechRecognitionCtor =
-        (window as unknown as Record<string, unknown>).SpeechRecognition ||
-        (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognitionCtor) {
         setTestStatus('error');
         setTestMessage(t('settings.asrNotSupported'));
         return;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Vendor-prefixed API without standard typings
-      const recognition = new (SpeechRecognitionCtor as new () => any)();
+      const recognition = new SpeechRecognitionCtor() as PreviewRecognition;
       recognition.lang = effectiveLanguage;
-      recognition.onresult = (event: {
-        results: { [index: number]: { [index: number]: { transcript: string } } };
-      }) => {
+      recognition.onresult = (event) => {
+        if (recognitionRef.current !== recognition) return;
         setASRResult(event.results[0][0].transcript);
         setTestStatus('success');
         setTestMessage(t('settings.asrTestSuccess'));
       };
-      recognition.onerror = (event: { error: string }) => {
+      recognition.onerror = (event) => {
+        if (recognitionRef.current !== recognition) return;
         setTestStatus('error');
         setTestMessage(t('settings.asrTestFailed') + ': ' + event.error);
       };
       recognition.onend = () => {
+        if (recognitionRef.current !== recognition) return;
+        recognitionRef.current = null;
         setIsRecording(false);
+        setIsProcessing(false);
       };
-      recognition.start();
+      recognitionRef.current = recognition;
       setIsRecording(true);
+      try {
+        recognition.start();
+      } catch (error) {
+        recognitionRef.current = null;
+        setIsRecording(false);
+        log.error('Failed to start browser speech recognition:', error);
+        setTestStatus('error');
+        setTestMessage(t('settings.asrTestFailed'));
+      }
       return;
     }
 
