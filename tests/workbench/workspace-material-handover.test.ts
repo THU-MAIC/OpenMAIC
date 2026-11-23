@@ -1182,6 +1182,16 @@ describe('an empty conversation opened for a course', () => {
     expect(sendButton()!.disabled).toBe(true);
   });
 
+  it('keeps the phone exit callback stable across shell rerenders', async () => {
+    await render();
+    const before = mocks.classroomProps!.onMobileExit;
+    // Opening a draft beside the course rerenders the whole shell controller.
+    await talkAboutCourse();
+
+    expect(typeof before).toBe('function');
+    expect(mocks.classroomProps!.onMobileExit).toBe(before);
+  });
+
   it('sent with the mention: a conversation about that course', async () => {
     await render();
     await talkAboutCourse();

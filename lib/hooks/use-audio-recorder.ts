@@ -259,6 +259,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
           recognition.onerror = (event: { error: string }) => {
             if (!isCurrentSession(session)) return;
+            setIsProcessing(false);
             setIsStarting(false);
             log.error('Speech recognition error:', event.error);
             let errorMessage = '语音识别失败';
@@ -303,6 +304,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           recognition.onend = () => {
             if (!isCurrentSession(session)) return;
             speechRecognitionRef.current = null;
+            setIsProcessing(false);
             setIsStarting(false);
             busyRef.current = false;
             setIsRecording(false);
@@ -393,6 +395,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
   // Explicit stop preserves the final transcription; cancellation discards it.
   const stopRecording = useCallback(() => {
     if (speechRecognitionRef.current) {
+      setIsProcessing(true);
       speechRecognitionRef.current.stop();
       setIsStarting(false);
       setIsRecording(false);

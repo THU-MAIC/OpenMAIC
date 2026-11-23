@@ -29,6 +29,8 @@ import { SessionList } from './session-list';
 import { LectureNotesView } from './lecture-notes-view';
 
 interface ChatAreaProps {
+  mobile?: boolean;
+  onTabChange?: (tab: 'lecture' | 'chat') => void;
   className?: string;
   width?: number;
   onWidthChange?: (width: number) => void;
@@ -58,7 +60,10 @@ interface ChatAreaProps {
   onJumpToAction?: (sceneId: string, actionIndex: number) => void;
 }
 
+export type SpeechSource = 'lecture' | 'reply' | 'question';
+
 export interface ChatAreaRef {
+  revealSpeech: (source: SpeechSource, text: string) => boolean;
   createSession: (type: SessionType, title: string) => Promise<string>;
   endSession: (sessionId: string, options?: EndSessionOptions) => Promise<void>;
   endActiveSession: (options?: EndSessionOptions) => Promise<void>;
@@ -87,6 +92,8 @@ const MAX_WIDTH = 560;
 export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   (
     {
+      mobile = false,
+      onTabChange,
       className,
       width = DEFAULT_WIDTH,
       onWidthChange,
@@ -149,15 +156,35 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     });
 
     const [activeTab, setActiveTab] = useState<'lecture' | 'chat'>('lecture');
+    const [noteTarget, setNoteTarget] = useState<{ sceneId: string; actionIndex: number } | null>(
+      null,
+    );
+    const [messageTarget, setMessageTarget] = useState<string | null>(null);
     const isDraggingRef = useRef(false);
     const [isDragging, setIsDragging] = useState(false);
-    const bottomRef = useRef<HTMLDivElement>(null);
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+    const followReplies = useRef(true);
+    const lastFollowPosition = useRef(0);
+    const touchingChat = useRef(false);
 
     // Derive lecture notes directly from scenes — updates reactively as scenes stream in.
     const lectureNotes = useMemo(() => buildLectureNotes(scenes), [scenes]);
 
     // Filter out lecture sessions for the Chat tab
     const chatSessions = useMemo(() => sessions.filter((s) => s.type !== 'lecture'), [sessions]);
+
+    // On phones the panel owns scrolling across sessions. Stream updates may
+    // follow its bottom, but must not move it while someone reads older replies.
+    useEffect(() => {
+      const panel = chatScrollRef.current;
+      if (!mobile || activeTab !== 'chat' || messageTarget || !panel || !panel.clientHeight) return;
+      // A stream render can land before the browser delivers the scroll event.
+      if (panel.scrollTop < lastFollowPosition.current - 2) followReplies.current = false;
+      if (followReplies.current && !touchingChat.current) {
+        panel.scrollTop = panel.scrollHeight;
+        lastFollowPosition.current = panel.scrollTop;
+      }
+    }, [mobile, activeTab, chatSessions, messageTarget]);
 
     // Whether there's an active discussion/QA session (for amber dot on Chat tab)
     const hasActiveChatSession = useMemo(
@@ -204,9 +231,15 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       return softClosing ? continueSoftClosingSession(softClosing.id) : false;
     }, [chatSessions, continueSoftClosingSession]);
 
-    const switchToTab = useCallback((tab: 'lecture' | 'chat') => {
-      setActiveTab(tab);
-    }, []);
+    const switchToTab = useCallback(
+      (tab: 'lecture' | 'chat') => {
+        setNoteTarget(null);
+        setMessageTarget(null);
+        setActiveTab(tab);
+        onTabChange?.(tab);
+      },
+      [onTabChange],
+    );
 
     useImperativeHandle(ref, () => ({
       createSession,
@@ -228,6 +261,37 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       pauseActiveLiveBuffer,
       resumeActiveLiveBuffer,
       switchToTab,
+      revealSpeech(source, text) {
+        if (source === 'lecture') {
+          const note = lectureNotes.find((entry) => entry.sceneId === currentSceneId);
+          const matches = note?.items.filter(
+            (item) => item.kind === 'speech' && item.text === text,
+          );
+          const line =
+            matches?.filter((item) => item.actionIndex <= (currentActionIndex ?? -1)).pop() ??
+            matches?.[0];
+          if (!note || !line) return false;
+          switchToTab('lecture');
+          setNoteTarget({ sceneId: note.sceneId, actionIndex: line.actionIndex });
+          return true;
+        }
+        for (const session of [...chatSessions].reverse()) {
+          const matches = [...session.messages]
+            .reverse()
+            .filter(
+              (message) =>
+                (message.role === 'user') === (source === 'question') &&
+                message.parts.some((part) => part.type === 'text' && part.text.includes(text)),
+            );
+          const message = matches.find((item) => item.id === activeBubbleId) ?? matches[0];
+          if (!message) continue;
+          if (!expandedSessionIds.has(session.id)) toggleSessionExpand(session.id);
+          switchToTab('chat');
+          setMessageTarget(message.id);
+          return true;
+        }
+        return false;
+      },
     }));
 
     // Drag-to-resize
@@ -267,7 +331,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     return (
       <div
         style={{
-          width: displayWidth,
+          width: mobile ? '100%' : displayWidth,
           transition: isDragging ? 'none' : 'width 0.3s ease',
         }}
         className={cn(
@@ -276,7 +340,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         )}
       >
         {/* Drag handle */}
-        {!collapsed && (
+        {!mobile && !collapsed && (
           <div
             onMouseDown={handleDragStart}
             className="absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-50 group hover:bg-purple-400/30 dark:hover:bg-purple-600/30 active:bg-purple-500/40 dark:active:bg-purple-500/40 transition-colors"
@@ -288,7 +352,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         <div className={cn('flex flex-col w-full h-full overflow-hidden', collapsed && 'hidden')}>
           <Tabs
             value={activeTab}
-            onValueChange={(v) => setActiveTab(v as 'lecture' | 'chat')}
+            onValueChange={(v) => switchToTab(v as 'lecture' | 'chat')}
             className="flex flex-col h-full gap-0"
           >
             {/* Tab header row */}
@@ -296,11 +360,11 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               <TabsList variant="line" className="h-full flex-1 w-0">
                 <TabsTrigger value="lecture" className="text-xs gap-1 flex-1">
                   <BookOpen className="w-3.5 h-3.5" />
-                  {t('chat.tabs.lecture')}
+                  {t(mobile ? 'mobileClassroom.lecture' : 'chat.tabs.lecture')}
                 </TabsTrigger>
                 <TabsTrigger value="chat" className="text-xs gap-1 flex-1 relative">
                   <MessageSquare className="w-3.5 h-3.5" />
-                  {t('chat.tabs.chat')}
+                  {t(mobile ? 'mobileClassroom.chat' : 'chat.tabs.chat')}
                   {/* Amber pulse dot when there's an active chat session and user is on Notes tab */}
                   {hasActiveChatSession && activeTab === 'lecture' && (
                     <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
@@ -324,7 +388,9 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
             {/* Notes Tab */}
             <TabsContent value="lecture" className="flex-1 overflow-hidden flex flex-col">
               <LectureNotesView
+                mobile={mobile}
                 notes={lectureNotes}
+                target={noteTarget}
                 currentSceneId={currentSceneId}
                 currentActionIndex={currentActionIndex}
                 canJumpToAction={canJumpToAction}
@@ -334,7 +400,26 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
             {/* Chat Tab */}
             <TabsContent value="chat" className="flex-1 overflow-hidden flex flex-col">
-              <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-hide">
+              <div
+                ref={chatScrollRef}
+                onScroll={({ currentTarget: el }) => {
+                  followReplies.current = el.scrollHeight - el.clientHeight - el.scrollTop <= 3;
+                  lastFollowPosition.current = el.scrollTop;
+                }}
+                onTouchStart={() => {
+                  touchingChat.current = true;
+                }}
+                onTouchEnd={() => {
+                  touchingChat.current = false;
+                }}
+                onTouchCancel={() => {
+                  touchingChat.current = false;
+                }}
+                className={cn(
+                  'flex-1 overflow-y-auto overflow-x-hidden p-3 space-y-2 scrollbar-hide',
+                  mobile && 'overscroll-contain [overflow-anchor:none]',
+                )}
+              >
                 {chatSessions.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-50">
                     <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-3 text-gray-300 dark:text-gray-600">
@@ -350,15 +435,16 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                 ) : (
                   <>
                     <SessionList
+                      mobile={mobile}
+                      revealMessageId={messageTarget}
                       sessions={chatSessions}
                       expandedSessionIds={expandedSessionIds}
                       isStreaming={isStreaming}
-                      activeBubbleId={activeBubbleId}
+                      activeBubbleId={messageTarget ?? activeBubbleId}
                       onToggleExpand={toggleSessionExpand}
                       onEndSession={handleEndSession}
                       onContinueSession={continueSoftClosingSession}
                     />
-                    <div ref={bottomRef} />
                   </>
                 )}
               </div>

@@ -2,7 +2,14 @@
 
 import { DockResizeHandle, useDockBox } from '@/components/classroom/dock-box';
 import { dockBubbleVars } from '@/lib/edit/dock-height';
-import { useState, useRef, useCallback, useEffect, type CSSProperties } from 'react';
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Mic,
@@ -23,6 +30,8 @@ import {
 import { cn } from '@/lib/utils';
 import type { AudioIndicatorState } from './audio-indicator';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
+import type { ChatAreaRef } from '@/components/chat/chat-area';
+import { MobileRoundtable } from './mobile-roundtable';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { toast } from 'sonner';
@@ -46,6 +55,15 @@ export interface DiscussionRequest {
 }
 
 interface RoundtableProps {
+  readonly onMobileBack?: () => void;
+  readonly mobile?: boolean;
+  readonly mobileComposerHost?: HTMLElement | null;
+  /** Mobile classroom tabs, rendered between the playback toolbar and the roundtable. */
+  readonly onRevealSpeech?: ChatAreaRef['revealSpeech'];
+  readonly onQuestionFocus?: () => void;
+  readonly mobileNav?: ReactNode;
+  readonly mobileFocused?: boolean;
+  readonly onToggleMobileFocus?: () => void;
   readonly mode?: 'playback' | 'autonomous';
   readonly initialParticipants?: Participant[];
   readonly playbackView?: PlaybackView; // Centralised derived state from Stage
@@ -161,6 +179,14 @@ function VoiceWaveformBars({ barClassName }: { readonly barClassName: string }) 
 }
 
 export function Roundtable({
+  onMobileBack,
+  mobile = false,
+  mobileComposerHost,
+  mobileNav,
+  onQuestionFocus,
+  onRevealSpeech,
+  mobileFocused = false,
+  onToggleMobileFocus,
   mode: _mode = 'autonomous',
   initialParticipants = [],
   playbackView,
@@ -235,6 +261,8 @@ export function Roundtable({
   // The workspace's tts and asr slots decide whether narration and speech
   // input are available.
   const ttsEnabled = !!useModelCapabilities().tts;
+  // Phone sound settings also control recorded course audio without a TTS provider.
+  const soundControlsEnabled = mobile || ttsEnabled;
   const asrEnabled = useASRAvailable();
   const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
@@ -405,11 +433,20 @@ export function Roundtable({
   const userAvatar = userParticipant?.avatar || DEFAULT_USER_AVATAR;
 
   // Audio recording
-  const { isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
+  const { isStarting, isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
     useAudioRecorder({
       onTranscription: (text) => {
         if (!text.trim()) {
           toast.info(t('roundtable.noSpeechDetected'));
+          setIsVoiceOpen(false);
+          return;
+        }
+        if (mobile) {
+          const transcript = text.trim();
+          setInputValue((draft) => {
+            const separator = draft && !/\s$/.test(draft) ? ' ' : '';
+            return draft + separator + transcript;
+          });
           setIsVoiceOpen(false);
           return;
         }
@@ -497,6 +534,7 @@ export function Roundtable({
   // T = toggle text input, V = toggle voice input, Escape = dismiss panels,
   // Space = discussion pause/resume (during live flow)
   useEffect(() => {
+    if (mobile) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // Escape should always work, even when typing in an input
       if (e.key === 'Escape') {
@@ -550,6 +588,7 @@ export function Roundtable({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
+    mobile,
     isInLiveFlow,
     isDiscussionPaused,
     thinkingState,
@@ -715,6 +754,8 @@ export function Roundtable({
     isProcessing;
   const toolbar = (
     <CanvasToolbar
+      mobile={mobile}
+      onMobileBack={mobile ? onMobileBack : undefined}
       className="shrink-0 h-8 px-3 border-b border-gray-100/40 dark:border-gray-700/30"
       currentSceneIndex={currentSceneIndex}
       scenesCount={scenesCount}
@@ -731,21 +772,22 @@ export function Roundtable({
       whiteboardOpen={whiteboardOpen}
       sidebarCollapsed={sidebarCollapsed}
       chatCollapsed={chatCollapsed}
-      onToggleSidebar={onToggleSidebar}
-      onToggleChat={onToggleChat}
+      onToggleSidebar={mobile ? undefined : onToggleSidebar}
+      onToggleChat={mobile ? undefined : onToggleChat}
       onPrevSlide={onPrevSlide ?? (() => {})}
       onNextSlide={onNextSlide ?? (() => {})}
       onPlayPause={onPlayPause ?? (() => {})}
       onWhiteboardClose={onWhiteboardClose ?? (() => {})}
       isPresenting={isPresenting}
       onTogglePresentation={onTogglePresentation}
+      sessionType={sessionType}
       showStopDiscussion={showStopButton}
       onStopDiscussion={onStopDiscussion}
       onContinueDiscussion={handleContinueSoftClosing}
-      ttsEnabled={ttsEnabled}
+      ttsEnabled={soundControlsEnabled}
       ttsMuted={ttsMuted}
       ttsVolume={ttsVolume}
-      onToggleMute={() => ttsEnabled && setTTSMuted(!ttsMuted)}
+      onToggleMute={() => soundControlsEnabled && setTTSMuted(!ttsMuted)}
       onVolumeChange={(v) => setTTSVolume(v)}
       autoPlayLecture={autoPlayLecture}
       onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
@@ -757,7 +799,7 @@ export function Roundtable({
       onToggleElementPick={onToggleElementPick}
       nextOpensEnd={nextOpensEnd}
       dockCollapsed={dock.collapsed}
-      onToggleDock={isPresenting ? undefined : () => setDockCollapsed(!dock.collapsed)}
+      onToggleDock={mobile || isPresenting ? undefined : () => setDockCollapsed(!dock.collapsed)}
     />
   );
   const referencePill = elementReferencePill ? (
@@ -1308,6 +1350,78 @@ export function Roundtable({
         </div>
       </div>
     ) : null;
+
+  if (mobile)
+    return (
+      <MobileRoundtable
+        toolbar={toolbar}
+        nav={mobileNav}
+        onQuestionFocus={onQuestionFocus}
+        userAvatar={userAvatar}
+        participants={initialParticipants}
+        composerHost={mobileComposerHost}
+        dialogContainer={fullscreenContainerRef?.current}
+        speakerId={
+          isDiscussionPaused || engineMode === 'paused'
+            ? null
+            : speakingAgentId || (engineMode === 'playing' ? teacherParticipant?.id : null)
+        }
+        speakerName={bubbleName || teacherName}
+        speech={sourceText}
+        speechSource={userMessage ? 'question' : currentSpeech ? 'reply' : 'lecture'}
+        onRevealSpeech={onRevealSpeech}
+        status={
+          isDiscussionPaused || engineMode === 'paused'
+            ? t('stage.paused')
+            : engineMode === 'idle' && !isInLiveFlow
+              ? t('stage.paused')
+              : thinkingState
+                ? t('roundtable.thinking')
+                : isRecording
+                  ? t('roundtable.listening')
+                  : isProcessing
+                    ? t('roundtable.processing')
+                    : ''
+        }
+        input={inputValue}
+        onInput={(value) => {
+          setInputValue(value);
+          onUserInputActivity?.('text_input');
+        }}
+        onInputActivate={onInputActivate}
+        onSend={handleSendMessage}
+        onVoice={handleToggleVoice}
+        onFinishVoice={() => {
+          if (isRecording) stopRecording();
+          else if (!isProcessing) cancelRecording();
+          setIsVoiceOpen(false);
+        }}
+        starting={isStarting}
+        voiceAvailable={asrEnabled}
+        recording={isRecording}
+        processing={isProcessing}
+        sendDisabled={isSendCooldown}
+        focused={mobileFocused}
+        onToggleFocus={() => onToggleMobileFocus?.()}
+        onOpenChat={onToggleChat}
+        quickReplies={showSuggestedReplies ? quickReplies : null}
+        referencePill={referencePill}
+        participantDescription={(id) => getAgentConfig(id)?.persona}
+        discussion={
+          discussionRequest ? (
+            <div className="flex gap-2 p-2 text-sm">
+              <span className="flex-1">{discussionRequest.topic}</span>
+              <button type="button" onClick={() => onDiscussionStart?.(discussionRequest)}>
+                {t('mobileClassroom.join')}
+              </button>
+              <button type="button" onClick={() => onDiscussionSkip?.()}>
+                {t('mobileClassroom.skip')}
+              </button>
+            </div>
+          ) : null
+        }
+      />
+    );
 
   if (isPresenting) return speechLayer;
 

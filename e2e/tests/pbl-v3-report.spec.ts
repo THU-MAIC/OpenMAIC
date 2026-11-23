@@ -6,6 +6,9 @@ import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningReport } from '@/lib/pbl/v3/report';
 
+// Phone classrooms show the desktop-only project notice below this width.
+const COMPACT_WORKBENCH_WIDTH = 768;
+
 test('completed project reports stay discoverable, show facts before analysis, and reopen a read-only workbench', async ({
   page,
   learningEvents,
@@ -382,7 +385,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
     .toBe(1200);
   const shareViewport = page.viewportSize()!;
   const imageBeforeResize = await poster.getAttribute('src');
-  for (const width of [420, 800, 1600]) {
+  for (const width of [COMPACT_WORKBENCH_WIDTH, 1024, 1600]) {
     await page.setViewportSize({ width, height: 1000 });
     await expect(poster).toHaveAttribute('src', imageBeforeResize!);
     expect(
@@ -418,7 +421,7 @@ test('completed project reports stay discoverable, show facts before analysis, a
   );
   // An expanded citation must stay inside the report, even with an unbroken token.
   const priorViewport = page.viewportSize()!;
-  await page.setViewportSize({ width: 520, height: 900 });
+  await page.setViewportSize({ width: COMPACT_WORKBENCH_WIDTH, height: 900 });
   await expect.poll(() => report.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThan(3);
   await page.setViewportSize(priorViewport);
   await report.getByRole('button', { name: 'View read-only workbench', exact: true }).click();
@@ -485,10 +488,10 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await expect(heroReport).toBeVisible();
   await heroReport.click();
   await expect(report.getByText('7/7', { exact: true })).toBeVisible();
-  await page.setViewportSize({ width: 520, height: 850 });
+  await page.setViewportSize({ width: COMPACT_WORKBENCH_WIDTH, height: 850 });
   await expect(report).toBeVisible();
   expect(await report.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
-  await report.screenshot({ path: 'test-results/pbl-v3-report-mobile.png' });
+  await report.screenshot({ path: 'test-results/pbl-v3-report-compact.png' });
   expect(generations).toBe(2);
   expect(commands).toEqual([]);
 });

@@ -22,6 +22,8 @@ interface MessagePart {
 }
 
 interface ChatSessionProps {
+  readonly mobile?: boolean;
+  readonly revealMessageId?: string | null;
   readonly session: ChatSession;
   readonly isActive: boolean;
   readonly isStreaming?: boolean;
@@ -109,6 +111,7 @@ const MessageBubble = memo(function MessageBubble({
 
   return (
     <div
+      data-chat-bubble={isUser ? 'user' : 'agent'}
       className={cn(
         'inline-block px-2.5 py-1.5 rounded-xl text-[12px] leading-relaxed max-w-full text-left transition-shadow duration-300',
         isUser
@@ -157,6 +160,8 @@ const MessageBubble = memo(function MessageBubble({
 });
 
 export function ChatSessionComponent({
+  mobile = false,
+  revealMessageId,
   session,
   isActive,
   isStreaming,
@@ -189,33 +194,38 @@ export function ChatSessionComponent({
   // Auto-scroll: smooth scroll when a NEW message arrives — always (new agent bubble should be visible)
   const msgCount = session.messages.length;
   useEffect(() => {
-    if (bottomRef.current) {
+    if (!mobile && bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
       isAtBottomRef.current = true;
     }
-  }, [msgCount]);
+  }, [mobile, msgCount]);
 
   // Auto-scroll: rAF-throttled instant scroll as text grows — only when user is at bottom
   const scrollRaf = useRef(0);
   useEffect(() => {
-    if (!isAtBottomRef.current) return;
+    if (mobile || !isAtBottomRef.current) return;
     cancelAnimationFrame(scrollRaf.current);
     scrollRaf.current = requestAnimationFrame(() => {
       const el = scrollContainerRef.current;
       if (el) el.scrollTop = el.scrollHeight;
     });
-  }, [session.messages]);
+    return () => cancelAnimationFrame(scrollRaf.current);
+  }, [mobile, session.messages]);
 
   // Scroll to active bubble when it changes
   useEffect(() => {
-    if (activeBubbleId && activeBubbleRef.current) {
+    if (
+      activeBubbleId &&
+      activeBubbleRef.current &&
+      (!mobile || activeBubbleId === revealMessageId)
+    ) {
       activeBubbleRef.current.scrollIntoView({
         behavior: 'smooth',
         block: 'nearest',
       });
       isAtBottomRef.current = true;
     }
-  }, [activeBubbleId]);
+  }, [mobile, activeBubbleId, revealMessageId]);
 
   if (session.messages.length === 0 && !isActive) {
     return (
@@ -234,7 +244,7 @@ export function ChatSessionComponent({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="space-y-1 overflow-y-auto scrollbar-hide"
+        className={cn('space-y-1', !mobile && 'overflow-y-auto scrollbar-hide')}
       >
         {session.messages.map((message, msgIdx) => {
           const isUser = message.metadata?.originalRole === 'user';
@@ -248,6 +258,7 @@ export function ChatSessionComponent({
           return (
             <motion.div
               key={message.id}
+              data-active-message={isActiveBubble || undefined}
               ref={isActiveBubble ? activeBubbleRef : undefined}
               initial={{ opacity: 0, y: 4 }}
               animate={
@@ -359,6 +370,7 @@ export function ChatSessionComponent({
             className="mt-2 mx-2 flex flex-wrap items-center justify-center gap-1.5"
           >
             <button
+              data-session-end
               onClick={() => onEndSession(session.id)}
               className="h-7 bg-red-50/80 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-800/50 px-2.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-colors hover:bg-red-100 dark:hover:bg-red-900/35"
             >

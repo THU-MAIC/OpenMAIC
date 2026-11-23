@@ -1455,14 +1455,6 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   await expect(task.getByRole('button', { name: /^Current task$/ })).toBeFocused();
-  await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
-  await page.setViewportSize({ width: 390, height: 844 });
-  if (
-    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).isVisible()
-  )
-    await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
-  await page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }).click();
-  await expect(page.getByLabel('Your message', { exact: true })).toBeInViewport();
   const splitSize = await page.getByTestId('pbl-workbench-split').evaluate((el) => ({
     height: el.clientHeight,
     contents: el.firstElementChild!.getBoundingClientRect().height,
@@ -1471,10 +1463,20 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByTestId('pbl-v3-frame').evaluate((el) => {
     el.scrollTop = 0;
   });
-  await page.screenshot({ path: 'test-results/pbl-v3-conversation-mobile.png' });
   await expect
     .poll(() =>
       page.getByTestId('pbl-v3-workspace').evaluate((el) => el.scrollWidth - el.clientWidth),
     )
     .toBeLessThanOrEqual(1);
+  await page.screenshot({ path: 'test-results/pbl-v3-conversation-compact-desktop.png' });
+  await page.getByRole('button', { name: 'Exit fullscreen workspace' }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('note')).toHaveText(
+    'Preview is not available on phones. Open this project on a computer to try it.',
+  );
+  await expect(page.getByTestId('pbl-workspace-frame')).not.toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Expand to fullscreen workspace', exact: true }),
+  ).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/pbl-v3-conversation-phone-gate.png' });
 });

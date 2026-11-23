@@ -63,20 +63,25 @@ function InteractiveCourseEndPortal({ children }: { readonly children: ReactNode
 
 export function CourseEndLayer({
   overInteractive,
+  mobileStage,
   children,
 }: {
   readonly overInteractive: boolean;
+  readonly mobileStage?: Element | null;
   readonly children: ReactNode;
 }) {
   const overlay = (
     <motion.div
-      className="absolute inset-0 z-[130]"
+      className={mobileStage ? 'absolute inset-0 z-[300]' : 'absolute inset-0 z-[130]'}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.18 }}
     >
       {children}
     </motion.div>
   );
+
+  // The phone stage owns its rotation and its full-screen card in the same coordinate space.
+  if (mobileStage) return createPortal(overlay, mobileStage);
 
   // The interactive host paints at z-index 1 outside the isolated canvas.
   // Share its portal target so the card covers it without changing the iframe.

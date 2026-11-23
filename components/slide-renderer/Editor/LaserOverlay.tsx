@@ -20,7 +20,6 @@ interface LaserOverlayProps {
  * - Uses percentage positioning (0-100)
  */
 export function LaserOverlay({ geometry, color, duration: _duration = 3000 }: LaserOverlayProps) {
-  const { centerX, centerY } = geometry;
   const layerOptions = {
     geometry,
     units: { left: '%', top: '%' },
@@ -32,7 +31,6 @@ export function LaserOverlay({ geometry, color, duration: _duration = 3000 }: La
 
   return (
     <motion.div
-      key={`laser-${centerX}-${centerY}`}
       initial={dot.initial}
       animate={dot.animate}
       exit={dot.exit}
