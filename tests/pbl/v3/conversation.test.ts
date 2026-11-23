@@ -1347,3 +1347,61 @@ it.each([
     expect(pages).toEqual(saved);
   },
 );
+
+it.each([
+  [
+    'wb_draw_text',
+    { content: 'Compare the two routes through the application' },
+    'text',
+    'Compare the two routes through the application'.slice(0, 24),
+  ],
+  [
+    'wb_draw_table',
+    {
+      data: [
+        ['Choice', 'Result'],
+        ['a', 'b'],
+      ],
+    },
+    'table',
+    'Choice / Result',
+  ],
+  ['wb_draw_code', { code: 'print(1)\nprint(2)', fileName: 'main.py' }, 'code', 'main.py'],
+  ['wb_draw_code', { code: 'print(1)\nprint(2)' }, 'code', 'print(1)'],
+  ['wb_draw_shape', {}, 'shape', ''],
+  ['wb_draw_line', {}, 'line', ''],
+  ['wb_draw_latex', {}, 'latex', ''],
+  ['wb_draw_chart', {}, 'chart', ''],
+  ['wb_edit_code', {}, 'edit', ''],
+  ['wb_delete', {}, 'delete', ''],
+  ['wb_clear', {}, 'clear', ''],
+  ['wb_read', {}, 'read', ''],
+])(
+  'projects %s as a board part with learner display and committed sequence',
+  (toolName, args, op, label) => {
+    const start = event(1, 'tool_execution_start', { toolCallId: 'call', toolName, args });
+    const end = event(2, 'tool_execution_end', {
+      toolCallId: 'call',
+      toolName,
+      result: { details: { ok: true, lastSeq: 0 } },
+    });
+    const entries = projectConversation([start, end], 'discussion', false);
+    expect(entries[0].parts[0]).toMatchObject({
+      kind: 'tool',
+      action: 'board',
+      status: 'succeeded',
+      display: { op, label, seq: 0 },
+    });
+    expect(projectConversation([start], 'discussion', true)[0].parts[0]).toMatchObject({
+      action: 'board',
+      display: { op, label, seq: null },
+    });
+    expect(
+      projectConversation(
+        [start, { ...end, data: { ...(end.data as object), isError: true } }],
+        'discussion',
+        false,
+      )[0].parts[0],
+    ).toMatchObject({ status: 'failed', display: { seq: null } });
+  },
+);

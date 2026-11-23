@@ -278,3 +278,21 @@ describe('V3 learning SSE projection', () => {
     }
   });
 });
+
+it('pushes a changed board during a running turn without a revision or activitySequence change', async () => {
+  const { reader } = await attach();
+  await frame(reader);
+  mocks.view.mockResolvedValue({
+    ...view,
+    busy: true,
+    explainBoard: { whiteboard: { id: 'board', elements: [] }, lastSeq: 0 },
+  });
+  mocks.subscriptions.get('study')!();
+  await settle();
+  const update = await frame(reader);
+  expect(update).toContain(
+    '"explainBoard":{"whiteboard":{"id":"board","elements":[]},"lastSeq":0}',
+  );
+  expect(update).toContain('"activitySequence":1');
+  expect(update).toContain('"busy":true');
+});
