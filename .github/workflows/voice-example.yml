@@ -1,0 +1,55 @@
+name: Record the workbench voice example
+on:
+  push:
+    branches: [evidence/workbench-voice-capture]
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: fixture
+          persist-credentials: false
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: 324e6a9360ca582c92c88e4cf767344c8a437676
+          path: app
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Install the app and offline recording tools
+        working-directory: app
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg espeak-ng
+          python3 -m venv "$RUNNER_TEMP/recognition"
+          "$RUNNER_TEMP/recognition/bin/pip" install pocketsphinx==5.0.4
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium
+      - name: Record microphone input appended to a draft
+        working-directory: app
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: |
+          mkdir -p app/review-voice
+          cp ../fixture/page.tsx app/review-voice/page.tsx
+          cp ../fixture/capture.cjs ../fixture/recognize.py .
+          pnpm exec next dev --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/workbench.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          curl --retry 60 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://127.0.0.1:3000/review-voice
+          PYTHON="$RUNNER_TEMP/recognition/bin/python" node capture.cjs
+          sha256sum voice-draft.mp4 | tee SHA256SUMS
+          ffprobe -v error -show_entries format=duration:stream=codec_type,width,height voice-draft.mp4
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-voice-example
+          path: |
+            app/voice-draft.mp4
+            app/SHA256SUMS
+          if-no-files-found: error

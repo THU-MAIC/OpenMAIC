@@ -28,9 +28,9 @@ const view = {
 const workbench = {environmentId: view.environmentId, revision: 1, epoch: 0, canEdit: false, canManageFiles: false, canRun: false, planning: false, commands: [], terminals: []};
 
 async function main() {
-  const aiff = path.join(scratch, 'sample.aiff');
-  execFileSync('say', ['-v', 'Samantha', '-r', '145', '-o', aiff, 'read the file']);
-  execFileSync('ffmpeg', ['-loglevel','error','-i',aiff,'-ac','1','-ar','48000','-af','adelay=650,apad=pad_dur=0.8',wave]);
+  const sample = path.join(scratch, 'speech.wav');
+  execFileSync('espeak-ng', ['-v', 'en-us', '-s', '145', '-w', sample, 'read the file']);
+  execFileSync('ffmpeg', ['-loglevel','error','-i',sample,'-ac','1','-ar','48000','-af','adelay=650,apad=pad_dur=0.8',wave]);
   const stream = require('node:http').createServer((request,response) => {
     response.setHeader('access-control-allow-origin', origin);
     response.setHeader('access-control-allow-headers', 'x-openmaic-sandbox');
