@@ -10,7 +10,11 @@ import type {
   RenderExecutionResult,
   RenderJobRecord,
 } from '../src/types.js';
-import { createMemoryArtifactStore, createMemoryJobStore, succeedingExecutor } from './support/fakes.js';
+import {
+  createMemoryArtifactStore,
+  createMemoryJobStore,
+  succeedingExecutor,
+} from './support/fakes.js';
 import { owner, submitRender } from './support/identities.js';
 
 const scratch: string[] = [];
