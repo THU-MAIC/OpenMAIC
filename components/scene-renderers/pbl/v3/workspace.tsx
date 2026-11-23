@@ -53,6 +53,7 @@ import { WorkbenchOnboarding } from './workbench-onboarding';
 import { WorkbenchLoading } from './workbench-loading';
 import { pblRequest } from './request';
 import { continueActionLabel, needsInitialStart } from '@/lib/pbl/v3/presentation';
+import { SpeechButton } from '@/components/audio/speech-button';
 export { pblRequest } from './request';
 import { SandboxRequestError } from '@/components/sandbox/client';
 
@@ -835,10 +836,10 @@ function PBLV3WorkspaceContent({
                 data-pbl-tour="conversation"
                 className="flex h-full min-h-0 flex-col bg-muted/10 focus-visible:outline-none focus-visible:[&>header]:ring-2 focus-visible:[&>header]:ring-inset focus-visible:[&>header]:ring-ring"
               >
-                <header className="pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
-                  <MessageSquareText size={15} />
-                  <h3 className="font-semibold">{t('pblV3.learning')}</h3>
-                  <span className="ml-auto text-muted-foreground">
+                <header className="pbl-pane-header pbl-chrome flex shrink-0 items-center gap-2 border-b px-3 text-xs">
+                  <MessageSquareText size={15} className="shrink-0" />
+                  <h3 className="min-w-0 truncate font-semibold">{t('pblV3.learning')}</h3>
+                  <span className="ml-auto truncate text-muted-foreground">
                     {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
                   </span>
                 </header>
@@ -1296,37 +1297,51 @@ function PBLV3WorkspaceContent({
                         }}
                       />
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="min-w-0 truncate text-[11px] text-muted-foreground">
                           {t('pblV3.ide.sendHint')}
                         </span>
-                        {view.busy ? (
-                          <button
-                            type="button"
-                            className="rounded-full bg-red-600 p-2 text-white hover:bg-red-700 disabled:opacity-40"
-                            aria-label={t('pblV3.cancel')}
-                            disabled={pending}
-                            onClick={() => void command('cancel')}
-                          >
-                            <Square size={15} />
-                          </button>
-                        ) : (
-                          <button
-                            className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-40"
-                            aria-label={t('pblV3.send')}
-                            aria-busy={pendingAction === 'chat'}
-                            disabled={disabled || !text.trim()}
-                            title={
-                              blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
-                            }
-                            aria-describedby={blockedReason ? blockedId : undefined}
-                          >
-                            {pendingAction === 'chat' ? (
-                              <LoaderCircle size={16} className="animate-spin" />
-                            ) : (
-                              <ArrowUp size={16} />
-                            )}
-                          </button>
-                        )}
+                        <div className="flex shrink-0 items-center gap-1">
+                          <SpeechButton
+                            size="md"
+                            disabled={disabled}
+                            continuous
+                            onTranscription={(transcript) => {
+                              const said = transcript.trim();
+                              if (!said) return;
+                              setText((draft) =>
+                                draft && !/\s$/.test(draft) ? `${draft} ${said}` : draft + said,
+                              );
+                            }}
+                          />
+                          {view.busy ? (
+                            <button
+                              type="button"
+                              className="rounded-full bg-red-600 p-2 text-white hover:bg-red-700 disabled:opacity-40"
+                              aria-label={t('pblV3.cancel')}
+                              disabled={pending}
+                              onClick={() => void command('cancel')}
+                            >
+                              <Square size={15} />
+                            </button>
+                          ) : (
+                            <button
+                              className="rounded-full bg-primary p-2 text-primary-foreground disabled:opacity-40"
+                              aria-label={t('pblV3.send')}
+                              aria-busy={pendingAction === 'chat'}
+                              disabled={disabled || !text.trim()}
+                              title={
+                                blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
+                              }
+                              aria-describedby={blockedReason ? blockedId : undefined}
+                            >
+                              {pendingAction === 'chat' ? (
+                                <LoaderCircle size={16} className="animate-spin" />
+                              ) : (
+                                <ArrowUp size={16} />
+                              )}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </form>

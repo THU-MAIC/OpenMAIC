@@ -146,19 +146,24 @@ function AgentTurn({
         )}
       </div>
       {copyText && (
-        <button
-          type="button"
-          className="rounded p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover/turn:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100"
-          aria-label={t('workbench.chat.copyReply')}
-          onClick={() => {
-            void navigator.clipboard
-              .writeText(copyText)
-              .then(() => setCopied(true))
-              .catch(() => setCopied(false));
-          }}
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            className="rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            aria-label={t('workbench.chat.copyReply')}
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(copyText)
+                .then(() => {
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1600);
+                })
+                .catch(() => setCopied(false));
+            }}
+          >
+            {copied ? <Check size={13} /> : <Copy size={13} />}
+          </button>
+        </div>
       )}
     </article>
   );

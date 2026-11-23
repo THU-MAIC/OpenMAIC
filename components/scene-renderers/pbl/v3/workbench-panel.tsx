@@ -108,6 +108,32 @@ export function LearningWorkbenchPanel({
     { enabled: !disabled && !!work?.canEdit, canEdit },
   );
   const { path, buffer, stale } = editor;
+  // "Saved" is a confirmation, not a status light: flash it after a save lands, then clear it.
+  const [savedNotice, setSavedNotice] = useState(false);
+  const { saving, saveError } = editor;
+  const dirtyNow = editor.dirty(path);
+  const wasSaving = useRef(false);
+  const savedTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const finishedSaving = wasSaving.current && !saving;
+    wasSaving.current = saving;
+    if (!finishedSaving || saveError || dirtyNow) return;
+    setSavedNotice(true);
+    if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => {
+      savedTimer.current = null;
+      setSavedNotice(false);
+    }, 2400);
+  }, [saving, saveError, dirtyNow]);
+  useEffect(() => {
+    setSavedNotice(false);
+  }, [path]);
+  useEffect(
+    () => () => {
+      if (savedTimer.current) window.clearTimeout(savedTimer.current);
+    },
+    [],
+  );
   const tabList = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const rail = tabList.current;
@@ -348,7 +374,7 @@ export function LearningWorkbenchPanel({
             onResize={({ asPercentage }) => setFilesCollapsed(asPercentage === 0)}
             className="h-full bg-muted/20"
           >
-            <header className="flex shrink-0 items-center gap-1 border-b pbl-chrome px-2 py-1">
+            <header className="pbl-pane-header flex shrink-0 items-center gap-1 border-b pbl-chrome px-2">
               <Files size={15} className="shrink-0" aria-hidden="true" />
               <span className="mr-auto min-w-0 truncate text-xs font-semibold">
                 {t('pblV3.files')}{' '}
@@ -378,7 +404,7 @@ export function LearningWorkbenchPanel({
             className="w-px bg-border hover:bg-primary"
           />
           <Panel id="editor" minSize="45%" className="flex h-full min-w-0 flex-col">
-            <div className="pbl-chrome flex min-h-9 shrink-0 items-center border-b">
+            <div className="pbl-pane-header pbl-chrome flex shrink-0 items-center border-b">
               {filesCollapsed && (
                 <button
                   className={button}
@@ -393,85 +419,106 @@ export function LearningWorkbenchPanel({
                 ref={tabList}
                 role="tablist"
                 aria-label={t('pblV3.ide.openFiles')}
-                className="flex min-w-0 flex-1 flex-nowrap overflow-x-auto overflow-y-hidden"
+                className="pbl-tab-strip flex h-full min-w-0 flex-1 flex-nowrap items-stretch overflow-x-auto overflow-y-hidden"
               >
-                {editor.tabs.map((p) => (
-                  <div key={p} className="flex shrink-0 items-center border-r">
-                    <button
-                      role="tab"
-                      aria-selected={p === path}
-                      className="shrink-0 whitespace-nowrap border-t-2 border-transparent px-3 py-2 text-xs aria-selected:border-primary aria-selected:bg-background"
-                      title={p}
-                      onClick={() => {
-                        editor.select(p);
-                      }}
+                {editor.tabs.map((p) => {
+                  const active = p === path;
+                  return (
+                    <div
+                      key={p}
+                      className={`group/tab flex max-w-[220px] shrink-0 items-center border-r border-t-2 ${
+                        active ? 'border-t-primary bg-background' : 'border-t-transparent'
+                      }`}
                     >
-                      {p.split('/').at(-1)}
-                      {editor.dirty(p) ? ' ●' : ''}
-                    </button>
-                    <button
-                      className="p-1 hover:bg-muted disabled:opacity-40"
-                      disabled={editor.saving}
-                      aria-label={t('pblV3.ide.closeFile', { path: p })}
-                      onClick={() => {
-                        if (!editor.dirty(p) || window.confirm(t('pblV3.ide.discard', { path: p })))
-                          editor.close(p);
-                      }}
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              {operation || editor.loading ? (
-                <PendingAction action={operation ?? 'read'} />
-              ) : (
-                <span
-                  role="status"
-                  className="flex shrink-0 items-center gap-1 px-2 text-xs text-muted-foreground"
-                  title={editor.saveError || undefined}
-                >
-                  {editor.saveError ? (
-                    <>
-                      <AlertCircle size={12} />
-                      <button className="underline" disabled={!canSave} onClick={save}>
-                        {t('pblV3.ide.saveFailed')}
+                      <button
+                        role="tab"
+                        aria-selected={active}
+                        className="flex min-w-0 flex-1 items-center gap-1 px-3 py-1.5 text-left text-xs"
+                        title={p}
+                        onClick={() => {
+                          editor.select(p);
+                        }}
+                      >
+                        <span className="truncate whitespace-nowrap">{p.split('/').at(-1)}</span>
+                        {editor.dirty(p) ? (
+                          <span className="shrink-0" aria-hidden="true">
+                            ●
+                          </span>
+                        ) : null}
                       </button>
-                    </>
-                  ) : editor.dirty(path) && !canSave && !editor.saving ? (
-                    <span>{t('pblV3.ide.draftRetained')}</span>
-                  ) : editor.dirty(path) || editor.saving ? (
-                    <>
-                      <LoaderCircle size={12} className="animate-spin" />
-                      {t('pblV3.ide.saving')}
-                    </>
-                  ) : (
-                    <>
-                      <Check size={12} />
-                      {t('pblV3.ide.saved')}
-                    </>
-                  )}
-                </span>
-              )}
-              <button
-                className={button}
-                disabled={disabled || editor.saving}
-                onClick={reload}
-                aria-label={t(editor.dirty(path) ? 'pblV3.workbench.discard' : 'pblV3.reloadFile')}
-                title={t('pblV3.reloadFile')}
-              >
-                <RefreshCw size={14} />
-              </button>
-              {work?.canManageFiles && (
+                      <button
+                        className={`mr-1 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 ${
+                          active
+                            ? 'opacity-100'
+                            : 'opacity-0 group-hover/tab:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100'
+                        }`}
+                        disabled={editor.saving}
+                        aria-label={t('pblV3.ide.closeFile', { path: p })}
+                        onClick={() => {
+                          if (!editor.dirty(p) || window.confirm(t('pblV3.ide.discard', { path: p })))
+                            editor.close(p);
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex h-full shrink-0 items-center gap-0.5 border-l pl-1">
+                {operation || editor.loading ? (
+                  <PendingAction action={operation ?? 'read'} />
+                ) : (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className="flex shrink-0 items-center gap-1 px-1 text-xs text-muted-foreground"
+                    title={editor.saveError || undefined}
+                  >
+                    {editor.saveError ? (
+                      <>
+                        <AlertCircle size={12} />
+                        <button className="underline" disabled={!canSave} onClick={save}>
+                          {t('pblV3.ide.saveFailed')}
+                        </button>
+                      </>
+                    ) : editor.dirty(path) && !canSave && !editor.saving ? (
+                      <span className="max-w-48 truncate whitespace-nowrap">
+                        {t('pblV3.ide.draftRetained')}
+                      </span>
+                    ) : editor.saving ? (
+                      <>
+                        <LoaderCircle size={12} className="animate-spin" />
+                        <span className="sr-only">{t('pblV3.ide.saving')}</span>
+                      </>
+                    ) : savedNotice ? (
+                      <>
+                        <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+                        {t('pblV3.ide.saved')}
+                      </>
+                    ) : null}
+                  </span>
+                )}
                 <button
                   className={button}
-                  aria-label={t('pblV3.workbench.manageFiles')}
-                  aria-expanded={manage}
-                  onClick={() => setManage((v) => !v)}
+                  disabled={disabled || editor.saving}
+                  onClick={reload}
+                  aria-label={t(editor.dirty(path) ? 'pblV3.workbench.discard' : 'pblV3.reloadFile')}
+                  title={t('pblV3.reloadFile')}
                 >
-                  <FolderCog size={14} />
+                  <RefreshCw size={14} />
                 </button>
-              )}
+                {work?.canManageFiles && (
+                  <button
+                    className={button}
+                    aria-label={t('pblV3.workbench.manageFiles')}
+                    aria-expanded={manage}
+                    onClick={() => setManage((v) => !v)}
+                  >
+                    <FolderCog size={14} />
+                  </button>
+                )}
+              </div>
             </div>
             {!canSave && (
               <div

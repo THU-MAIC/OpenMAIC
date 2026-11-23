@@ -50,6 +50,22 @@
 .pbl-workbench .pbl-chrome {
   background: var(--pbl-chrome);
 }
+
+/* Every pane in the workbench shares one chrome height, so their headers line up
+   across columns and stay the same height when a pane narrows or stacks. */
+.pbl-pane-header {
+  height: 36px;
+  min-height: 36px;
+  padding-block: 0;
+}
+
+/* Tabs scroll horizontally; the strip keeps its own scrollbar out of the chrome. */
+.pbl-tab-strip {
+  scrollbar-width: none;
+}
+.pbl-tab-strip::-webkit-scrollbar {
+  display: none;
+}
 :is(.pbl-workbench, .pbl-history) .pbl-assistant-bubble {
   background: var(--pbl-assistant-bubble);
   font-size: var(--wb-text-base);
