@@ -29,7 +29,7 @@ import { useLearnerMessage } from './use-learner-message';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { acknowledgeDecisionDraft, hasEditorDraft, useStudyDraft } from './use-project-drafts';
 import { WorkbenchSplit } from './workbench-split';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { LearningView } from '@/lib/pbl/v3/types';
@@ -66,6 +66,11 @@ interface WorkspaceProps {
   layoutReady?: boolean;
   onOnboardingChange?: (open: boolean) => void;
   toolbarControl?: ReactNode;
+}
+
+function fitMessageField(field: HTMLTextAreaElement) {
+  field.style.height = 'auto';
+  field.style.height = `${field.scrollHeight}px`;
 }
 
 function PBLV3WorkspaceContent({
@@ -120,13 +125,28 @@ function PBLV3WorkspaceContent({
     finish: finishMessage,
     observe: observeMessage,
   } = useLearnerMessage(view, storageError, savedMessage);
-  // The composer grows with what is typed instead of reserving a fixed block.
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const field = composerRef.current;
+  const observeComposer = useCallback((field: HTMLTextAreaElement | null) => {
+    composerRef.current = field;
     if (!field) return;
-    field.style.height = 'auto';
-    field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
+    let lastWidth = 0;
+    let frame = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.borderBoxSize[0].inlineSize;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      cancelAnimationFrame(frame);
+      if (width > 0) frame = requestAnimationFrame(() => fitMessageField(field));
+    });
+    observer.observe(field, { box: 'border-box' });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      composerRef.current = null;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (composerRef.current) fitMessageField(composerRef.current);
   }, [text]);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingDecision, setPendingDecision] = useState<{ id: string; chosen: string } | null>(
@@ -1292,7 +1312,7 @@ function PBLV3WorkspaceContent({
                     <div className="rounded-xl border bg-muted/20 p-2 focus-within:ring-1 focus-within:ring-primary">
                       <textarea
                         id={`pbl-chat-${sceneId}`}
-                        ref={composerRef}
+                        ref={observeComposer}
                         rows={1}
                         className="max-h-40 min-h-[52px] w-full resize-none overflow-y-auto bg-transparent p-1 text-sm outline-none"
                         placeholder={t('pblV3.ide.messagePlaceholder')}
