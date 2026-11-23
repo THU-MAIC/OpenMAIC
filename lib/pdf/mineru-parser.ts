@@ -20,12 +20,13 @@ function displayLatex(text: unknown): string | undefined {
 
 /**
  * Whether LaTeX holds the equation itself, not only its number however it is
- * typeset (`\tag{2.7}`, `(2.7a)`, `\left(2.7\right)`, `\mathrm{(A.3)}`).
- * Commands are dropped before deciding, so when unsure it answers no and the
- * crop stays.
+ * typeset (`\tag{2.7}`, `\tag{A}`, `(2.7a)`, `\left(2.7\right)`,
+ * `\mathrm{(A.3)}`). A tag goes whole, whatever it says; other commands are
+ * dropped before deciding, so when unsure it answers no and the crop stays.
  */
 function hasEquationContent(latex: string): boolean {
   const body = latex
+    .replace(/\\tag\*?\s*\{[^}]*\}/g, '')
     .replace(/\\[a-zA-Z]+\*?/g, '')
     .replace(/\\./g, '')
     .replace(/[\s{}~]/g, '');

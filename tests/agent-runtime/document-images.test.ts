@@ -631,6 +631,8 @@ describe('MinerU parser', () => {
     '$$\\qquad (A.3)$$',
     '$$\\mathrm{(2.7)}$$',
     '$$\\text{(2.7)}$$',
+    '$$\\tag{A}$$',
+    '$$\\tag*{(B)}$$',
     '2',
   ])('keeps the crop of an equation recognized as its number only: %s', (text) => {
     const parsed = extractMinerUResult({
