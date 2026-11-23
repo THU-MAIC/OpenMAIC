@@ -57,6 +57,24 @@ export interface LearningView {
     stages: string[];
   }[];
   role: AgentRole | null;
+  /** The deployment lets the learner start this project over (a testing aid). */
+  canReset?: boolean;
+  /**
+   * The current stage's explanation board. Present only when the deployment teaches with a
+   * board; the workbench then shows the role as a companion beside it.
+   */
+  explainBoard?: {
+    whiteboard: import('@openmaic/dsl').Whiteboard | null;
+    lastSeq: number | null;
+    /** Oldest first, excluding the current board's latest state; at most 24 pages. */
+    pages?: {
+      id: string;
+      milestoneIndex: number;
+      stageIndex: number;
+      step: string;
+      whiteboard: import('@openmaic/dsl').Whiteboard;
+    }[];
+  };
   actions: string[];
   files: string[];
   busy: boolean;

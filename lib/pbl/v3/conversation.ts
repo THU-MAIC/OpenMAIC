@@ -9,6 +9,51 @@ export type LearningRunFailure =
   | 'contextTurnCapacity'
   | 'contextPreparation';
 
+/**
+ * How a whiteboard or pointer call shows in the conversation: what it did, and what the telling
+ * of the reply needs to show it at the right moment. Both kinds of call share the `board`
+ * action: they are what the role does beside what it says.
+ */
+export interface LearningBoardDisplay {
+  op:
+    | 'text'
+    | 'table'
+    | 'code'
+    | 'shape'
+    | 'line'
+    | 'latex'
+    | 'chart'
+    | 'edit'
+    | 'delete'
+    | 'clear'
+    | 'read'
+    | 'point'
+    | 'open'
+    | 'close';
+  label: string;
+  seq: number | null;
+  /** Elements this change put on the board, shown when the telling of the reply reaches it. */
+  ids?: string[];
+  /** Elements this change took off the board, gone when the telling of the reply reaches it. */
+  removes?: string[];
+  /** What the role points at while speaking. */
+  target?: CodePointer | PreviewPointer;
+}
+
+/** Lines of a project file, in a spotlight or under a laser dot. */
+export interface CodePointer {
+  path: string;
+  line: number;
+  end?: number;
+  pointer: 'spotlight' | 'laser';
+}
+
+/** An element of the learner's running application, by CSS selector. */
+export interface PreviewPointer {
+  selector: string;
+  pointer: 'spotlight' | 'laser';
+}
+
 /** Learner-owned conversation with OpenPBL thinking and full tool activity. */
 export interface LearningConversationEntry {
   id: string;
@@ -60,7 +105,8 @@ export interface LearningConversationEntry {
           | 'list'
           | 'manage'
           | 'skill'
-          | 'tool';
+          | 'tool'
+          | 'board';
         name?: string;
         omitted?: boolean;
         args?: unknown;
@@ -206,8 +252,30 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
         : [],
     ),
   );
+  // At a whiteboard the role speaks between its board calls and records only the closing in
+  // the review tool. That speech is the explanation, not an echo: it goes only when the
+  // recorded reply repeats it.
+  const spoken = new Set(
+    entries.flatMap((entry) =>
+      entry.parts.some((part) => part.kind === 'tool' && part.action === 'board')
+        ? entry.parts.filter((part) => part.kind === 'text' && !part.canonical)
+        : [],
+    ),
+  );
+  const recorded = replies.filter((reply) => reply.canonical);
   const duplicates = new Set<LearningConversationEntry['parts'][number]>(
-    [...handoffEchoes(replies)].map((reply) => reply.part),
+    [...handoffEchoes(replies)]
+      .filter(
+        (reply) =>
+          !spoken.has(reply.part) ||
+          recorded.some(
+            (committed) =>
+              committed.scope === reply.scope &&
+              committed.inputId === reply.inputId &&
+              committed.text.includes(reply.text),
+          ),
+      )
+      .map((reply) => reply.part),
   );
   const deduplicated = entries.flatMap((entry) => {
     const parts = entry.parts.filter((part) => !duplicates.has(part));
