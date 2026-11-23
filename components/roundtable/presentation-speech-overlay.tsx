@@ -1,8 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Play, Pause, Repeat, Loader2, Volume2, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  Repeat,
+  Loader2,
+  Volume2,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+} from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
@@ -36,6 +45,10 @@ export interface PresentationBubbleModel {
   text: string;
   isLoading: boolean;
   isTopicPending: boolean;
+  /** Names the speaker's part where it is neither the classroom's teacher nor a student. */
+  roleLabel?: string;
+  /** Room for a longer piece of speech, kept scrolled to the words being said. */
+  follow?: boolean;
 }
 
 export function buildPresentationBubbleModel({
@@ -192,6 +205,8 @@ export function PresentationBubbleCard({
   bubble,
   onClick,
   onCollapse,
+  onExpand,
+  footer,
   audioIndicatorState,
   buttonState,
   isPaused,
@@ -199,11 +214,37 @@ export function PresentationBubbleCard({
   readonly bubble: PresentationBubbleModel;
   readonly onClick?: () => void;
   readonly onCollapse?: () => void;
+  /** Open the whole conversation this bubble is one moment of. */
+  readonly onExpand?: () => void;
+  /** What follows the words in the same breath: on other surfaces, the tool calls made. */
+  readonly footer?: React.ReactNode;
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
 }) {
   const { t } = useI18n();
+  // More is above the fold of a long piece of speech, or below it once the reader scrolls
+  // back: an edge fades wherever text continues past it, so the bubble never reads as cut off.
+  const [more, setMore] = useState({ above: false, below: false });
+  const edges = (node: HTMLDivElement) => {
+    const above = node.scrollTop > 2,
+      below = node.scrollHeight - node.scrollTop - node.clientHeight > 2;
+    setMore((seen) => (seen.above === above && seen.below === below ? seen : { above, below }));
+  };
+  // The newest words stay in view while the reader is at the bottom. A reader who has scrolled
+  // back is left where they are, until the next piece of speech begins.
+  const body = useRef<HTMLDivElement>(null);
+  const reading = useRef({ pinned: true, length: 0 });
+  const follow = !!bubble.follow;
+  const length = bubble.text.length;
+  useLayoutEffect(() => {
+    const node = body.current;
+    if (!node || !follow) return;
+    if (length < reading.current.length) reading.current.pinned = true;
+    reading.current.length = length;
+    if (reading.current.pinned) node.scrollTop = node.scrollHeight;
+    edges(node);
+  }, [follow, length]);
   return (
     <div
       aria-live="polite"
@@ -242,11 +283,13 @@ export function PresentationBubbleCard({
                   : 'text-purple-500 dark:text-purple-300',
             )}
           >
-            {bubble.role === 'user'
-              ? t('roundtable.you')
-              : bubble.role === 'agent'
-                ? t('settings.agentRoles.student')
-                : t('settings.agentRoles.teacher')}
+            {bubble.roleLabel
+              ? bubble.roleLabel
+              : bubble.role === 'user'
+                ? t('roundtable.you')
+                : bubble.role === 'agent'
+                  ? t('settings.agentRoles.student')
+                  : t('settings.agentRoles.teacher')}
           </div>
           <div className="flex items-center gap-1.5">
             <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
@@ -260,8 +303,26 @@ export function PresentationBubbleCard({
             )}
           </div>
         </div>
+        {onExpand && (
+          <div
+            role="button"
+            data-testid="bubble-expand"
+            onClick={(e) => {
+              e.stopPropagation();
+              onExpand();
+            }}
+            className={cn(
+              'absolute top-2 p-1.5 rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-gray-800/80 transition-colors duration-200 cursor-pointer z-10',
+              onCollapse ? 'right-9' : 'right-2',
+            )}
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </div>
+        )}
         {onCollapse && (
           <div
+            role="button"
+            data-testid="bubble-collapse"
             onClick={(e) => {
               e.stopPropagation();
               onCollapse();
@@ -273,7 +334,35 @@ export function PresentationBubbleCard({
         )}
       </div>
 
-      <div className="ml-4 mr-10 mb-4 max-h-[140px] overflow-y-auto scrollbar-hide">
+      <div
+        ref={body}
+        onScroll={
+          bubble.follow
+            ? (event) => {
+                const node = event.currentTarget;
+                reading.current.pinned = node.scrollHeight - node.scrollTop - node.clientHeight < 8;
+                edges(node);
+              }
+            : undefined
+        }
+        className={cn(
+          'ml-4 mr-10 mb-4 overflow-y-auto scrollbar-hide',
+          // Whoever places the bubble may leave it less room, as when something sits under it.
+          bubble.follow ? 'max-h-[var(--bubble-room,min(26rem,55vh))]' : 'max-h-[140px]',
+          bubble.follow &&
+            more.above &&
+            more.below &&
+            '[mask-image:linear-gradient(to_bottom,transparent,#000_28px,#000_calc(100%-28px),transparent)]',
+          bubble.follow &&
+            more.above &&
+            !more.below &&
+            '[mask-image:linear-gradient(to_bottom,transparent,#000_28px)]',
+          bubble.follow &&
+            !more.above &&
+            more.below &&
+            '[mask-image:linear-gradient(to_bottom,#000_calc(100%-28px),transparent)]',
+        )}
+      >
         {bubble.isLoading ? (
           <div className="flex gap-1 items-center py-1">
             {[0, 0.2, 0.4].map((delay) => (
@@ -301,6 +390,8 @@ export function PresentationBubbleCard({
           </p>
         )}
       </div>
+
+      {footer && <div className="mx-4 mb-4 -mt-1">{footer}</div>}
 
       {bubble.role !== 'user' &&
         !bubble.isLoading &&
