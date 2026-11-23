@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Features
 
+- Classroom: phone portrait and landscape layouts reuse the existing playback, roundtable, conversation and course-completion components. Touch controls, materials panels, quiz focus and a compact landscape dock preserve playback and interactive-page state across panel and orientation changes. PBL projects direct phone learners to a computer.
 - Model settings: a context window can be declared per chat model the built-in catalogue does not describe — in the model edit dialog for user-configured services, and as `modelContextWindows` under a provider in `openmaic.yml`. Compaction and the context budget check plan with the declared window instead of the 128k fallback; catalogue metadata still wins where it applies (except on an OpenAI-compatible endpoint, where the declaration also covers a name-colliding catalogue hit). [#2337](https://github.com/THU-MAIC/OpenMAIC/issues/2337)
 
 ### Bug Fixes

@@ -146,11 +146,13 @@ export function handleInteractivePickerMessage(
  * zero-reload return.
  */
 export function InteractiveIframeHost({
+  portalContainer,
   onMediaPlay,
   playbackPicker,
   onPlaybackPick,
   onPlaybackCancel,
 }: {
+  readonly portalContainer?: HTMLElement | null;
   readonly onMediaPlay?: () => void;
   readonly playbackPicker?: PlaybackInteractivePickerState | null;
   readonly onPlaybackPick?: (pick: PlaybackInteractiveComponentPick) => void;
@@ -163,8 +165,8 @@ export function InteractiveIframeHost({
 
   // Portal into the fullscreen element when one is active (presentation mode
   // fullscreens the stage, and a body-portaled iframe would not be part of that
-  // subtree, so it would vanish). Falls back to body otherwise.
-  const portalTarget = useFullscreenPortalTarget();
+  // subtree, so it would vanish). An explicit null waits for Stage to mount.
+  const portalTarget = useFullscreenPortalTarget(portalContainer);
 
   // Keep the messaging store's active scene in lock-step (its legacy fallback
   // path resolves the current widget by active scene when no id is passed).
@@ -477,7 +479,7 @@ function PooledIframe({
   };
 
   return (
-    <div style={wrapStyle}>
+    <div className="interactive-iframe-viewport" style={wrapStyle}>
       <iframe
         ref={iframeRef}
         srcDoc={observation.html}

@@ -1,15 +1,11 @@
-/** Session-scoped web fetching with a local trust boundary for every provider. */
+/** Web fetching with a local network trust boundary for every provider. */
 import { withAbort } from '@/lib/web-fetch/abort';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
 import type { AgentSessionMaterial } from '@openmaic/storage';
-import {
-  backgroundWorkspaceId,
-  SlotDisabledError,
-  SlotUnassignedError,
-} from '@/lib/server/model-config/runtime';
+import { backgroundWorkspaceId } from '@/lib/server/model-config/runtime';
 import { resolveMediaSlot, type MediaConnection } from '@/lib/server/model-config/media';
 import { resolveExtractionServices } from '@/lib/server/material-extraction/services';
 import { assertSafeIp, normalizeUrlForStrictFetch } from '@/lib/server/ssrf-guard';
@@ -156,6 +152,7 @@ const FETCH_URL_SCHEMA = Type.Object({
 });
 
 export interface FetchUrlToolDependencies {
+  mode?: 'session';
   sessionId: string;
   /** The run's owner, whose document slot a fetched PDF uses. */
   ownerId?: string;
@@ -169,10 +166,80 @@ export interface FetchUrlToolDependencies {
   saveWebMaterial?: (sessionId: string, page: ExtractedWebPage) => Promise<AgentSessionMaterial>;
 }
 
-/**
- * Build the session-scoped `fetch_url` tool, registered only when fetching is enabled.
- */
-export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<never, never> {
+export interface ClassroomFetchUrlOptions {
+  mode: 'classroom';
+  connection: MediaConnection;
+  workspaceId: string | null;
+}
+
+function providerOptions(connection: MediaConnection) {
+  const { providerId, apiKey, baseUrl, proxy, options } = connection;
+  return { providerId, credentials: { apiKey, baseUrl, proxy, options } };
+}
+
+function pagePreview(page: ExtractedWebPage) {
+  return {
+    url: page.finalUrl,
+    title: page.title.slice(0, FETCH_TITLE_CHARS),
+    content: page.markdown.slice(0, FETCH_PREVIEW_CHARS),
+  };
+}
+
+function pageResult(trusted: Record<string, unknown>, untrusted: ReturnType<typeof pagePreview>) {
+  const details = { trusted, untrusted };
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(details, null, 2) }],
+    details,
+  };
+}
+
+const CLASSROOM_FETCH_URL_SCHEMA = Type.Object(
+  {
+    url: Type.String({ minLength: 1, maxLength: 8_192, description: 'A public HTTP(S) page URL.' }),
+  },
+  { additionalProperties: false },
+);
+
+export function buildFetchUrlTool(
+  deps: ClassroomFetchUrlOptions,
+): AgentTool<typeof CLASSROOM_FETCH_URL_SCHEMA>;
+export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<never, never>;
+export function buildFetchUrlTool(deps: FetchUrlToolDependencies | ClassroomFetchUrlOptions) {
+  if (deps.mode === 'classroom') {
+    const tool: AgentTool<typeof CLASSROOM_FETCH_URL_SCHEMA> = {
+      name: 'fetch_url',
+      label: 'Read web page',
+      description: 'Read a public web page and return a short preview of its extracted text.',
+      parameters: CLASSROOM_FETCH_URL_SCHEMA,
+      async execute(_id, { url }, signal) {
+        throwIfAborted(signal);
+        const page = await fetchAndExtractUrl(url, {
+          ...providerOptions(deps.connection),
+          loadExtractionServices: () =>
+            resolveExtractionServices(deps.workspaceId ?? undefined, { forward: false }),
+          signal,
+        }).catch((cause: unknown) => {
+          signal?.throwIfAborted();
+          // Extractor errors can include a remote service's response body.
+          throw new Error('The page could not be read. Its contents are unverified.', { cause });
+        });
+        throwIfAborted(signal);
+        const preview = pagePreview(page);
+        const truncated = page.truncated || preview.content.length < page.markdown.length;
+        return pageResult(
+          {
+            status: 'done',
+            truncated,
+            ...(truncated && {
+              note: 'Only the first part of the page is available here. Base your answer on the text shown.',
+            }),
+          },
+          preview,
+        );
+      },
+    };
+    return tool;
+  }
   const urlAllowed = deps.isUrlAllowed ?? isSessionUrlAllowed;
   const fetchUrl = deps.fetchUrl ?? fetchAndExtractUrl;
   const saveWebMaterial = deps.saveWebMaterial ?? createWebMaterial;
@@ -213,17 +280,7 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
         : (deps.connection ??
           (await resolveMediaSlot('webFetch', { workspaceId: workspaceId ?? null })));
       const page = await fetchUrl(params.url, {
-        ...(connection
-          ? {
-              providerId: connection.providerId,
-              credentials: {
-                apiKey: connection.apiKey,
-                baseUrl: connection.baseUrl,
-                proxy: connection.proxy,
-                options: connection.options,
-              },
-            }
-          : {}),
+        ...(connection ? providerOptions(connection) : {}),
         ...(connection && getWebFetchProvider(connection.providerId)?.hosted
           ? {}
           : { extractionServices: await resolveExtractionServices(workspaceId) }),
@@ -248,8 +305,9 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
       throwIfAborted(signal);
       const record = await saveWebMaterial(deps.sessionId, page);
       throwIfAborted(signal);
-      const preview = page.markdown.slice(0, FETCH_PREVIEW_CHARS);
-      const nextOffset = preview.length < page.markdown.length ? preview.length : undefined;
+      const preview = pagePreview(page);
+      const nextOffset =
+        preview.content.length < page.markdown.length ? preview.content.length : undefined;
       const trusted = {
         status: 'done' as const,
         materialId: record.id,
@@ -258,16 +316,7 @@ export function buildFetchUrlTool(deps: FetchUrlToolDependencies): AgentTool<nev
         truncated: page.truncated,
         ...(nextOffset !== undefined ? { nextOffset } : {}),
       };
-      const untrusted = {
-        url: page.finalUrl,
-        title: page.title.slice(0, FETCH_TITLE_CHARS),
-        content: preview,
-      };
-      const structured = { trusted, untrusted };
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(structured, null, 2) }],
-        details: structured,
-      };
+      return pageResult(trusted, preview);
     },
     capability: 'web_fetch',
     promptBlock: fetchPromptBlock,
@@ -281,14 +330,4 @@ export function hasConfiguredWebFetchCapability(
   return connection !== null && connection !== undefined && connection !== 'off';
 }
 
-/** Follow the media resolver's failure rules: disabled/unassigned omit the tool; stale references fail loudly. */
-export async function resolveWebFetchCapability(
-  workspaceId: string | null,
-): Promise<MediaConnection | null> {
-  try {
-    return await resolveMediaSlot('webFetch', { workspaceId });
-  } catch (error) {
-    if (error instanceof SlotDisabledError || error instanceof SlotUnassignedError) return null;
-    throw error;
-  }
-}
+export { resolveWebFetchCapability } from '@/lib/server/web-fetch-config';

@@ -19,6 +19,8 @@ export interface WorkbenchPanelState {
   readonly editPinned: boolean;
   /** The pane header's element that hosts the editor's undo/redo buttons. */
   readonly historySlot: HTMLElement | null;
+  /** Delegate mobile Back to the workspace's existing navigation lifecycle. */
+  readonly onMobileExit?: () => void;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
@@ -36,11 +38,13 @@ export function WorkbenchPanelProvider({
   visible = true,
   learning = true,
   historySlot = null,
+  onMobileExit,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly learning?: boolean;
   readonly historySlot?: HTMLElement | null;
+  readonly onMobileExit?: () => void;
 }) {
   // The pane's size (split or full screen) is not part of this: the hosted
   // classroom renders the same chrome at either size, and the pane draws the
@@ -52,8 +56,9 @@ export function WorkbenchPanelProvider({
       learning,
       editPinned: visible && !learning,
       historySlot,
+      onMobileExit,
     }),
-    [visible, learning, historySlot],
+    [visible, learning, historySlot, onMobileExit],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

@@ -58,6 +58,45 @@ afterEach(() => {
 });
 
 describe('InteractiveIframeHost picker messages', () => {
+  it('waits for the local portal container and preserves the first iframe node', async () => {
+    useInteractiveIframePool.setState({
+      entries: {
+        'scene-web': {
+          srcDoc: '<div>Widget</div>',
+          rect: { left: 0, top: 0, width: 960, height: 540 },
+          clip: { left: 0, top: 0, width: 960, height: 540 },
+          owner: 'test-owner',
+          tick: 1,
+        },
+      },
+      activeSceneId: 'scene-web',
+      tick: 1,
+    });
+    const container = document.createElement('div');
+    const portal = document.createElement('div');
+    document.body.append(container, portal);
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(createElement(InteractiveIframeHost, { portalContainer: null })),
+      );
+      expect(document.querySelector('iframe')).toBeNull();
+      await act(async () =>
+        root.render(createElement(InteractiveIframeHost, { portalContainer: portal })),
+      );
+      const frame = portal.querySelector('iframe');
+      expect(frame).not.toBeNull();
+      await act(async () =>
+        root.render(createElement(InteractiveIframeHost, { portalContainer: portal })),
+      );
+      expect(portal.querySelector('iframe')).toBe(frame);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      portal.remove();
+    }
+  });
+
   it('flushes queued widget actions on the iframe load event', async () => {
     useInteractiveIframePool.setState({
       entries: {

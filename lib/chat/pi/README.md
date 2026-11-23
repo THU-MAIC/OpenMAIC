@@ -80,6 +80,20 @@ learner's language. Existing `buildLengthGuidelines` remains unchanged (teacher
 guidance). The skill contains teaching organization and diagram semantics, not
 a script or a playback synchronization guarantee.
 
+## Reading web pages
+
+Native Children can call the shared `fetch_url` tool when the request's `webFetch`
+slot resolves to a reader. Disabling the slot removes the tool and its prompt
+sections. Each Native Child search or read displays an inline tool-call tag.
+
+A Child can request a public HTTP(S) URL from any origin. The shared reader
+enforces its network and size limits. The builtin reader checks each redirect
+and resolves PDF extraction for the request's workspace. Hosted reads validate
+the requested URL and the provider's reported final URL. The Child receives up
+to 2,000 characters of untrusted page text. The result flags a partial preview
+when more text exists or the reader reports truncation. Classroom reads create
+no session material and offer no continuation.
+
 ## Verification boundaries
 
 Offline route tests drive real writes and the real provider adapter with a fake

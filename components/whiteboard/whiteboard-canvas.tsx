@@ -4,6 +4,7 @@ import {
   useRef,
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useMemo,
   memo,
@@ -24,6 +25,8 @@ const WHITEBOARD_SHAPE_PROSE_STYLES = createTextProseStyles(
 
 export type WhiteboardCanvasHandle = {
   resetView: () => void;
+  /** Absolute zoom, clamped like the wheel. Available to touch-only layouts. */
+  setZoom: (zoom: number) => void;
 };
 
 type InteractiveWhiteboardCanvasProps = {
@@ -35,6 +38,7 @@ type InteractiveWhiteboardCanvasProps = {
   elements: PPTElement[];
   isClearing: boolean;
   onViewModifiedChange?: (modified: boolean) => void;
+  onZoomChange?: (zoom: number) => void;
   readyHintText: string;
   readyText: string;
 };
@@ -130,6 +134,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
     elements,
     isClearing,
     onViewModifiedChange,
+    onZoomChange,
     readyHintText,
     readyText,
   },
@@ -161,6 +166,23 @@ const InteractiveWhiteboardCanvas = forwardRef<
     [canvasWidth, canvasHeight, containerWidth, containerHeight, containerScale],
   );
 
+  useLayoutEffect(() => {
+    // Reconcile persisted pan before paint when a resize changes the visible bounds.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- pan is constrained by measured viewport geometry
+    setPanX((x) => clampPan(x, 0, viewZoom).x);
+    setPanY((y) => clampPan(0, y, viewZoom).y);
+  }, [clampPan, viewZoom]);
+
+  const setCenteredZoom = useCallback(
+    (zoom: number) => {
+      const nextZoom = Math.min(5, Math.max(0.2, zoom));
+      setViewZoom(nextZoom);
+      setPanX((x) => clampPan(x, 0, nextZoom).x);
+      setPanY((y) => clampPan(0, y, nextZoom).y);
+    },
+    [clampPan],
+  );
+
   const resetView = useCallback((animate: boolean) => {
     setIsPanning(false);
     setIsResetting(animate);
@@ -187,8 +209,10 @@ const InteractiveWhiteboardCanvas = forwardRef<
     ref,
     () => ({
       resetView: () => resetView(true),
+      // Keep the centre anchored unless the existing pan boundary is reached.
+      setZoom: setCenteredZoom,
     }),
-    [resetView],
+    [resetView, setCenteredZoom],
   );
 
   // Notify parent when view modified state changes
@@ -196,7 +220,16 @@ const InteractiveWhiteboardCanvas = forwardRef<
     onViewModifiedChange?.(isViewModified);
   }, [isViewModified, onViewModifiedChange]);
 
-  // Always-on drag/pan — no toggle needed
+  useEffect(() => {
+    onZoomChange?.(viewZoom);
+  }, [viewZoom, onZoomChange]);
+
+  // Always-on drag/pan — no toggle needed. A second finger switches to pinch
+  // zoom, which is the only way to reach zoom on a touch screen: the wheel
+  // handler cannot fire there. Pinch zooms about the view centre.
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       if (e.button !== 0) {
@@ -205,15 +238,39 @@ const InteractiveWhiteboardCanvas = forwardRef<
 
       e.preventDefault();
       window.getSelection()?.removeAllRanges();
+      pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+      if (pointersRef.current.size === 2) {
+        const [a, b] = [...pointersRef.current.values()];
+        pinchRef.current = { distance: Math.hypot(a.x - b.x, a.y - b.y), zoom: viewZoom };
+        setIsPanning(false);
+        return;
+      }
+      if (pointersRef.current.size > 2) return;
+
       setIsPanning(true);
       panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
-    [panX, panY],
+    [panX, panY, viewZoom],
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (pointersRef.current.has(e.pointerId)) {
+        pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      const pinch = pinchRef.current;
+      if (pinch && pointersRef.current.size >= 2) {
+        const [a, b] = [...pointersRef.current.values()];
+        const distance = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch.distance > 0) {
+          setCenteredZoom((pinch.zoom * distance) / pinch.distance);
+        }
+        return;
+      }
+
       if (!isPanning) {
         return;
       }
@@ -229,7 +286,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
       setPanX(clamped.x);
       setPanY(clamped.y);
     },
-    [containerScale, viewZoom, isPanning, clampPan],
+    [containerScale, viewZoom, isPanning, clampPan, setCenteredZoom],
   );
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
@@ -237,6 +294,8 @@ const InteractiveWhiteboardCanvas = forwardRef<
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
     }
 
+    pointersRef.current.delete(e.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
     setIsPanning(false);
   }, []);
 
@@ -339,6 +398,9 @@ const InteractiveWhiteboardCanvas = forwardRef<
       className="w-full h-full relative select-none"
       style={{
         cursor: isPanning ? 'grabbing' : 'grab',
+        // Let the pointer handlers own touch: a second finger is a pinch, not a
+        // browser scroll or page zoom.
+        touchAction: 'none',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -405,10 +467,11 @@ const InteractiveWhiteboardCanvas = forwardRef<
 export type WhiteboardCanvasProps = {
   whiteboard?: Whiteboard | null;
   onViewModifiedChange?: (modified: boolean) => void;
+  onZoomChange?: (zoom: number) => void;
 };
 
 export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCanvasProps>(
-  function WhiteboardCanvas({ whiteboard, onViewModifiedChange }, ref) {
+  function WhiteboardCanvas({ whiteboard, onViewModifiedChange, onZoomChange }, ref) {
     const { t } = useI18n();
     const isClearing = useCanvasStore.use.whiteboardClearing();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -465,6 +528,7 @@ export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCan
           elements={elements}
           isClearing={isClearing}
           onViewModifiedChange={onViewModifiedChange}
+          onZoomChange={onZoomChange}
           readyHintText={t('whiteboard.readyHint')}
           readyText={t('whiteboard.ready')}
         />

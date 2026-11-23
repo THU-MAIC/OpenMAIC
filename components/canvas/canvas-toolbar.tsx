@@ -2,11 +2,13 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
+  CircleStop,
   ChevronLeft,
   ChevronRight,
   Play,
   Pause,
   PencilLine,
+  Presentation,
   LayoutList,
   PanelRightClose,
   PanelRightOpen,
@@ -24,9 +26,13 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useSoftCloseCountdown } from '@/components/chat/use-soft-close-countdown';
 
 export interface CanvasToolbarProps {
+  readonly sessionType?: 'qa' | 'discussion';
+  readonly onMobileBack?: () => void;
+  readonly mobile?: boolean;
   readonly currentSceneIndex: number;
   readonly scenesCount: number;
   readonly engineState: 'idle' | 'playing' | 'paused';
@@ -98,6 +104,7 @@ function VolumeIcon({
 }
 
 export function CanvasToolbar({
+  mobile = false,
   currentSceneIndex,
   scenesCount,
   engineState,
@@ -114,6 +121,7 @@ export function CanvasToolbar({
   onPlayPause,
   onWhiteboardClose,
   showStopDiscussion,
+  sessionType,
   onStopDiscussion,
   onContinueDiscussion,
   isPresenting,
@@ -141,6 +149,8 @@ export function CanvasToolbar({
   const canGoPrev = currentSceneIndex > 0;
   const canGoNext = currentSceneIndex < scenesCount - 1 || !!nextOpensEnd;
   const showPlayPause = !isLiveSession;
+  const showSceneNavigation =
+    (scenesCount > 1 || !!nextOpensEnd) && !(mobile && showStopDiscussion && onStopDiscussion);
 
   const whiteboardElementCount = useStageStore(
     (s) => s.stage?.whiteboard?.[0]?.elements?.length || 0,
@@ -148,9 +158,9 @@ export function CanvasToolbar({
 
   // Volume slider hover state
   const [volumeHover, setVolumeHover] = useState(false);
+  const [volumeDialogContainer, setVolumeDialogContainer] = useState<HTMLElement | null>(null);
   const volumeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const volumeContainerRef = useRef<HTMLDivElement>(null);
-
   const handleVolumeEnter = useCallback(() => {
     clearTimeout(volumeTimerRef.current);
     setVolumeHover(true);
@@ -165,10 +175,14 @@ export function CanvasToolbar({
 
   // Effective volume for display
   const effectiveVolume = ttsMuted ? 0 : ttsVolume;
+  const endLabel = t(mobile && sessionType === 'qa' ? 'chat.endQA' : 'roundtable.stopDiscussion');
   const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
 
   return (
-    <div className={cn('flex items-center gap-2', className)}>
+    <div
+      data-mobile-toolbar={mobile || undefined}
+      className={cn('flex items-center gap-2', className)}
+    >
       {/* ── Left: sidebar toggle + page indicator ── */}
       <div className="flex items-center gap-1 shrink-0 pl-1">
         {onToggleSidebar && (
@@ -210,14 +224,24 @@ export function CanvasToolbar({
           {/* Volume with vertical popover slider */}
           {onToggleMute && (
             <div
+              data-toolbar-control="volume"
               ref={volumeContainerRef}
               className="relative flex items-center"
-              onMouseEnter={handleVolumeEnter}
-              onMouseLeave={handleVolumeLeave}
+              onMouseEnter={mobile ? undefined : handleVolumeEnter}
+              onMouseLeave={mobile ? undefined : handleVolumeLeave}
             >
               <button
-                onClick={onToggleMute}
-                disabled={!ttsEnabled}
+                onClick={
+                  mobile
+                    ? (event) => {
+                        setVolumeDialogContainer(
+                          event.currentTarget.closest<HTMLElement>('[data-classroom-stage]'),
+                        );
+                        setVolumeHover((open) => !open);
+                      }
+                    : onToggleMute
+                }
+                disabled={!mobile && !ttsEnabled}
                 className={cn(
                   ctrlBtn,
                   'w-6 h-6',
@@ -227,50 +251,113 @@ export function CanvasToolbar({
                       ? 'text-red-500 dark:text-red-400'
                       : 'text-gray-500 dark:text-gray-400',
                 )}
-                aria-label={ttsMuted ? 'Unmute' : 'Mute'}
+                aria-label={mobile ? t('mobileClassroom.volume') : ttsMuted ? 'Unmute' : 'Mute'}
+                aria-expanded={mobile ? volumeHover : undefined}
+                aria-haspopup={mobile ? 'dialog' : undefined}
               >
                 <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={!ttsEnabled} />
               </button>
 
               {/* Vertical volume slider (pops up above) */}
-              <div
-                className={cn(
-                  'absolute bottom-full left-1/2 -translate-x-1/2 mb-2 flex flex-col items-center',
-                  'transition-all duration-200 ease-out pointer-events-none opacity-0',
-                  volumeHover && ttsEnabled && 'pointer-events-auto opacity-100',
-                )}
-              >
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-2 py-2.5 flex flex-col items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums font-medium select-none">
-                    {Math.round(effectiveVolume * 100)}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={effectiveVolume}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      onVolumeChange?.(v);
-                      if (v > 0 && ttsMuted) onToggleMute?.();
-                    }}
-                    className={cn(
-                      'appearance-none cursor-pointer',
-                      'h-16 w-1 rounded-full',
-                      'bg-gray-200 dark:bg-gray-600',
-                      '[writing-mode:vertical-lr] [direction:rtl]',
-                      '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3',
-                      '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-500 [&::-webkit-slider-thumb]:dark:bg-violet-400',
-                      '[&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer',
-                      '[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3',
-                      '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-500 [&::-moz-range-thumb]:border-0',
-                    )}
-                  />
+              {!mobile && (
+                <div
+                  inert={!volumeHover || !ttsEnabled}
+                  className={cn(
+                    'absolute bottom-full mb-2 flex flex-col duration-200 ease-out pointer-events-none opacity-0',
+                    'left-1/2 -translate-x-1/2 items-center transition-all',
+                    volumeHover && ttsEnabled && 'pointer-events-auto opacity-100',
+                  )}
+                >
+                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-2 py-2.5 flex flex-col items-center gap-1.5">
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums font-medium select-none">
+                      {Math.round(effectiveVolume * 100)}
+                    </span>
+                    <input
+                      type="range"
+                      disabled={!ttsEnabled}
+                      aria-label={t('mobileClassroom.volume')}
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={effectiveVolume}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        onVolumeChange?.(v);
+                        if (v > 0 && ttsMuted) onToggleMute?.();
+                      }}
+                      className={cn(
+                        'appearance-none cursor-pointer',
+                        'h-16 w-1 rounded-full',
+                        'bg-gray-200 dark:bg-gray-600',
+                        '[writing-mode:vertical-lr] [direction:rtl]',
+                        '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3',
+                        '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-500 [&::-webkit-slider-thumb]:dark:bg-violet-400',
+                        '[&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer',
+                        '[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3',
+                        '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-500 [&::-moz-range-thumb]:border-0',
+                      )}
+                    />
+                  </div>
+                  {/* Arrow pointing down */}
+                  <div className="w-2 h-2 bg-white dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 rotate-45 -mt-[5px]" />
                 </div>
-                {/* Arrow pointing down */}
-                <div className="w-2 h-2 bg-white dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 rotate-45 -mt-[5px]" />
-              </div>
+              )}
+              {mobile && (
+                <Dialog open={volumeHover} onOpenChange={setVolumeHover}>
+                  <DialogContent
+                    container={volumeDialogContainer}
+                    className="mobile-sound-settings z-[400] w-[calc(100vw-32px)] max-w-[340px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl p-5 gap-5"
+                    overlayClassName="z-[399] bg-black/30 backdrop-blur-sm"
+                    aria-describedby={undefined}
+                    onCloseAutoFocus={(event) => {
+                      event.preventDefault();
+                      volumeContainerRef.current?.querySelector('button')?.focus();
+                    }}
+                  >
+                    <DialogTitle className="text-lg font-semibold pe-10">
+                      {t('mobileClassroom.soundSettings')}
+                    </DialogTitle>
+                    <label className="flex min-h-11 items-center gap-3">
+                      <span>{t('mobileClassroom.volume')}</span>
+                      <input
+                        type="range"
+                        aria-label={t('mobileClassroom.volume')}
+                        disabled={!ttsEnabled}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={ttsVolume}
+                        onChange={(event) => onVolumeChange?.(parseFloat(event.target.value))}
+                        className="min-w-0 flex-1 accent-violet-600"
+                      />
+                      <span className="w-10 text-end tabular-nums">
+                        {Math.round(ttsVolume * 100)}%
+                      </span>
+                    </label>
+                    <label className="flex min-h-11 items-center justify-between gap-4">
+                      <span>{t('mobileClassroom.playSound')}</span>
+                      <input
+                        type="checkbox"
+                        className="size-5 accent-violet-600"
+                        disabled={!ttsEnabled}
+                        checked={!!ttsEnabled && !ttsMuted}
+                        onChange={onToggleMute}
+                      />
+                    </label>
+                    {onToggleAutoPlay && (
+                      <label className="flex min-h-11 items-center justify-between gap-4">
+                        <span>{t('roundtable.autoPlay')}</span>
+                        <input
+                          type="checkbox"
+                          className="size-5 accent-violet-600"
+                          checked={!!autoPlayLecture}
+                          onChange={onToggleAutoPlay}
+                        />
+                      </label>
+                    )}
+                  </DialogContent>
+                </Dialog>
+              )}
             </div>
           )}
 
@@ -280,6 +367,7 @@ export function CanvasToolbar({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
+                    data-toolbar-control="speed"
                     onClick={onCycleSpeed}
                     className={cn(
                       'w-8 h-5 rounded flex items-center justify-center',
@@ -305,8 +393,9 @@ export function CanvasToolbar({
           <CtrlDivider />
 
           {/* Prev scene */}
-          {(scenesCount > 1 || nextOpensEnd) && (
+          {showSceneNavigation && (
             <button
+              data-toolbar-control="previous"
               onClick={onPrevSlide}
               disabled={!canGoPrev}
               className={cn(
@@ -321,7 +410,7 @@ export function CanvasToolbar({
 
           {/* Play / Pause / Stop Discussion */}
           {showStopDiscussion && onStopDiscussion ? (
-            <div className="flex items-center gap-1.5">
+            <div data-toolbar-control="discussion" className="flex items-center gap-1.5">
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -333,13 +422,19 @@ export function CanvasToolbar({
                   'text-[11px] font-semibold whitespace-nowrap',
                   'hover:bg-red-500/20 dark:hover:bg-red-400/20 active:scale-95 transition-all cursor-pointer',
                 )}
-                title={t('roundtable.stopDiscussion')}
+                title={endLabel}
+                data-discussion-action="end"
               >
-                <span className="inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-                {t('roundtable.stopDiscussion')}
+                {mobile ? (
+                  <CircleStop aria-hidden />
+                ) : (
+                  <span className="inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                )}
+                <span data-discussion-label>{endLabel}</span>
               </button>
               {isSoftClosing && onContinueDiscussion && (
                 <button
+                  data-discussion-action="continue"
                   onClick={(e) => {
                     e.stopPropagation();
                     onContinueDiscussion();
@@ -347,7 +442,7 @@ export function CanvasToolbar({
                   className="flex items-center gap-1.5 h-6 px-2.5 rounded-md border border-purple-200 dark:border-purple-700 bg-white/70 dark:bg-gray-800/70 text-purple-600 dark:text-purple-300 text-[11px] font-semibold whitespace-nowrap hover:bg-purple-50 dark:hover:bg-purple-900/20 active:scale-95 transition-all cursor-pointer"
                   title={t('roundtable.softClosing')}
                 >
-                  {t('roundtable.softClosing')}
+                  <span data-discussion-label>{t('roundtable.softClosing')}</span>
                   {remainingSoftCloseSeconds !== undefined && (
                     <span className="text-[9px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
                       {remainingSoftCloseSeconds}s
@@ -358,6 +453,7 @@ export function CanvasToolbar({
             </div>
           ) : showPlayPause ? (
             <button
+              data-toolbar-control="play"
               onClick={onPlayPause}
               className={cn(
                 ctrlBtn,
@@ -377,8 +473,9 @@ export function CanvasToolbar({
           ) : null}
 
           {/* Next scene */}
-          {(scenesCount > 1 || nextOpensEnd) && (
+          {showSceneNavigation && (
             <button
+              data-toolbar-control="next"
               onClick={onNextSlide}
               disabled={!canGoNext}
               className={cn(
@@ -394,7 +491,7 @@ export function CanvasToolbar({
           <CtrlDivider />
 
           {/* Auto-play */}
-          {onToggleAutoPlay && (
+          {!mobile && onToggleAutoPlay && (
             <TooltipProvider delayDuration={0}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -421,6 +518,7 @@ export function CanvasToolbar({
 
           {/* Whiteboard */}
           <button
+            data-toolbar-control="whiteboard"
             onClick={(e) => {
               e.stopPropagation();
               onWhiteboardClose();
@@ -433,14 +531,19 @@ export function CanvasToolbar({
                 : 'text-gray-500 dark:text-gray-400',
             )}
             title={whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
+            aria-label={whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
           >
-            <PencilLine className="w-3.5 h-3.5" />
+            {mobile ? (
+              <Presentation className="w-3.5 h-3.5" />
+            ) : (
+              <PencilLine className="w-3.5 h-3.5" />
+            )}
             {!whiteboardOpen && whiteboardElementCount > 0 && (
               <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-violet-500 dark:bg-violet-400 rounded-full" />
             )}
           </button>
 
-          {showElementReference && (
+          {!mobile && showElementReference && (
             <button
               type="button"
               onClick={(event) => {
@@ -489,7 +592,7 @@ export function CanvasToolbar({
             )}
           </button>
         )}
-        {onTogglePresentation && (
+        {!mobile && onTogglePresentation && (
           <button
             onClick={onTogglePresentation}
             className={cn(

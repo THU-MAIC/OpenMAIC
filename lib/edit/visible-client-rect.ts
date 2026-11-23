@@ -27,8 +27,12 @@ function clipsOverflow(value: string): boolean {
  * Return the part of a node that is not clipped by an overflow ancestor.
  * Ancestors outside the current fullscreen element are ignored.
  */
-export function visibleClientRect(node: Element): ClientBox {
-  const rect = node.getBoundingClientRect();
+export function visibleClientRect(
+  node: Element,
+  measure: (element: Element) => ClientBox = (element) => element.getBoundingClientRect(),
+  boundary: Element | null = node.ownerDocument.fullscreenElement,
+): ClientBox {
+  const rect = measure(node);
   let box: ClientBox = {
     left: rect.left,
     top: rect.top,
@@ -37,13 +41,12 @@ export function visibleClientRect(node: Element): ClientBox {
   };
   // Fullscreen is in the browser's top layer: overflow ancestors outside it
   // no longer clip the slot, but the fullscreen element and its descendants do.
-  const fullscreenElement = node.ownerDocument.fullscreenElement;
   let element = node;
-  while (element !== fullscreenElement && element.parentElement) {
+  while (element !== boundary && element.parentElement) {
     element = element.parentElement;
     const style = getComputedStyle(element);
     if (clipsOverflow(style.overflowX) || clipsOverflow(style.overflowY)) {
-      const clip = element.getBoundingClientRect();
+      const clip = measure(element);
       box = intersectClientBoxes(box, {
         left: clip.left,
         top: clip.top,

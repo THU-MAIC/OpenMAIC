@@ -805,7 +805,11 @@
     "restore": "Restaurar",
     "noHistory": "Sem histórico ainda",
     "restored": "Quadro restaurado",
-    "elementCount": "{{count}} elementos"
+    "elementCount": "{{count}} elementos",
+    "mobileEmpty": "Ainda não há anotações no quadro",
+    "mobileEmptyHint": "Deduções, fórmulas e diagramas adicionados pelo professor aparecerão aqui",
+    "zoomIn": "Aumentar zoom",
+    "zoomOut": "Diminuir zoom"
   },
   "quiz": {
     "title": "Questionário",
@@ -3451,5 +3455,32 @@
       },
       "close": "Fechar guia"
     }
+  },
+  "mobileClassroom": {
+    "soundSettings": "Configurações de som",
+    "playSound": "Reproduzir som",
+    "materials": "Material do curso",
+    "classroom": "Aula",
+    "directory": "Conteúdo",
+    "lecture": "Notas",
+    "volume": "Volume",
+    "mute": "Silenciar",
+    "roundtable": "Participantes",
+    "captions": "Legendas",
+    "controls": "Controles de reprodução",
+    "send": "Enviar",
+    "join": "Participar",
+    "skip": "Pular",
+    "play": "Reproduzir",
+    "pause": "Pausar",
+    "pblDesktop": "A prévia não está disponível em celulares. Abra este projeto em um computador para experimentar.",
+    "chat": "Conversa",
+    "askTeacher": "Pergunte ao professor…",
+    "viewInNotes": "Ver nas anotações",
+    "viewInChat": "Ver no chat",
+    "fullSpeech": "Mensagem completa",
+    "me": "Eu",
+    "listening": "Ouvindo",
+    "whiteboardTitle": "Quadro da aula"
   }
 }

@@ -988,3 +988,33 @@ it('only claims hidden board tools are available when a board service exists', (
     'A hidden panel does not mean drawing tools are unavailable.',
   );
 });
+
+describe('classroom fetch_url prompt sections (#1925)', () => {
+  it('tells the Director about Child web reading only when fetch_url is available', () => {
+    const withFetch = buildDirectorPrompt(makeBody(), agents, true, false, {
+      searchConfigured: true,
+    });
+    expect(withFetch).toContain('Child web_search: configured and available.');
+    expect(withFetch).toContain('Child fetch_url: available.');
+
+    const withoutFetch = buildDirectorPrompt(makeBody(), agents, true, false);
+    expect(withoutFetch).not.toContain('Child web capabilities');
+    expect(withoutFetch).not.toContain('fetch_url');
+  });
+
+  it('adds the Child reading section only with fetch_url in the inventory', () => {
+    const withFetch = buildNativeChildPrompt(
+      makeBody(),
+      agents[0],
+      [],
+      ['web_search', 'fetch_url'],
+    );
+    const searchOnly = buildNativeChildPrompt(makeBody(), agents[0], [], ['web_search']);
+
+    expect(withFetch).toContain('# Reading web evidence');
+    expect(withFetch).toContain('Base your answer on the returned preview');
+    expect(withFetch).not.toContain('nextOffset');
+    expect(searchOnly).not.toContain('# Reading web evidence');
+    expect(searchOnly).not.toContain('fetch_url');
+  });
+});

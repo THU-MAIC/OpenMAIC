@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LectureNoteEntry } from '@/lib/types/chat';
+import { InlineActionIcon } from './inline-action-icon';
 
 const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string }> = {
   spotlight: {
@@ -55,7 +56,9 @@ const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string 
 };
 
 interface LectureNotesViewProps {
+  mobile?: boolean;
   notes: LectureNoteEntry[];
+  target?: { sceneId: string; actionIndex: number } | null;
   currentSceneId?: string | null;
   currentActionIndex?: number | null;
   canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;
@@ -63,7 +66,9 @@ interface LectureNotesViewProps {
 }
 
 export function LectureNotesView({
+  mobile = false,
   notes,
+  target,
   currentSceneId,
   currentActionIndex,
   canJumpToAction,
@@ -80,6 +85,16 @@ export function LectureNotesView({
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [currentSceneId]);
+
+  useEffect(() => {
+    if (target?.sceneId !== currentSceneId || !target) return;
+    const frame = requestAnimationFrame(() =>
+      containerRef.current
+        ?.querySelector('[data-speech-target]')
+        ?.scrollIntoView({ block: 'center' }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [target, currentSceneId]);
 
   // Empty state
   if (notes.length === 0) {
@@ -101,6 +116,7 @@ export function LectureNotesView({
   return (
     <div
       ref={containerRef}
+      data-mobile-notes={mobile || undefined}
       className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 scrollbar-hide"
     >
       {notes.map((note, index) => {
@@ -218,7 +234,10 @@ export function LectureNotesView({
                   const actions = row.kind === 'trailing' ? row.inlineActions : row.inlineActions;
                   const isSpeech = row.kind === 'speech';
                   const isActiveSpeech =
-                    isCurrent && isSpeech && row.actionIndex === currentActionIndex;
+                    isCurrent &&
+                    isSpeech &&
+                    row.actionIndex ===
+                      (target?.sceneId === note.sceneId ? target.actionIndex : currentActionIndex);
                   const canJump =
                     isCurrent &&
                     isSpeech &&
@@ -232,18 +251,7 @@ export function LectureNotesView({
                       {actions.map((a, j) => {
                         const cfg = ACTION_ICON_ONLY[a];
                         if (!cfg) return null;
-                        const { Icon, style } = cfg;
-                        return (
-                          <span
-                            key={j}
-                            className={cn(
-                              'inline-flex items-center justify-center w-4 h-4 rounded-full border align-middle mr-0.5',
-                              style,
-                            )}
-                          >
-                            <Icon className="w-2.5 h-2.5" />
-                          </span>
-                        );
+                        return <InlineActionIcon key={j} icon={cfg.Icon} style={cfg.style} />;
                       })}
                       {isSpeech ? row.text : null}
                     </>
@@ -253,6 +261,10 @@ export function LectureNotesView({
                       <button
                         key={row.actionId}
                         type="button"
+                        data-speech-target={
+                          (isActiveSpeech && target?.sceneId === note.sceneId) || undefined
+                        }
+                        data-active={isActiveSpeech || undefined}
                         disabled={!canJump}
                         title={jumpTitle}
                         onClick={() => onJumpToAction?.(note.sceneId, row.actionIndex)}

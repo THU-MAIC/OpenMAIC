@@ -805,7 +805,11 @@
     "restore": "복원",
     "noHistory": "아직 기록이 없습니다",
     "restored": "화이트보드가 복원되었습니다",
-    "elementCount": "요소 {{count}}개"
+    "elementCount": "요소 {{count}}개",
+    "mobileEmpty": "아직 판서가 없습니다",
+    "mobileEmptyHint": "선생님이 추가한 풀이, 수식, 도표가 여기에 표시됩니다",
+    "zoomIn": "확대",
+    "zoomOut": "축소"
   },
   "quiz": {
     "title": "퀴즈",
@@ -3451,5 +3455,32 @@
       },
       "close": "안내 닫기"
     }
+  },
+  "mobileClassroom": {
+    "soundSettings": "소리 설정",
+    "playSound": "소리 재생",
+    "materials": "수업 자료",
+    "classroom": "수업",
+    "directory": "목차",
+    "lecture": "노트",
+    "volume": "음량",
+    "mute": "음소거",
+    "roundtable": "참여자",
+    "captions": "자막",
+    "controls": "재생 컨트롤",
+    "send": "보내기",
+    "join": "참여",
+    "skip": "건너뛰기",
+    "play": "재생",
+    "pause": "일시정지",
+    "pblDesktop": "휴대폰에서는 미리보기를 지원하지 않습니다. 컴퓨터에서 열어 체험해 주세요.",
+    "chat": "채팅",
+    "askTeacher": "선생님께 질문…",
+    "viewInNotes": "노트에서 보기",
+    "viewInChat": "채팅에서 보기",
+    "fullSpeech": "전체 발언",
+    "me": "나",
+    "listening": "청강 중",
+    "whiteboardTitle": "수업 화이트보드"
   }
 }
