@@ -1000,10 +1000,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             if (autoPlayLecture) {
               setTimeout(() => {
                 const stageState = useStageStore.getState();
+                // A manual navigation during the pause owns the new page.
+                if (cancelled || stageState.currentSceneId !== currentScene.id) return;
                 if (!useSettingsStore.getState().autoPlayLecture) return;
                 const allScenes = stageState.scenes;
-                const curId = stageState.currentSceneId;
-                const idx = allScenes.findIndex((s) => s.id === curId);
+                const idx = allScenes.findIndex((s) => s.id === currentScene.id);
                 if (idx >= 0 && idx < allScenes.length - 1) {
                   const currentScene = allScenes[idx];
                   if (
