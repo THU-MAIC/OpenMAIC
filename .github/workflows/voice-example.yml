@@ -11,34 +11,31 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          path: fixture
+          ref: 324e6a9360ca582c92c88e4cf767344c8a437676
           persist-credentials: false
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
-          ref: 324e6a9360ca582c92c88e4cf767344c8a437676
-          path: app
+          path: fixture
           persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 22
-      - name: Install the app and offline recording tools
-        working-directory: app
+      - uses: ./.github/actions/setup-workspace
+      - name: Install offline speech tools
+        timeout-minutes: 4
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg espeak-ng
+          if ! command -v espeak-ng || ! command -v ffmpeg; then
+            sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 update -qq
+            sudo apt-get install --no-install-recommends -y ffmpeg espeak-ng
+          fi
           python3 -m venv "$RUNNER_TEMP/recognition"
-          "$RUNNER_TEMP/recognition/bin/pip" install pocketsphinx==5.0.4
-          corepack enable
-          pnpm install --frozen-lockfile
-          pnpm exec playwright install --with-deps chromium
+          "$RUNNER_TEMP/recognition/bin/pip" install --only-binary=:all: pocketsphinx==5.0.4
+      - name: Install Chromium
+        run: pnpm exec playwright install chromium
       - name: Record microphone input appended to a draft
-        working-directory: app
         env:
           NEXT_TELEMETRY_DISABLED: "1"
         run: |
           mkdir -p app/review-voice
-          cp ../fixture/page.tsx app/review-voice/page.tsx
-          cp ../fixture/capture.cjs ../fixture/recognize.py .
+          cp fixture/page.tsx app/review-voice/page.tsx
+          cp fixture/capture.cjs fixture/recognize.py .
           pnpm exec next dev --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/workbench.log" 2>&1 &
           server=$!
           trap 'kill "$server" 2>/dev/null || true' EXIT
@@ -50,6 +47,6 @@ jobs:
         with:
           name: workbench-voice-example
           path: |
-            app/voice-draft.mp4
-            app/SHA256SUMS
+            voice-draft.mp4
+            SHA256SUMS
           if-no-files-found: error
