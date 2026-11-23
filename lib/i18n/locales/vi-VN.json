@@ -3136,6 +3136,7 @@
       "closeDetails": "Close task details",
       "reviewDetails": "Xem chi tiết",
       "milestoneSteps": "Milestone learning steps",
+      "explainMore": "Giải thích bằng ví dụ",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "Giai đoạn sau",
       "planArtifact": "Open PLAN.md in the IDE to read the current plan. Discuss, review and approve it in the conversation.",

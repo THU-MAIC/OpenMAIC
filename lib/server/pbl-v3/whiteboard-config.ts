@@ -20,27 +20,25 @@ export function pblExplanationSkill() {
     .trim());
 }
 
-/**
- * The product guide describes the docked assistant pane. With the whiteboard on, the same
- * controls sit beside the tutor avatar, so directions given to the learner must say so.
- */
-export function pblWhiteboardProductWording(text: string, withLayoutNote = false) {
-  return (
-    text
-      .replaceAll(
-        'Task bar at the bottom of the Learning Assistant pane',
-        'Controls beside the tutor avatar at the bottom-right corner of the workbench',
-      )
-      .replaceAll(
-        'the task bar at the bottom of the Learning Assistant pane',
-        'the controls beside the tutor avatar at the bottom-right corner of the workbench',
-      )
-      .replaceAll(
-        'The task drawer opens upward from the visibly labeled Current task button on',
-        'The task drawer opens in the conversation window, reached from the progress ring around the tutor avatar, among',
-      ) +
-    (withLayoutNote
-      ? '\nWhiteboard layout: your reply appears as a speech bubble above the tutor avatar at the bottom-right corner. The learner types or speaks back in the input under that bubble, and the single next-step or Run tests button sits beside the avatar; clicking the avatar opens the full conversation. The whiteboard is a movable window over the workbench that the learner can close and reopen from the pencil button in the workbench header. There is no Learning Assistant pane unless the learner docks the conversation.'
-      : '')
-  );
+/** The host owns these UI directions; course text and learner quotations stay verbatim. */
+export function teachingLayout(board: boolean) {
+  if (board)
+    return {
+      nextControl:
+        'the controls beside the movable tutor avatar (initially at the bottom-right of the workbench)',
+      progress:
+        'Workbench header: milestones. The progress ring around the tutor avatar opens the current task.',
+      drawer: 'Open the current task from the progress ring around the tutor avatar.',
+      landmark: 'the avatar controls',
+      note: 'Whiteboard layout: the reply plays beside the tutor avatar. The learner can reply there, open the conversation from the avatar, or dock it. The current task opens in the conversation window from the avatar progress ring. The pencil in the workbench header reopens the board.',
+    };
+  return {
+    nextControl: 'the task bar at the bottom of the Learning Assistant pane',
+    progress:
+      'Workbench header: milestones. Task bar at the bottom of the Learning Assistant pane: current milestone steps.',
+    drawer:
+      'The task drawer opens upward from the visibly labeled Current task button on the task bar at the bottom of the Learning Assistant pane.',
+    landmark: 'the task bar and pane',
+    note: '',
+  };
 }

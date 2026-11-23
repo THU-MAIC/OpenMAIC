@@ -1,7 +1,7 @@
 import {
   pblExplanationSkill,
   pblWhiteboardEnabled,
-  pblWhiteboardProductWording,
+  teachingLayout,
   pblWhiteboardTeachingRole,
 } from './whiteboard-config';
 import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
@@ -24,9 +24,10 @@ import type { GuidedFeedbackSource } from './guided-review';
 import { stageStep } from '@/lib/pbl/v3/presentation';
 import {
   teachingProductContext,
-  productHelpRules,
+  productHelpRulesFor,
   type TeachingWorkspaceFacts,
 } from './product-context';
+import { teachingLiteOpeningPrefix, teachingLiteRules } from './teaching-lite-rules';
 import {
   teachingRules,
   learnerExpressionRules,
@@ -42,6 +43,8 @@ export interface TeachingSkill {
   content: Record<string, string>;
   progression: string[];
   documents: { path: string; text: string }[];
+  /** Host-driven teaching: the milestone opening, delivered before any section material. */
+  opening?: string;
 }
 export interface TeachingPromptInput {
   definition: ProjectDefinition;
@@ -55,6 +58,7 @@ export interface TeachingPromptInput {
   planText?: string;
   activeSection?: string | null;
   completionRecorded?: boolean;
+  teachingExit?: boolean;
   welcome?: 'pending' | 'ready';
   welcomePresented?: boolean;
   milestoneIndex?: number;
@@ -123,6 +127,79 @@ export function teachingSection(
   };
 }
 
+/**
+ * Host-driven teaching. The opening turn carries the milestone opening and
+ * nothing from the sections; later turns carry the sections as reference material.
+ * Section order is teaching material, never a gate the learner has to clear.
+ */
+function buildLiteTeachingPrompt(
+  input: {
+    definition: ProjectDefinition;
+    stage: StageDefinition;
+    milestone: MilestoneDefinition;
+    role: AgentRole;
+    skill: TeachingSkill;
+    completionRecorded: boolean;
+    automaticEntry: boolean;
+    milestoneIndex: number;
+    stageIndex: number;
+    workspace?: TeachingWorkspaceFacts;
+    communication: { uiLocale: string; responseLanguage: ResponseLanguage | null };
+    collected: CollectedMilestoneState;
+    planText?: string;
+  },
+  boardTeaching: boolean,
+) {
+  const { definition, stage, milestone, role, skill, workspace, communication } = input;
+  const { current: _entryState, ...productGuide } = teachingProductContext({
+    definition,
+    stage,
+    role,
+    completionRecorded: input.completionRecorded,
+    workspace,
+    boardTeaching,
+    uiLocale: communication.uiLocale,
+  });
+  const sections = Object.entries(skill.content).map(([name, text]) => ({ path: name, text }));
+  const opening = skill.opening ?? '';
+  const systemPrompt =
+    buildSystemPrompt({
+      role,
+      seed: {
+        productContext: productGuide,
+        communication,
+        projectContext: { title: definition.title, language: definition.language },
+        stageEntry: {
+          firstMilestone: input.milestoneIndex === 0,
+          step: input.stageIndex + 1,
+          totalSteps: milestone.stages.length,
+          steps: milestone.stages.map(stageStep),
+        },
+        milestone: { title: milestone.title, goal: milestone.goal ?? milestone.title },
+        // The opening turn never receives section material, so nothing can be
+        // folded into the opening or compressed into it by accident.
+        ...(input.automaticEntry
+          ? { opening, openingInstruction: teachingLiteOpeningPrefix }
+          : {
+              referenceMaterials: sections,
+              ...(skill.documents.length ? { materials: skill.documents } : {}),
+            }),
+      },
+      project: {
+        commonRules: definition.agents.commonRules,
+        agents: definition.agents,
+      },
+    }) +
+    '\n' +
+    teachingLiteRules +
+    '\n' +
+    productHelpRulesFor(boardTeaching, true) +
+    '\n' +
+    HOST_STATE_TAIL_RULES +
+    (boardTeaching ? '\n' + pblExplanationSkill() + '\n' + teachingLayout(true).note : '');
+  return { systemPrompt, initialContext: '' };
+}
+
 function buildTeachingPrompt({
   definition,
   stage,
@@ -137,6 +214,7 @@ function buildTeachingPrompt({
   completionRecorded = false,
   welcome,
   welcomePresented,
+  teachingExit,
   milestoneIndex = definition.milestones.findIndex((item) => item.id === milestone.id),
   stageIndex = milestone.stages.indexOf(stage),
   automaticEntry = false,
@@ -150,13 +228,32 @@ function buildTeachingPrompt({
 }: TeachingPromptInput) {
   // The role teaches at a whiteboard: it gets the explanation skill and the companion layout.
   const boardTeaching = pblWhiteboardEnabled() && pblWhiteboardTeachingRole(role);
+  if (teachingExit !== undefined)
+    return buildLiteTeachingPrompt(
+      {
+        definition,
+        stage,
+        milestone,
+        role,
+        skill,
+        completionRecorded,
+        automaticEntry,
+        milestoneIndex,
+        stageIndex,
+        workspace,
+        communication,
+        collected,
+        planText,
+      },
+      boardTeaching,
+    );
   const finalRecap = isFinalProjectRecap(definition, { milestoneIndex, stageIndex }, stage);
   const confirmation =
     welcome === 'pending'
       ? 'Project readiness is a chat reply, not a Continue button. After that reply, read_next_skill opens formal teaching inside this same first step; do not send the learner to another step.'
       : finalRecap
         ? 'Only a successful final recap complete_stage receipt completes the project and reveals the report in the top toolbar, final completion message and project overview. The completion banner only shows status. Before that receipt, do not claim completion or say a report is already available. Refer to the actual productContext.visibleLabels.report text when giving directions. The report links back to the read-only workbench and remains discoverable after revisiting the PBL scene. Do not ask for another Continue click or append another milestone.'
-        : 'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar at the bottom of the Learning Assistant pane to enter the next step. Quote productContext.visibleLabels.continue exactly when naming that button.';
+        : `After the current completion gates succeed and productContext allows Continue, the learner uses ${teachingLayout(boardTeaching).nextControl} to enter the next step. Quote productContext.visibleLabels.continue exactly when naming that button.`;
   const artifactApprovalRequired = requiresArtifactApproval(stage);
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
   const repairing = stage.kind === 'check' && stage.checker === 'tests' && !!collected.remediation;
@@ -180,6 +277,7 @@ function buildTeachingPrompt({
     role,
     completionRecorded,
     workspace,
+    boardTeaching,
     uiLocale: communication.uiLocale,
   });
   const systemPrompt =
@@ -307,7 +405,7 @@ function buildTeachingPrompt({
           ? '\nBriefly introduce the current test or quiz using productContext controls. Do not give assessment answers, run checks, or claim results. Wait for the learner to use the controls. Ordinary tests/quizzes have no learner chat: do not invite a message; answer repair questions only when productContext.current.chatSupported is true.'
           : '\nFocus decision guidance on the current offered decisions. The learner records choices using the project controls. Project knowledge and product help remain available.') +
     '\n' +
-    productHelpRules +
+    productHelpRulesFor(boardTeaching) +
     '\n' +
     HOST_STATE_TAIL_RULES +
     (boardTeaching ? '\n' + pblExplanationSkill() : '');
@@ -343,8 +441,14 @@ function buildTeachingPrompt({
     });
   if (boardTeaching)
     return {
-      systemPrompt: pblWhiteboardProductWording(systemPrompt, true),
-      initialContext: pblWhiteboardProductWording(initialContext),
+      systemPrompt:
+        systemPrompt +
+        '\n' +
+        teachingLayout(true).note +
+        (guided
+          ? '\nAt the board, speak the explanation between board calls. Use the stage review or response tool for the closing only.'
+          : ''),
+      initialContext,
     };
   return { systemPrompt, initialContext };
 }
@@ -365,6 +469,18 @@ export function teachingLiveContext(
   input: TeachingPromptInput,
   startedWithWelcome = false,
 ): string {
+  // Host-driven teaching repeats only what changes: current controls and facts.
+  // Section order and review bookkeeping are gone, so they must not reappear here.
+  if (input.teachingExit !== undefined)
+    return JSON.stringify({
+      productContext: { current: teachingProductContext(input).current },
+      communication: input.communication ?? { uiLocale: 'en-US', responseLanguage: null },
+      stageKey: input.stageKey,
+      milestone: {
+        title: input.milestone.title,
+        goal: input.milestone.goal ?? input.milestone.title,
+      },
+    });
   const artifactApprovalRequired = requiresArtifactApproval(input.stage);
   const guided = input.stage.kind === 'mentor_say' || input.stage.kind === 'produce';
   const repair =
@@ -468,11 +584,13 @@ export function teachingLiveSuffix(live: string): string {
 export function renderTeachingPrompt(input: TeachingPromptInput) {
   const { systemPrompt, initialContext } = buildTeachingPrompt(input);
   const sections =
-    input.stage.kind === 'produce' || input.stage.kind === 'mentor_say'
-      ? input.skill.progression
-          .slice(1)
-          .map((section) => teachingSection({ ...input, welcome: undefined }, section))
-      : [];
+    input.teachingExit !== undefined
+      ? []
+      : input.stage.kind === 'produce' || input.stage.kind === 'mentor_say'
+        ? input.skill.progression
+            .slice(1)
+            .map((section) => teachingSection({ ...input, welcome: undefined }, section))
+        : [];
   const sectionBytes = sections.length ? Buffer.byteLength(JSON.stringify(sections)) : 0;
   return {
     systemPrompt,

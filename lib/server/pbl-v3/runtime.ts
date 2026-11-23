@@ -19,6 +19,13 @@ import { isTeachingLocale } from './communication';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
+import {
+  openingDelivered,
+  readTeachingVisit,
+  selectTeachingProtocol,
+  teachingProtocolAtEntry,
+  usesHostTeaching,
+} from './teaching-lite';
 import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
 import { canonicalReview, reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
@@ -345,7 +352,7 @@ export async function openStudy(principal: OwnerPrincipal, stageId: string, scen
       version: project.ref.version,
       projectRef: project.ref,
     },
-    transitions.startOrchestration(project.definition),
+    selectTeachingProtocol(project, transitions.startOrchestration(project.definition)),
   );
 }
 export async function queueRole(
@@ -373,6 +380,19 @@ export async function queueRole(
     await db.query('DELETE FROM sandbox_session_grants WHERE session_id=$1', [binding.session_id]);
     await db.query('DELETE FROM pbl_v3_roles WHERE session_id=$1', [binding.session_id]);
     binding = undefined;
+  }
+  if (usesHostTeaching(row.state) && !opening) {
+    if (
+      binding?.stage_key !== stageKey(row) ||
+      !(await openingDelivered(db, binding.session_id, stageKey(row)))
+    )
+      throw sandboxConflict('Wait for the milestone opening before asking a follow-up.');
+    const session = await db.query<{ status: string }>(
+      'SELECT status FROM agent_sessions WHERE id=$1 FOR UPDATE',
+      [binding.session_id],
+    );
+    if (['queued', 'running'].includes(session.rows[0]?.status ?? ''))
+      throw sandboxConflict('Wait for the teaching response, or cancel it first.');
   }
   if (!binding) {
     const id = `pbl-role-${randomUUID()}`;
@@ -743,7 +763,9 @@ export async function commandStudy(
               db,
               row,
               command.type === 'begin'
-                ? 'System stage entry: open the current learning step using its teaching protocol. This is not learner feedback. Introduce the project when entering its first step, and wait for the learner.'
+                ? usesHostTeaching(row.state)
+                  ? 'Present the milestone opening. Explain what the learner needs for the decision and how to continue or ask for more detail.'
+                  : 'System stage entry: open the current learning step using its teaching protocol. This is not learner feedback. Introduce the project when entering its first step, and wait for the learner.'
                 : command.text!,
               command.type === 'begin',
               command.id,
@@ -840,7 +862,14 @@ export async function commandStudy(
           await readFiles(service, row, project, AbortSignal.timeout(CHECKPOINT_TIMEOUT_MS)),
           checkpoint?.revision ?? 0,
         );
-        transition = { state: restored.state, events: [] };
+        const moved =
+          row.state.position.milestoneId !== restored.state.position.milestoneId ||
+          row.state.position.stageIndex !== restored.state.position.stageIndex;
+        const restoredState =
+          restored.reset && moved
+            ? teachingProtocolAtEntry(project, restored.state)
+            : restored.state;
+        transition = { state: restoredState, events: [] };
         row.evaluation = null;
         row.environment_recovery = {
           ...row.environment_recovery,
@@ -858,8 +887,10 @@ export async function commandStudy(
           );
           if (restored.reset)
             await db.query(
-              'UPDATE pbl_v3_roles SET guided=NULL,completion=NULL WHERE study_id=$1',
-              [row.id],
+              `UPDATE pbl_v3_roles SET guided=NULL,completion=NULL,
+                stage_key=CASE WHEN stage_key=$2 AND role='discussion' THEN '' ELSE stage_key END
+                WHERE study_id=$1`,
+              [row.id, usesHostTeaching(restoredState) ? restoredState.hostTeachingStage : null],
             );
           await persist(db);
         });
@@ -1016,16 +1047,30 @@ export async function commandStudy(
       transition = collected.transition;
       result = collected.result;
     } else if (command.type === 'next') {
+      if (!usesHostTeaching(row.state)) check('next');
       if (row.evaluation)
         throw sandboxConflict('Collect the pending test result before continuing.');
-      check('next');
+      let participation: Awaited<ReturnType<typeof readTeachingVisit>> | undefined;
       const role = roleFor(row);
       if (role && (stage.kind === 'mentor_say' || stage.kind === 'produce')) {
         const bindings = await store.roles(id);
         const binding = bindings.find((b) => b.role === role && b.stage_key === stageKey(row));
-        if (!hasStageCompletion(row, stage, binding))
+        if (usesHostTeaching(row.state)) {
+          // Host-driven teaching: the delivered opening is the gate, and it stays
+          // earned even if a later follow-up failed.
+          participation =
+            binding && (await readTeachingVisit(store.pool, binding.session_id, stageKey(row)));
+          if (!participation?.openingDelivered)
+            throw sandboxConflict('Wait until the opening has been delivered.');
+        } else if (!hasStageCompletion(row, stage, binding))
           throw sandboxConflict('Complete the current teaching interaction first.');
       }
+      if (
+        !transitions
+          .allowedStudentActions(definition, row.state, participation?.openingDelivered)
+          .includes('next')
+      )
+        throw sandboxConflict('This action is not available at the current stage.');
       const endingMilestone =
         row.state.position.stageIndex ===
         currentMilestone(definition, row.state)!.stages.length - 1;
@@ -1056,7 +1101,30 @@ export async function commandStudy(
         // Establish a durable artifact before acknowledging the student's stage confirmation.
         await saveStudyCheckpoint(service, row, verifiedSnapshot, allowApplications);
       }
-      transition = transitions.completeCurrentStage(definition, row.state);
+      if (participation) {
+        // No receipt tool exists to mark teaching complete, so the host records it
+        // here and advances in the same transaction the learner asked for.
+        const taught = transitions.completeTeaching(definition, row.state);
+        const milestoneId = row.state.position.milestoneId!;
+        const state = {
+          ...taught.state,
+          collected: {
+            ...taught.state.collected,
+            [milestoneId]: {
+              ...taught.state.collected[milestoneId]!,
+              teachingParticipation: {
+                learnerTurns: participation.learnerTurns,
+                tutorTurns: participation.tutorTurns,
+                openingDeliveredAt: participation.openingDeliveredAt!,
+                leftAt: Date.now(),
+              },
+            },
+          },
+        };
+        const advanced = transitions.completeCurrentStage(definition, state);
+        transition = { state: advanced.state, events: [...taught.events, ...advanced.events] };
+      } else transition = transitions.completeCurrentStage(definition, row.state);
+      transition = selectTeachingProtocol(project, transition);
     } else throw sandboxInvalid('Unknown learning action.');
     return store.transaction(async (db) => {
       await persist(db);
@@ -1371,12 +1439,17 @@ export async function learningView(
   }
 
   const approvalCurrent = hasStageCompletion(row, stage, binding);
+  const teachingVisit =
+    usesHostTeaching(row.state) && binding
+      ? await readTeachingVisit(store.pool, binding.session_id, stageKey(row))
+      : undefined;
   const actions = learnerActions({
     definition: project.definition,
     state: row.state,
     stage,
     evaluation: row.evaluation,
     completionRecorded: approvalCurrent,
+    teachingExit: usesHostTeaching(row.state) ? !!teachingVisit?.openingDelivered : undefined,
     buildAvailable: !!project.buildCommand,
   });
   const duplicateMessages = handoffEchoes(messages);
@@ -1428,6 +1501,9 @@ export async function learningView(
     })),
     actions,
     files,
+    ...(teachingVisit?.openingDelivered
+      ? { teachingVisit: { learnerTurns: teachingVisit.learnerTurns } }
+      : {}),
     busy: roleRun?.status === 'running' || roleRun?.status === 'queued' || (await busy(store, row)),
     messages: messages
       .filter((message) => !duplicateMessages.has(message))

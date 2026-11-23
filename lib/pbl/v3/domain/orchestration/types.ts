@@ -130,6 +130,12 @@ export interface QuizAttempt {
 
 export interface CollectedMilestoneState {
   teachingCompleted?: boolean;
+  teachingParticipation?: {
+    learnerTurns: number;
+    tutorTurns: number;
+    openingDeliveredAt: number;
+    leftAt: number;
+  };
   recapCompleted?: boolean;
   planReviewCompleted?: boolean;
   codeReviewCompleted?: boolean;
@@ -173,6 +179,8 @@ export interface CourseProgress {
 }
 
 export interface PblSessionState {
+  /** Selected at stage entry. Older or receipt-driven visits have no marker. */
+  hostTeachingStage?: string;
   status: SessionStatus;
   position: SessionPosition;
   milestones: MilestoneProgress[];

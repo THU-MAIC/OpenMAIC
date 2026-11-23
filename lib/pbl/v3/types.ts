@@ -21,6 +21,7 @@ export interface ArchiveDiscard {
   reason: ArchiveFailure['reason'];
 }
 export interface LearningView {
+  teachingVisit?: { learnerTurns: number };
   /** Server-owned learner-wide V3 guide receipt, including prior V3 learning progress. */
   onboardingCompleted?: boolean;
   id: string;

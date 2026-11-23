@@ -822,6 +822,94 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     expect((await learningView(principal, later.id)).onboardingCompleted).toBe(true);
   });
 
+  it.each([false, true])(
+    'advances a delivered host opening once (follow-up: %s)',
+    async (followUp) => {
+      const study = await freshStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const row = await store.get(study.id, principal.ownerId);
+      const key = `${row.state.position.milestoneId}:${row.state.position.stageIndex}`;
+      // Pin the visit. The actual package/flag selection is tested at the entry boundary.
+      await pool.query(
+        "UPDATE pbl_v3_studies SET state=state||jsonb_build_object('hostTeachingStage',$2::text) WHERE id=$1",
+        [study.id, key],
+      );
+      const initial = await learningView(principal, study.id);
+      expect(initial.actions).not.toContain('next');
+      const began = (await study.send('begin')) as { sessionId: string };
+      const finish = async (text: string) => {
+        const worker = 'opening-worker';
+        const claim = await agents.claimNextSession(worker, process.pid, {
+          sessionId: began.sessionId,
+          leaseTtlMs: 30000,
+          maxAttempts: 5,
+        });
+        expect(claim).toBeTruthy();
+        for (const [type, data] of [
+          ['session_resumed', {}],
+          ['message_end', { message: { role: 'assistant', content: [{ type: 'text', text }] } }],
+          ['session_end', { status: 'succeeded' }],
+        ] as const)
+          await agents.appendControlEvent(began.sessionId, { type, ts: Date.now(), data });
+        await agents.finishSession(began.sessionId, worker, {
+          status: 'succeeded',
+          expectedAttempt: claim!.attempt,
+        });
+      };
+      await finish('Here is how to trace one request through the project.');
+      if (followUp) {
+        await study.send('chat');
+        await finish('The handler prepares the input.');
+      }
+      const refreshed = await learningView(principal, study.id);
+      expect(refreshed.actions).toContain('next');
+      expect(refreshed.roleRun).toMatchObject({ status: 'succeeded', canRetry: false });
+      const request = { id: randomUUID(), revision: refreshed.revision, type: 'next' };
+      const next = () => commandStudy(principal, study.id, request);
+      if (followUp) {
+        const competing = { ...request, id: randomUUID() };
+        const results = await Promise.allSettled([
+          next(),
+          commandStudy(principal, study.id, competing),
+        ]);
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+        await commandStudy(
+          principal,
+          study.id,
+          results[0]!.status === 'fulfilled' ? request : competing,
+        );
+      } else {
+        await Promise.all([next(), next()]);
+      }
+      await expect(
+        commandStudy(principal, study.id, { ...request, id: randomUUID() }),
+      ).rejects.toThrow();
+      const after = await learningView(principal, study.id);
+      expect(after.state.position.stageIndex).toBe(1);
+      const progress = after.state.collected[after.state.position.milestoneId!]!;
+      expect(progress.decisions).toHaveLength(0);
+      expect(progress.teachingParticipation).toMatchObject({
+        learnerTurns: followUp ? 1 : 0,
+        tutorTurns: followUp ? 2 : 1,
+        openingDeliveredAt: expect.any(Number),
+        leftAt: expect.any(Number),
+      });
+      expect(progress.teachingParticipation!.leftAt).toBeGreaterThanOrEqual(
+        progress.teachingParticipation!.openingDeliveredAt,
+      );
+      const events = await pool.query(
+        'SELECT event FROM pbl_v3_events WHERE study_id=$1 ORDER BY sequence',
+        [study.id],
+      );
+      const types = events.rows.map((r) => r.event.type);
+      expect(types.filter((t) => t === 'teaching.completed')).toHaveLength(1);
+      expect(types.filter((t) => t === 'stage.completed')).toHaveLength(1);
+      expect(
+        events.rows.filter(({ event }) => event.type === 'stage.entered' && event.stageIndex === 1),
+      ).toHaveLength(1);
+    },
+  );
   it.each(['bootstrap', 'stage', 'completed', 'reset', 'discard', 'chat', 'event'] as const)(
     'derives prior learner-wide V3 progress from %s without counting mere preparation/opening',
     async (kind) => {

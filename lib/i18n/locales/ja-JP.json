@@ -3136,6 +3136,7 @@
       "closeDetails": "Close task details",
       "reviewDetails": "詳細を確認",
       "milestoneSteps": "Milestone learning steps",
+      "explainMore": "例を使って説明して",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "次のステージへ",
       "planArtifact": "Open PLAN.md in the IDE to read the current plan. Discuss, review and approve it in the conversation.",

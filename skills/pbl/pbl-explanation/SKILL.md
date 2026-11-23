@@ -9,16 +9,15 @@ description: Teach a project stage with a short spoken reply and an explanation 
 You teach the way a teacher talks at a whiteboard: write a block, say what it shows, write the next. The stage guidance decides what to teach; this skill decides where each part goes, and it takes precedence over any other instruction about how long or how complete a reply should be.
 
 - The board carries the explanation: everything the learner needs to look at, compare or come back to. The structure of the idea, a comparison, the lines of code under discussion, the steps of a flow all go there.
-- Elsewhere this prompt says to put the whole learner-visible reply into the response of the review or respond tool and not to write ordinary text. At the whiteboard that rule covers the closing only. The explanation itself is spoken: you write it as ordinary text between your whiteboard calls, and it is never copied into that response.
 - Speech is your ordinary text, written between your tool calls. The learner hears each piece read aloud in the order you wrote it and watches each board change happen at its place in that order, so what you write is what you would say out loud at that moment.
 - Your first output in a turn is one short spoken sentence saying what this turn is about, before any tool call. A turn that opens with a run of board calls leaves the learner watching a silent board for half a minute; that is the failure this rule exists to prevent.
 - Never draw two blocks in a row without speaking between them.
 - Finish one meaningful board block, then say that block's short explanation, before starting the next block's drawing calls.
 - A piece of speech is one or two short sentences and never more, each about as long as a line of a text message; it is read aloud, and a paragraph read aloud loses the learner. What does not fit in two sentences belongs on the board or in the next piece. It gives the judgment the block cannot show or says what to look at in it. It does not read the block aloud.
 - Speak learner-facing content only. Never narrate what you are about to do with your tools, and never say tool names, file hashes or sequence numbers.
-- The reply recorded at the end of the turn is only the closing: at most one summing-up sentence and then the single question or next action. It never repeats what you already said or what the board shows.
+- Close the turn with at most one summing-up sentence and then the single question or next action. It never repeats what you already said or what the board shows.
 - A turn that only confirms, corrects a detail, or redirects needs no board change. Do not draw to fill space.
-- When the closing question has a small set of natural answers, such as being ready or wanting one thing explained again, offer them with cue_user just before recording the closing, so the learner can answer with one tap. A question that asks for their own reasoning gets no offered replies.
+- When the closing question has a small set of natural answers, such as being ready or wanting one thing explained again, offer them with cue_user just before the closing, so the learner can answer with one tap. A question that asks for their own reasoning gets no offered replies.
 
 ## Order of work
 

@@ -1,4 +1,5 @@
 'use client';
+import { TeachingExit } from './teaching-exit';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { ArrowRight, LoaderCircle } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
@@ -435,21 +436,35 @@ export function Companion({
           />
         </div>
       )}
-      {continueLabel && onContinue && !historyOpen && !bubbleAway && (
-        <button
-          type="button"
-          data-testid="pbl-companion-continue"
-          className="pbl-stage-action pointer-events-auto me-6 flex h-9 max-w-full shrink-0 items-center gap-2 rounded-full border px-4 text-xs font-semibold shadow-md transition-colors disabled:cursor-not-allowed"
-          data-state={disabled ? 'disabled' : 'ready'}
-          disabled={disabled}
-          aria-busy={continuing}
-          onClick={onContinue}
-        >
-          {continuing && <LoaderCircle size={13} className="shrink-0 animate-spin" />}
-          <span className="truncate">{continueLabel}</span>
-          <ArrowRight size={15} className="shrink-0 rtl:-scale-x-100" aria-hidden="true" />
-        </button>
-      )}
+      {continueLabel &&
+        onContinue &&
+        !historyOpen &&
+        (!bubbleAway || !!view.teachingVisit) &&
+        (view.teachingVisit ? (
+          <div className="pointer-events-auto me-6 w-full max-w-80">
+            <TeachingExit
+              view={view}
+              nextLabel={continueLabel}
+              disabled={disabled || active}
+              onNext={onContinue}
+              onAsk={onSend}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-testid="pbl-companion-continue"
+            className="pbl-stage-action pointer-events-auto me-6 flex h-9 max-w-full shrink-0 items-center gap-2 rounded-full border px-4 text-xs font-semibold shadow-md transition-colors disabled:cursor-not-allowed"
+            data-state={disabled ? 'disabled' : 'ready'}
+            disabled={disabled}
+            aria-busy={continuing}
+            onClick={onContinue}
+          >
+            {continuing && <LoaderCircle size={13} className="shrink-0 animate-spin" />}
+            <span className="truncate">{continueLabel}</span>
+            <ArrowRight size={15} className="shrink-0 rtl:-scale-x-100" aria-hidden="true" />
+          </button>
+        ))}
       {/* The ring around the avatar already shows progress. Its wording and the two ways to
           answer orbit the avatar, and come out when the learner reaches for it. */}
       <div

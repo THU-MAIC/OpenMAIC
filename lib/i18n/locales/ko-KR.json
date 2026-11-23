@@ -3136,6 +3136,7 @@
       "closeDetails": "Close task details",
       "reviewDetails": "세부 내용 보기",
       "milestoneSteps": "Milestone learning steps",
+      "explainMore": "예를 들어 설명해 주세요",
       "enterStep": "Continue to {{step}}",
       "enterMilestone": "다음 단계로 이동",
       "planArtifact": "Open PLAN.md in the IDE to read the current plan. Discuss, review and approve it in the conversation.",

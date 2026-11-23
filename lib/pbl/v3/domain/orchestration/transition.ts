@@ -731,6 +731,7 @@ export function releaseMilestoneAgents(
 export function allowedStudentActions(
   project: ProjectDefinition,
   state: PblSessionState,
+  teachingExit?: boolean,
 ): readonly StudentAction[] {
   if (state.status === 'completed') return [];
   const stage = currentStage(project, state);
@@ -747,7 +748,7 @@ export function allowedStudentActions(
     if (
       stage.kind === 'mentor_say' &&
       stage.agent === 'discussion' &&
-      !collected?.teachingCompleted
+      !(teachingExit ?? collected?.teachingCompleted)
     ) {
       return stage.studentActions.filter((action) => action !== 'next');
     }

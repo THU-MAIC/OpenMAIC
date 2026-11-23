@@ -93,8 +93,19 @@ export type ProjectDescriptor = z.infer<typeof descriptorSchema>;
 function teachingResources(
   bundle: PBLProjectPackage,
   active: ProjectDescriptor['teaching'][number],
+  lite = false,
 ) {
   const root = bundle.files[active.entrypoint];
+  // Host-driven teaching reads the opening once and the sections as independent
+  // reference material; repeating the entrypoint before every section would
+  // duplicate the opening into each of them.
+  if (lite)
+    return {
+      opening: root,
+      content: Object.fromEntries(active.sections.map((s) => [s.name, bundle.files[s.path]])),
+      progression: [active.entrypoint, ...active.sections.map((s) => s.name)],
+      documents: active.documents.map((path) => ({ path, text: bundle.files[path] })),
+    };
   return {
     content: Object.fromEntries(
       active.sections.map((s) => [s.name, `${root}\n\n${bundle.files[s.path]}`]),
@@ -602,6 +613,7 @@ export function packagedStageSkill(
   stage: StageDefinition,
   key: string,
   role: AgentRole,
+  hostTeaching = false,
 ) {
   if (!project.coursePackage)
     return { ...stageSkill(stage), documents: [] as { path: string; text: string }[] };
@@ -614,5 +626,5 @@ export function packagedStageSkill(
       documents: [] as { path: string; text: string }[],
     };
   if (!active) return invalid(`Teaching resources are unavailable for ${key}/${role}`);
-  return teachingResources(bundle, active);
+  return teachingResources(bundle, active, hostTeaching);
 }

@@ -10,10 +10,14 @@ export function learnerActions(input: {
   evaluation: unknown;
   completionRecorded: boolean;
   buildAvailable: boolean;
+  /** Host-driven teaching: the exit is earned when the opening became visible. */
+  teachingExit?: boolean;
 }): string[] {
   const { definition, state, stage } = input;
   const actions: string[] =
-    state.status === 'completed' ? [] : [...allowedStudentActions(definition, state)];
+    state.status === 'completed'
+      ? []
+      : [...allowedStudentActions(definition, state, input.teachingExit)];
   if (
     actions.includes('edit') &&
     stage.kind === 'produce' &&
@@ -22,7 +26,8 @@ export function learnerActions(input: {
   )
     actions.push('compile');
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
-  return input.evaluation || (guided && !input.completionRecorded)
+  const completed = input.teachingExit ?? input.completionRecorded;
+  return input.evaluation || (guided && !completed)
     ? actions.filter((action) => action !== 'next')
     : actions;
 }

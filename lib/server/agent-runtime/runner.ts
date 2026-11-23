@@ -1524,7 +1524,9 @@ async function executeSession(
     const idleAttach = meta.existingCourse;
 
     if (
-      ((plan.kind === 'already-complete' && !teaching?.needsTurnReceipt()) ||
+      ((plan.kind === 'already-complete' &&
+        !teaching?.requiresVisibleReply &&
+        !teaching?.needsTurnReceipt()) ||
         teaching?.isTurnComplete()) &&
       pending.length === 0
     ) {
@@ -2132,6 +2134,7 @@ async function executeSession(
     // the same ordered chain as its event. The INSERT is a critical write: a
     // failure aborts the loop and prevents a successful settlement.
     const inFlightToolCalls = new Map<string, PendingToolCall>();
+    let spokeThisAttempt = false;
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
       emit(event.type, event);
       if (event.type === 'message_end') {
@@ -2141,6 +2144,10 @@ async function executeSession(
         // pending only AFTER its fenced append succeeds; clearing it at event
         // time would reopen the orphan race during write-chain drain.
         if (event.message.role === 'assistant') {
+          if (teaching?.requiresVisibleReply)
+            spokeThisAttempt ||= event.message.content.some(
+              (part) => part.type === 'text' && part.text.trim().length > 0,
+            );
           trackToolCallMessage(inFlightToolCalls, event.message);
         }
         if (event.message.role === 'user') {
@@ -2272,7 +2279,26 @@ async function executeSession(
     cleanup.add(() => clearInterval(messagePoll));
 
     let repairedTeachingStop = false;
+    const resumeVisibleReply = () => {
+      // Pi continues from user/tool results. Discard only a terminal assistant
+      // suffix in the request view. The durable transcript keeps every frame.
+      const messages = [...agent.state.messages];
+      while (messages.at(-1)?.role === 'assistant') messages.pop();
+      if (!messages.length) return false;
+      agent.state.messages = messages;
+      return true;
+    };
     const repairTeachingStop = async () => {
+      if (
+        teaching?.requiresVisibleReply &&
+        !spokeThisAttempt &&
+        !repairedTeachingStop &&
+        !abort.signal.aborted &&
+        !terminalLoopError(agent.state.messages, agent.state.errorMessage)
+      ) {
+        repairedTeachingStop = resumeVisibleReply();
+        return repairedTeachingStop;
+      }
       if (
         repairedTeachingStop ||
         !teaching?.needsTurnReceipt() ||
@@ -2400,7 +2426,10 @@ async function executeSession(
         if (repair.messages.length > 0 || filePreload.length > 0) {
           await agent.prompt([...repair.messages, ...filePreload]);
         } else {
-          if (plan.kind === 'already-complete') await repairTeachingStop();
+          if (plan.kind === 'already-complete') {
+            if (teaching?.requiresVisibleReply) resumeVisibleReply();
+            else await repairTeachingStop();
+          }
           await agent.continue();
         }
       }
@@ -2431,6 +2460,9 @@ async function executeSession(
 
       const loopError =
         terminalLoopError(agent.state.messages, agent.state.errorMessage) ||
+        (teaching?.requiresVisibleReply && !spokeThisAttempt
+          ? 'Teaching ended without a visible explanation. Retry this turn.'
+          : undefined) ||
         (teaching?.needsTurnReceipt()
           ? 'Teaching turn ended without recording a review question or stage completion. Retry to continue the current review.'
           : undefined);

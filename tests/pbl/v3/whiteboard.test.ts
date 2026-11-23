@@ -5,11 +5,7 @@ import { BrowserRuntimeStore } from '@openmaic/storage';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { APP_RUNTIME_PAYLOAD_VALIDATORS } from '@/lib/runtime/payload-validators';
 import { studyWhiteboard, studyExplainBoard } from '@/lib/server/pbl-v3/whiteboard';
-import {
-  pblWhiteboardEnabled,
-  pblExplanationSkill,
-  pblWhiteboardProductWording,
-} from '@/lib/server/pbl-v3/whiteboard-config';
+import { pblWhiteboardEnabled, pblExplanationSkill } from '@/lib/server/pbl-v3/whiteboard-config';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import { startOrchestration } from '@/lib/pbl/v3/domain/orchestration/transition';
 import { renderTeachingPrompt, teachingLiveSuffix } from '@/lib/server/pbl-v3/teaching-prompt';
@@ -421,12 +417,8 @@ it('preserves disabled prompt bytes and appends the stable skill only when enabl
   expect(renderTeachingPrompt(input)).toEqual(baseline);
   vi.stubEnv('OPENMAIC_PBL_V3_WHITEBOARD', 'true');
   const enabled = renderTeachingPrompt(input);
-  // Enabled, the prompt is the baseline with the skill appended and the control locations
-  // reworded for the companion layout; nothing else differs.
-  expect(enabled.systemPrompt).toBe(
-    pblWhiteboardProductWording(baseline.systemPrompt + '\n' + pblExplanationSkill(), true),
-  );
-  expect(enabled.initialContext).toBe(pblWhiteboardProductWording(baseline.initialContext));
+  expect(enabled.systemPrompt).toContain(pblExplanationSkill());
+  expect(baseline.systemPrompt).not.toContain(pblExplanationSkill());
   expect(enabled.systemPrompt).not.toContain('at the bottom of the Learning Assistant pane');
   expect(enabled.systemPrompt).toContain('beside the tutor avatar');
   expect(enabled.systemPrompt).not.toContain('name: pbl-explanation');

@@ -50,6 +50,7 @@ import {
 import { assertLearningPlan } from './plan';
 import { startBuild, collectBuild, assertBuilt, isBuilt } from './compilation';
 import { packagedStageSkill } from './project-package';
+import { usesHostTeaching, openingDelivered } from './teaching-lite';
 import {
   renderTeachingPrompt,
   teachingSection,
@@ -101,7 +102,8 @@ export async function teachingRunnerConfig(input: {
     [input.sessionId, supportedLocales.map(({ code }) => code)],
   );
   const uiLocale = localeEvent.rows[0]?.locale ?? 'en-US';
-  const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role);
+  const liteTeaching = usesHostTeaching(row.state);
+  const skill = packagedStageSkill(project, stage, bound.stage_key, bound.role, liteTeaching);
   const progression = skill.progression;
   const protocol = {
     progression,
@@ -126,6 +128,10 @@ export async function teachingRunnerConfig(input: {
     latest?.seq ?? 0,
   );
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
+  // The opening receipt cannot change while the same role session is running.
+  const teachingExit = liteTeaching
+    ? await openingDelivered(store.pool, input.sessionId, bound.stage_key)
+    : undefined;
   let completionRecorded = hasStageCompletion(row, stage, bound);
   let turnComplete =
     guided &&
@@ -619,7 +625,7 @@ export async function teachingRunnerConfig(input: {
         },
       ),
     );
-  if (guided) {
+  if (guided && !liteTeaching) {
     tools.push(
       tool(
         'respond_to_learner',
@@ -1036,6 +1042,7 @@ export async function teachingRunnerConfig(input: {
     if (stage.kind === 'produce' && stage.writes === 'plan') observedText.set('PLAN.md', planText);
   }
   const promptInput: TeachingPromptInput = {
+    teachingExit,
     definition: project.definition,
     stage,
     milestone,
@@ -1122,12 +1129,13 @@ export async function teachingRunnerConfig(input: {
     systemPrompt,
     initialContext,
     thinkingConfig: (): ThinkingConfig =>
-      review.state.welcome === 'pending'
+      (liteTeaching ? latest?.pblOpening : review.state.welcome === 'pending')
         ? { mode: 'disabled' }
         : { mode: 'enabled', effort: 'low', level: 'low' },
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
-    needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
+    requiresVisibleReply: liteTeaching,
+    needsTurnReceipt: () => guided && !liteTeaching && !completionRecorded && !turnComplete,
     liveContext: () =>
       abortable(
         (async () => {

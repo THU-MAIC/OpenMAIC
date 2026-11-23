@@ -2,6 +2,7 @@ import {
   type StageDefinition,
   type ProjectDefinition,
 } from '@/lib/pbl/v3/domain/project/project-schema';
+import { usesHostTeaching } from './teaching-lite';
 import type { Study, RoleBinding } from './store';
 
 export function requiresArtifactApproval(stage: StageDefinition): boolean {
@@ -51,6 +52,7 @@ export function succeededWithoutTeachingReceipt(
   const key = `${row.state.position.milestoneId}:${row.state.position.stageIndex}`;
   const resetAt = row.environment_recovery?.progressResetAt;
   return (
+    !usesHostTeaching(row.state) &&
     status === 'succeeded' &&
     !!latestUserSeq &&
     binding?.stage_key === key &&
