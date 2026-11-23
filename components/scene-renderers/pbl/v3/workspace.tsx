@@ -456,7 +456,7 @@ function PBLV3WorkspaceContent({
     : null;
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
-    'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
+    'rounded-md border px-2 py-1.5 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   return (
     <section
       ref={workspaceRoot}

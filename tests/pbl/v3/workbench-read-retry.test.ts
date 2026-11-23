@@ -159,7 +159,7 @@ it('offers a draft-preserving read retry without a discard confirmation or an au
 it('shows saving for a healthy dirty file during the debounce while another file retains a blocked draft', async () => {
   await blockedDraft();
   await act(async () => button('main.py').click());
-  expect(host.textContent).toContain('pblV3.ide.saved');
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
   expect(host.textContent).not.toContain('pblV3.ide.draftRetained');
   await edit('Healthy edit');
   expect(host.textContent).toContain('pblV3.ide.saving');
@@ -206,7 +206,7 @@ it('clears the paused queue indicator on a clean healthy tab without authorizing
   expect(host.textContent).toContain('pblV3.ide.saveFailed');
   await act(async () => button('pblV3.ide.saveFailed').click());
   expect(onSave).toHaveBeenCalledTimes(1);
-  expect(host.textContent).toContain('pblV3.ide.saved');
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
   expect(host.textContent).not.toContain('pblV3.ide.saveFailed');
   await act(async () => button('PLAN.md ●').click());
   expect(host.textContent).toContain('pblV3.ide.saveFailed');

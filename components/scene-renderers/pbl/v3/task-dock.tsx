@@ -149,7 +149,7 @@ export function TaskDock({
           aria-label={t('pblV3.journey.taskDetails')}
           className="pbl-task-drawer absolute inset-x-2 bottom-[calc(100%+8px)] z-20 flex flex-col overflow-hidden rounded-lg border bg-popover text-sm shadow-xl outline-none"
         >
-          <header className="flex h-[42px] shrink-0 items-center gap-2 border-b px-3">
+          <header className="pbl-pane-header flex shrink-0 items-center gap-2 border-b px-3">
             <Settings size={16} className="text-muted-foreground" />
             <h4 className="font-semibold">{t('pblV3.journey.taskTitle')}</h4>
             <span className="min-w-0 flex-1 text-xs text-muted-foreground">

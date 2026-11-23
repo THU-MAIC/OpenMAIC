@@ -109,22 +109,25 @@ export function LearningWorkbenchPanel({
   );
   const { path, buffer, stale } = editor;
   // "Saved" is a confirmation, not a status light: flash it after a save lands, then clear it.
+  // A save lands when the file's stored snapshot advances to the buffer's text; watching that
+  // catches saves whose start and finish are batched into one render.
   const [savedNotice, setSavedNotice] = useState(false);
-  const { saving, saveError } = editor;
-  const dirtyNow = editor.dirty(path);
-  const wasSaving = useRef(false);
+  const { saveError } = editor;
   const savedTimer = useRef<number | null>(null);
+  const savedText = useRef(new Map<string, string>());
   useEffect(() => {
-    const finishedSaving = wasSaving.current && !saving;
-    wasSaving.current = saving;
-    if (!finishedSaving || saveError || dirtyNow) return;
+    if (!buffer || !path) return;
+    const previous = savedText.current.get(path);
+    savedText.current.set(path, buffer.saved);
+    if (previous === undefined || previous === buffer.saved) return;
+    if (buffer.text !== buffer.saved) return;
     setSavedNotice(true);
     if (savedTimer.current) window.clearTimeout(savedTimer.current);
     savedTimer.current = window.setTimeout(() => {
       savedTimer.current = null;
       setSavedNotice(false);
     }, 2400);
-  }, [saving, saveError, dirtyNow]);
+  }, [buffer, path, saveError]);
   useEffect(() => {
     setSavedNotice(false);
   }, [path]);
@@ -440,11 +443,7 @@ export function LearningWorkbenchPanel({
                         }}
                       >
                         <span className="truncate whitespace-nowrap">{p.split('/').at(-1)}</span>
-                        {editor.dirty(p) ? (
-                          <span className="shrink-0" aria-hidden="true">
-                            ●
-                          </span>
-                        ) : null}
+                        {editor.dirty(p) ? <span className="shrink-0"> ●</span> : null}
                       </button>
                       <button
                         className={`mr-1 shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40 ${
@@ -455,7 +454,10 @@ export function LearningWorkbenchPanel({
                         disabled={editor.saving}
                         aria-label={t('pblV3.ide.closeFile', { path: p })}
                         onClick={() => {
-                          if (!editor.dirty(p) || window.confirm(t('pblV3.ide.discard', { path: p })))
+                          if (
+                            !editor.dirty(p) ||
+                            window.confirm(t('pblV3.ide.discard', { path: p }))
+                          )
                             editor.close(p);
                         }}
                       >
@@ -486,7 +488,7 @@ export function LearningWorkbenchPanel({
                       <span className="max-w-48 truncate whitespace-nowrap">
                         {t('pblV3.ide.draftRetained')}
                       </span>
-                    ) : editor.saving ? (
+                    ) : editor.saving || editor.dirty(path) ? (
                       <>
                         <LoaderCircle size={12} className="animate-spin" />
                         <span className="sr-only">{t('pblV3.ide.saving')}</span>
@@ -503,7 +505,9 @@ export function LearningWorkbenchPanel({
                   className={button}
                   disabled={disabled || editor.saving}
                   onClick={reload}
-                  aria-label={t(editor.dirty(path) ? 'pblV3.workbench.discard' : 'pblV3.reloadFile')}
+                  aria-label={t(
+                    editor.dirty(path) ? 'pblV3.workbench.discard' : 'pblV3.reloadFile',
+                  )}
                   title={t('pblV3.reloadFile')}
                 >
                   <RefreshCw size={14} />
@@ -583,7 +587,7 @@ export function LearningWorkbenchPanel({
           className="shrink-0 border-t bg-muted/10"
           style={{ height: consoleOpen ? '38%' : undefined }}
         >
-          <div className="flex flex-wrap items-center gap-1 border-b px-2 py-1">
+          <div className="pbl-pane-header flex flex-wrap items-center gap-1 border-b px-2">
             <button
               className={button}
               aria-pressed={consoleOpen && consoleTab === 'output'}
