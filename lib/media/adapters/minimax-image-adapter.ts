@@ -38,7 +38,9 @@ export async function generateWithMiniMaxImage(
       prompt: options.prompt,
       negative_prompt: options.negativePrompt,
       aspect_ratio: aspectRatio,
-      response_format: 'url',
+      // Inline bytes, so the result needs no second download from a
+      // provider-hosted URL.
+      response_format: 'base64',
       n: 1,
       prompt_optimizer: false,
     }),
@@ -60,12 +62,12 @@ export async function generateWithMiniMaxImage(
     throw new Error(`MiniMax Image API error ${code}: ${msg}`);
   }
 
-  const imageUrls = data?.data?.image_urls;
-  if (!imageUrls || imageUrls.length === 0) {
-    throw new Error(`MiniMax Image: no image URLs returned. Response: ${JSON.stringify(data)}`);
+  const inline: unknown = data?.data?.image_base64?.[0];
+  if (typeof inline !== 'string' || !inline) {
+    throw new Error('MiniMax Image: no image data returned');
   }
-
-  const imageUrl = imageUrls[0];
+  // The response declares no media type, so read the JPEG signature.
+  const mimeType = inline.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
 
   // Determine dimensions from aspect ratio
   let width = options.width || 1024;
@@ -84,7 +86,8 @@ export async function generateWithMiniMaxImage(
   }
 
   return {
-    url: imageUrl,
+    base64: inline,
+    mimeType,
     width,
     height,
   };
