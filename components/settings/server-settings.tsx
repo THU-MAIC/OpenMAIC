@@ -329,6 +329,8 @@ export interface ProviderFields {
   apiKey?: string;
   baseUrl?: string | null;
   models?: string[] | null;
+  /** Omitted: keep the stored windows. Null or empty: remove them all. */
+  modelContextWindows?: Record<string, number> | null;
 }
 
 /**

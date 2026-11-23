@@ -289,6 +289,44 @@ describe('modelSettingsView', () => {
     ]);
   });
 
+  it('shows declared windows on chat rows the catalogue does not describe', () => {
+    deployment({
+      providers: {
+        gateway: {
+          preset: 'openai-compatible',
+          apiKey: 'sk-operator',
+          baseUrl: 'https://gateway.example/v1',
+          models: ['mystery', 'gpt-5.6'],
+          modelContextWindows: { mystery: 1_000_000, 'gpt-5.6': 400_000 },
+        },
+      },
+    });
+    const gateway = modelSettingsView(null).providers.find((entry) => entry.id === 'gateway')!;
+    const rows = gateway.capabilities.chat?.models ?? [];
+    // A row without catalogue metadata shows the declared window; on an
+    // endpoint the catalogue does not cover, the declaration also wins a
+    // name-colliding catalogue value.
+    expect(rows.find((model) => model.id === 'mystery')?.contextWindow).toBe(1_000_000);
+    expect(rows.find((model) => model.id === 'gpt-5.6')?.contextWindow).toBe(400_000);
+    expect(gateway.modelContextWindows).toEqual({ mystery: 1_000_000, 'gpt-5.6': 400_000 });
+  });
+
+  it('keeps the catalogue window on a trusted provider the catalogue covers', () => {
+    deployment({
+      providers: {
+        operator: {
+          preset: 'deepseek',
+          apiKey: 'sk-operator-secret-0001',
+          models: ['deepseek-v4-pro'],
+          modelContextWindows: { 'deepseek-v4-pro': 100_000 },
+        },
+      },
+    });
+    const operator = modelSettingsView(null).providers.find((entry) => entry.id === 'operator')!;
+    const row = operator.capabilities.chat?.models.find((model) => model.id === 'deepseek-v4-pro');
+    expect(row?.contextWindow).not.toBe(100_000);
+  });
+
   it('never shows credentials a stored endpoint carries', () => {
     const view = modelSettingsView({
       config: {
@@ -511,6 +549,55 @@ describe('applyModelSettingsChange', () => {
       apiKey: '',
     });
     expect(config.providers?.mine).toEqual({ preset: 'openai', models: ['gpt-5.6'] });
+  });
+
+  it('stores declared windows with the model list, pruned to it', async () => {
+    let config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'mine',
+      preset: 'openai',
+      apiKey: 'sk-1',
+    });
+    config = await applyModelSettingsChange(config, {
+      kind: 'provider',
+      id: 'mine',
+      preset: 'openai',
+      models: ['gpt-5.6', 'mystery'],
+      modelContextWindows: { 'gpt-5.6': 100_000, mystery: 1_000_000 },
+    });
+    expect(config.providers?.mine.modelContextWindows).toEqual({
+      'gpt-5.6': 100_000,
+      mystery: 1_000_000,
+    });
+    // Editing the list alone prunes the windows of models it dropped.
+    config = await applyModelSettingsChange(config, {
+      kind: 'provider',
+      id: 'mine',
+      preset: 'openai',
+      models: ['mystery'],
+    });
+    expect(config.providers?.mine.modelContextWindows).toEqual({ mystery: 1_000_000 });
+    // A window for a model the list does not hold is refused, not stored.
+    await expect(
+      applyModelSettingsChange(config, {
+        kind: 'provider',
+        id: 'mine',
+        preset: 'openai',
+        modelContextWindows: { other: 1_000 },
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER',
+      message: expect.stringContaining("not in this provider's model list"),
+    });
+    // Removing the list removes the windows with it.
+    config = await applyModelSettingsChange(config, {
+      kind: 'provider',
+      id: 'mine',
+      preset: 'openai',
+      models: null,
+      modelContextWindows: null,
+    });
+    expect(config.providers?.mine).toEqual({ preset: 'openai', apiKey: 'sk-1' });
   });
 
   it('keeps workspace providers out of what only the deployment may set', async () => {
@@ -888,4 +975,45 @@ it('passes an inactive provider catalogue to previews when no default is configu
   expect(defaultVoiceFor('openai-tts', 'custom-tts', provider.options, provider.voices)).toBe(
     'vivian',
   );
+});
+
+describe('importModelSettings with declared context windows', () => {
+  it('counts a provider the same only with the same declared windows', async () => {
+    const base = {
+      preset: 'openai',
+      apiKey: 'sk-1',
+      models: ['mystery'],
+      modelContextWindows: { mystery: 1_000_000 },
+    };
+    const config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'mine',
+      ...base,
+    });
+    const same = await importModelSettings(config, { providers: { mine: { ...base } } });
+    expect(same.skipped[0]).toMatchObject({ kind: 'provider', id: 'mine', code: 'EXISTS_SAME' });
+    const changed = await importModelSettings(config, {
+      providers: { mine: { ...base, modelContextWindows: { mystery: 2_000_000 } } },
+    });
+    expect(changed.skipped[0]).toMatchObject({
+      kind: 'provider',
+      id: 'mine',
+      code: 'EXISTS_DIFFERENT',
+    });
+  });
+
+  it('imports a provider with declared windows', async () => {
+    const result = await importModelSettings(null, {
+      providers: {
+        mine: {
+          preset: 'openai',
+          apiKey: 'sk-1',
+          models: ['mystery'],
+          modelContextWindows: { mystery: 1_000_000 },
+        },
+      },
+    });
+    expect(result.imported).toEqual([{ kind: 'provider', id: 'mine' }]);
+    expect(result.config.providers?.mine.modelContextWindows).toEqual({ mystery: 1_000_000 });
+  });
 });

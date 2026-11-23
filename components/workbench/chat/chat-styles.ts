@@ -81,6 +81,25 @@ export const wbStyles = {
     count: 'tabular-nums',
   },
   /**
+   * The compaction divider — the timeline's one "the conversation itself
+   * changed shape" marker: everything above it lives on as a summary. Same
+   * centered caption register as `boundary` (a fact, not a warning), plus the
+   * one thing a boundary never has — something behind it. The caption row is
+   * the toggle; the expanded panel reads as prose in a quiet card, because the
+   * summary IS prose the model wrote about the messages it replaces.
+   */
+  compaction: {
+    row: 'flex flex-col items-center gap-2 py-2',
+    toggle:
+      'inline-flex cursor-pointer items-center gap-1.5 rounded-[var(--wb-radius-sm)] border-0 bg-transparent px-1 py-0.5 text-[11px] leading-none text-[var(--wb-text-faint)] transition-colors duration-[var(--wb-duration-base)] hover:text-[var(--wb-text-muted)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
+    icon: 'inline-flex shrink-0 items-center',
+    car: 'inline-flex shrink-0 items-center',
+    body: 'w-full rounded-[var(--wb-radius-md)] border border-[var(--wb-line)] bg-[var(--wb-surface-sunken)]/50 px-3 py-2',
+    meta: 'm-0 mb-1 text-[11px] leading-4 text-[var(--wb-text-faint)]',
+    summary:
+      'm-0 max-h-[42vh] overflow-y-auto whitespace-pre-wrap break-words text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text-muted)] [overflow-wrap:anywhere]',
+  },
+  /**
    * The in-chat course link, both forms — THE one place its look is decided.
    * Degrading the block form to a plain underlined link is an edit to `base` +
    * `block` here and to nothing else.

@@ -53,8 +53,10 @@ import { cn } from '@/lib/utils';
 import {
   TOKEN_PLAN_PRESETS,
   MODALITY_ORDER,
+  tokenPlanInRegion,
   type TokenPlanPreset,
   type TokenPlanModality,
+  type TokenPlanRegion,
 } from '@/lib/config/token-plan-presets';
 import { tokenPlanPresetId } from '@/lib/config/preset-ids';
 import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
@@ -96,6 +98,8 @@ const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
   webSearch: Search,
   webFetch: Globe,
 };
+
+const REGIONS: readonly TokenPlanRegion[] = ['domestic', 'international'];
 
 /** Display-name mapping: the volcengine-ark preset is shown as "Seed". */
 function presetDisplayName(preset: TokenPlanPreset): string {
@@ -199,14 +203,23 @@ export function TokenPlanSettings({
   view: ModelSettingsView;
   apply: ApplyChange;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
-  // The plans connecting can still change something with, and the ones
-  // already connected (to manage or disconnect); see tokenPlanListed.
-  const plans = TOKEN_PLAN_PRESETS.filter((plan) => {
-    const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
-    return !!preset && tokenPlanListed(view, preset);
-  });
+  // The page opens on the side matching the interface language; mainland
+  // plans are for the Simplified Chinese interface.
+  const [region, setRegion] = useState<TokenPlanRegion>(
+    locale === 'zh-CN' ? 'domestic' : 'international',
+  );
+
+  // A region's plans connecting can still change something with, and the
+  // ones already connected (to manage or disconnect); see tokenPlanListed.
+  const plansIn = (side: TokenPlanRegion) =>
+    TOKEN_PLAN_PRESETS.filter((plan) => {
+      if (!tokenPlanInRegion(plan, side)) return false;
+      const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
+      return !!preset && tokenPlanListed(view, preset);
+    });
+  const plans = plansIn(region);
   const [selectedId, setSelectedId] = useState<string>(plans[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -241,6 +254,14 @@ export function TokenPlanSettings({
     setApiKey('');
     setEditingKey(false);
     setDisconnectOpen(false);
+  };
+
+  // Switching sides selects that side's first plan.
+  const selectRegion = (side: TokenPlanRegion) => {
+    if (side === region) return;
+    setRegion(side);
+    const first = plansIn(side)[0];
+    if (first) selectPreset(first);
   };
 
   // Disconnect = remove the plan's provider; the stages that used it follow
@@ -330,67 +351,109 @@ export function TokenPlanSettings({
 
       {/* 1:2 比例分割：服务商列表不需要太宽，右侧密钥/能力详情是主体 */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        {/* Left column: service tablist (collapses to a 3-column grid on small screens) */}
-        <div
-          className="grid grid-cols-3 content-start gap-1 rounded-xl bg-muted/40 p-1 sm:grid-cols-1 sm:gap-1 sm:bg-transparent sm:p-0"
-          role="tablist"
-          aria-label={t(`${tp}.selectPlan`)}
-        >
-          {plans.map((preset, index) => {
-            const enabled = isPresetEnabled(preset);
-            const active = selected?.id === preset.id;
-            return (
-              <button
-                type="button"
-                role="tab"
-                key={preset.id}
-                aria-selected={active}
-                tabIndex={active ? 0 : -1}
-                ref={(node) => {
-                  if (node) tabRefs.current.set(preset.id, node);
-                  else tabRefs.current.delete(preset.id);
-                }}
-                onClick={() => selectPreset(preset)}
-                onKeyDown={(event) => {
-                  const delta =
-                    event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                      ? 1
-                      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                        ? -1
-                        : 0;
-                  if (!delta && event.key !== 'Home' && event.key !== 'End') return;
-                  event.preventDefault();
-                  const next =
-                    plans[
-                      event.key === 'Home'
-                        ? 0
-                        : event.key === 'End'
-                          ? plans.length - 1
-                          : (index + delta + plans.length) % plans.length
-                    ];
-                  selectPreset(next);
-                  tabRefs.current.get(next.id)?.focus();
-                }}
-                className={cn(
-                  'flex min-w-0 flex-col items-center gap-2 rounded-lg px-2 py-3 text-center outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:flex-row sm:gap-3 sm:px-3 sm:py-2 sm:text-left',
-                  active
-                    ? 'bg-background text-foreground shadow-sm sm:bg-accent/70 sm:shadow-none'
-                    : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                )}
-              >
-                <PresetLogo preset={preset} />
-                <span className="min-w-0">
-                  <span className="block break-words text-sm font-medium leading-5">
-                    {presetDisplayName(preset)}
+        <div className="flex min-w-0 flex-col gap-3">
+          {/* Region: filters the plan list below to the plans that region's accounts can use. */}
+          <div className="space-y-1.5">
+            <div
+              id="token-plan-region-label"
+              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
+            >
+              <Globe className="size-3.5" aria-hidden="true" />
+              {t(`${tp}.region`)}
+            </div>
+            <div
+              className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
+              role="group"
+              aria-labelledby="token-plan-region-label"
+            >
+              {REGIONS.map((side) => (
+                <button
+                  key={side}
+                  type="button"
+                  aria-pressed={region === side}
+                  onClick={() => selectRegion(side)}
+                  className={cn(
+                    'flex-1 rounded-md py-1.5 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
+                    region === side
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground/80',
+                  )}
+                >
+                  {t(`settings.providerLinks.${side}`)}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                region === 'domestic'
+                  ? `${tp}.regionHintDomestic`
+                  : `${tp}.regionHintInternational`,
+              )}
+            </p>
+          </div>
+
+          {/* Service tablist (collapses to a 3-column grid on small screens) */}
+          <div
+            className="grid grid-cols-3 content-start gap-1 rounded-xl bg-muted/40 p-1 sm:grid-cols-1 sm:gap-1 sm:bg-transparent sm:p-0"
+            role="tablist"
+            aria-label={t(`${tp}.selectPlan`)}
+          >
+            {plans.map((preset, index) => {
+              const enabled = isPresetEnabled(preset);
+              const active = selected?.id === preset.id;
+              return (
+                <button
+                  type="button"
+                  role="tab"
+                  key={preset.id}
+                  aria-selected={active}
+                  tabIndex={active ? 0 : -1}
+                  ref={(node) => {
+                    if (node) tabRefs.current.set(preset.id, node);
+                    else tabRefs.current.delete(preset.id);
+                  }}
+                  onClick={() => selectPreset(preset)}
+                  onKeyDown={(event) => {
+                    const delta =
+                      event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                        ? 1
+                        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                          ? -1
+                          : 0;
+                    if (!delta && event.key !== 'Home' && event.key !== 'End') return;
+                    event.preventDefault();
+                    const next =
+                      plans[
+                        event.key === 'Home'
+                          ? 0
+                          : event.key === 'End'
+                            ? plans.length - 1
+                            : (index + delta + plans.length) % plans.length
+                      ];
+                    selectPreset(next);
+                    tabRefs.current.get(next.id)?.focus();
+                  }}
+                  className={cn(
+                    'flex min-w-0 flex-col items-center gap-2 rounded-lg px-2 py-3 text-center outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:flex-row sm:gap-3 sm:px-3 sm:py-2 sm:text-left',
+                    active
+                      ? 'bg-background text-foreground shadow-sm sm:bg-accent/70 sm:shadow-none'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  )}
+                >
+                  <PresetLogo preset={preset} />
+                  <span className="min-w-0">
+                    <span className="block break-words text-sm font-medium leading-5">
+                      {presetDisplayName(preset)}
+                    </span>
+                    <span className="flex items-center justify-center gap-1 text-xs leading-5 text-muted-foreground sm:justify-start">
+                      {enabled && <Check className="size-3 shrink-0" />}
+                      {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
+                    </span>
                   </span>
-                  <span className="flex items-center justify-center gap-1 text-xs leading-5 text-muted-foreground sm:justify-start">
-                    {enabled && <Check className="size-3 shrink-0" />}
-                    {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* 右列：服务详情（头部一行制 + 密钥表单 + 能力区块） */}

@@ -72,6 +72,8 @@ export function AddProviderDialog({
   const preset = API_MODE_PRESETS[type];
   const available = view.presets.some((entry) => entry.id === preset);
   const slug = providerIdFromName(name);
+  // A name with no Latin letter or digit (all Chinese, say) yields no id.
+  const nameWithoutId = name.trim() !== '' && !slug;
 
   const handleAdd = async () => {
     if (!slug || !baseUrl.trim()) return;
@@ -104,10 +106,16 @@ export function AddProviderDialog({
               placeholder={t('settings.providerNamePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
+              aria-invalid={nameWithoutId || undefined}
             />
             {slug && (
               <p className="text-xs text-muted-foreground">
                 {t('settings.serverConfig.providerIdHint', { id: slug })}
+              </p>
+            )}
+            {nameWithoutId && (
+              <p className="text-xs text-destructive">
+                {t('settings.serverConfig.providerNameNeedsLatin')}
               </p>
             )}
           </div>

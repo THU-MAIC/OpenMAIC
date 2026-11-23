@@ -374,3 +374,87 @@ describe('Pi Google route on resolved slot targets', () => {
     },
   );
 });
+
+describe('declared context windows', () => {
+  async function resolvesWith(config: ModelConfigLayer['config']) {
+    state.lookup = lookupFromLayers('course.content.slide', {
+      deployment: null,
+      workspace: layer('workspace', config),
+    });
+    return resolveStageModel({ stage: 'scene-content:slide', workspaceId: 'user:alice' });
+  }
+
+  it('uses a declared window for a model the catalogue does not know', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          models: ['mystery'],
+          modelContextWindows: { mystery: 1_000_000 },
+        },
+      },
+      slots: { 'course.content': 'relay:mystery' },
+    });
+    expect(resolved.modelInfo).toEqual({
+      id: 'mystery',
+      name: 'mystery',
+      contextWindow: 1_000_000,
+    });
+  });
+
+  it('leaves an unknown model without metadata when nothing is declared', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        relay: { preset: 'openai-compatible', apiKey: 'sk', baseUrl: 'https://relay.example/v1' },
+      },
+      slots: { 'course.content': 'relay:mystery' },
+    });
+    expect(resolved.modelInfo).toBeNull();
+  });
+
+  it('keeps the catalogue window for a model it knows on a trusted provider', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        o: { preset: 'openai', apiKey: 'sk-test', modelContextWindows: { 'gpt-5.6': 100_000 } },
+      },
+      slots: { 'course.content': 'o:gpt-5.6' },
+    });
+    expect(resolved.modelInfo?.contextWindow).toBe(1_050_000);
+  });
+
+  it('takes the declared window over a name-colliding catalogue hit on a custom endpoint', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          modelContextWindows: { 'gpt-5.6': 400_000 },
+        },
+      },
+      slots: { 'course.content': 'relay:gpt-5.6' },
+    });
+    expect(resolved.modelInfo).toMatchObject({ contextWindow: 400_000, outputWindow: 128_000 });
+  });
+
+  it('fills a declared window when the catalogue row exists but omits it', async () => {
+    // Lemonade's Gemma row has streaming/tools/vision but no contextWindow.
+    // Override the baseUrl to a non-local address so the SSRF guard passes in tests.
+    const resolved = await resolvesWith({
+      providers: {
+        lm: {
+          preset: 'lemonade',
+          apiKey: '',
+          baseUrl: 'https://lemonade.example/v1',
+          modelContextWindows: { 'Gemma-4-26B-A4B-it-GGUF': 200_000 },
+        },
+      },
+      slots: { 'course.content': 'lm:Gemma-4-26B-A4B-it-GGUF' },
+    });
+    expect(resolved.modelInfo?.contextWindow).toBe(200_000);
+    // The catalogue's own name and capabilities are kept.
+    expect(resolved.modelInfo?.name).toBe('Gemma 4 26B A4B IT GGUF');
+  });
+});

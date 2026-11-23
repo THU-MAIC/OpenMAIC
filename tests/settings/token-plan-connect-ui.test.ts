@@ -11,11 +11,15 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The panel opens on the side the interface language picks; most cases
+// connect mainland plans, so they run with the Simplified Chinese interface.
+const i18n = vi.hoisted(() => ({ locale: 'zh-CN' }));
+
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       options ? [key, ...Object.values(options)].join('|') : key,
-    locale: 'en-US',
+    locale: i18n.locale,
     setLocale: () => {},
   }),
 }));
@@ -46,6 +50,7 @@ const roots: Root[] = [];
 beforeEach(() => {
   vi.stubEnv('ALLOW_LOCAL_NETWORKS', '');
   deployment(null);
+  i18n.locale = 'zh-CN';
 });
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
@@ -282,5 +287,54 @@ it('takes over the builtin reader when keeping an explicit chat choice', async (
   expect(panel.config()?.slots).toMatchObject({
     llm: 'ds:deepseek-v4-pro',
     webFetch: 'kimi-coding-plan',
+  });
+});
+
+describe('Token Plan → mainland and international sides', () => {
+  const planNames = () =>
+    [...document.body.querySelectorAll('[role="tab"]')].map(
+      (tab) => tab.querySelector('.font-medium')?.textContent,
+    );
+
+  it('opens on the international side outside the Simplified Chinese interface', () => {
+    i18n.locale = 'en-US';
+    mountPanel(null);
+    expect(planNames()).toEqual(['MiniMax', 'Kimi', 'DeepSeek']);
+    expect(byText('settings.providerLinks.international').getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(document.body.textContent).toContain('settings.tokenPlan.region');
+    expect(document.body.textContent).toContain('settings.tokenPlan.regionHintInternational');
+    expect(
+      document.body
+        .querySelector('[aria-label="settings.tokenPlan.apiKey"]')
+        ?.getAttribute('placeholder'),
+    ).toBe('sk-cp-...');
+  });
+
+  it('opens on the mainland side in Simplified Chinese and switches sides', () => {
+    mountPanel(null);
+    expect(planNames()).toEqual(['TokenDance', 'MiniMax', 'Seed', 'Kimi', 'DeepSeek']);
+    expect(document.body.textContent).toContain('settings.tokenPlan.regionHintDomestic');
+    act(() => byText('settings.providerLinks.international').click());
+    expect(planNames()).toEqual(['MiniMax', 'Kimi', 'DeepSeek']);
+    expect(document.body.textContent).toContain('settings.tokenPlan.regionHintInternational');
+    expect(document.body.textContent).not.toContain('settings.tokenPlan.regionHintDomestic');
+    expect(
+      document.body.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
+    ).toContain('MiniMax');
+  });
+
+  it('connects the international Kimi plan as its own provider', async () => {
+    i18n.locale = 'en-US';
+    const panel = mountPanel(null);
+    await connectPlan('Kimi', 'sk-kimi-intl-0001');
+    expect(panel.changes[0]).toMatchObject({
+      kind: 'provider',
+      id: 'kimi-intl',
+      preset: 'kimi-intl',
+    });
+    expect(panel.config()?.slots?.llm).toBe('kimi-intl:kimi-for-coding');
+    expect(panel.config()?.slots?.webFetch).toBe('kimi-intl');
   });
 });

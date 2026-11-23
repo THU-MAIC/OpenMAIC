@@ -77,39 +77,68 @@ describe('lifecycle events', () => {
     'no_compaction_boundary',
     'still_oversized',
     'invalid_output_budget',
-  ] as const)('replays %s as localized copy without a retry hint or technical code', (reason) => {
-    const error = new ContextBudgetError(reason).message;
-    const events = [
-      ev('session_start', { prompt: 'keep my request' }),
-      ev('message_end', {
-        message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: error },
-      }),
-      ev('session_end', { status: 'failed', error, errorCode: 'CONTEXT_BUDGET_EXCEEDED' }),
-    ];
-    const state = foldAll(events);
-    const node = state.chat.find((n) => n.kind === 'system')!;
-    const invalid = reason === 'invalid_output_budget';
-    for (const locale of ['en-US', 'zh-CN', 'unknown-locale']) {
-      const notice = presentSystemNotice(node, createWorkbenchTranslator(locale));
-      expect(notice.summary).toBe(
-        locale === 'zh-CN'
-          ? invalid
-            ? '当前模型的上下文预算配置异常，本轮已停止'
-            : '您已达到此会话的长度上限，可以开始新聊天以继续对话'
-          : invalid
-            ? "The current model's context budget is misconfigured. This turn has been stopped"
-            : "You've reached the maximum length for this conversation, but you can keep talking by starting a new chat",
+  ] as const)(
+    'replays %s as its own reason, its own next step, and the code behind the disclosure',
+    (reason) => {
+      const error = new ContextBudgetError(reason).message;
+      const events = [
+        ev('session_start', { prompt: 'keep my request' }),
+        ev('message_end', {
+          message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: error },
+        }),
+        ev('session_end', { status: 'failed', error, errorCode: 'CONTEXT_BUDGET_EXCEEDED' }),
+      ];
+      const state = foldAll(events);
+      const node = state.chat.find((n) => n.kind === 'system')!;
+      // Every reason is its own sentence and its own advice; only the
+      // misconfigured-output-budget copy has no user action (an operator fixes
+      // it), so it alone carries no hint.
+      const copy = {
+        summary_failed: {
+          en: 'This conversation reached the context limit and summarizing its earlier messages failed, so this turn was stopped',
+          zh: '此会话已超出上下文上限，且早期消息的摘要生成失败，本轮已停止',
+          // Not the plain retry hint: a history too large to summarize fails
+          // the same way every time, so the advice names the way out too.
+          hintEn: 'Send another message to retry, or start a new chat if it keeps failing',
+          hintZh: '可以再说一句让它重试；如果反复失败，请开始新聊天',
+        },
+        // These two share one hint: either can come from a single oversized
+        // input, which a new chat alone cannot fix.
+        no_compaction_boundary: {
+          en: "A single message or attachment is too large for the model's context limit",
+          zh: '单条消息或附件过大，超出了模型上下文上限',
+          hintEn: 'Shorten the message or attachments, or start a new chat',
+          hintZh: '请精简消息或附件，或开始新聊天',
+        },
+        still_oversized: {
+          // Says nothing about summarizing: the same reason is raised with
+          // compaction off and when no cut fits, where nothing was summarized.
+          en: "This conversation is too long for the model's context limit",
+          zh: '此会话过长，超出了模型上下文上限',
+          hintEn: 'Shorten the message or attachments, or start a new chat',
+          hintZh: '请精简消息或附件，或开始新聊天',
+        },
+        invalid_output_budget: {
+          en: "The current model's context budget is misconfigured. This turn has been stopped",
+          zh: '当前模型的上下文预算配置异常，本轮已停止',
+        },
+      }[reason];
+      for (const locale of ['en-US', 'zh-CN', 'unknown-locale']) {
+        const notice = presentSystemNotice(node, createWorkbenchTranslator(locale));
+        const zh = locale === 'zh-CN';
+        expect(notice.summary).toBe(zh ? copy.zh : copy.en);
+        expect(notice.hint).toBe(zh ? copy.hintZh : copy.hintEn);
+        // The raw reason code stays available behind the disclosure for support.
+        expect(notice.detail).toBe(error);
+      }
+      expect(state.status).toBe('failed');
+      expect(state.generationOpen).toBe(false);
+      expect(state.chat).toContainEqual(
+        expect.objectContaining({ kind: 'user', text: 'keep my request' }),
       );
-      expect(notice.hint).toBeUndefined();
-      expect(notice.detail).toBeUndefined();
-    }
-    expect(state.status).toBe('failed');
-    expect(state.generationOpen).toBe(false);
-    expect(state.chat).toContainEqual(
-      expect.objectContaining({ kind: 'user', text: 'keep my request' }),
-    );
-    expect(foldAll(events).chat).toEqual(state.chat);
-  });
+      expect(foldAll(events).chat).toEqual(state.chat);
+    },
+  );
 
   it('silently clears a deleted Skill binding without changing the conversation or course', () => {
     const initial = foldAll([
@@ -1222,6 +1251,105 @@ describe('consent_required', () => {
       }),
     ]);
     expect(state.chat).toEqual([]);
+  });
+});
+
+describe('context_compacted (the compaction divider)', () => {
+  const compacted = (data: Record<string, unknown>) => ev('context_compacted', data);
+
+  it('folds the durable frame into a divider between the user bubble and the answer that used it', () => {
+    const events = [
+      ev('session_start', { prompt: 'keep talking' }),
+      compacted({
+        summary: 'The learner asked about light refraction and built two pages.',
+        tokensBefore: 100_000,
+        tokensAfter: 12_000,
+        messagesBefore: 40,
+        messagesAfter: 6,
+      }),
+      ev('message_start', { message: assistantMessage([{ type: 'text', text: '接着说' }]) }),
+      ev('message_end', { message: assistantMessage([{ type: 'text', text: '接着说' }]) }),
+    ];
+    const state = foldAll(events);
+    const divider = state.chat.find((n) => n.kind === 'compaction');
+    expect(divider).toMatchObject({
+      copyKey: 'workbench.system.contextCompacted',
+      compactionSummary: 'The learner asked about light refraction and built two pages.',
+      compactionTokensBefore: 100_000,
+      compactionTokensAfter: 12_000,
+      compactionMessagesBefore: 40,
+      compactionMessagesAfter: 6,
+    });
+    // The divider sits after the request it compacted and before the answer
+    // that answered from the summary: its position IS its meaning.
+    const idx = state.chat.findIndex((n) => n.kind === 'compaction');
+    expect(state.chat[idx - 1]).toMatchObject({ kind: 'user' });
+    expect(state.chat[idx + 1]).toMatchObject({ kind: 'assistant' });
+    // Same prefix in, same view out — the refresh contract.
+    expect(foldAll(events).chat).toEqual(state.chat);
+  });
+
+  it('keeps the frame through replay compaction and refolding', () => {
+    const events = [
+      ev('session_start', { prompt: 'p' }),
+      compacted({
+        summary: 'sum',
+        tokensBefore: 9,
+        tokensAfter: 4,
+        messagesBefore: 5,
+        messagesAfter: 2,
+      }),
+      ev('message_update', { message: assistantMessage([{ type: 'text', text: 'a' }]) }),
+      ev('message_update', { message: assistantMessage([{ type: 'text', text: 'a b' }]) }),
+    ];
+    // Token deltas are compacted on replay; the compaction marker is not.
+    const replayed = compactReplayEvents(events);
+    expect(replayed).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'context_compacted' })]),
+    );
+    const state = foldEvents(blankFold, replayed);
+    expect(state.chat.filter((n) => n.kind === 'compaction')).toHaveLength(1);
+  });
+
+  it('folds to nothing when the frame carries no summary', () => {
+    const before = foldAll([ev('session_start', { prompt: 'p' })]);
+    const state = foldEvent(before, compacted({ summary: '   ', tokensBefore: 9, tokensAfter: 4 }));
+    expect({ ...state, lastEventId: 0 }).toEqual({ ...before, lastEventId: 0 });
+    expect(state.lastEventId).toBe(before.lastEventId + 1);
+  });
+
+  it('inserts the divider before the waiting node when compaction arrives mid-gap', () => {
+    // Compaction fires before the model call, so it can land while the
+    // waiting (gap) node is already open. The divider must sit above the
+    // gap — not below it — otherwise the reply that fills the gap would
+    // appear above the "earlier messages were summarized" caption.
+    let state = foldAll([ev('session_start', { prompt: 'p' })]);
+    expect(state.waitingKey).not.toBeNull();
+    state = foldEvent(
+      state,
+      compacted({ summary: 'The learner asked about waves.', tokensBefore: 50, tokensAfter: 10 }),
+    );
+    const divIdx = state.chat.findIndex((n) => n.kind === 'compaction');
+    const waitIdx = state.chat.findIndex((n) => n.kind === 'waiting');
+    expect(divIdx).toBeGreaterThanOrEqual(0);
+    expect(waitIdx).toBeGreaterThanOrEqual(0);
+    // Divider must come before the waiting node.
+    expect(divIdx).toBeLessThan(waitIdx);
+    // The gap is still open — the reply has not started yet.
+    expect(state.waitingKey).not.toBeNull();
+    // Once thinking arrives the waiting node becomes the thinking bar in
+    // place; the divider must remain above it.
+    state = foldEvent(
+      state,
+      ev('message_update', {
+        message: assistantMessage([{ type: 'thinking', thinking: '嗯' }]),
+      }),
+    );
+    const divIdx2 = state.chat.findIndex((n) => n.kind === 'compaction');
+    const thinkIdx = state.chat.findIndex((n) => n.kind === 'thinking');
+    expect(divIdx2).toBeGreaterThanOrEqual(0);
+    expect(thinkIdx).toBeGreaterThanOrEqual(0);
+    expect(divIdx2).toBeLessThan(thinkIdx);
   });
 });
 

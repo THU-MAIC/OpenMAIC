@@ -206,8 +206,24 @@ export const workbenchEn = {
     steerQueued: 'The agent will respond after finishing the current step',
     runFailed: 'This build failed',
     retryHint: 'Send another message to retry',
-    contextLengthLimit:
-      "You've reached the maximum length for this conversation, but you can keep talking by starting a new chat.",
+    retryOrNewChatHint: 'Send another message to retry, or start a new chat if it keeps failing',
+    /** The compaction divider: everything above it lives on as a summary. */
+    contextCompacted: 'Earlier messages were summarized to continue this conversation',
+    /**
+     * Before → after, not "N summarized": `messagesAfter` counts the summary
+     * plus the kept tail, so the difference is the only honest claim.
+     */
+    contextCompactedMeta:
+      'Context: {{messagesBefore}} → {{messagesAfter}} messages · about {{tokensBefore}} → {{tokensAfter}} tokens',
+    contextSummaryFailed:
+      'This conversation reached the context limit and summarizing its earlier messages failed, so this turn was stopped',
+    /**
+     * Neutral about summarizing: this reason is also raised with compaction
+     * turned off, and when no cut fits before any summary is made.
+     */
+    contextStillTooLarge: "This conversation is too long for the model's context limit",
+    contextNoBoundary: "A single message or attachment is too large for the model's context limit",
+    shortenOrNewChatHint: 'Shorten the message or attachments, or start a new chat',
     contextBudgetInvalid:
       "The current model's context budget is misconfigured. This turn has been stopped.",
     stopped: 'This build was stopped',
@@ -577,7 +593,14 @@ export const workbenchZh = {
     steerQueued: 'agent 会在当前这一步做完后回应你',
     runFailed: '本轮生成失败',
     retryHint: '可以再说一句让它重试',
-    contextLengthLimit: '您已达到此会话的长度上限，可以开始新聊天以继续对话。',
+    retryOrNewChatHint: '可以再说一句让它重试；如果反复失败，请开始新聊天',
+    contextCompacted: '已将较早的消息压缩为摘要以继续对话',
+    contextCompactedMeta:
+      '上下文：{{messagesBefore}} → {{messagesAfter}} 条消息 · 约 {{tokensBefore}} → {{tokensAfter}} tokens',
+    contextSummaryFailed: '此会话已超出上下文上限，且早期消息的摘要生成失败，本轮已停止',
+    contextStillTooLarge: '此会话过长，超出了模型上下文上限',
+    contextNoBoundary: '单条消息或附件过大，超出了模型上下文上限',
+    shortenOrNewChatHint: '请精简消息或附件，或开始新聊天',
     contextBudgetInvalid: '当前模型的上下文预算配置异常，本轮已停止。',
     stopped: '本轮生成已停止',
     workerInterrupted: '被 worker 重启打断，这次调用没有产生结果；agent 会在新一次尝试里按需重发。',
