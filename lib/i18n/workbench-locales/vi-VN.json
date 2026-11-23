@@ -22,7 +22,8 @@
     "waiting": "Đang xử lý",
     "emptyTitle": "Bắt đầu một cuộc trò chuyện",
     "emptyHint": "Hãy mô tả thay đổi bạn muốn, hoặc dùng @ để chỉ một lớp học",
-    "copyReply": "Copy Agent reply"
+    "copyReply": "Copy Agent reply",
+    "copied": "Đã sao chép"
   },
   "question": {
     "waiting": "Đang chờ bạn trả lời",

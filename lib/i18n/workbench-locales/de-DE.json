@@ -22,7 +22,8 @@
     "waiting": "In Arbeit",
     "emptyTitle": "Neues Gespräch beginnen",
     "emptyHint": "Beschreibe die gewünschte Änderung oder nenne mit @ einen Klassenraum",
-    "copyReply": "Copy Agent reply"
+    "copyReply": "Copy Agent reply",
+    "copied": "Kopiert"
   },
   "question": {
     "waiting": "Wartet auf deine Antwort",

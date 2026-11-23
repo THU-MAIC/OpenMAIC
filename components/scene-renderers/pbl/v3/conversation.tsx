@@ -1,18 +1,11 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
 import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
-import { useState, type MouseEvent, type ReactNode } from 'react';
-import {
-  Check,
-  Copy,
-  Route,
-  Code2,
-  GraduationCap,
-  ListChecks,
-  MessageSquareText,
-} from 'lucide-react';
+import type { MouseEvent, ReactNode } from 'react';
+import { Route, Code2, GraduationCap, ListChecks, MessageSquareText } from 'lucide-react';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
+import { ReplyCopyButton } from './reply-copy-button';
 import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
@@ -59,7 +52,6 @@ function AgentTurn({
   onOpenReport?: () => void;
 }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
   const role = entry.speaker === 'user' ? 'mentor' : entry.speaker;
   const Icon = icons[role];
   // Keep the turn visibly alive between text blocks and after completed tools.
@@ -145,26 +137,7 @@ function AgentTurn({
           </p>
         )}
       </div>
-      {copyText && (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-            aria-label={t('workbench.chat.copyReply')}
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(copyText)
-                .then(() => {
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1600);
-                })
-                .catch(() => setCopied(false));
-            }}
-          >
-            {copied ? <Check size={13} /> : <Copy size={13} />}
-          </button>
-        </div>
-      )}
+      {copyText && <ReplyCopyButton text={copyText} />}
     </article>
   );
 }

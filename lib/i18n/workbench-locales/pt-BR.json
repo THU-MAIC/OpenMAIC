@@ -22,7 +22,8 @@
     "waiting": "Processando",
     "emptyTitle": "Comece uma conversa",
     "emptyHint": "Descreva a mudança que você quer, ou use @ para indicar uma turma",
-    "copyReply": "Copy Agent reply"
+    "copyReply": "Copy Agent reply",
+    "copied": "Copiado"
   },
   "question": {
     "waiting": "Aguardando sua resposta",

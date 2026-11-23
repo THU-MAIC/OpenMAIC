@@ -52,6 +52,7 @@ export const workbenchEn = {
     cancelQueued: 'Cancel this request',
     waiting: 'Processing',
     copyReply: 'Copy Agent reply',
+    copied: 'Copied',
     emptyTitle: 'Start a new conversation',
     emptyHint: 'Describe the change you want, or use @ to name a classroom',
   },
@@ -452,6 +453,7 @@ export const workbenchZh = {
   },
   chat: {
     copyReply: '复制 Agent 回复',
+    copied: '已复制',
     stopFailed: '停止失败，请重试',
     sendFailed: '发送失败，请重试',
     elementRefsNotAccepted: '服务暂时不可用，请稍后重试。',
