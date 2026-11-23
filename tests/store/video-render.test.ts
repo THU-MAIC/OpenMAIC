@@ -253,4 +253,34 @@ describe('video render failure presentation and lifecycle', () => {
     fetchMock.mockImplementation(async () => Response.json({ status: 'running', progress: 0.1 }));
     pending.catch(() => {});
   });
+
+  it('estimates remaining render time using running samples after a queue wait', async () => {
+    let polls = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return Response.json({ jobId: 'job-eta' }, { status: 202 });
+      if (url.endsWith('/download')) return new Response(new Blob(['mp4 fixture']));
+      polls += 1;
+      if (polls <= 20) return Response.json({ status: 'queued', queuePosition: 0, progress: 0 });
+      if (polls === 21) return Response.json({ status: 'running', progress: 0.1 });
+      if (polls === 22) return Response.json({ status: 'running', progress: 0.2 });
+      return Response.json({ status: 'succeeded', progress: 1 });
+    });
+
+    const pending = start();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(63_000);
+    expect(useVideoRenderStore.getState()).toMatchObject({
+      status: 'rendering',
+      percent: 10,
+      etaMs: null,
+    });
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(useVideoRenderStore.getState()).toMatchObject({ status: 'rendering', percent: 20 });
+    expect(useVideoRenderStore.getState().etaMs).toBeCloseTo(24_000);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    await pending;
+    expect(mocks.saveAs).toHaveBeenCalledWith(expect.any(Blob), 'Example.mp4');
+  });
 });

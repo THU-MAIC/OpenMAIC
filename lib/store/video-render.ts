@@ -328,30 +328,11 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
 
           const percent = Math.round((data.progress ?? 0) * 100);
 
-          // Derive a recent speed (percent/ms) from the delta since the last
-          // sample, EMA-smooth it, then project the remaining percent. Only
-          // forward progress updates the speed; stalls/regressions are ignored
-          // so a paused stage doesn't blow the ETA up to infinity.
-          const now = Date.now();
-          let etaMs = get().etaMs;
-          if (lastPercent != null && percent > lastPercent && now > lastTs) {
-            const sample = (percent - lastPercent) / (now - lastTs);
-            smoothedSpeed =
-              smoothedSpeed == null
-                ? sample
-                : SPEED_SMOOTHING * sample + (1 - SPEED_SMOOTHING) * smoothedSpeed;
-          }
-          if (percent >= ETA_MIN_PERCENT && percent < 100 && smoothedSpeed && smoothedSpeed > 0) {
-            etaMs = (100 - percent) / smoothedSpeed;
-          }
-          if (lastPercent == null || percent > lastPercent) {
-            lastPercent = percent;
-            lastTs = now;
-          }
-
           const jobQueuePosition =
             typeof data.queuePosition === 'number' ? data.queuePosition : null;
           if (data.status === 'queued') {
+            lastPercent = null;
+            smoothedSpeed = null;
             set({ status: 'queued', queuePosition: jobQueuePosition, percent: 0, etaMs: null });
             toast.loading(
               jobQueuePosition != null
@@ -364,9 +345,28 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
               set({ status: 'rendering', queuePosition: null });
               toast.loading(t('export.videoRendering'), { id: toastId });
             }
+
+            // Measure progress only after rendering starts. The time spent in
+            // the queue says nothing about how fast this job can render.
+            const now = Date.now();
+            let etaMs = get().etaMs;
+            if (lastPercent != null && percent > lastPercent && now > lastTs) {
+              const sample = (percent - lastPercent) / (now - lastTs);
+              smoothedSpeed =
+                smoothedSpeed == null
+                  ? sample
+                  : SPEED_SMOOTHING * sample + (1 - SPEED_SMOOTHING) * smoothedSpeed;
+            }
+            if (percent >= ETA_MIN_PERCENT && percent < 100 && smoothedSpeed && smoothedSpeed > 0) {
+              etaMs = (100 - percent) / smoothedSpeed;
+            }
+            if (lastPercent == null || percent > lastPercent) {
+              lastPercent = percent;
+              lastTs = now;
+            }
             set({ percent, etaMs });
           } else {
-            set({ percent, etaMs });
+            set({ percent });
           }
 
           if (data.status === 'succeeded') {
