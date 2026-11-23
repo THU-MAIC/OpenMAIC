@@ -51,7 +51,7 @@ export const workbenchEn = {
     queuedPlaceholder: 'Waiting in the queue — add a note, then press Enter',
     cancelQueued: 'Cancel this request',
     waiting: 'Processing',
-    copyReply: 'Copy Agent reply',
+    copyReply: 'Copy reply',
     copied: 'Copied',
     emptyTitle: 'Start a new conversation',
     emptyHint: 'Describe the change you want, or use @ to name a classroom',
@@ -452,7 +452,7 @@ export const workbenchZh = {
     unknownSkill: '这个 Skill 已不存在，正在移除它并重试',
   },
   chat: {
-    copyReply: '复制 Agent 回复',
+    copyReply: '复制回复',
     copied: '已复制',
     stopFailed: '停止失败，请重试',
     sendFailed: '发送失败，请重试',
