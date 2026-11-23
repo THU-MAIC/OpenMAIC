@@ -178,6 +178,11 @@ export class StreamBuffer {
   // Roundtable segment tracking
   private currentSegmentText = '';
   private currentAgentId: string | null = null;
+  /**
+   * The agent whose text is arriving now. `currentAgentId` follows the playhead,
+   * which can still be on an earlier agent while the stream has moved on.
+   */
+  private streamAgentId: string | null = null;
 
   // Control
   private _paused = false;
@@ -219,6 +224,7 @@ export class StreamBuffer {
   pushAgentStart(data: Omit<AgentStartItem, 'kind'>): void {
     if (this._disposed) return;
     this.sealLastText();
+    this.streamAgentId = data.agentId;
     this.items.push({ kind: 'agent_start', ...data });
   }
 
@@ -242,7 +248,7 @@ export class StreamBuffer {
       this.items.push({
         kind: 'text',
         messageId,
-        agentId: agentId ?? this.currentAgentId ?? '',
+        agentId: agentId ?? this.streamAgentId ?? this.currentAgentId ?? '',
         partId: `p${this.partCounter++}`,
         text: delta,
         sealed: false,
@@ -260,6 +266,15 @@ export class StreamBuffer {
         break;
       }
     }
+  }
+
+  /**
+   * End the current text segment at a boundary that has no queue item of its
+   * own, such as a whiteboard change that is applied as soon as it arrives.
+   */
+  sealSegment(): void {
+    if (this._disposed) return;
+    this.sealLastText();
   }
 
   pushAction(data: Omit<ActionItem, 'kind'>): void {
@@ -478,9 +493,9 @@ export class StreamBuffer {
       const item = this.items[i];
       if (item.kind === 'text' && !item.sealed) {
         item.sealed = true;
-        // Ordering invariant: sealLastText() is called BEFORE pushAgentEnd/pushAgentStart,
-        // so this.currentAgentId still refers to the agent whose text is being sealed.
-        this.cb.onSegmentSealed?.(item.messageId, item.partId, item.text, this.currentAgentId);
+        // The item's own agent, fixed when its text arrived. The playhead's
+        // agent can still be an earlier speaker, whose voice would be wrong.
+        this.cb.onSegmentSealed?.(item.messageId, item.partId, item.text, item.agentId || null);
         break;
       }
       // Stop searching once we hit a non-text item

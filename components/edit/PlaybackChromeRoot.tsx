@@ -538,9 +538,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     /** Request failure should exit live discussion UI without hard-closing the session. */
     const handleLiveSessionError = useCallback(() => {
       engineRef.current?.handleDiscussionError();
+      // The failed turn's remaining speech must not keep playing after its UI is gone.
+      discussionTTS.cleanup();
       resetLiveState();
       setActiveBubbleId(null);
-    }, [resetLiveState]);
+    }, [resetLiveState, discussionTTS]);
 
     /**
      * Unified session cleanup — called by both roundtable stop button and chat area end button.
@@ -640,13 +642,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       ref,
       () => ({
         teardown: async () => {
+          // Silence speech first: ending the session can wait on a whiteboard action.
+          discussionTTS.cleanup();
           await chatAreaRef.current?.endActiveSession();
           if (discussionAbortRef.current) {
             discussionAbortRef.current.abort();
             discussionAbortRef.current = null;
           }
           engineRef.current?.stop();
-          discussionTTS.cleanup();
           resetSceneState();
         },
         pauseForInteractiveMedia: () => {
@@ -782,6 +785,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         // Bump epoch so any stale SSE callbacks from the previous scene are discarded
         sceneEpochRef.current++;
 
+        // Stop any in-flight discussion TTS audio on scene switch, before the wait
+        // below, so the previous scene's next line cannot start during it.
+        discussionTTS.cleanup();
+
         // Wait for an in-flight presentation action before initializing the next
         // scene against shared whiteboard state.
         await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
@@ -792,9 +799,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           discussionAbortRef.current.abort();
           discussionAbortRef.current = null;
         }
-
-        // Stop any in-flight discussion TTS audio on scene switch
-        discussionTTS.cleanup();
 
         const sessionResumeCursor =
           currentScene && typeof window !== 'undefined'
@@ -2437,6 +2441,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               setIsCueUser(true);
             }}
             onLiveSessionError={handleLiveSessionError}
+            onLiveSessionStopping={discussionTTS.cleanup}
             onSoftCloseSession={() => {
               setThinkingState(null);
               setSpeechProgress(null);

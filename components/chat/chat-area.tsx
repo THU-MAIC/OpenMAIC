@@ -43,6 +43,7 @@ interface ChatAreaProps {
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
   onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onLiveSessionError?: () => void;
+  onLiveSessionStopping?: () => void;
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
   onStopSession?: (payload: SessionCleanupPayload) => void;
@@ -106,6 +107,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onThinking,
       onCueUser,
       onLiveSessionError,
+      onLiveSessionStopping,
       onSoftCloseSession,
       onSoftClosingChange,
       onStopSession,
@@ -149,6 +151,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onCueUser,
       onActiveBubble,
       onLiveSessionError,
+      onLiveSessionStopping,
       onSoftCloseSession,
       onStopSession,
       onSegmentSealed,

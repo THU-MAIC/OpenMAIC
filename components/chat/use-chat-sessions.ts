@@ -130,6 +130,13 @@ interface UseChatSessionsOptions {
   onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSessionError?: () => void;
+  /**
+   * Called as soon as a QA/Discussion session is ended by a manual stop, a
+   * soft-close confirmation or a scene switch, before waiting for an in-flight
+   * whiteboard action.
+   * Speech for the ended turn should stop here rather than after that wait.
+   */
+  onLiveSessionStopping?: () => void;
   /** Called immediately when the server semantically closes a QA/Discussion session. */
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   /** Called when a QA/Discussion session completes naturally (director end). */
@@ -548,24 +555,30 @@ export async function respondToWhiteboardVisibilityQuery(
   }
 }
 
+/**
+ * Apply a Native whiteboard event. Returns true when it was a whiteboard action
+ * that took effect (a committed change, or the board opened or closed), which
+ * ends the speech segment before it. A visibility query only reads.
+ */
 export function consumePiWhiteboardEvent(
   data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'],
   signal: AbortSignal,
-): void {
-  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+): boolean {
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return false;
   if (data.kind === 'visibility_query') {
     void respondToWhiteboardVisibilityQuery(data, signal).catch((error) => {
       if (!signal.aborted) log.warn('Whiteboard visibility response failed', error);
     });
-    return;
+    return false;
   }
   if (data.kind === 'projection') {
     void refreshWhiteboardRuntimeProjection(data.stageId, data.lastSeq);
-    return;
+    return true;
   }
   const canvas = useCanvasStore.getState();
-  if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return;
+  if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return false;
   canvas.setWhiteboardOpen(data.kind === 'open');
+  return true;
 }
 
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
@@ -575,6 +588,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onCueUserRef = useRef(options.onCueUser);
   const onActiveBubbleRef = useRef(options.onActiveBubble);
   const onLiveSessionErrorRef = useRef(options.onLiveSessionError);
+  const onLiveSessionStoppingRef = useRef(options.onLiveSessionStopping);
   const onSoftCloseSessionRef = useRef(options.onSoftCloseSession);
   const onStopSessionRef = useRef(options.onStopSession);
   const onSegmentSealedRef = useRef(options.onSegmentSealed);
@@ -586,6 +600,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     onCueUserRef.current = options.onCueUser;
     onActiveBubbleRef.current = options.onActiveBubble;
     onLiveSessionErrorRef.current = options.onLiveSessionError;
+    onLiveSessionStoppingRef.current = options.onLiveSessionStopping;
     onSoftCloseSessionRef.current = options.onSoftCloseSession;
     onStopSessionRef.current = options.onStopSession;
     onSegmentSealedRef.current = options.onSegmentSealed;
@@ -597,6 +612,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     options.onCueUser,
     options.onActiveBubble,
     options.onLiveSessionError,
+    options.onLiveSessionStopping,
     options.onSoftCloseSession,
     options.onStopSession,
     options.onSegmentSealed,
@@ -1191,7 +1207,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       const onEvent = (event: StatelessEvent) => {
         if (event.type === 'whiteboard') {
-          consumePiWhiteboardEvent(event.data, controller.signal);
+          // A whiteboard action ends the text before it, as an action item does,
+          // so that text goes to speech synthesis without waiting for the turn.
+          if (consumePiWhiteboardEvent(event.data, controller.signal)) {
+            currentBuffer?.sealSegment();
+          }
           return;
         }
         if (!currentBuffer) {
@@ -1405,6 +1425,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       const wasStreaming = !!(
         abortControllerRef.current && streamingSessionIdRef.current === sessionId
       );
+      if (
+        isLiveSession &&
+        (options.source === 'manual_stop' ||
+          options.source === 'soft_close_confirmed' ||
+          options.source === 'scene_switch')
+      ) {
+        onLiveSessionStoppingRef.current?.();
+      }
 
       // Retire presentation work before callers start another session. An action
       // already inside ActionEngine cannot be cancelled, so wait for it to settle.

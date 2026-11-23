@@ -828,36 +828,62 @@ describe('Pi Native whiteboard Browser events', () => {
     const stage = useStageStore.getState().stage;
     const signal = new AbortController().signal;
 
-    consumePiWhiteboardEvent(
-      {
-        kind: 'open',
-        stageId: 'stage-1',
-        manualVisibilityRevision: 2,
-      },
-      signal,
-    );
+    // The return value says whether the action took effect, which ends the
+    // speech segment before it; ignored events must not split speech.
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'open',
+          stageId: 'stage-1',
+          manualVisibilityRevision: 2,
+        },
+        signal,
+      ),
+    ).toBe(true);
     expect(useCanvasStore.getState().whiteboardOpen).toBe(true);
 
     useCanvasStore.getState().setWhiteboardOpenManually(false);
-    consumePiWhiteboardEvent(
-      {
-        kind: 'open',
-        stageId: 'stage-1',
-        manualVisibilityRevision: 2,
-      },
-      signal,
-    );
-    consumePiWhiteboardEvent(
-      {
-        kind: 'close',
-        stageId: 'another-stage',
-        manualVisibilityRevision: 3,
-      },
-      signal,
-    );
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'open',
+          stageId: 'stage-1',
+          manualVisibilityRevision: 2,
+        },
+        signal,
+      ),
+    ).toBe(false);
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'close',
+          stageId: 'another-stage',
+          manualVisibilityRevision: 3,
+        },
+        signal,
+      ),
+    ).toBe(false);
 
     expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
     expect(useStageStore.getState().stage).toBe(stage);
+  });
+
+  it('reports a committed change as an action, but not one for another Stage or after abort', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+    const projection = { kind: 'projection', stageId: 'stage-1', lastSeq: 1 } as const;
+    expect(consumePiWhiteboardEvent(projection, new AbortController().signal)).toBe(true);
+    expect(
+      consumePiWhiteboardEvent(
+        { ...projection, stageId: 'another-stage' },
+        new AbortController().signal,
+      ),
+    ).toBe(false);
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(consumePiWhiteboardEvent(projection, aborted.signal)).toBe(false);
   });
 
   it('answers a current-Stage visibility query with the active Browser state', async () => {
@@ -866,14 +892,17 @@ describe('Pi Native whiteboard Browser events', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const controller = new AbortController();
-    consumePiWhiteboardEvent(
-      {
-        kind: 'visibility_query',
-        queryId: 'query-1',
-        stageId: 'stage-1',
-      },
-      controller.signal,
-    );
+    // A query only reads the board, so it does not end a speech segment.
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'visibility_query',
+          queryId: 'query-1',
+          stageId: 'stage-1',
+        },
+        controller.signal,
+      ),
+    ).toBe(false);
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith('/api/chat/pi/whiteboard-visibility', {

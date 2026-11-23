@@ -407,3 +407,85 @@ describe('StreamBuffer Pi wrap-up ordering', () => {
     expect(actionSignal?.aborted).toBe(true);
   });
 });
+
+describe('StreamBuffer speech segments', () => {
+  type Sealed = { messageId: string; partId: string; text: string; agentId: string | null };
+
+  function createBuffer(sealed: Sealed[], speakers: Array<string | null> = []) {
+    return new StreamBuffer(
+      {
+        onAgentStart() {},
+        onAgentEnd() {},
+        onTextReveal() {},
+        onActionReady() {},
+        onLiveSpeech(text, agentId) {
+          if (text) speakers.push(agentId);
+        },
+        onSpeechProgress() {},
+        onThinking() {},
+        onCueUser() {},
+        onDone() {},
+        onError(message) {
+          throw new Error(message);
+        },
+        onSegmentSealed(messageId, partId, text, agentId) {
+          sealed.push({ messageId, partId, text, agentId });
+        },
+      },
+      { tickMs: 1, charsPerTick: 100 },
+    );
+  }
+
+  it('ends a segment at sealSegment and starts a new part for the same message', () => {
+    const sealed: Sealed[] = [];
+    const buffer = createBuffer(sealed);
+    buffer.pushAgentStart({ messageId: 'm1', agentId: 'teacher', agentName: 'Teacher' });
+    buffer.pushText('m1', 'First we draw the axes.');
+    buffer.sealSegment();
+    buffer.sealSegment();
+    buffer.pushText('m1', 'Then the curve.');
+    buffer.pushAgentEnd({ messageId: 'm1', agentId: 'teacher' });
+
+    expect(sealed).toEqual([
+      { messageId: 'm1', partId: 'p0', text: 'First we draw the axes.', agentId: 'teacher' },
+      { messageId: 'm1', partId: 'p1', text: 'Then the curve.', agentId: 'teacher' },
+    ]);
+    buffer.shutdown();
+  });
+
+  it('does nothing after shutdown', () => {
+    const sealed: Sealed[] = [];
+    const buffer = createBuffer(sealed);
+    buffer.pushAgentStart({ messageId: 'm1', agentId: 'teacher', agentName: 'Teacher' });
+    buffer.pushText('m1', 'Unfinished');
+    buffer.shutdown();
+    buffer.sealSegment();
+    expect(sealed).toEqual([]);
+  });
+
+  it('seals each segment with the speaker who said it while the playhead lags behind', async () => {
+    const sealed: Sealed[] = [];
+    const speakers: Array<string | null> = [];
+    const buffer = createBuffer(sealed, speakers);
+    // Both agents stream before the playhead has processed anything.
+    buffer.pushAgentStart({ messageId: 'a', agentId: 'teacher', agentName: 'Teacher' });
+    buffer.pushText('a', 'Teacher line.');
+    buffer.pushAgentEnd({ messageId: 'a', agentId: 'teacher' });
+    buffer.pushAgentStart({ messageId: 'b', agentId: 'student', agentName: 'Student' });
+    buffer.pushText('b', 'Student line before a drawing.');
+    buffer.sealSegment();
+    buffer.pushText('b', 'Student line after it.');
+    buffer.pushAgentEnd({ messageId: 'b', agentId: 'student' });
+
+    expect(sealed.map((s) => [s.text, s.agentId])).toEqual([
+      ['Teacher line.', 'teacher'],
+      ['Student line before a drawing.', 'student'],
+      ['Student line after it.', 'student'],
+    ]);
+
+    // The bubble still follows the playhead.
+    await buffer.flush();
+    expect(speakers[0]).toBe('teacher');
+    expect(speakers.at(-1)).toBe('student');
+  });
+});
