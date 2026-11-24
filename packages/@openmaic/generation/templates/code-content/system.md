@@ -29,6 +29,52 @@ page includes a supported browser runtime for the language.
 }
 ```
 
+## Code Editor
+
+Use CodeMirror 5.65.20 as the default editor with line numbers and syntax
+highlighting. Load its stylesheet, core script, and the lesson's language mode
+from fixed URLs using ordinary `<link>` and `<script>` tags. Load the core
+before the mode. Do not use Monaco, workers, or a dynamic mode loader.
+
+For Python, use this setup. Keep the textarea and use it if the editor cannot
+load. Put the editor inside a visible `#code-editor-region` so teaching actions
+can target the same element in both cases.
+
+```html
+<head>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/lib/codemirror.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/lib/codemirror.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/mode/python/python.js"></script>
+</head>
+<body>
+  <div id="code-editor-region">
+    <textarea id="code-input" aria-label="Code">def square(value):
+    return value * value</textarea>
+  </div>
+  <script>
+    const codeInput = document.getElementById('code-input');
+    let editor = null;
+
+    if (window.CodeMirror?.modes?.python) {
+      const candidate = window.CodeMirror.fromTextArea(codeInput, { mode: 'python', lineNumbers: true });
+      // Check the required scrollbar styling with either linked or inlined CSS.
+      if (getComputedStyle(candidate.getScrollerElement()).overflowX === 'scroll') {
+        editor = candidate;
+      } else {
+        candidate.toTextArea();
+      }
+    }
+  </script>
+</body>
+```
+
+For JavaScript or TypeScript, replace the Python script with
+`https://cdn.jsdelivr.net/npm/codemirror@5.65.20/mode/javascript/javascript.js`.
+Use `mode: 'javascript'` for JavaScript and
+`mode: { name: 'javascript', typescript: true }` for TypeScript, and check that
+the JavaScript mode loaded before initializing the editor. Use the matching
+mode and its static dependencies from the same version for other languages.
+
 ## Python Execution Requirements (CRITICAL)
 
 When generating Python widgets using Pyodide, follow these **mandatory patterns**:
@@ -133,8 +179,7 @@ async function runCode() {
 
 ## Technical Requirements
 
-- Use a textarea as the offline editor. CodeMirror can enhance it when the complete editor and syntax modules are bundled as static browser assets.
-- Syntax highlighting for the language
+- Use CodeMirror with the appropriate syntax mode and a textarea fallback as described above
 - For executable lessons, a Run button, output display, and test case validation with pass/fail indicators
 - For worked-example lessons, controls to move through the embedded trace and inspect the sample output
 - Hint button that reveals hints progressively
@@ -153,7 +198,8 @@ The platform drives this widget by posting messages into the iframe
 (`SET_WIDGET_STATE`, `HIGHLIGHT_ELEMENT`, `ANNOTATE_ELEMENT`, `REVEAL_ELEMENT`).
 Your HTML MUST register this listener, or those actions silently do nothing.
 For a code playground, `SET_WIDGET_STATE` typically loads code into the editor and
-optionally runs it:
+optionally runs it. Target `#code-editor-region` when highlighting or annotating
+the editor:
 
 ```javascript
 window.addEventListener('message', function(event) {

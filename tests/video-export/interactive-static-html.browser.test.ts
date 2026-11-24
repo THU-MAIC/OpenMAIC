@@ -59,6 +59,45 @@ async function load(page: Page, fixture: { index: string; child: string }): Prom
   await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'load' });
 }
 
+function codeMirrorFixture() {
+  const prompt = readFileSync(
+    join(process.cwd(), 'packages/@openmaic/generation/templates/code-content/system.md'),
+    'utf8',
+  );
+  const editor = [...prompt.matchAll(/```html\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .find((example) => example.includes('CodeMirror.fromTextArea'));
+  const listener = [...prompt.matchAll(/```javascript\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .find((example) => example.includes("addEventListener('message'"));
+  expect(editor).toBeDefined();
+  expect(listener).toBeDefined();
+
+  const packageRoot = join(process.cwd(), 'node_modules/codemirror');
+  const { version } = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+  const assetRoot = `https://cdn.jsdelivr.net/npm/codemirror@${version}/`;
+  const assets = new Map(
+    [
+      ['lib/codemirror.css', 'text/css'],
+      ['lib/codemirror.js', 'text/javascript'],
+      ['mode/python/python.js', 'text/javascript'],
+    ].map(([path, contentType]) => [
+      assetRoot + path,
+      { bytes: readFileSync(join(packageRoot, path)), contentType },
+    ]),
+  );
+  const html = `<!doctype html>${editor!.replace(
+    '</body>',
+    `<output id="output"></output><script>
+      async function runCode() {
+        document.getElementById('output').textContent = editor?.getValue() ?? codeInput.value;
+      }
+      ${listener}
+    </script></body>`,
+  )}`;
+  return { html, assets, assetRoot };
+}
+
 describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
   let browser: Browser;
 
@@ -73,6 +112,90 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
   afterAll(async () => {
     await browser?.close();
   });
+
+  it('exports the prompted CodeMirror editor and replays its teaching actions offline', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      const { html, assets } = codeMirrorFixture();
+      const replacement = 'def double(value):\n    return value * 2';
+      const externalRequests: string[] = [];
+      const pageErrors: string[] = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.route(/^https?:\/\//, (route) => {
+        externalRequests.push(route.request().url());
+        return route.abort();
+      });
+      await load(
+        page,
+        await emittedFixture(html, async (url) => assets.get(url) ?? null, [
+          { id: 'intro', type: 'speech', text: 'Look at the initial code.' },
+          { id: 'code', type: 'widget_setState', state: { code: replacement, run: true } },
+          { id: 'highlight', type: 'widget_highlight', target: '#code-editor-region' },
+          { id: 'outro', type: 'speech', text: 'Now the code doubles its input.' },
+        ]),
+      );
+
+      await page.locator('[data-interactive-static-state="frozen"]').waitFor({ state: 'attached' });
+      const child = page.frames()[1];
+      const editor = child.locator('.CodeMirror');
+      expect(await editor.isVisible()).toBe(true);
+      expect(await editor.evaluate((element) => getComputedStyle(element).position)).toBe(
+        'relative',
+      );
+      expect(await child.locator('.CodeMirror-code .cm-keyword').allTextContents()).toEqual([
+        'def',
+        'return',
+      ]);
+      expect(await child.locator('#code-input').isVisible()).toBe(false);
+
+      await page.evaluate(async () => {
+        const host = document.querySelector('[data-widget-actions]')!;
+        const [state, highlight] = JSON.parse(host.getAttribute('data-widget-actions')!);
+        await Reflect.get(window, '__openmaicInteractiveReady');
+        const timeline = Reflect.get(window, '__timelines').openmaic;
+        timeline.time((Math.max(state.at, highlight.at) + 50) / 1000, true);
+        await Reflect.get(window, '__hfWaitForSeekCompletion')();
+      });
+
+      expect(await child.locator('#output').textContent()).toBe(replacement);
+      expect(await child.locator('.CodeMirror-code .cm-def').allTextContents()).toContain('double');
+      expect(
+        await child
+          .locator('#code-editor-region')
+          .evaluate((element) => element.style.outlineWidth),
+      ).toBe('3px');
+      expect(externalRequests).toEqual([]);
+      expect(pageErrors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.each(['lib/codemirror.css', 'lib/codemirror.js', 'mode/python/python.js'])(
+    'keeps the prompted textarea usable when %s fails to load',
+    async (missingPath) => {
+      const page = await browser.newPage();
+      try {
+        const { html, assets, assetRoot } = codeMirrorFixture();
+        await page.route(`${assetRoot}**`, (route) => {
+          const url = route.request().url();
+          const asset = assets.get(url);
+          if (!asset || url === assetRoot + missingPath) return route.abort();
+          return route.fulfill({ body: asset.bytes, contentType: asset.contentType });
+        });
+        await page.setContent(html);
+        expect(await page.locator('.CodeMirror').count()).toBe(0);
+        expect(await page.locator('#code-input').isVisible()).toBe(true);
+        await page.evaluate(() => {
+          window.postMessage({ type: 'SET_WIDGET_STATE', state: { code: 'print(42)', run: true } });
+        });
+        await page.locator('#output', { hasText: 'print(42)' }).waitFor();
+        expect(await page.locator('#code-input').inputValue()).toBe('print(42)');
+      } finally {
+        await page.close();
+      }
+    },
+  );
 
   it('freezes the settled initial state before exposing the Hyperframes timeline', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });

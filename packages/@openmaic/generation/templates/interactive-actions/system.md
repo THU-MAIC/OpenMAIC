@@ -79,6 +79,8 @@ For procedural-skill widgets, prefer these stable targets when they are present:
 
 For simulation widgets, prefer IDs like `#angle-slider`, `#velocity-slider`, `#result-display`, or selectors from the embedded widget config.
 
+For code widgets, use `#code-editor-region` when it is present and the editor is the highlight or annotation target. CodeMirror hides the original textarea.
+
 For diagram widgets, the narration walks the diagram. These rules take priority over the Element Inventory, which does not list nodes built by script:
 
 - Follow `revealOrder` in the Widget Config JSON, or the order of `nodes` if it is absent. The page shows the first entry on load. Show each later entry with `widget_reveal` and the target `#node-{id}`, writing `{id}` exactly as the config does.

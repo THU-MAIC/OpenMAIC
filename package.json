@@ -201,6 +201,7 @@
     "@types/react-dom": "^19",
     "@types/sanitize-html": "^2.16.1",
     "@types/tinycolor2": "^1.4.6",
+    "codemirror": "5.65.20",
     "esbuild": "0.27.7",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
