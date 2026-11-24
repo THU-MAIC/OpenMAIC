@@ -36,6 +36,7 @@ export function visibleProductLabels(locale = 'en-US', nextStep?: string, nextMi
     submitDecision: p.submitDecision,
     runTests: p.runTests,
     submitQuiz: p.submitQuiz,
+    resubmit: p.resubmit,
     build: p.build,
     continue: nextStep
       ? p.journey.enterStep.replace('{{step}}', () => steps[nextStep] ?? nextStep)

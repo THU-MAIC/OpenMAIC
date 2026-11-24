@@ -1,6 +1,6 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
-import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel, hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
 import { useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import {
   Check,
@@ -56,9 +56,11 @@ function groupParts(parts: Part[]) {
 function AgentTurn({
   entry,
   onOpenReport,
+  nextAction,
   persona = false,
 }: {
   entry: LearningConversationEntry;
+  nextAction?: string;
   onOpenReport?: () => void;
   /** Show the role as a named character, with its face, instead of a role label. */
   persona?: boolean;
@@ -125,7 +127,10 @@ function AgentTurn({
                   {t(
                     part.some((tool) => tool.projectCompleted)
                       ? 'pblV3.reportCopy.completed'
-                      : 'pblV3.journey.completionHandoff',
+                      : nextAction
+                        ? 'pblV3.journey.ready'
+                        : 'pblV3.journey.completionHandoff',
+                    { action: nextAction },
                   )}
                 </p>
               )}
@@ -191,9 +196,11 @@ function AgentTurn({
 function ConversationEntry({
   entry,
   onOpenReport,
+  nextAction,
   persona,
 }: {
   entry: LearningConversationEntry;
+  nextAction?: string;
   onOpenReport?: () => void;
   persona?: boolean;
 }) {
@@ -220,7 +227,13 @@ function ConversationEntry({
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
-    <AgentTurn key={entry.id} entry={entry} onOpenReport={onOpenReport} persona={persona} />
+    <AgentTurn
+      key={entry.id}
+      entry={entry}
+      onOpenReport={onOpenReport}
+      persona={persona}
+      nextAction={nextAction}
+    />
   );
 }
 export function LearningConversation({
@@ -334,6 +347,11 @@ export function LearningConversation({
         <ConversationEntry
           key={entry.id}
           entry={entry}
+          nextAction={
+            entry.currentStage && view.actions.includes('next')
+              ? continueActionLabel(view, t)
+              : undefined
+          }
           onOpenReport={onOpenReport}
           persona={persona}
         />

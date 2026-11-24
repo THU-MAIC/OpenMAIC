@@ -491,6 +491,8 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.conversation = markRecoveredTeachingTools(view.conversation);
   view.activitySequence!++;
   publishLearning();
+  // Completed groups fold automatically, including a group with a failed call.
+  await transcript.getByRole('button', { name: '3 tool calls · 1 failed' }).click();
   await expect(
     transcript.locator('[data-testid="workbench-tool-card"][data-status="failed"]'),
   ).toHaveCount(1);
@@ -765,6 +767,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   });
   await expect(enterDecisions).toHaveCount(0);
   view.actions = ['chat', 'next'];
+  view.conversation![1]!.currentStage = true;
   view.conversation![1]!.parts.push({
     kind: 'tool',
     id: 'completion',
@@ -774,12 +777,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.revision++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(enterDecisions).toBeVisible();
-  await expect(
-    page.getByText(
-      'This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.',
-      { exact: true },
-    ),
-  ).toBeVisible();
+  await expect(page.getByTestId('pbl-completion-handoff')).toHaveText(
+    'This step is ready. Choose “Continue to Make your decisions” when you are ready to move on.',
+  );
   await expect(enterDecisions).toHaveAttribute('data-state', 'ready');
   await expect(enterDecisions).toBeEnabled();
   const readyGradient = () => enterDecisions.evaluate((el) => getComputedStyle(el).backgroundImage);

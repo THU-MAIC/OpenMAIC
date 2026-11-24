@@ -20,27 +20,5 @@ export function pblExplanationSkill() {
     .trim());
 }
 
-/**
- * The product guide describes the docked assistant pane. With the whiteboard on, the same
- * controls sit beside the tutor avatar, so directions given to the learner must say so.
- */
-export function pblWhiteboardProductWording(text: string, withLayoutNote = false) {
-  return (
-    text
-      .replaceAll(
-        'Task bar at the bottom of the Learning Assistant pane',
-        'Controls beside the tutor avatar at the bottom-right corner of the workbench',
-      )
-      .replaceAll(
-        'the task bar at the bottom of the Learning Assistant pane',
-        'the controls beside the tutor avatar at the bottom-right corner of the workbench',
-      )
-      .replaceAll(
-        'The task drawer opens upward from the visibly labeled Current task button on',
-        'The task drawer opens in the conversation window, reached from the progress ring around the tutor avatar, among',
-      ) +
-    (withLayoutNote
-      ? '\nWhiteboard layout: your reply appears as a speech bubble above the tutor avatar at the bottom-right corner. The learner types or speaks back in the input under that bubble, and the single next-step or Run tests button sits beside the avatar; clicking the avatar opens the full conversation. The whiteboard is a movable window over the workbench that the learner can close and reopen from the pencil button in the workbench header. There is no Learning Assistant pane unless the learner docks the conversation.'
-      : '')
-  );
-}
+export const pblWhiteboardLayout =
+  'Whiteboard layout: the learner can use a speech bubble beside the tutor avatar, a floating conversation window, or a docked assistant. The active layout is unobserved. The whiteboard can be closed and reopened from the workbench header.';

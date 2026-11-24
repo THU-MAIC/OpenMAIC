@@ -1,7 +1,7 @@
 import {
   pblExplanationSkill,
   pblWhiteboardEnabled,
-  pblWhiteboardProductWording,
+  pblWhiteboardLayout,
   pblWhiteboardTeachingRole,
 } from './whiteboard-config';
 import { HOST_STATE_TAIL_RULES } from '@/lib/ai/request-state-tail';
@@ -156,7 +156,7 @@ function buildTeachingPrompt({
       ? 'Project readiness is a chat reply, not a Continue button. After that reply, read_next_skill opens formal teaching inside this same first step; do not send the learner to another step.'
       : finalRecap
         ? 'Only a successful final recap complete_stage receipt completes the project and reveals the report in the top toolbar, final completion message and project overview. The completion banner only shows status. Before that receipt, do not claim completion or say a report is already available. Refer to the actual productContext.visibleLabels.report text when giving directions. The report links back to the read-only workbench and remains discoverable after revisiting the PBL scene. Do not ask for another Continue click or append another milestone.'
-        : 'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar at the bottom of the Learning Assistant pane to enter the next step. Quote productContext.visibleLabels.continue exactly when naming that button.';
+        : 'After the current completion gates succeed and productContext allows Continue, the learner chooses the named next-step button to enter the next step. Quote productContext.visibleLabels.continue exactly when naming that button.';
   const artifactApprovalRequired = requiresArtifactApproval(stage);
   const guided = stage.kind === 'produce' || stage.kind === 'mentor_say';
   const repairing = stage.kind === 'check' && stage.checker === 'tests' && !!collected.remediation;
@@ -310,7 +310,7 @@ function buildTeachingPrompt({
     productHelpRules +
     '\n' +
     HOST_STATE_TAIL_RULES +
-    (boardTeaching ? '\n' + pblExplanationSkill() : '');
+    (boardTeaching ? '\n' + pblExplanationSkill() + '\n' + pblWhiteboardLayout : '');
   const initialContext =
     '\nInitial teaching state: ' +
     JSON.stringify({
@@ -341,11 +341,6 @@ function buildTeachingPrompt({
           }
         : {}),
     });
-  if (boardTeaching)
-    return {
-      systemPrompt: pblWhiteboardProductWording(systemPrompt, true),
-      initialContext: pblWhiteboardProductWording(initialContext),
-    };
   return { systemPrompt, initialContext };
 }
 

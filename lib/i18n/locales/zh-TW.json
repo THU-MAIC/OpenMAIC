@@ -3093,7 +3093,7 @@
       "currentMilestone": "目前階段",
       "milestoneGoal": "目標：",
       "milestoneResult": "成果：",
-      "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
+      "completionHandoff": "本環節已完成。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",

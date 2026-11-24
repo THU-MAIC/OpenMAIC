@@ -227,6 +227,51 @@ async function project(
   return { view, workbench, commands, calls, applicationCalls, publish, publishRaw, stageId };
 }
 
+const assistantModes = ['bubble', 'window', 'docked'] as const;
+
+async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number]) {
+  if (mode === 'bubble') return;
+  await page.getByTestId('pbl-companion-avatar').click();
+  if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
+}
+
+for (const mode of assistantModes) {
+  test(`decision controls in the ${mode} match the tutor's named action`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const { view } = fixture;
+    view.state.position.stageIndex = 1;
+    view.stage = {
+      kind: 'dialogue',
+      agent: 'discussion',
+      reads: [],
+      collects: 'decisions',
+      studentActions: ['chat', 'decide'],
+    };
+    view.actions = ['chat', 'decide'];
+    view.decisions = [
+      {
+        id: 'direction',
+        prompt: 'Choose a direction',
+        requiresRationale: true,
+        options: [{ id: 'a', label: 'North' }],
+      },
+    ];
+    view.revision++;
+    await fixture.publish();
+    await useAssistantMode(page, mode);
+    if (mode !== 'bubble')
+      await page.getByRole('button', { name: 'Current task', exact: true }).click();
+    const form = page.getByTestId('pbl-decision-response').filter({ visible: true });
+    await form.getByRole('button', { name: 'North' }).click();
+    await form.getByRole('textbox').fill('It matches the goal.');
+    await form.getByRole('button', { name: 'Submit decision', exact: true }).click();
+    await expect.poll(() => fixture.commands.filter((c) => c === 'decide').length).toBe(1);
+  });
+}
+
 for (const previous of ['tests', 'quiz'] as const) {
   test(`retires companion instructions when leaving ${previous} without removing history`, async ({
     page,
