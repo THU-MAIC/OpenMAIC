@@ -14,6 +14,7 @@
 // provider. A plan the server configures is shown as connected, read-only.
 
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -79,7 +80,7 @@ import {
 } from './server-settings';
 import { MS, slotName } from './models/slot-meta';
 import { CARD_CAPABILITIES, PlanCapabilities, planModels } from './plan-capabilities';
-import { PlanQuotaCard, QuotaSummary, usePlanQuotas } from './plan-quota';
+import { isBalanceOnly, PlanQuotaCard, QuotaSummary, usePlanQuotas } from './plan-quota';
 
 const REGIONS: readonly TokenPlanRegion[] = ['domestic', 'international'];
 
@@ -186,14 +187,17 @@ function PresetLogo({ preset, size = 'md' }: { preset: TokenPlanPreset; size?: '
   );
 }
 
-const pill = 'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium';
+const pill = 'inline-flex items-center rounded-full border px-1.5 py-0.5 text-[11px] font-medium';
 
 export function TokenPlanSettings({
   view,
   apply,
+  regionSlot,
 }: {
   view: ModelSettingsView;
   apply: ApplyChange;
+  /** Where the dialog's header hosts the region switch; without one the panel shows it. */
+  regionSlot?: HTMLElement | null;
 }) {
   const { t, locale } = useI18n();
   const tp = 'settings.tokenPlan';
@@ -254,14 +258,14 @@ export function TokenPlanSettings({
   /** A connected plan's priority among the region's connected plans. */
   const rankOf = (plan: TokenPlanPreset) => connected.indexOf(plan) + 1;
 
-  /** How a card names a service: a connected plan with its rank, else its provider. */
-  const serviceName = (providerId: string): string => {
+  /** How a card names a service: a connected plan (with its rank, unless not wanted), else its provider. */
+  const serviceName = (providerId: string, withRank = true): string => {
     const provider = view.providers.find((entry) => entry.id === providerId);
     const plan = provider
       ? TOKEN_PLAN_PRESETS.find((entry) => tokenPlanPresetId(entry.id) === provider.preset)
       : undefined;
     if (!plan) return providerLabel(view, providerId, t);
-    const rank = connected.includes(plan) ? ` (#${rankOf(plan)})` : '';
+    const rank = withRank && connected.includes(plan) ? ` (#${rankOf(plan)})` : '';
     // Another connection of the plan shown: say whose it is.
     const whose =
       selected && plan.id === selected.id && provider
@@ -270,11 +274,11 @@ export function TokenPlanSettings({
     return `${presetDisplayName(plan)}${rank}${whose}`;
   };
 
-  /** The capabilities a connected plan's account lacks, as card labels. */
-  const missingLabels = (provider: ProviderView | undefined) =>
+  /** The capabilities a connected plan's account lacks. */
+  const missingCards = (provider: ProviderView | undefined) =>
     CARD_CAPABILITIES.filter(({ capability }) =>
       provider?.unsupportedCapabilities?.includes(capability),
-    ).map(({ label }) => t(label));
+    );
 
   const selectPreset = (preset: TokenPlanPreset) => {
     setSelectedId(preset.id);
@@ -373,7 +377,8 @@ export function TokenPlanSettings({
   const planRow = (preset: TokenPlanPreset, index: number) => {
     const provider = providerOf(preset);
     const active = selected?.id === preset.id;
-    const missing = missingLabels(provider);
+    const missing = missingCards(provider);
+    const join = (labels: string[]) => labels.join(t(`${tp}.listSeparator`));
     return (
       <button
         type="button"
@@ -407,55 +412,60 @@ export function TokenPlanSettings({
           tabRefs.current.get(next.id)?.focus();
         }}
         className={cn(
-          'flex w-full min-w-0 flex-col gap-1 rounded-lg border px-3 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring',
+          'flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring',
           active ? 'border-border bg-background shadow-sm' : 'border-transparent hover:bg-muted/60',
         )}
       >
-        <span className="flex w-full min-w-0 items-center gap-3">
-          <PresetLogo preset={preset} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium leading-5">
-              {presetDisplayName(preset)}
-            </span>
-            <span className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-muted-foreground">
-              <span
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full',
-                  provider ? 'bg-emerald-500' : 'bg-muted-foreground/40',
-                )}
-                aria-hidden="true"
-              />
-              <span className="truncate">
-                {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
-              </span>
-            </span>
+        <PresetLogo preset={preset} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium leading-5">
+            {presetDisplayName(preset)}
           </span>
-          <span className="flex shrink-0 flex-col items-end text-xs leading-5">
-            {provider ? (
-              <>
-                <span className="text-[11px] text-muted-foreground">#{rankOf(preset)}</span>
-                <span className="font-medium">
-                  {provider.source === 'workspace' && provider.key?.set ? (
-                    <QuotaSummary entry={quotas.entries[provider.id]} />
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </span>
-              </>
-            ) : (
-              <span className="text-muted-foreground">{t(`${tp}.setUp`)}</span>
-            )}
+          {/* The tier lacking a capability is said in the status line, by its short name. */}
+          <span
+            className="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-muted-foreground"
+            title={
+              missing.length > 0
+                ? t(`${tp}.missingCapability`, { name: join(missing.map(({ label }) => t(label))) })
+                : undefined
+            }
+          >
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                !provider
+                  ? 'bg-muted-foreground/40'
+                  : missing.length > 0
+                    ? 'bg-amber-600'
+                    : 'bg-green-600',
+              )}
+              aria-hidden="true"
+            />
+            <span className="truncate">
+              {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
+              {missing.length > 0 &&
+                ` · ${t(`${tp}.missingCapabilityShort`, { name: join(missing.map(({ short }) => t(short))) })}`}
+            </span>
           </span>
         </span>
-        {/* The tier lacks a capability: said under the whole row, not squeezed beside the quota. */}
-        {missing.length > 0 && (
-          <span className="flex items-start gap-1 pl-11 text-xs leading-4 text-amber-600 dark:text-amber-400">
-            <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
-            <span>
-              {t(`${tp}.missingCapability`, { name: missing.join(t(`${tp}.listSeparator`)) })}
-            </span>
-          </span>
-        )}
+        <span className="flex shrink-0 flex-col items-end text-xs leading-5">
+          {provider ? (
+            <>
+              <span className="rounded bg-muted px-1.5 text-[11px] leading-4 text-muted-foreground">
+                #{rankOf(preset)}
+              </span>
+              <span className="font-medium">
+                {provider.source === 'workspace' && provider.key?.set ? (
+                  <QuotaSummary entry={quotas.entries[provider.id]} />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{t(`${tp}.setUp`)}</span>
+          )}
+        </span>
       </button>
     );
   };
@@ -511,9 +521,12 @@ export function TokenPlanSettings({
       !provider || !!provider.capabilities[MODALITY_CAPABILITY[m]];
     const modalities = MODALITY_ORDER.filter((m) => plan.modalities[m] && offered(m));
     const modelCount = modalities.reduce((sum, m) => sum + planModels(plan, m).length, 0);
-    const regionLabel = plan.region
-      ? t(`settings.providerLinks.${plan.region}`)
-      : t(`${tp}.regionGlobal`);
+    const quota = provider ? quotas.entries[provider.id]?.quota : undefined;
+    const regionLabel = [
+      plan.region ? t(`settings.providerLinks.${plan.region}`) : t(`${tp}.regionGlobal`),
+      // The vendor reports a balance and no quota windows: billed as used.
+      ...(isBalanceOnly(quota) ? [t(`${tp}.payAsYouGo`)] : []),
+    ].join(' · ');
     const accountUrl =
       plan.id === 'tokendance' && plan.websiteUrl
         ? portalCreditsUrl(plan.websiteUrl)
@@ -522,11 +535,11 @@ export function TokenPlanSettings({
     return (
       <>
         {/* Account: identity, status and region; key, priority; vendor console and actions. */}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4 @xl:flex-nowrap">
+          <div className="flex min-w-0 items-start gap-2.5">
             <PresetLogo preset={plan} size="lg" />
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1">
                 <h4 className="break-words text-base font-semibold leading-6">{name}</h4>
                 {plan.name !== name && (
                   <span className="text-xs text-muted-foreground">{plan.name}</span>
@@ -535,13 +548,18 @@ export function TokenPlanSettings({
                   className={cn(
                     pill,
                     provider
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
-                      : 'text-muted-foreground',
+                      ? 'gap-1 border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300'
+                      : 'border-transparent bg-muted text-muted-foreground',
                   )}
                 >
+                  {provider && (
+                    <span className="size-1.5 rounded-full bg-green-600" aria-hidden="true" />
+                  )}
                   {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
                 </span>
-                <span className={cn(pill, 'text-muted-foreground')}>{regionLabel}</span>
+                <span className={cn(pill, 'border-transparent bg-muted text-muted-foreground')}>
+                  {regionLabel}
+                </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
                 {provider?.source === 'deployment' && (
@@ -553,18 +571,19 @@ export function TokenPlanSettings({
                     <span className="rounded bg-muted px-1 font-mono">{provider.key.mask}</span>
                   </span>
                 )}
+                {own && provider?.key?.mask && <span aria-hidden="true">·</span>}
                 {provider && <span>{t(`${tp}.priority`, { n: rankOf(plan) })}</span>}
                 {!provider && <span>{t(`${tp}.connectHint`, { name })}</span>}
               </div>
             </div>
           </div>
-          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
             {own && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8"
+                className="h-8 text-xs"
                 onClick={() => {
                   setEditingKey(!editingKey);
                   setApiKey('');
@@ -581,7 +600,14 @@ export function TokenPlanSettings({
                 rel="noopener noreferrer"
                 className={linkButton}
               >
-                {t(`${tp}.consoleLink`, { name })}
+                {t(
+                  plan.consoleKind === 'portal'
+                    ? `${tp}.portalLink`
+                    : plan.consoleKind === 'platform'
+                      ? `${tp}.platformLink`
+                      : `${tp}.consoleLink`,
+                  { name },
+                )}
                 <ExternalLink className="size-3" aria-hidden="true" />
               </a>
             )}
@@ -591,7 +617,7 @@ export function TokenPlanSettings({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="size-8"
+                    className="size-7"
                     aria-label={t(`${tp}.more`)}
                   >
                     <MoreHorizontal className="size-4" />
@@ -660,8 +686,8 @@ export function TokenPlanSettings({
         {/* Models & default routing: the plan's default per capability and
             stage, and the models it offers; changed on the generation bar and
             in Course Model Config. */}
-        <details className="group rounded-xl border">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <details className="group rounded-xl border bg-muted/40">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <span className="flex items-center gap-2">
               <Layers className="size-4 text-muted-foreground" aria-hidden="true" />
               {t(`${tp}.modelsRouting`)}
@@ -726,51 +752,50 @@ export function TokenPlanSettings({
     );
   };
 
+  // Each side lists the plans its accounts can use.
+  const regionSwitch = (
+    <div className="flex items-center justify-end gap-2">
+      <span
+        id="token-plan-region-label"
+        className="flex items-center gap-1 text-xs text-muted-foreground"
+      >
+        <Globe className="size-3.5" aria-hidden="true" />
+        <span className="max-lg:sr-only">{t(`${tp}.region`)}</span>
+      </span>
+      <div
+        className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
+        role="group"
+        aria-labelledby="token-plan-region-label"
+      >
+        {REGIONS.map((side) => (
+          <button
+            key={side}
+            type="button"
+            aria-pressed={region === side}
+            onClick={() => selectRegion(side)}
+            className={cn(
+              'rounded-md px-3 py-1 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
+              region === side
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground/80',
+            )}
+          >
+            {t(`settings.providerLinks.${side}`)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-4">
-      {/* Title and the region switch: each side lists the plans its accounts can use. */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">{t(`${tp}.title`)}</h3>
-          <p className="text-xs text-muted-foreground">{t(`${tp}.subtitle`)}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span
-            id="token-plan-region-label"
-            className="flex items-center gap-1 text-xs text-muted-foreground"
-          >
-            <Globe className="size-3.5" aria-hidden="true" />
-            {t(`${tp}.region`)}
-          </span>
-          <div
-            className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
-            role="group"
-            aria-labelledby="token-plan-region-label"
-          >
-            {REGIONS.map((side) => (
-              <button
-                key={side}
-                type="button"
-                aria-pressed={region === side}
-                onClick={() => selectRegion(side)}
-                className={cn(
-                  'rounded-md px-3 py-1 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
-                  region === side
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground/80',
-                )}
-              >
-                {t(`settings.providerLinks.${side}`)}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* The region switch sits in the dialog's header when it hosts one. */}
+      {regionSlot ? createPortal(regionSwitch, regionSlot) : regionSwitch}
 
-      <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
         {/* Plans: connected in priority order, then the ones to set up. */}
         <div
-          className="flex min-w-0 flex-col gap-4 rounded-xl bg-muted/30 p-2"
+          className="flex min-w-0 flex-col gap-4 rounded-xl bg-muted/30 p-1"
           role="tablist"
           aria-label={t(`${tp}.selectPlan`)}
           aria-orientation="vertical"
@@ -792,20 +817,20 @@ export function TokenPlanSettings({
               {available.map((plan) => planRow(plan, plans.indexOf(plan)))}
             </div>
           )}
-          <div className="mt-auto space-y-1 border-t px-2 pt-3 text-[11px] leading-4 text-muted-foreground">
+          <div className="mt-auto border-t px-2 pt-3 text-xs leading-snug text-muted-foreground">
             <p>
               {t(
                 region === 'domestic'
                   ? `${tp}.regionHintDomestic`
                   : `${tp}.regionHintInternational`,
-              )}
+              )}{' '}
+              {t(`${tp}.priorityNote`)}
             </p>
-            <p>{t(`${tp}.priorityNote`)}</p>
           </div>
         </div>
 
         {selected && (
-          <div className="min-w-0 space-y-4" role="tabpanel">
+          <div className="@container min-w-0 space-y-4" role="tabpanel">
             {detail(selected)}
           </div>
         )}
