@@ -69,6 +69,8 @@ JSON body `{ error, reason }` where `reason` is one of:
   `RENDER_MAX_JOBS_PER_USER` active renders.
 - `resource_unavailable` — the opt-in resource owner is unavailable or admission
   is closed; operator investigation is required before resuming submissions.
+- `shutting_down` — the process received `SIGTERM` and admits no more renders;
+  send the render to another instance or retry after the restart.
 
 `POST /preview` also answers `429` with `{ error, reason }`, where `reason` is
 one of:
@@ -98,6 +100,13 @@ aggregate-only: no queue depths or occupancy counts, and never any per-identity
 data. Identity keys are client IPs when the service runs behind
 `TRUST_PROXY_HEADERS=true`, so exposing the per-identity map would publish the
 IP address of everyone currently rendering.
+
+On `SIGTERM` the service stops admitting renders: `/health` reports
+`accepting: false` from then on and new submissions get `shutting_down`. An idle
+process exits right away. Renders already admitted are not waited for: they keep
+running until the platform's termination grace period ends and the process is
+killed, so a caller that resubmits lost renders (the app's durable export queue)
+sends them again elsewhere. The grace period does not need to cover a render.
 
 Previews have their own execution budget, defaulting to one concurrent preview,
 independent of the video render queue. Once a preview has passed its body and

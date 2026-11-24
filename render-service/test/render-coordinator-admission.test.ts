@@ -240,4 +240,49 @@ describe('RenderCoordinator admission control', () => {
     );
     expect(m.accepting).toBe(true);
   });
+
+  it('closeAdmission stops accepting for good while admitted renders keep running', async () => {
+    const { executor, releaseRenders } = parkingExecutor();
+    const jobs = createMemoryJobStore();
+    const m = new RenderCoordinator(executor, jobs, createMemoryArtifactStore().store, {
+      maxQueue: 5,
+      maxConcurrency: 1,
+      maxJobsPerUser: 0,
+    });
+    expect(m.idle).toBe(true);
+    const held = m.reserve(admission('alice'));
+    const jobId = await m.submit({
+      reservation: held,
+      ownerId: owner('alice'),
+      projectDir: '/tmp/whatever',
+      options: { fps: 30, quality: 'draft', format: 'mp4' },
+    });
+    // A reservation taken before the close cannot become a job after it.
+    const late = m.reserve(admission('bob'));
+
+    m.closeAdmission();
+    expect(m.accepting).toBe(false);
+    expect(m.idle).toBe(false);
+    await expect(captureRejection(() => m.reserve(admission('carol')))).resolves.toMatchObject({
+      reason: 'shutting_down',
+    });
+    await expect(
+      captureRejection(() =>
+        m.submit({
+          reservation: late,
+          ownerId: owner('bob'),
+          projectDir: '/tmp/wherever',
+          options: { fps: 30, quality: 'draft', format: 'mp4' },
+        }),
+      ),
+    ).resolves.toMatchObject({ reason: 'shutting_down' });
+
+    releaseRenders();
+    await waitUntil(
+      async () => ((await jobs.get(jobId))?.status === 'succeeded' ? true : null),
+      'the admitted render to finish',
+    );
+    expect(m.idle).toBe(true);
+    expect(m.accepting).toBe(false);
+  });
 });

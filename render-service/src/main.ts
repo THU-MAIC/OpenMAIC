@@ -735,6 +735,18 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
   });
   coordinator = new RenderCoordinator(executor, jobs, artifacts);
 
+  // On SIGTERM, stop admitting: `/health` reports `accepting: false`, so a
+  // caller that checks it before sending a render (the app's durable export
+  // queue) sends nothing more here. Renders already running are not waited
+  // for; they end with the process, and that caller sends them again. An idle
+  // process exits now, as it did before this handler existed. The resource
+  // entrypoint has its own SIGTERM handler, which closes the resource owner
+  // and exits.
+  process.once('SIGTERM', () => {
+    coordinator.closeAdmission();
+    if (!resourceExecutor && coordinator.idle) process.exit(0);
+  });
+
   // Build the browser mount off the request path so the first preview does not
   // pay the cold esbuild cost while holding admission and execution permits.
   if (!resourceExecutor) await buildSlideClientBundle();

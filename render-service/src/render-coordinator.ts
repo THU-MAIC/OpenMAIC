@@ -31,7 +31,11 @@ import type {
  * Machine-readable admission-rejection code, surfaced as `reason` on HTTP 429
  * responses so clients can react to backpressure without parsing prose.
  */
-export type RenderRejectionReason = 'queue_full' | 'per_identity_limit' | 'resource_unavailable';
+export type RenderRejectionReason =
+  | 'queue_full'
+  | 'per_identity_limit'
+  | 'resource_unavailable'
+  | 'shutting_down';
 
 /**
  * Thrown when admission control rejects a submission (mapped to HTTP 429).
@@ -91,6 +95,8 @@ export class RenderCoordinator {
   private readonly controllers = new Map<string, AbortController>();
   private readonly activeByIdentity = new Map<AdmissionIdentity, number>();
   private pending = 0;
+  /** Set once the process is asked to stop; see {@link closeAdmission}. */
+  private admissionClosed = false;
   private readonly maxConcurrency: number;
   private readonly maxQueue: number;
   private readonly maxJobsPerUser: number;
@@ -136,7 +142,26 @@ export class RenderCoordinator {
    * them would leak the list of active users' addresses.
    */
   get accepting(): boolean {
-    return this.executor.accepting?.() !== false && this.inSystem < this.maxQueue;
+    return (
+      !this.admissionClosed &&
+      this.executor.accepting?.() !== false &&
+      this.inSystem < this.maxQueue
+    );
+  }
+
+  /**
+   * Stop admitting renders for good (the process received SIGTERM): `/health`
+   * reports `accepting: false` from now on, so a caller that checks it sends
+   * its next render elsewhere or waits. Renders already admitted keep running
+   * until the process exits; nothing waits for them.
+   */
+  closeAdmission(): void {
+    this.admissionClosed = true;
+  }
+
+  /** No render is reserved, queued or running. */
+  get idle(): boolean {
+    return this.inSystem === 0;
   }
 
   /**
@@ -146,6 +171,9 @@ export class RenderCoordinator {
    * holds `maxJobsPerUser` active jobs.
    */
   reserve(admissionIdentity: AdmissionIdentity): Reservation {
+    if (this.admissionClosed) {
+      throw new RenderRejectedError('The render service is shutting down.', 'shutting_down');
+    }
     if (this.executor.accepting?.() === false) {
       throw new RenderRejectedError('The resource owner is unavailable.', 'resource_unavailable');
     }
@@ -187,6 +215,10 @@ export class RenderCoordinator {
   async submit({ reservation, ownerId, projectDir, options }: RenderSubmission): Promise<string> {
     if (reservation.consumed) throw new RenderRejectedError('Reservation already used');
 
+    if (this.admissionClosed) {
+      this.release(reservation);
+      throw new RenderRejectedError('The render service is shutting down.', 'shutting_down');
+    }
     if (this.executor.accepting?.() === false) {
       this.release(reservation);
       throw new RenderRejectedError('The resource owner is unavailable.', 'resource_unavailable');
