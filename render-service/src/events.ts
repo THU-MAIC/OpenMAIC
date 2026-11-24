@@ -16,8 +16,10 @@
  * job id, a state, a duration, a reason code. No client identity, no file or
  * directory names, no scene content, and no raw error strings — a render works
  * on untrusted, model-authored input, and none of it belongs in an operational
- * log. `error_code` is a fixed vocabulary, not a message.
+ * log. Failed jobs additionally carry a bounded, sanitized diagnostic reason.
+ * `errorCode` remains a fixed vocabulary, not a message.
  */
+import { sanitizeFailureReason } from './failure-reason.js';
 
 /** Lifecycle and admission transitions worth a log line. */
 export type RenderEventName =
@@ -60,6 +62,8 @@ export interface RenderEvent {
    * reason, or a 5xx preview's {@link PreviewErrorCode}.
    */
   errorCode?: string;
+  /** Sanitized operational diagnostic, only for failed render jobs. */
+  failureReason?: string;
   /** Which admission cap rejected the caller, or which route served it. */
   reason?: string;
   route?: string;
@@ -146,6 +150,13 @@ function nonEmpty(event: RenderEvent): Record<string, unknown> {
   for (const key of SERIALIZED_FIELDS) {
     const value = event[key];
     if (value !== undefined && value !== null) out[key] = value;
+  }
+  if (
+    event.event === 'render_job_finished' &&
+    event.outcome === 'failed' &&
+    event.failureReason !== undefined
+  ) {
+    out.failureReason = sanitizeFailureReason(event.failureReason);
   }
   return out;
 }
