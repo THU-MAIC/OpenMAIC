@@ -14,12 +14,15 @@ export const FAILURE_REASON_MAX_LENGTH = 300;
  */
 export function sanitizeFailureReason(message: string): string {
   const reason = message
-    .replace(/(?:[a-z][a-z0-9+.-]*:\/\/|www\.|data:)[^\s<>"'`]+/gi, '[url]')
+    // URLs and unquoted paths are masked up to the next whitespace: quote or
+    // bracket characters are legal inside them, so stopping there could leave a
+    // query string or a file name behind. Over-masking punctuation is harmless.
+    .replace(/(?:[a-z][a-z0-9+.-]*:\/\/|www\.|data:)\S+/gi, '[url]')
     // A quoted path is masked through the last matching quote on its line, so
     // spaces or quote characters inside a directory or file name cannot leave
     // its tail in the log. Over-masking a little trailing text is the safe side.
     .replace(/(['"`])(?:[a-z]:[\\/]|\\\\|\/)[^\n]*\1/gi, '$1[path]$1')
-    .replace(/(?<![\w\]])(?:[a-z]:[\\/]|\\\\|\/)[^\s<>"'`]+/gi, '[path]')
+    .replace(/(?<![\w\]])(?:[a-z]:[\\/]|\\\\|\/)\S+/gi, '[path]')
     // eslint-disable-next-line no-control-regex -- Strip control characters from log output.
     .replace(/[\s\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ')
     .trim();

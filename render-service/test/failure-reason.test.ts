@@ -35,6 +35,13 @@ describe('sanitizeFailureReason', () => {
     expect(reason).not.toContain('secret');
   });
 
+  it('masks a URL or unquoted path through embedded quote characters', () => {
+    const reason = sanitizeFailureReason(
+      "Failed to fetch https://cdn.example.com/Teacher'sNotes/a.mp3?token=Secret and /tmp/a'b/Private.mp3",
+    );
+    expect(reason).toBe('Failed to fetch [url] and [path]');
+  });
+
   it('keeps an unknown error message so the failure stays explainable', () => {
     expect(sanitizeFailureReason("Cannot read properties of undefined (reading 'duration')")).toBe(
       "Cannot read properties of undefined (reading 'duration')",
