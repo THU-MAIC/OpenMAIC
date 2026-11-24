@@ -25,7 +25,6 @@ import {
   countUnfinishedRenderJobs,
   createRenderJob,
   failRenderUpload,
-  isRenderPartListed,
   queueRenderJob,
   readRenderJob,
   recordRenderInputPart,
@@ -86,14 +85,12 @@ export async function submitQueuedRender(
 
   const capped = capBodyStream(body, maxBytes);
   try {
-    const { pool } = await renderQueuePersistence();
-    const input = await renderJobBytes(pool, jobId, 'input');
     const total = await writeRenderParts(
-      input,
+      jobId,
+      'input',
       capped.stream as unknown as AsyncIterable<Uint8Array>,
       maxBytes,
-      (part, totalBytes) => recordRenderInputPart(jobId, part, totalBytes),
-      (part) => isRenderPartListed(jobId, 'input', part),
+      (part, totalBytes, queryable) => recordRenderInputPart(jobId, part, totalBytes, queryable),
     );
     if (total === 0) {
       await failRenderUpload(jobId, 'upload_empty', 'Empty export archive');

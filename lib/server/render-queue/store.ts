@@ -181,20 +181,24 @@ export async function createRenderJob(input: {
   });
 }
 
-/** Record an input part before its bytes are written; false once the upload was cancelled. */
+/**
+ * Record an input part, before or with its bytes (`queryable`: the
+ * transaction that writes them); false once the upload was cancelled.
+ */
 export async function recordRenderInputPart(
   jobId: string,
   part: RenderJobPart,
   totalBytes: number,
+  queryable?: Queryable,
 ): Promise<boolean> {
-  const { pool } = await renderQueuePersistence();
-  const result = await pool.query(
+  const db = queryable ?? (await renderQueuePersistence()).pool;
+  const result = await db.query(
     `UPDATE render_jobs
         SET input_parts = input_parts || $2::jsonb, input_bytes = $3, updated_at = now()
-      WHERE id = $1 AND status = 'uploading'`,
+      WHERE id = $1 AND status = 'uploading' RETURNING id`,
     [jobId, JSON.stringify([part]), totalBytes],
   );
-  return (result.rowCount ?? 0) > 0;
+  return result.rows.length > 0;
 }
 
 /**
@@ -371,17 +375,30 @@ export async function heartbeatRenderJob(
  * job queued, and the next dispatch counts as another attempt. Answers the
  * attempt this dispatch is, or null once the lease or job is gone.
  */
-export async function beginRenderJobDispatch(lease: RenderJobLease): Promise<number | null> {
+export async function beginRenderJobDispatch(
+  lease: RenderJobLease,
+  maxAttempts: number,
+): Promise<number | 'limit' | null> {
   const { pool } = await renderQueuePersistence();
+  // The limit is checked before counting: a job already sent `maxAttempts`
+  // times answers 'limit' and is not counted again.
   const result = await pool.query<{ attempt: number }>(
     `UPDATE render_jobs SET attempt = attempt + 1, updated_at = now()
-      WHERE ${HELD} AND status = 'queued' RETURNING attempt`,
+      WHERE ${HELD} AND status = 'queued' AND attempt < $4 RETURNING attempt`,
+    [...leaseParams(lease), maxAttempts],
+  );
+  if (result.rows[0]) return result.rows[0].attempt;
+  const held = await pool.query(
+    `SELECT 1 FROM render_jobs WHERE ${HELD} AND status = 'queued'`,
     leaseParams(lease),
   );
-  return result.rows[0]?.attempt ?? null;
+  return (held.rowCount ?? 0) > 0 ? 'limit' : null;
 }
 
-/** The render service certainly did not take the job: the dispatch does not count. */
+/**
+ * The render service certainly did not take the job (it refused it, or never
+ * received the whole archive): the dispatch does not count.
+ */
 export async function undoRenderJobDispatch(lease: RenderJobLease): Promise<void> {
   const { pool } = await renderQueuePersistence();
   await pool.query(
@@ -454,10 +471,11 @@ export async function failRenderJob(
 /** The output parts recorded so far, or null once the lease or job is gone. */
 export async function readRenderJobOutputParts(
   lease: RenderJobLease,
+  queryable?: Queryable,
 ): Promise<RenderJobPart[] | null> {
-  const { pool } = await renderQueuePersistence();
-  const result = await pool.query<{ output_parts: RenderJobPart[] }>(
-    `SELECT output_parts FROM render_jobs WHERE ${HELD} AND status = ANY($4::text[])`,
+  const db = queryable ?? (await renderQueuePersistence()).pool;
+  const result = await db.query<{ output_parts: RenderJobPart[] }>(
+    `SELECT output_parts FROM render_jobs WHERE ${HELD} AND status = ANY($4::text[]) FOR UPDATE`,
     [...leaseParams(lease), AT_RENDER],
   );
   return result.rows[0]?.output_parts ?? null;
@@ -468,14 +486,17 @@ export async function readRenderJobOutputParts(
  * job was sent again); the caller has deleted their bytes. False once the
  * lease or job is gone.
  */
-export async function resetRenderJobOutput(lease: RenderJobLease): Promise<boolean> {
-  const { pool } = await renderQueuePersistence();
-  const result = await pool.query(
+export async function resetRenderJobOutput(
+  lease: RenderJobLease,
+  queryable?: Queryable,
+): Promise<boolean> {
+  const db = queryable ?? (await renderQueuePersistence()).pool;
+  const result = await db.query(
     `UPDATE render_jobs SET output_parts = '[]'::jsonb, output_bytes = 0, updated_at = now()
-      WHERE ${HELD} AND status = ANY($4::text[])`,
+      WHERE ${HELD} AND status = ANY($4::text[]) RETURNING id`,
     [...leaseParams(lease), AT_RENDER],
   );
-  return (result.rowCount ?? 0) > 0;
+  return result.rows.length > 0;
 }
 
 /** The cancelled job is cancelled at the render service too: nothing is left to do. */
@@ -489,21 +510,25 @@ export async function finishRenderJobCancel(lease: RenderJobLease): Promise<void
   );
 }
 
-/** Record an output part before its bytes are written; false once the lease or job is gone. */
+/**
+ * Record an output part, before or with its bytes (`queryable`: the
+ * transaction that writes them); false once the lease or job is gone.
+ */
 export async function recordRenderOutputPart(
   lease: RenderJobLease,
   part: RenderJobPart,
   totalBytes: number,
+  queryable?: Queryable,
 ): Promise<boolean> {
-  const { pool } = await renderQueuePersistence();
-  const result = await pool.query(
+  const db = queryable ?? (await renderQueuePersistence()).pool;
+  const result = await db.query(
     `UPDATE render_jobs
         SET output_parts = output_parts || $4::jsonb, output_bytes = $5,
             lease_heartbeat_at = $6, updated_at = now()
-      WHERE ${HELD} AND status = ANY($7::text[])`,
+      WHERE ${HELD} AND status = ANY($7::text[]) RETURNING id`,
     [...leaseParams(lease), JSON.stringify([part]), totalBytes, Date.now(), AT_RENDER],
   );
-  return (result.rowCount ?? 0) > 0;
+  return result.rows.length > 0;
 }
 
 /** Every output part is stored: the MP4 is downloadable. */
@@ -547,8 +572,9 @@ export async function abandonStaleRenderUploads(
 
 /**
  * Take the input parts of finished jobs: the row forgets them in the same
- * statement that returns them, so only the caller deletes their bytes, and a
- * late upload write finds its part no longer listed.
+ * statement that returns them, so only the caller deletes their bytes. In
+ * PostgreSQL a part is recorded and written in one transaction, so there is no
+ * written-but-unlisted part for it to miss.
  */
 export async function takeFinishedRenderInputs(
   tx: Queryable,
@@ -594,26 +620,6 @@ export async function takeExpiredRenderJobs(
     input: row.input_parts,
     output: row.output_parts,
   }));
-}
-
-/**
- * Whether a part just written is still listed on its job. Read under the
- * row's share lock, so it waits for a sweep that is taking the parts: a part
- * no longer listed was taken (or its job deleted), and its writer deletes the
- * bytes it wrote after the sweep's own delete.
- */
-export async function isRenderPartListed(
-  jobId: string,
-  kind: 'input' | 'output',
-  part: RenderJobPart,
-): Promise<boolean> {
-  const { pool } = await renderQueuePersistence();
-  const column = kind === 'input' ? 'input_parts' : 'output_parts';
-  const result = await pool.query<{ listed: boolean }>(
-    `SELECT ${column} @> $2::jsonb AS listed FROM render_jobs WHERE id = $1 FOR SHARE`,
-    [jobId, JSON.stringify([{ hash: part.hash }])],
-  );
-  return result.rows[0]?.listed === true;
 }
 
 export type { Queryable };

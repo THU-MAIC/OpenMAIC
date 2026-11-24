@@ -31,6 +31,7 @@ import {
   renderJobBytes,
   renderPartsBody,
   RenderPartCorruptError,
+  RenderPartStoreError,
   writeRenderParts,
 } from './bytes';
 import { renderQueueConfig, type RenderQueueConfig } from './config';
@@ -42,7 +43,6 @@ import {
   finishRenderJobCancel,
   hasQueuedRenderJob,
   heartbeatRenderJob,
-  isRenderPartListed,
   markRenderJobDispatched,
   readRenderJobOutputParts,
   recordRenderOutputPart,
@@ -149,21 +149,31 @@ async function dispatch(
   // Counted before sending: an accepted job whose id was never recorded (the
   // worker died in between) is sent again by the next worker, at most up to
   // the attempt limit.
-  const attempt = await beginRenderJobDispatch(lease);
+  const attempt = await beginRenderJobDispatch(lease, maxAttempts);
   if (attempt === null) return { outcome: 'lease_lost' };
-  if (attempt > maxAttempts) {
-    log.warn(`job ${job.id}: sent ${attempt - 1} times without a recorded result; failing`);
+  if (attempt === 'limit') {
+    log.warn(`job ${job.id}: sent ${maxAttempts} times without a recorded result; failing`);
     await failRenderJob(lease, 'render_lost', 'The render service lost the job');
     return { outcome: 'failed' };
   }
   let corrupt = false;
+  // The render service creates a job only after reading the whole archive: a
+  // dispatch whose body was not read to the end certainly created none.
+  let sentWhole = false;
   let response: Response;
   try {
     response = await proxyFetch(`${target}/owner-bound/render`, {
       method: 'POST',
-      body: renderPartsBody(input, job.inputParts, (error) => {
-        corrupt = error instanceof RenderPartCorruptError;
-      }),
+      body: renderPartsBody(
+        input,
+        job.inputParts,
+        (error) => {
+          corrupt = error instanceof RenderPartCorruptError;
+        },
+        () => {
+          sentWhole = true;
+        },
+      ),
       duplex: 'half',
       headers: {
         'content-type': job.inputContentType,
@@ -182,7 +192,11 @@ async function dispatch(
       return { outcome: 'failed' };
     }
     log.warn(`job ${job.id}: dispatch to render service failed`, error);
-    await releaseRenderJob(lease);
+    // Refused or broken before the archive was through (connection refused,
+    // DNS, connect timeout): it does not count. Lost after the whole archive
+    // was sent, the render service may hold the job: it counts.
+    if (sentWhole) await releaseRenderJob(lease);
+    else await undoRenderJobDispatch(lease);
     return { outcome: 'dispatch_failed' };
   }
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -213,26 +227,37 @@ async function dispatch(
 }
 
 /**
- * Copy the finished MP4 into the job's output namespace. `missing`: the render
- * service no longer has it (404); `retry`: it did not answer usefully this
- * time (a 5xx, an error mid-stream), so the next poll copies it again;
- * `failed`: it never will (a redirect, which this mode does not follow).
+ * Copy the finished MP4 into the job's output namespace.
+ *
+ * - `missing`: the render service no longer has it (404);
+ * - `retry`: the render service did not answer usefully this time (a 5xx, an
+ *   error mid-stream), so the next poll copies it again, within lostAfterMs;
+ * - `store_retry`: this app's own storage failed, which says nothing about the
+ *   render service, so the next poll copies it again without a deadline;
+ * - `failed`: it never will be copied (a redirect, which this mode does not follow).
  */
 async function collect(
   claim: ClaimedRenderJob,
   target: string,
   renderJobId: string,
   signal: AbortSignal,
-): Promise<'stored' | 'missing' | 'retry' | 'failed' | 'refused'> {
+): Promise<'stored' | 'missing' | 'retry' | 'store_retry' | 'failed' | 'refused'> {
   const { job, lease } = claim;
-  const { pool } = await renderQueuePersistence();
-  const output = await renderJobBytes(pool, job.id, 'output');
-  // Parts of an earlier, interrupted copy (or an earlier dispatch) go first.
-  const storedParts = await readRenderJobOutputParts(lease);
-  if (storedParts === null) return 'refused';
-  if (storedParts.length > 0) {
-    await deleteRenderParts(output, storedParts);
-    if (!(await resetRenderJobOutput(lease))) return 'refused';
+  // Parts of an earlier, interrupted copy (or an earlier dispatch) go first,
+  // with the list, in one transaction.
+  try {
+    const { withTransaction } = await renderQueuePersistence();
+    const cleared = await withTransaction(async (tx) => {
+      const stored = await readRenderJobOutputParts(lease, tx);
+      if (stored === null) return false;
+      if (stored.length === 0) return true;
+      await deleteRenderParts(await renderJobBytes(tx, job.id, 'output'), stored);
+      return resetRenderJobOutput(lease, tx);
+    });
+    if (!cleared) return 'refused';
+  } catch (error) {
+    log.warn(`job ${job.id}: clearing an earlier copy failed; retrying`, error);
+    return 'store_retry';
   }
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -265,17 +290,21 @@ async function collect(
       return 'retry';
     }
     const total = await writeRenderParts(
-      output,
+      job.id,
+      'output',
       response.body as unknown as AsyncIterable<Uint8Array>,
       Number.POSITIVE_INFINITY,
-      (part, totalBytes) => recordRenderOutputPart(lease, part, totalBytes),
-      (part) => isRenderPartListed(job.id, 'output', part),
+      (part, totalBytes, queryable) => recordRenderOutputPart(lease, part, totalBytes, queryable),
     );
     if (total === null) return 'refused';
     return (await succeedRenderJob(lease)) ? 'stored' : 'refused';
   } catch (error) {
     if (signal.aborted) throw error;
     // The parts this copy recorded are deleted by the next one.
+    if (error instanceof RenderPartStoreError) {
+      log.warn(`job ${job.id}: storing the MP4 failed; retrying`, error);
+      return 'store_retry';
+    }
     log.warn(`job ${job.id}: copying the MP4 failed; retrying`, error);
     return 'retry';
   } finally {
@@ -419,6 +448,9 @@ export async function runClaimedRenderJob(
         if (stored === 'stored') return 'succeeded';
         if (stored === 'failed') return 'failed';
         if (stored === 'missing') return await lost(claim, attempt, config);
+        // The app's own storage failed: copy the same finished job again on
+        // the next poll; the render service is not to blame.
+        if (stored === 'store_retry') continue;
         if (stored === 'retry') {
           // Bounded like an unreachable service: the same finished job is
           // copied again on the next poll, until lostAfterMs.

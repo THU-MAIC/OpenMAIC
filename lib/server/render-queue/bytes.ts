@@ -11,7 +11,7 @@ import type { AssetByteStore } from '@openmaic/storage/asset/pg';
 
 import { resolveConfiguredAssetByteStore } from '@/lib/persistence/asset-byte-store';
 
-import type { RenderJobPart } from './store';
+import { renderQueuePersistence, type Queryable, type RenderJobPart } from './store';
 
 export const RENDER_PART_BYTES = 8 * 1024 ** 2;
 
@@ -105,32 +105,69 @@ async function* parts(source: AsyncIterable<Uint8Array>, maximum: number) {
   if (used) yield pending.subarray(0, used);
 }
 
+/** The app's own byte store or database failed while storing a part. */
+export class RenderPartStoreError extends Error {
+  constructor(cause: unknown) {
+    super('Storing a render part failed', { cause });
+    this.name = 'RenderPartStoreError';
+  }
+}
+
 /**
- * Store `source` as parts. Each part is recorded (`record`, which answers
- * false once the job may no longer write) BEFORE its bytes are written, so a
- * write that fails or is interrupted still leaves a part cleanup can find.
- * After the write, `listed` checks the part is still on the job: if cleanup
- * took the job's parts meanwhile, it deleted them before these bytes landed,
- * so the writer deletes them itself. Answers the total size, or null when the
- * job stopped taking parts.
+ * Store `source` as parts of the job's `kind` namespace. Each part is recorded
+ * on the row (`record`, which answers false once the job may no longer take
+ * parts) with its bytes:
+ *
+ * - in PostgreSQL, in one transaction, so a part is listed exactly when its
+ *   bytes are stored and the sweep, which takes parts under the row lock,
+ *   can never miss one;
+ * - in an object store, recorded first and then written: a write that fails
+ *   still leaves a listed part, and object-store parts are never deleted here.
+ *
+ * Failures of the app's own storage are thrown as {@link RenderPartStoreError};
+ * a failure reading `source` is thrown as it is. Answers the total size, or
+ * null when the job stopped taking parts.
  */
 export async function writeRenderParts(
-  store: AssetByteStore,
+  jobId: string,
+  kind: RenderPartKind,
   source: AsyncIterable<Uint8Array>,
   maximum: number,
-  record: (part: RenderJobPart, totalBytes: number) => Promise<boolean>,
-  listed: (part: RenderJobPart) => Promise<boolean>,
+  record: (part: RenderJobPart, totalBytes: number, queryable: Queryable) => Promise<boolean>,
 ): Promise<number | null> {
+  let persistence: Awaited<ReturnType<typeof renderQueuePersistence>>;
+  let external: AssetByteStore | null;
+  try {
+    persistence = await renderQueuePersistence();
+    const base = await resolveConfiguredAssetByteStore(persistence.pool);
+    external =
+      base.writesOutsideRegistryDatabase === true
+        ? await renderJobBytes(persistence.pool, jobId, kind)
+        : null;
+  } catch (error) {
+    throw new RenderPartStoreError(error);
+  }
+  const { pool, withTransaction } = persistence;
   let total = 0;
   for await (const chunk of parts(source, maximum)) {
     total += chunk.byteLength;
     const part = { hash: hashOf(chunk), bytes: chunk.byteLength };
-    if (!(await record(part, total))) return null;
-    await store.write(part.hash as Hash, chunk);
-    if (!(await listed(part))) {
-      await store.delete(part.hash as Hash);
-      return null;
+    let kept: boolean;
+    try {
+      if (external) {
+        kept = await record(part, total, pool);
+        if (kept) await external.write(part.hash as Hash, chunk);
+      } else {
+        kept = await withTransaction(async (tx) => {
+          if (!(await record(part, total, tx))) return false;
+          await (await renderJobBytes(tx, jobId, kind)).write(part.hash as Hash, chunk);
+          return true;
+        });
+      }
+    } catch (error) {
+      throw new RenderPartStoreError(error);
     }
+    if (!kept) return null;
   }
   return total;
 }
@@ -164,20 +201,23 @@ export async function deleteRenderParts(
 /**
  * A request or response body over the parts, read one part at a time.
  * `onError` sees why the stream failed (a fetch consuming it reports only
- * that its body broke).
+ * that its body broke); `onEnd` runs once the reader took the last part.
  */
 export function renderPartsBody(
   store: AssetByteStore,
   recorded: readonly RenderJobPart[],
   onError?: (error: unknown) => void,
+  onEnd?: () => void,
 ): ReadableStream<Uint8Array> {
   const iterator = readRenderParts(store, recorded);
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const next = await iterator.next();
-        if (next.done) controller.close();
-        else controller.enqueue(next.value);
+        if (next.done) {
+          onEnd?.();
+          controller.close();
+        } else controller.enqueue(next.value);
       } catch (error) {
         onError?.(error);
         controller.error(error);

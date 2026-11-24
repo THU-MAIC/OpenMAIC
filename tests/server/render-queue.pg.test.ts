@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   resolveRequestOwnerId: vi.fn(),
   /** An object store to use instead of the PostgreSQL byte layer. */
   externalBytes: null as null | import('@openmaic/storage/asset/pg').AssetByteStore,
+  /** Runs before each write to a namespace of the PostgreSQL byte layer. */
+  beforePgWrite: null as null | ((prefix: string) => Promise<void>),
 }));
 vi.mock('@/lib/persistence/asset-byte-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/persistence/asset-byte-store')>();
@@ -22,7 +24,28 @@ vi.mock('@/lib/persistence/asset-byte-store', async (importOriginal) => {
     ...actual,
     resolveConfiguredAssetByteStore: async (
       queryable: Parameters<typeof actual.resolveConfiguredAssetByteStore>[0],
-    ) => mocks.externalBytes ?? actual.resolveConfiguredAssetByteStore(queryable),
+    ) => {
+      if (mocks.externalBytes) return mocks.externalBytes;
+      const base = await actual.resolveConfiguredAssetByteStore(queryable);
+      if (!mocks.beforePgWrite) return base;
+      return {
+        ...base,
+        read: (hash) => base.read(hash),
+        write: (hash, bytes, options) => base.write(hash, bytes, options),
+        delete: (hash) => base.delete(hash),
+        withPrefix: (prefix: string) => {
+          const store = base.withPrefix!(prefix);
+          return {
+            read: (hash) => store.read(hash),
+            delete: (hash) => store.delete(hash),
+            write: async (hash, bytes, options) => {
+              await mocks.beforePgWrite?.(prefix);
+              return store.write(hash, bytes, options);
+            },
+          };
+        },
+      } satisfies import('@openmaic/storage/asset/pg').AssetByteStore;
+    },
   };
 });
 vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch: mocks.proxyFetch }));
@@ -39,7 +62,7 @@ import { GET as DOWNLOAD } from '@/app/api/export-video/render/[jobId]/download/
 import { ensureOwnerMergeSchema } from '@/lib/persistence/owner-merges';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import type { AssetByteStore } from '@openmaic/storage/asset/pg';
-import { renderJobBytes, writeRenderParts } from '@/lib/server/render-queue/bytes';
+import { RenderPartStoreError, writeRenderParts } from '@/lib/server/render-queue/bytes';
 import type { RenderQueueConfig } from '@/lib/server/render-queue/config';
 import { submitQueuedRender } from '@/lib/server/render-queue/routes';
 import {
@@ -51,10 +74,8 @@ import {
   beginRenderJobDispatch,
   claimRenderJob,
   createRenderJob,
-  isRenderPartListed,
   markRenderJobDispatched,
   recordRenderInputPart,
-  renderQueuePersistence,
   resetRenderJobSchemaForTests,
 } from '@/lib/server/render-queue/store';
 
@@ -90,6 +111,8 @@ const render = {
   failNextSubmit: false,
   /** Answers submissions 429 while its health still says accepting. */
   refuseSubmits: false,
+  /** Refuses this many submissions at the connection, before reading anything. */
+  refuseConnections: 0,
   /** Holds each submission this long before answering. */
   submitDelayMs: 0,
   posts: 0,
@@ -104,6 +127,7 @@ const render = {
     this.down = false;
     this.failNextSubmit = false;
     this.refuseSubmits = false;
+    this.refuseConnections = 0;
     this.submitDelayMs = 0;
     this.posts = 0;
     this.downloadAnswers = [];
@@ -134,6 +158,10 @@ async function fakeRenderFetch(url: string, init: RequestInit = {}): Promise<Res
   const headers = new Headers(init.headers);
   if (pathname === '/health') {
     return ownerBound(Response.json({ ok: true, accepting: render.accepting }));
+  }
+  if (pathname === '/owner-bound/render' && method === 'POST' && render.refuseConnections > 0) {
+    render.refuseConnections -= 1;
+    throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
   }
   if (pathname === '/owner-bound/render' && method === 'POST') {
     render.posts += 1;
@@ -285,6 +313,7 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
 
   afterEach(async () => {
     mocks.externalBytes = null;
+    mocks.beforePgWrite = null;
     await runner?.stop({ timeoutMs: 5000 });
     runner = undefined;
     vi.unstubAllEnvs();
@@ -356,8 +385,14 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     expect(capability).toMatchObject({ enabled: true, accepting: true });
 
     render.accepting = true;
-    await vi.waitFor(() => expect(render.received.length).toBeGreaterThanOrEqual(1), UNTIL);
-    expect((await row(first.jobId))?.status).not.toBe('queued');
+    // The fake records an archive before it answers 202, and the runner marks
+    // the job sent only once the answer arrives: wait for the row, not the fake.
+    await vi.waitFor(
+      async () => expect((await row(first.jobId))?.status).not.toBe('queued'),
+      UNTIL,
+    );
+    // The oldest job went first.
+    expect(render.received[0]!.client).toBe(`render-queue:${first.jobId}`);
   });
 
   it('sends a job lost by the render service again, then fails it at the limit', async () => {
@@ -419,7 +454,7 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     // The worker counted the attempt and the render service took the job, but
     // the worker died before it recorded the render service's id.
     const claim = (await claimRenderJob('dead-worker', { leaseTtlMs: 2000, dispatch: true }))!;
-    expect(await beginRenderJobDispatch(claim.lease)).toBe(1);
+    expect(await beginRenderJobDispatch(claim.lease, 2)).toBe(1);
     await fakeRenderFetch(`${RENDER_URL}/owner-bound/render`, {
       method: 'POST',
       body: 'x',
@@ -552,7 +587,7 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     expect(await storedParts(jobId)).toBe(0);
   });
 
-  it('ends a stalled upload, and a part written after the sweep took its job is deleted', async () => {
+  it('ends a stalled upload, and a sweep during a part write leaves no part behind', async () => {
     const created = await createRenderJob({
       ownerId: OWNER,
       inputContentType: 'multipart/form-data; boundary=x',
@@ -566,29 +601,33 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     await sweep(3_600_000);
     expect((await row(jobId))?.status).toBe('uploading');
 
-    const { pool: shared } = await renderQueuePersistence();
-    const input = await renderJobBytes(shared, jobId, 'input');
-    // The part is recorded, then the upload stalls past the limit and the
-    // sweep ends it and deletes its listed parts, before the bytes land.
-    const late: AssetByteStore = {
-      write: async (hash, bytes, options) => {
-        await pool.query(`UPDATE render_jobs SET updated_at = now() - interval '1 hour'`);
-        await sweep(60_000);
-        await input.write(hash, bytes, options);
-      },
-      read: (hash) => input.read(hash),
-      delete: (hash) => input.delete(hash),
+    // A part is being written (recorded, bytes on their way) when the sweep
+    // decides the upload is abandoned.
+    let reached!: () => void;
+    const writing = new Promise<void>((resolve) => (reached = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    mocks.beforePgWrite = async () => {
+      reached();
+      await released;
     };
-    const total = await writeRenderParts(
-      late,
+    const upload = writeRenderParts(
+      jobId,
+      'input',
       (async function* () {
         yield new Uint8Array(randomBytes(1024));
       })(),
       1024 * 1024,
-      (part, totalBytes) => recordRenderInputPart(jobId, part, totalBytes),
-      (part) => isRenderPartListed(jobId, 'input', part),
+      (part, totalBytes, queryable) => recordRenderInputPart(jobId, part, totalBytes, queryable),
     );
-    expect(total).toBeNull();
+    await writing;
+    const swept = sweep(0);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    release();
+    expect(await upload).toBe(1024);
+    await swept;
+    await sweep(0);
+
     expect(await row(jobId)).toMatchObject({ status: 'failed', error_code: 'upload_abandoned' });
     expect((await row(jobId))?.input_parts).toEqual([]);
     expect(await storedParts(jobId)).toBe(0);
@@ -596,6 +635,62 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     expect(
       await recordRenderInputPart(jobId, { hash: 'sha256-' + '0'.repeat(64), bytes: 1 }, 1),
     ).toBe(false);
+  });
+
+  it('records no part whose bytes failed to store', async () => {
+    const created = await createRenderJob({
+      ownerId: OWNER,
+      inputContentType: 'multipart/form-data; boundary=x',
+      maxJobs: 20,
+      maxJobsPerOwner: 0,
+    });
+    const jobId = (created as { id: string }).id;
+    mocks.beforePgWrite = async () => {
+      throw new Error('disk full');
+    };
+    await expect(
+      writeRenderParts(
+        jobId,
+        'input',
+        (async function* () {
+          yield new Uint8Array(randomBytes(1024));
+        })(),
+        1024 * 1024,
+        (part, totalBytes, queryable) => recordRenderInputPart(jobId, part, totalBytes, queryable),
+      ),
+    ).rejects.toBeInstanceOf(RenderPartStoreError);
+    expect((await row(jobId))?.input_parts).toEqual([]);
+    expect(await storedParts(jobId)).toBe(0);
+  });
+
+  it('sends a job whose dispatches were refused at the connection, without counting them', async () => {
+    render.refuseConnections = 2;
+    const { jobId } = await submit();
+    runner = startRenderQueueRunner({ config: FAST });
+    await vi.waitFor(() => expect(render.received).toHaveLength(1), UNTIL);
+    expect(render.refuseConnections).toBe(0);
+    await vi.waitFor(async () => expect((await row(jobId))?.status).toBe('running'), UNTIL);
+    expect((await row(jobId))?.attempt).toBe(1);
+    render.finish();
+    await vi.waitFor(async () => expect((await poll(jobId)).body.status).toBe('succeeded'), UNTIL);
+  });
+
+  it('keeps copying a finished MP4 while its own storage fails, without rendering it again', async () => {
+    const { jobId } = await submit();
+    runner = startRenderQueueRunner({ config: FAST });
+    await vi.waitFor(() => expect(render.received).toHaveLength(1), UNTIL);
+    // Longer than lostAfterMs: an unreachable render service would count as lost by then.
+    const failUntil = Date.now() + 4 * (FAST.lostAfterMs ?? 200);
+    mocks.beforePgWrite = async (prefix) => {
+      if (prefix.endsWith('/output/') && Date.now() < failUntil) throw new Error('disk full');
+    };
+    render.finish();
+    await vi.waitFor(async () => expect((await poll(jobId)).body.status).toBe('succeeded'), UNTIL);
+    expect(Date.now()).toBeGreaterThanOrEqual(failUntil);
+    expect(render.received).toHaveLength(1);
+    expect((await row(jobId))?.attempt).toBe(1);
+    const download = await DOWNLOAD(jobRequest(`${jobId}/download`), context(jobId));
+    expect(Buffer.from(await download.arrayBuffer()).equals(Buffer.from(render.mp4))).toBe(true);
   });
 
   it('keeps the parts in an object store and drops only the expired rows', async () => {
