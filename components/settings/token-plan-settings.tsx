@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   ChevronDown,
-  CircleAlert,
   ExternalLink,
   Eye,
   EyeOff,
