@@ -941,7 +941,8 @@
         "emptyChatHint": "你和 {{name}} 的專案導學會從這裡開始。",
         "continueError": "無法繼續到下一階段：{{error}}",
         "stillTyping": "仍在輸入中",
-        "handoverHint": "請先點擊「繼續到下一階段」。"
+        "handoverHint": "請先點擊「繼續到下一階段」。",
+        "emptyOutput": "這一輪沒有新的回覆，請再試一次。"
       },
       "scene": {
         "expand": "展開",

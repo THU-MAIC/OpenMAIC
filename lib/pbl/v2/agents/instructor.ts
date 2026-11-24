@@ -1631,7 +1631,8 @@ export async function* runInstructorTurn(
     yield {
       type: 'error',
       code: 'EMPTY_LLM_OUTPUT',
-      message: '导师本轮没有产生新的内容。请稍后再试，或者把你的问题再说得具体一些。',
+      // Locale-neutral on purpose: the client maps this code to an i18n string.
+      message: 'The model produced no new content for this turn. Please try again.',
     };
   }
 

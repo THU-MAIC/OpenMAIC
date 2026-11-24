@@ -941,7 +941,8 @@
         "emptyChatHint": "你和 {{name}} 的项目导学会从这里开始。",
         "continueError": "无法继续到下一阶段：{{error}}",
         "stillTyping": "仍在输入中",
-        "handoverHint": "请先点击「继续到下一阶段」。"
+        "handoverHint": "请先点击「继续到下一阶段」。",
+        "emptyOutput": "这一轮没有新的回复，请再试一次。"
       },
       "scene": {
         "expand": "展开",

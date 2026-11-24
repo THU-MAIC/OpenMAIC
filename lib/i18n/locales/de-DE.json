@@ -941,7 +941,8 @@
         "emptyChatHint": "Hier beginnt deine Projektbegleitung mit {{name}}.",
         "continueError": "Fortsetzen nicht möglich: {{error}}",
         "stillTyping": "Schreibt noch",
-        "handoverHint": "Klicke auf „Weiter zur nächsten Phase“, um fortzufahren."
+        "handoverHint": "Klicke auf „Weiter zur nächsten Phase“, um fortzufahren.",
+        "emptyOutput": "In diesem Durchgang kam keine neue Antwort. Bitte versuche es erneut."
       },
       "scene": {
         "expand": "Vergrößern",
