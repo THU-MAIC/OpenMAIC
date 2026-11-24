@@ -54,7 +54,13 @@ can target the same element in both cases.
     let editor = null;
 
     if (window.CodeMirror?.modes?.python) {
-      editor = window.CodeMirror.fromTextArea(codeInput, { mode: 'python', lineNumbers: true });
+      const candidate = window.CodeMirror.fromTextArea(codeInput, { mode: 'python', lineNumbers: true });
+      // CSS failed to load offline when the scroller does not get its required overflow.
+      if (getComputedStyle(candidate.getScrollerElement()).overflowX === 'scroll') {
+        editor = candidate;
+      } else {
+        candidate.toTextArea();
+      }
     }
   </script>
 </body>
