@@ -1,11 +1,86 @@
 import { readFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 
 function javascriptExamples(path: string): string[] {
   const markdown = readFileSync(new URL(path, import.meta.url), 'utf8');
   return [...markdown.matchAll(/```javascript\n([\s\S]*?)```/g)].map((match) => match[1]!);
 }
+
+it('shares diagram step state across classic scripts for narration and controls', () => {
+  const listener = javascriptExamples('../templates/diagram-content/system.md').find((source) =>
+    source.includes("case 'REVEAL_ELEMENT'"),
+  );
+  expect(listener).toBeDefined();
+
+  const context = createContext({
+    document: {
+      createElement: () => ({}),
+      head: { appendChild: () => {} },
+      querySelector: () => null,
+    },
+  });
+  runInContext(
+    `const config = { revealOrder: ['first', 'second', 'third'] };
+     const revealOrder = config.revealOrder;
+     let revealedCount = 1;
+     let visibleNodes;
+     function renderStep() { visibleNodes = revealOrder.slice(0, revealedCount); }
+     function next() { revealedCount++; renderStep(); }
+     function back() { revealedCount--; renderStep(); }
+     function reset() { revealedCount = 1; renderStep(); }
+     const window = {
+       addEventListener(type, listener) { this[type] = listener; }
+     };
+     renderStep();`,
+    context,
+  );
+  runInContext(listener!, context);
+  expect(runInContext('visibleNodes', context)).toEqual(['first']);
+  runInContext('next()', context);
+  expect(runInContext('visibleNodes', context)).toEqual(['first', 'second']);
+  runInContext(
+    `window.message({ data: { type: 'REVEAL_ELEMENT', target: '#node-third' } })`,
+    context,
+  );
+  expect(runInContext('visibleNodes', context)).toEqual(['first', 'second', 'third']);
+  runInContext(
+    `window.message({ data: { type: 'REVEAL_ELEMENT', target: '#node-second' } })`,
+    context,
+  );
+  expect(runInContext('visibleNodes', context)).toEqual(['first', 'second', 'third']);
+  runInContext('back()', context);
+  expect(runInContext('visibleNodes', context)).toEqual(['first', 'second']);
+  runInContext('reset()', context);
+  expect(runInContext('visibleNodes', context)).toEqual(['first']);
+});
+
+it('runs the 3D listener with scene-local state and the platform message fields', () => {
+  const listener = javascriptExamples('../templates/visualization3d-content/system.md').find(
+    (source) => source.includes("addEventListener('message'"),
+  );
+  expect(listener).toBeDefined();
+
+  const setPosition = vi.fn();
+  const setEmissive = vi.fn();
+  const context = createContext({ setPosition, setEmissive });
+  runInContext(
+    `const window = {
+       addEventListener(type, listener) { this[type] = listener; }
+     };
+     function initScene() {
+       const camera = { position: { set: setPosition } };
+       const objects = { '#earth': [{ material: { emissive: { set: setEmissive } } }] };
+       ${listener}
+     }
+     initScene();
+     window.message({ data: { type: 'SET_WIDGET_STATE', state: { cameraPosition: [1, 2, 3] } } });
+     window.message({ data: { type: 'HIGHLIGHT_ELEMENT', target: '#earth' } });`,
+    context,
+  );
+  expect(setPosition).toHaveBeenCalledWith(1, 2, 3);
+  expect(setEmissive).toHaveBeenCalledWith(0xffff00);
+});
 
 it('executes the canonical projection on initial render, update, reset, and timer paths', async () => {
   const examples = javascriptExamples('../snippets/interactive-observation.md');

@@ -79,7 +79,13 @@ function getEdgePoints(from, to) {
 
 ## Step State
 
-Keep all reveal state in one `revealedCount` (how many `revealOrder` entries are shown, starting at 1) and one `renderStep()` derived from it. Next, Back, reset and the listener below only change `revealedCount` and call `renderStep()`. It alone decides which nodes and edges are shown, and it also updates the step label, the Next/Back disabled state, the detail panel and the state publication, so learner clicks and narration can never disagree.
+Declare these exact bindings at the top level of a classic (non-module) script before the listener script:
+
+- `const revealOrder` initialized from the embedded widget config's `revealOrder` array (use the node IDs in config order if omitted).
+- `let revealedCount = 1` for the number of entries shown.
+- `function renderStep()` to render the first `revealedCount` entries of `revealOrder` and update the edges, step label, Next/Back disabled state, detail panel, and state publication.
+
+Next, Back, reset, and the listener below must use these same bindings. Use `revealedCount` as the sole step state and call `renderStep()` after changing it.
 
 Hide nodes from `renderStep()` only. A message handler must not write `display` or `opacity` on a node group: the inline style would survive `renderStep()` and Back could no longer hide that node.
 
@@ -91,7 +97,7 @@ Your HTML MUST register this listener, or those actions silently do nothing.
 Narration moves the diagram with `REVEAL_ELEMENT` targeting `#node-{id}`:
 
 ```javascript
-// Add this script at the end of your HTML, after revealOrder, revealedCount and renderStep exist.
+// Add this classic script at the end of your HTML after the Step State declarations.
 
 // Move forward to a node, through step state. Never moves backwards: a learner
 // who has already stepped further keeps their position.

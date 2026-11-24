@@ -10,6 +10,35 @@
 import { describe, test, expect } from 'vitest';
 import { loadPrompt } from '@openmaic/generation';
 
+describe('interactive listener contracts', () => {
+  test('declares shared diagram step state before the listener', () => {
+    const prompt = loadPrompt('diagram-content')?.systemPrompt ?? '';
+    const contract = prompt.match(
+      /## Step State\n([\s\S]+?)\n## CRITICAL: postMessage Listener/,
+    )?.[1];
+
+    expect(contract).toContain(
+      'top level of a classic (non-module) script before the listener script',
+    );
+    expect(contract).toContain(
+      "`const revealOrder` initialized from the embedded widget config's `revealOrder` array",
+    );
+    expect(contract).toContain('`let revealedCount = 1`');
+    expect(contract).toContain('`function renderStep()`');
+    expect(contract).toContain(
+      'Next, Back, reset, and the listener below must use these same bindings',
+    );
+    expect(contract).toContain('Use `revealedCount` as the sole step state');
+  });
+
+  test('registers the 3D listener where its scene bindings are in scope', () => {
+    const prompt = loadPrompt('visualization3d-content')?.systemPrompt ?? '';
+    expect(prompt).toContain(
+      'Register the listener inside `initScene()`, in the same scope as `const camera` and `const objects`, after both have been initialized.',
+    );
+  });
+});
+
 describe('PBL action workflow', () => {
   test('previews the v2 instructor-guided milestone workspace', () => {
     const prompt = loadPrompt('pbl-actions');
