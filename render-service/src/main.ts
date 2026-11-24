@@ -11,6 +11,7 @@
  *
  *   POST   /owner-bound/render                 multipart: project(zip) + fps/quality/format → 202 { jobId }
  *   POST   /preview                            JSON: scene + stage + viewport → PNG
+ *   POST   /interactive-runtime-check          JSON: interactive scene + stage + viewport → errors
  *   GET    /owner-bound/render/:jobId          → { status, progress, currentStage, done, ... }
  *   GET    /owner-bound/render/:jobId/download → stream MP4 (or 302 to a presigned URL)
  *   DELETE /owner-bound/render/:jobId          → cancel
@@ -47,12 +48,18 @@ import {
   emitRenderEvent,
   type PreviewErrorCode,
   type RenderEventSink,
+  type RuntimeCheckResult,
 } from './events.js';
 import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
+import {
+  INTERACTIVE_RUNTIME_DEADLINE_MS,
+  type InteractiveRuntimeError,
+} from './interactive-runtime.js';
 import {
   ChromiumPreviewRenderer,
   PreviewTimeoutError,
   buildSlideClientBundle,
+  type InteractiveRuntimeRequest,
   type PreviewRenderer,
   type PreviewScene,
   type PreviewStageContext,
@@ -100,8 +107,14 @@ export interface AppDeps {
   previewExecutionGate?: Semaphore;
   /** Render one validated persisted scene to PNG. */
   previewRenderer?: PreviewRenderer;
+  /** Check one validated interactive scene in Chromium. */
+  interactiveRuntimeCheck?: (
+    request: InteractiveRuntimeRequest,
+  ) => Promise<InteractiveRuntimeError[]>;
   /** Preview wall-clock deadline, injectable for focused route tests. */
   previewDeadlineMs?: number;
+  /** Runtime check execution-slot wait, injectable for focused route tests. */
+  interactiveRuntimeWaitMs?: number;
   /** Preview JSON byte ceiling, injectable for focused route tests. */
   previewMaxJsonBytes?: number;
   /** Extract a validated archive into a dir. Overridable in tests. */
@@ -132,6 +145,19 @@ interface PreviewPayload {
 const RENDER_OWNER_HEADER = 'x-openmaic-render-owner';
 const RENDER_OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
 const ADMISSION_IDENTITY_HEADER = 'x-openmaic-client';
+const INTERACTIVE_RUNTIME_CHECK_PATH = '/interactive-runtime-check';
+
+function runtimeCheckResult(
+  status: number,
+  busyTimeout: boolean,
+  aborted: boolean,
+): RuntimeCheckResult {
+  if (status === 200) return 'checked';
+  if (status === 504) return 'deadline';
+  if (busyTimeout) return 'busy_timeout';
+  if (aborted) return 'aborted';
+  return 'error';
+}
 
 function requestOwner(c: Context): RenderOwnerId | null {
   const value = c.req.header(RENDER_OWNER_HEADER)?.trim();
@@ -272,8 +298,12 @@ export function createApp(deps: AppDeps): Hono {
   const unzipProject = deps.unzipProject ?? defaultUnzipProject;
   const hardenProject = deps.hardenProject ?? hardenProjectDirectory;
   const makeProjectDir = deps.makeProjectDir ?? defaultMakeProjectDir;
-  const previewRenderer = deps.previewRenderer ?? new ChromiumPreviewRenderer();
+  const chromium = new ChromiumPreviewRenderer();
+  const previewRenderer = deps.previewRenderer ?? chromium;
+  const checkInteractiveRuntime =
+    deps.interactiveRuntimeCheck ?? chromium.checkInteractiveRuntime.bind(chromium);
   const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
+  const interactiveRuntimeWaitMs = deps.interactiveRuntimeWaitMs ?? config.interactiveRuntimeWaitMs;
   const previewMaxJsonBytes = deps.previewMaxJsonBytes ?? config.previewMaxJsonBytes;
   const onEvent = deps.onEvent ?? emitRenderEvent;
   const previewGate =
@@ -294,6 +324,9 @@ export function createApp(deps: AppDeps): Hono {
       // RenderCoordinator#accepting (never queue depths or per-identity data).
       accepting: coordinator.accepting,
       previewMaxConcurrency: config.previewMaxConcurrency,
+      interactiveRuntimeCheck:
+        !deps.resourceMode &&
+        Boolean(process.env.PRODUCER_HEADLESS_SHELL_PATH || process.env.PUPPETEER_EXECUTABLE_PATH),
       resourceProfile: publicResourceProfile(config.resourceProfile),
       versions: deps.runtimeVersions ?? null,
     }),
@@ -403,21 +436,32 @@ export function createApp(deps: AppDeps): Hono {
   // A 5xx also carries why it failed, as a fixed code the handler records
   // against its request (never the error message).
   const previewFailures = new WeakMap<Request, PreviewErrorCode>();
-  app.use('/preview', async (c, next) => {
+  const runtimeWaitTimeouts = new WeakSet<Request>();
+  const previewRoutes = ['/preview', INTERACTIVE_RUNTIME_CHECK_PATH];
+  app.on('POST', previewRoutes, async (c, next) => {
     const startedAt = Date.now();
     await next();
     const errorCode =
       c.res.status >= 500 ? (previewFailures.get(c.req.raw) ?? 'internal') : undefined;
     onEvent({
       event: 'preview_request',
-      route: '/preview',
+      route: c.req.path,
       status: c.res.status,
       durationMs: Date.now() - startedAt,
       ...(errorCode ? { errorCode } : {}),
+      ...(c.req.path === INTERACTIVE_RUNTIME_CHECK_PATH
+        ? {
+            runtimeCheckResult: runtimeCheckResult(
+              c.res.status,
+              runtimeWaitTimeouts.has(c.req.raw),
+              c.req.raw.signal.aborted,
+            ),
+          }
+        : {}),
     });
   });
 
-  app.post('/preview', async (c) => {
+  app.on('POST', previewRoutes, async (c) => {
     // Resource mode cannot run Chromium here: this HTTP process is outside the
     // per-task cgroup. Reject before inspecting or buffering the request body.
     if (deps.resourceMode) {
@@ -435,6 +479,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: 'Upload too large' }, 413);
     }
 
+    const runtimeCheck = c.req.path === INTERACTIVE_RUNTIME_CHECK_PATH;
     const identity = c.req.header('x-openmaic-client')?.trim() || 'anonymous';
     let release: () => void;
     try {
@@ -443,7 +488,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof PreviewRejectedError) {
         onEvent({
           event: 'render_admission_rejected',
-          route: '/preview',
+          route: c.req.path,
           reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
           status: 429,
         });
@@ -453,9 +498,13 @@ export function createApp(deps: AppDeps): Hono {
     }
 
     const deadlineAbort = new AbortController();
+    const budgetMs = runtimeCheck
+      ? Math.min(previewDeadlineMs, INTERACTIVE_RUNTIME_DEADLINE_MS)
+      : previewDeadlineMs;
+    const expiresAt = performance.now() + budgetMs;
     const deadline = setTimeout(
       () => deadlineAbort.abort(new PreviewTimeoutError('Preview exceeded the deadline')),
-      previewDeadlineMs,
+      budgetMs,
     );
     deadline.unref?.();
     // The Fetch request signal is backed by the Node request's close event, so
@@ -472,9 +521,61 @@ export function createApp(deps: AppDeps): Hono {
       );
       const payload = parsePreviewPayload(value);
       if (typeof payload === 'string') throw new BadRequestError(payload);
+      const checkScene =
+        runtimeCheck && payload.scene.type === 'interactive' ? payload.scene : undefined;
+      if (runtimeCheck && !checkScene) {
+        throw new BadRequestError('Runtime checks require an interactive scene');
+      }
       const unpreviewable = previewabilityError(payload.scene);
       if (unpreviewable) throw new UnprocessablePreviewError(unpreviewable);
+      const remainingMs = Math.ceil(expiresAt - performance.now());
+      if (remainingMs <= 0) throw new PreviewTimeoutError('Preview exceeded the deadline');
       signal.throwIfAborted();
+      const request = {
+        scene: payload.scene,
+        stage: payload.stage,
+        viewport: payload.viewport,
+        signal,
+        deadlineMs: remainingMs,
+      };
+      if (checkScene) {
+        const busy = new PreviewRejectedError(
+          'Timed out waiting for preview capacity; retry shortly.',
+          'capacity_busy',
+        );
+        const waitAbort = new AbortController();
+        const waitExpiresAt = performance.now() + interactiveRuntimeWaitMs;
+        const waitTimer =
+          waitExpiresAt < expiresAt
+            ? setTimeout(() => waitAbort.abort(busy), interactiveRuntimeWaitMs)
+            : undefined;
+        waitTimer?.unref();
+        try {
+          return await previewExecutionGate.run(
+            async () => {
+              clearTimeout(waitTimer);
+              signal.throwIfAborted();
+              const now = performance.now();
+              const deadlineMs = Math.ceil(expiresAt - now);
+              if (deadlineMs <= 0) throw new PreviewTimeoutError('Preview exceeded the deadline');
+              if (now >= waitExpiresAt) throw busy;
+              const errors = await checkInteractiveRuntime({
+                ...request,
+                scene: checkScene,
+                deadlineMs,
+              });
+              signal.throwIfAborted();
+              return c.json({ errors });
+            },
+            AbortSignal.any([signal, waitAbort.signal]),
+          );
+        } catch (error) {
+          if (error === busy) runtimeWaitTimeouts.add(c.req.raw);
+          throw error;
+        } finally {
+          clearTimeout(waitTimer);
+        }
+      }
       const releaseExecution = previewExecutionGate.tryAcquire();
       if (!releaseExecution) {
         throw new PreviewRejectedError(
@@ -484,13 +585,7 @@ export function createApp(deps: AppDeps): Hono {
       }
       let png: Uint8Array;
       try {
-        png = await previewRenderer.render({
-          scene: payload.scene,
-          stage: payload.stage,
-          viewport: payload.viewport,
-          signal,
-          deadlineMs: previewDeadlineMs,
-        });
+        png = await previewRenderer.render(request);
       } finally {
         releaseExecution();
       }
@@ -514,7 +609,7 @@ export function createApp(deps: AppDeps): Hono {
       if (error instanceof PreviewRejectedError) {
         onEvent({
           event: 'render_admission_rejected',
-          route: '/preview',
+          route: c.req.path,
           reason: (error as Error & { reason?: string }).reason ?? 'unspecified',
           status: 429,
         });

@@ -32,6 +32,7 @@ import {
 } from './scene-tts';
 import { toGenerationContent } from './generation-content';
 import { checkScenesAgainstSkill } from './skills';
+import { interactiveRuntimeFeedback } from './interactive-runtime';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { createLogger } from '@/lib/logger';
@@ -546,6 +547,12 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         ...(skillViolations.length ? { skillViolations } : {}),
         detail: `page ${scene.order} persisted`,
       });
+      const runtimeFeedback = await interactiveRuntimeFeedback(
+        deps.checkInteractiveRuntime,
+        persisted,
+        doc.stage,
+        signal ?? deps.abortSignal,
+      );
       return result(
         `Page ${scene.order} "${scene.title}" persisted.${
           skillViolations.length
@@ -555,7 +562,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           mediaPlaceholders.length
             ? ` ${mediaPlaceholders.length} media placeholder(s) still render as skeletons.`
             : ''
-        }`,
+        }${runtimeFeedback}`,
         {
           sceneId: scene.id,
           order: scene.order,

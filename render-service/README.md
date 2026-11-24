@@ -22,6 +22,7 @@ poll, then download. Job ids are opaque.
 | ----------------------------------------- | ------------------------------------------------------------------------------------ |
 | `POST /owner-bound/render`                | multipart: `project` (the ZIP) + `fps`, `quality`, `format` fields → `202 { jobId }` |
 | `POST /preview`                           | JSON: persisted `scene`, stage context, and viewport → synchronous PNG               |
+| `POST /interactive-runtime-check`         | Same JSON envelope as preview, for one interactive scene → runtime errors            |
 | `GET /owner-bound/render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
 | `GET /owner-bound/render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
 | `DELETE /owner-bound/render/:jobId`       | cancel a queued/running job                                                          |
@@ -116,6 +117,24 @@ CSS `@import`) may pass validation; self-contained scenes are the caller's
 responsibility, and end-to-end fidelity for persisted scenes arrives with
 caller-side preparation (tracked separately).
 
+`POST /interactive-runtime-check` uses the same self-contained iframe,
+admission limits, and Chromium execution slots as the PNG preview. A check
+waits in FIFO order for a slot for up to `RENDER_INTERACTIVE_RUNTIME_WAIT_MS`
+(default 2000 ms). It returns `429` with `reason: capacity_busy` if the wait
+expires first, or `504` if the overall deadline expires first. The overall
+deadline covers parsing, waiting, and Chromium work and is the smaller of
+five seconds and `RENDER_PREVIEW_TIMEOUT_MS`, followed by bounded Chromium
+cleanup. A client disconnect cancels the wait.
+The response is `{ errors: [...] }`, with each uncaught exception or unhandled
+rejection labeled `phase: "load"` or `phase: "action"`. Action errors include
+the zero-based `actionIndex` in `scene.actions` and the posted `actionType`.
+The check loads the page and replays widget messages in order with a short
+observation window after each. `/health` advertises `interactiveRuntimeCheck`
+when Chromium is configured and per-task resource mode is off. The
+`preview_request` log includes `runtimeCheckResult` for this route. `checked`
+includes pages with reported runtime errors. The other codes are `busy_timeout`,
+`deadline`, `aborted`, and `error` (including admission or validation failures).
+
 ## Environment
 
 | Var                                      | Default                                        | Meaning                                                                                                                                                                                                                                           |
@@ -129,6 +148,7 @@ caller-side preparation (tracked separately).
 | `RENDER_JOB_TTL_MS`                      | `1800000`                                      | How long finished jobs + artifacts live before cleanup.                                                                                                                                                                                           |
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                                      | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                     |
 | `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                                        | Deadline for preview work, including body parsing; launch settlement and bounded browser cleanup complete before the slot is reused.                                                                                                                                                  |
+| `RENDER_INTERACTIVE_RUNTIME_WAIT_MS`     | `2000`                                         | Maximum runtime-check wait for a preview execution slot, in milliseconds. The overall deadline can end the wait sooner. |
 | `RENDER_PREVIEW_MAX_CONCURRENCY`         | `1`                                            | Maximum executing previews, independent of video exports. At most 2 in `standard`, 1 in `low-memory`; exceeding the profile limit fails startup. Each slot can launch one Chromium browser.                                                                         |
 | `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                                            | Maximum admitted previews across buffering and execution.                                                                                                                                                                                         |
 | `RENDER_PREVIEW_MAX_PER_USER`            | `2`                                            | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                              |

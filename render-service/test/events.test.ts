@@ -141,6 +141,17 @@ describe('emitRenderEvent', () => {
 
     expect(JSON.parse(lines[0]!)).toMatchObject({ level: 'INFO', status: 400 });
   });
+
+  it('serializes the runtime check result on the preview event', () => {
+    const { lines } = captureStdout();
+    emitRenderEvent({
+      event: 'preview_request',
+      route: '/interactive-runtime-check',
+      status: 429,
+      runtimeCheckResult: 'busy_timeout',
+    });
+    expect(JSON.parse(lines[0]!)).toMatchObject({ runtimeCheckResult: 'busy_timeout' });
+  });
 });
 
 describe('classifyPreviewFailure', () => {

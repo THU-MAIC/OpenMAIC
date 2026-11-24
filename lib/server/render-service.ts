@@ -87,6 +87,7 @@ export interface RenderServiceCapability {
   enabled: boolean;
   /** Omitted when a compatible service does not report admission state. */
   accepting?: boolean;
+  interactiveRuntimeCheck?: boolean;
 }
 
 /**
@@ -103,10 +104,14 @@ export async function getRenderServiceCapability(): Promise<RenderServiceCapabil
     if (!res.ok || !isRenderOwnerBoundResponse(res)) return { enabled: false };
     // Admission state is optional, but owner binding is mandatory. This keeps a
     // newer app from advertising an older, unscoped render service as usable.
-    const body = (await res.json().catch(() => null)) as { accepting?: unknown } | null;
+    const body = (await res.json().catch(() => null)) as {
+      accepting?: unknown;
+      interactiveRuntimeCheck?: unknown;
+    } | null;
     return {
       enabled: true,
       ...(typeof body?.accepting === 'boolean' ? { accepting: body.accepting } : {}),
+      ...(body?.interactiveRuntimeCheck === true ? { interactiveRuntimeCheck: true } : {}),
     };
   } catch (error) {
     log.info('Render service health check failed:', error instanceof Error ? error.message : error);

@@ -20,7 +20,14 @@ describe('video export capability', () => {
     'forwards accepting=%s without leaking service details',
     async (accepting) => {
       proxyFetch.mockResolvedValue(
-        ownerBound(Response.json({ ok: true, accepting, versions: { internal: 'x' } })),
+        ownerBound(
+          Response.json({
+            ok: true,
+            accepting,
+            interactiveRuntimeCheck: true,
+            versions: { internal: 'x' },
+          }),
+        ),
       );
       expect(await (await GET()).json()).toEqual({ success: true, enabled: true, accepting });
       expect(proxyFetch).toHaveBeenCalledWith('http://render-service:9000/health', {
