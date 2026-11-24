@@ -78,7 +78,7 @@ export function gradeChoiceQuestions(
       // and accepted as a different option.
       const userAnswer = toArray(answers[q.id]);
       const correctAnswer = toArray(q.answer).map((a) => resolveAnswerKeyToValue(q, a));
-      const correct = arraysEqual(userAnswer, correctAnswer);
+      const correct = correctAnswer.length > 0 && arraysEqual(userAnswer, correctAnswer);
       return {
         questionId: q.id,
         correct,
