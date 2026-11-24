@@ -342,13 +342,13 @@ async function prepareSlide(
   return { ok: true, scene: copy, notes };
 }
 
-async function prepareInteractive(
-  scene: Scene,
-  options: PreparePreviewOptions,
-  budget: number,
+export async function prepareInteractiveScenePreview(
+  scene: Extract<Scene, { type: 'interactive' }>,
+  options: Pick<PreparePreviewOptions, 'readLibraryFile' | 'signal' | 'budgetBytes'>,
 ): Promise<PreparedPreviewScene> {
-  const content = scene.content as unknown;
-  const html = isRecord(content) ? content.html : undefined;
+  options.signal?.throwIfAborted();
+  const budget = options.budgetBytes ?? PREVIEW_REQUEST_BUDGET_BYTES;
+  const html = scene.content.html;
   // The render service explains an empty page itself.
   if (typeof html !== 'string' || !html.trim()) return { ok: true, scene, notes: [] };
 
@@ -368,7 +368,7 @@ async function prepareInteractive(
   // leave a half-inlined page to send.
   options.signal?.throwIfAborted();
   const copy = structuredClone(scene);
-  (copy.content as unknown as Record<string, unknown>).html = inlined;
+  copy.content.html = inlined;
   if (jsonBytes(copy) > budget) {
     return {
       ok: false,
@@ -400,6 +400,6 @@ export async function prepareScenePreview(
   const budget = options.budgetBytes ?? PREVIEW_REQUEST_BUDGET_BYTES;
   options.signal?.throwIfAborted();
   if (scene.type === 'slide') return prepareSlide(scene, options, budget);
-  if (scene.type === 'interactive') return prepareInteractive(scene, options, budget);
+  if (scene.type === 'interactive') return prepareInteractiveScenePreview(scene, options);
   return { ok: true, scene, notes: [] };
 }

@@ -22,6 +22,7 @@ import { submitRender } from './support/identities.js';
 
 process.env.RENDER_SERVICE_NO_LISTEN = 'true';
 
+type AppDeps = import('../src/main.js').AppDeps;
 let createApp: typeof import('../src/main.js').createApp;
 let RenderCoordinator: typeof import('../src/render-coordinator.js').RenderCoordinator;
 
@@ -63,8 +64,12 @@ function previewPayload() {
   } as const;
 }
 
-function previewRequest(payload: unknown = previewPayload(), identity = 'preview-user'): Request {
-  return new Request('http://test/preview', {
+function previewRequest(
+  payload: unknown = previewPayload(),
+  identity = 'preview-user',
+  path = '/preview',
+): Request {
+  return new Request(new URL(path, 'https://example.com'), {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-openmaic-client': identity },
     body: JSON.stringify(payload),
@@ -96,6 +101,7 @@ function appWith(
     previewDeadlineMs?: number;
     previewMaxJsonBytes?: number;
     resourceMode?: boolean;
+    interactiveRuntimeCheck?: AppDeps['interactiveRuntimeCheck'];
   } = {},
 ) {
   const jobs = createMemoryJobStore();
@@ -109,11 +115,78 @@ function appWith(
     previewExecutionGate: options.previewExecutionGate,
     previewGate,
     previewRenderer,
+    interactiveRuntimeCheck: options.interactiveRuntimeCheck,
     previewDeadlineMs: options.previewDeadlineMs,
     previewMaxJsonBytes: options.previewMaxJsonBytes,
     resourceMode: options.resourceMode,
   });
 }
+
+describe('POST /interactive-runtime-check', () => {
+  const path = '/interactive-runtime-check';
+
+  function runtimeRequest() {
+    const base = previewPayload();
+    return previewRequest(
+      {
+        ...base,
+        scene: {
+          ...base.scene,
+          type: 'interactive',
+          content: { type: 'interactive', html: '<!doctype html><p>Widget</p>' },
+          actions: [{ id: 'reveal', type: 'widget_reveal', target: '#part' }],
+        },
+      },
+      'check-user',
+      path,
+    );
+  }
+
+  it('returns JSON and shares the PNG preview execution gate', async () => {
+    const pending =
+      deferred<Awaited<ReturnType<NonNullable<AppDeps['interactiveRuntimeCheck']>>>>();
+    const interactiveRuntimeCheck = vi.fn<NonNullable<AppDeps['interactiveRuntimeCheck']>>(
+      () => pending.promise,
+    );
+    const render = vi.fn<PreviewRenderer['render']>();
+    const app = appWith({ render }, undefined, {
+      interactiveRuntimeCheck,
+      previewExecutionGate: new Semaphore(1),
+    });
+    const check = app.fetch(runtimeRequest());
+    try {
+      await waitFor(() => interactiveRuntimeCheck.mock.calls.length === 1);
+      const preview = await app.fetch(previewRequest());
+      expect(preview.status).toBe(429);
+      expect(render).not.toHaveBeenCalled();
+    } finally {
+      pending.resolve([
+        { phase: 'action', actionIndex: 0, actionType: 'REVEAL_ELEMENT', message: 'Missing part' },
+      ]);
+    }
+    const response = await check;
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ errors: await pending.promise });
+    const request = interactiveRuntimeCheck.mock.calls[0]?.[0];
+    expect(request?.scene.actions).toHaveLength(1);
+    expect(request?.deadlineMs).toBeLessThanOrEqual(3_000);
+  });
+
+  it('rejects non-interactive scenes and maps an expired check to HTTP 504', async () => {
+    const interactiveRuntimeCheck: NonNullable<AppDeps['interactiveRuntimeCheck']> = ({ signal }) =>
+      new Promise((_resolve, reject) =>
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+      );
+    const app = appWith({ render: vi.fn() }, undefined, {
+      interactiveRuntimeCheck,
+      previewDeadlineMs: 100,
+    });
+    expect((await app.fetch(previewRequest(previewPayload(), 'check-user', path))).status).toBe(
+      400,
+    );
+    expect((await app.fetch(runtimeRequest())).status).toBe(504);
+  });
+});
 
 describe('POST /preview', () => {
   it.each(['disconnect', 'deadline'])(

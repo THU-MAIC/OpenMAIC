@@ -11,6 +11,6 @@ export const dynamic = 'force-dynamic';
  * Never leaks the service URL to the client.
  */
 export async function GET() {
-  const capability = await getRenderServiceCapability();
-  return apiSuccess({ ...capability });
+  const { enabled, accepting } = await getRenderServiceCapability();
+  return apiSuccess({ enabled, ...(accepting !== undefined ? { accepting } : {}) });
 }

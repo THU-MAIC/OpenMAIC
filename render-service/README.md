@@ -22,6 +22,7 @@ poll, then download. Job ids are opaque.
 | ----------------------------------------- | ------------------------------------------------------------------------------------ |
 | `POST /owner-bound/render`                | multipart: `project` (the ZIP) + `fps`, `quality`, `format` fields → `202 { jobId }` |
 | `POST /preview`                           | JSON: persisted `scene`, stage context, and viewport → synchronous PNG               |
+| `POST /interactive-runtime-check`         | Same JSON envelope as preview, for one interactive scene → runtime errors            |
 | `GET /owner-bound/render/:jobId`          | status/progress plus actual capture, worker, profile, and runtime metrics            |
 | `GET /owner-bound/render/:jobId/download` | stream the MP4 (or `302` to a presigned URL) once `succeeded`                        |
 | `DELETE /owner-bound/render/:jobId`       | cancel a queued/running job                                                          |
@@ -115,6 +116,16 @@ some exotic external constructs (for example, `object data`, `track src`, and
 CSS `@import`) may pass validation; self-contained scenes are the caller's
 responsibility, and end-to-end fidelity for persisted scenes arrives with
 caller-side preparation (tracked separately).
+
+`POST /interactive-runtime-check` uses the same self-contained iframe,
+request limits, and Chromium execution slots as the PNG preview. Its work
+deadline is at most three seconds, followed by bounded Chromium cleanup.
+The response is `{ errors: [...] }`, with each uncaught exception or unhandled
+rejection labeled `phase: "load"` or `phase: "action"`. Action errors include
+the zero-based `actionIndex` in `scene.actions` and the posted `actionType`.
+The check loads the page and replays widget messages in order with a short
+observation window after each. `/health` advertises `interactiveRuntimeCheck`
+when Chromium is configured and per-task resource mode is off.
 
 ## Environment
 

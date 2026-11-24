@@ -360,6 +360,62 @@ describe('read_stage', () => {
 });
 
 describe('patch_stage', () => {
+  it('rechecks saved HTML and action edits, keeping a timed-out check advisory', async () => {
+    const current = state();
+    const checkInteractiveRuntime = vi
+      .fn()
+      .mockImplementationOnce(async (scene: Scene) => {
+        expect(current.get().scenes.find(({ id }) => id === scene.id)).toEqual(scene);
+        return [{ phase: 'load', message: 'ReferenceError: missing is not defined' }];
+      })
+      .mockRejectedValueOnce(new DOMException('Deadline expired', 'TimeoutError'));
+    const patch = tool(
+      buildDslCourseTools({
+        store: current.store,
+        stageAccess: async () => OWNED,
+        onCheckpoint: vi.fn(),
+        checkInteractiveRuntime,
+      }),
+      'patch_stage',
+    );
+    const target = '/scenes/scene_widget';
+    const html = '<!doctype html><script>missing()</script>';
+    const htmlEdit = await patch.execute('html', {
+      target,
+      intent: 'Edit widget HTML',
+      ops: [{ op: 'set', path: '/content/html', value: html }],
+    });
+    expect(textOf(htmlEdit)).toContain('ReferenceError: missing is not defined');
+    expect(htmlEdit).not.toHaveProperty('isError');
+
+    const actions = [{ id: 'intro', type: 'widget_reveal', target: '#part' }];
+    const actionEdit = await patch.execute('actions', {
+      target,
+      intent: 'Set actions',
+      ops: [{ op: 'set', path: '/actions', value: actions }],
+    });
+    expect(textOf(actionEdit)).toContain('runtime was not checked');
+    expect(actionEdit).not.toHaveProperty('isError');
+    expect(checkInteractiveRuntime).toHaveBeenLastCalledWith(
+      expect.objectContaining({ content: expect.objectContaining({ html }), actions }),
+      expect.objectContaining({ id: 'stage-test' }),
+      expect.any(AbortSignal),
+    );
+    expect(current.get().scenes.find(({ id }) => id === 'scene_widget')?.actions).toEqual(actions);
+
+    await patch.execute('unchanged', {
+      target,
+      intent: 'Keep the same HTML',
+      ops: [{ op: 'set', path: '/content/html', value: html }],
+    });
+    await patch.execute('non-interactive', {
+      target: '/scenes/scene_slide',
+      intent: 'Change the slide narration',
+      ops: [{ op: 'set', path: '/actions/0/text', value: 'Different narration' }],
+    });
+    expect(checkInteractiveRuntime).toHaveBeenCalledTimes(2);
+  });
+
   it.each(['scene_widget', 'scene_pbl'] as const)(
     'rejects set /actions to a non-array on %s and never persists (R5-P2-2)',
     async (target) => {

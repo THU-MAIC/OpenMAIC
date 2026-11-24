@@ -58,6 +58,7 @@ import {
 import type { SceneTtsInput, SceneTtsSummary } from './scene-tts';
 import type { LoadedSkill } from './skills';
 import type { ResolvedCapabilityMap } from './capability-tools';
+import type { InteractiveRuntimeClient } from './interactive-runtime';
 
 export type CourseDocument = MaicDocument<Scene, Stage>;
 export type CourseStore = DocumentStore<Scene, Stage> & DocumentFolderStore;
@@ -107,6 +108,8 @@ export interface CourseToolDeps {
   getActiveSkill?: () => LoadedSkill | null;
   /** Resolved capability map for the runner session. */
   capabilities?: ResolvedCapabilityMap;
+  /** Present when the healthy render service advertises interactive checks. */
+  checkInteractiveRuntime?: InteractiveRuntimeClient;
 }
 
 /**
@@ -265,6 +268,7 @@ export const DSL_TOOLS_PROMPT = [
   'Before patching a structure you have not touched, read the stage-dsl skill and its matching reference chapter.',
   'Always read_stage detail:"source" for the target, patch_stage with the smallest /content/... or /actions/... JSON Pointer, then read_stage again to verify.',
   'For one targeted change inside a large HTML or long text field, use patch_stage op "str_replace" (path, oldText, newText; set replaceAll only when the anchor repeats) instead of rewriting the whole field with set.',
+  'When generate_scene or patch_stage reports interactive page runtime errors, fix them with patch_stage before moving on.',
   'Use grep_stage for literal stage-wide text/source search.',
   'Start with detail:"tree" to see structure; read source only for the subtree you will edit; for long content, prefer grep_stage over paging with offset.',
   'A conversation in this workspace exists to make a classroom, so the opening request of a new conversation is a request for a course by default: build one, even when the message names only a topic, unless it is clearly something else, such as a question about a course the conversation already refers to, a question about settings or how the product works, small talk, or a change to an existing course. When you genuinely cannot tell whether the user wants a course, ask once with ask_user whether to build one instead of only answering in chat.',

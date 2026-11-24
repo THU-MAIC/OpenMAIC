@@ -17,6 +17,11 @@ import puppeteer from 'puppeteer-core';
 import type { Browser, Frame, HTTPRequest, Page } from 'puppeteer-core';
 import { katexPreviewStylesheet } from './preview-katex.js';
 import { UNTRUSTED_HTML_CSP, injectUntrustedHtmlCsp } from './untrusted-html-csp.js';
+import {
+  collectInteractiveRuntimeErrors,
+  replayInteractiveActions,
+  type InteractiveRuntimeError,
+} from './interactive-runtime.js';
 
 export type PreviewScene = Scene<
   Action,
@@ -45,6 +50,10 @@ export interface PreviewRequest {
 export interface PreviewRenderer {
   render(request: PreviewRequest): Promise<Uint8Array>;
 }
+
+export type InteractiveRuntimeRequest = PreviewRequest & {
+  scene: Extract<PreviewScene, { type: 'interactive' }>;
+};
 
 export class PreviewTimeoutError extends Error {}
 
@@ -361,15 +370,20 @@ export async function waitForDocumentAssets(document: AssetDocument): Promise<vo
   })()`);
 }
 
-/** Wait for a srcDoc iframe and the assets inside its browsing context. */
-export async function waitForInteractiveFrame(page: Page): Promise<void> {
+/** Wait for the embedded document to finish loading. */
+async function loadedInteractiveFrame(page: Page): Promise<Frame> {
   const iframe = await page.waitForSelector('iframe');
   const frame = await iframe?.contentFrame();
   if (!frame) throw new Error('Interactive preview iframe did not load');
   await frame.waitForFunction(
     () => location.href === 'about:srcdoc' && document.readyState === 'complete',
   );
-  await waitForDocumentAssets(frame);
+  return frame;
+}
+
+/** Wait for a srcDoc iframe and the assets inside its browsing context. */
+export async function waitForInteractiveFrame(page: Page): Promise<void> {
+  await waitForDocumentAssets(await loadedInteractiveFrame(page));
 }
 
 function abortError(signal: AbortSignal): Error {
@@ -529,6 +543,62 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
   }
 
   async render(request: PreviewRequest): Promise<Uint8Array> {
+    return this.withPreviewPage(request, async (page) => {
+      await page.setContent(buildPreviewHtml(request.scene, request.stage, request.viewport), {
+        waitUntil: 'domcontentloaded',
+      });
+
+      if (request.scene.type === 'slide') {
+        await page.evaluate(
+          (slide, viewport) => {
+            Object.assign(window, {
+              __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
+            });
+          },
+          request.scene.content.canvas,
+          request.viewport,
+        );
+        await mountSlideClient(page, await buildSlideClientBundle());
+      }
+
+      const selected = await page.evaluate(
+        (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
+        request.scene.id,
+      );
+      if (!selected) {
+        throw new Error(`Requested scene was not found in the preview page (${request.scene.id})`);
+      }
+
+      if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
+      else await waitForDocumentAssets(page);
+
+      const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
+      return new Uint8Array(png);
+    });
+  }
+
+  async checkInteractiveRuntime(
+    request: InteractiveRuntimeRequest,
+  ): Promise<InteractiveRuntimeError[]> {
+    return this.withPreviewPage(request, async (page) => {
+      const collector = collectInteractiveRuntimeErrors(page);
+      try {
+        await page.setContent(buildPreviewHtml(request.scene, request.stage, request.viewport), {
+          waitUntil: 'domcontentloaded',
+        });
+        const frame = await loadedInteractiveFrame(page);
+        await replayInteractiveActions(page, frame, request.scene.actions ?? [], collector);
+        return collector.errors;
+      } finally {
+        collector.dispose();
+      }
+    });
+  }
+
+  private async withPreviewPage<T>(
+    request: PreviewRequest,
+    run: (page: Page) => Promise<T>,
+  ): Promise<T> {
     if (request.signal.aborted) throw abortError(request.signal);
 
     const executablePath =
@@ -558,41 +628,7 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
           await page.setViewport(request.viewport);
           const removeRequestGuard = await installPreviewRequestGuard(page);
           try {
-            await page.setContent(
-              buildPreviewHtml(request.scene, request.stage, request.viewport),
-              {
-                waitUntil: 'domcontentloaded',
-              },
-            );
-
-            if (request.scene.type === 'slide') {
-              await page.evaluate(
-                (slide, viewport) => {
-                  Object.assign(window, {
-                    __OPENMAIC_PREVIEW_PROPS__: { slide, viewport },
-                  });
-                },
-                request.scene.content.canvas,
-                request.viewport,
-              );
-              await mountSlideClient(page, await buildSlideClientBundle());
-            }
-
-            const selected = await page.evaluate(
-              (sceneId) => document.body.getAttribute('data-scene-id') === sceneId,
-              request.scene.id,
-            );
-            if (!selected) {
-              throw new Error(
-                `Requested scene was not found in the preview page (${request.scene.id})`,
-              );
-            }
-
-            if (request.scene.type === 'interactive') await waitForInteractiveFrame(page);
-            else await waitForDocumentAssets(page);
-
-            const png = await page.screenshot({ type: 'png', optimizeForSpeed: true });
-            return new Uint8Array(png);
+            return await run(page);
           } finally {
             removeRequestGuard();
           }

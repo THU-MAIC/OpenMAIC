@@ -50,7 +50,8 @@ export type CapabilityRequirement =
   | 'web_search'
   | 'web_fetch'
   | 'voice_registration'
-  | 'render_service';
+  | 'render_service'
+  | 'interactive_runtime_check';
 
 export interface CapabilityDependentTool<
   TParameters extends TSchema = TSchema,
@@ -115,6 +116,8 @@ export async function resolveRunnerCapabilities({
     video: hasConfiguredVideoGeneration({ videoConnection }),
     voice_registration: hasConfiguredVoiceRegistrationCapability(ttsConnection),
     render_service: renderService.enabled,
+    interactive_runtime_check:
+      renderService.enabled && renderService.interactiveRuntimeCheck === true,
   };
 
   return {
@@ -142,6 +145,7 @@ export function createCapabilityMap(
     video: false,
     voice_registration: false,
     render_service: false,
+    interactive_runtime_check: false,
     ...available,
   };
   return {
