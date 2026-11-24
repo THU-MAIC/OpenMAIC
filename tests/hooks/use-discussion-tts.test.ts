@@ -436,6 +436,21 @@ describe('discussion TTS synthesis lookahead', () => {
     expect(audio.play).toHaveBeenCalledTimes(2);
   });
 
+  it('answers the hold check for one segment when given its ids', async () => {
+    await seal('A');
+    await seal('B');
+    expect(hook.shouldHold('message', 'A').holding).toBe(true); // synthesizing at the head
+    expect(hook.shouldHold('message', 'B').holding).toBe(true); // queued
+    expect(hook.shouldHold('message', 'X').holding).toBe(false); // never queued
+    await respond(0);
+    await respond(1);
+    await act(async () => FakeAudio.instances[0].end());
+    // A has played while B plays: A's text no longer waits, the queue as a whole does.
+    expect(hook.shouldHold('message', 'A').holding).toBe(false);
+    expect(hook.shouldHold('message', 'B').holding).toBe(true);
+    expect(hook.shouldHold().holding).toBe(true);
+  });
+
   it('does not send a request after cancellation during voice-option resolution', async () => {
     const options = deferred<undefined>();
     mocks.voiceOptions.mockReturnValueOnce(options.promise);

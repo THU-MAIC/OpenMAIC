@@ -868,6 +868,18 @@ describe('Pi Native whiteboard Browser events', () => {
     expect(useStageStore.getState().stage).toBe(stage);
   });
 
+  it('does not report opening an open board or closing a closed one as an action', () => {
+    const signal = new AbortController().signal;
+    const open = { kind: 'open', stageId: 'stage-1', manualVisibilityRevision: 2 } as const;
+    const close = { kind: 'close', stageId: 'stage-1', manualVisibilityRevision: 2 } as const;
+    expect(consumePiWhiteboardEvent(close, signal)).toBe(false);
+    expect(consumePiWhiteboardEvent(open, signal)).toBe(true);
+    expect(consumePiWhiteboardEvent(open, signal)).toBe(false);
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(true);
+    expect(consumePiWhiteboardEvent(close, signal)).toBe(true);
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
+  });
+
   it('reports a committed change as an action, but not one for another Stage or after abort', () => {
     vi.stubGlobal(
       'fetch',

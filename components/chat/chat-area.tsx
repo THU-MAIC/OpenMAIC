@@ -54,7 +54,10 @@ interface ChatAreaProps {
     agentId: string | null,
   ) => void;
   /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
-  shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
+  shouldHoldAfterReveal?: (
+    messageId?: string,
+    partId?: string,
+  ) => { holding: boolean; segmentDone: number } | boolean;
   currentSceneId?: string | null;
   currentActionIndex?: number | null;
   canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;

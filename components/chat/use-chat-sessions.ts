@@ -148,7 +148,10 @@ interface UseChatSessionsOptions {
     agentId: string | null,
   ) => void;
   /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
-  shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
+  shouldHoldAfterReveal?: (
+    messageId?: string,
+    partId?: string,
+  ) => { holding: boolean; segmentDone: number } | boolean;
 }
 
 export type ChatRequestTemplate = {
@@ -577,7 +580,10 @@ export function consumePiWhiteboardEvent(
   }
   const canvas = useCanvasStore.getState();
   if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return false;
-  canvas.setWhiteboardOpen(data.kind === 'open');
+  const open = data.kind === 'open';
+  // Opening an open board (or closing a closed one) changes nothing on screen.
+  if (canvas.whiteboardOpen === open) return false;
+  canvas.setWhiteboardOpen(open);
   return true;
 }
 
@@ -1179,8 +1185,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             onSegmentSealedRef.current?.(messageId, partId, fullText, agentId);
           },
 
-          shouldHoldAfterReveal() {
-            return shouldHoldAfterRevealRef.current?.() ?? (false as const);
+          shouldHoldAfterReveal(messageId, partId) {
+            return shouldHoldAfterRevealRef.current?.(messageId, partId) ?? (false as const);
           },
         },
         pacingOptions,

@@ -143,8 +143,12 @@ export interface StreamBufferCallbacks {
    * When provided, called after a text item is fully revealed and sealed.
    * If it returns true, the tick loop will NOT advance to the next item —
    * the bubble stays on the current text (e.g. waiting for TTS playback to finish).
+   * It is given the revealed item's ids, so it can answer for that segment.
    */
-  shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
+  shouldHoldAfterReveal?: (
+    messageId?: string,
+    partId?: string,
+  ) => { holding: boolean; segmentDone: number } | boolean;
 }
 
 // ─── Options ─────────────────────────────────────────────────────────
@@ -194,6 +198,8 @@ export class StreamBuffer {
   /** True when a text item's post-delay has elapsed and we're waiting for TTS to finish. */
   private _holdingForTTS = false;
   private _holdSegmentSnapshot = -1;
+  /** The text item the playhead is holding on while its speech plays. */
+  private _heldText: { messageId: string; partId: string } | null = null;
   /** Blocks queue advancement until the current action effect has completed. */
   private _actionCompletion: Promise<void> | null = null;
   private _flushing = false;
@@ -527,7 +533,10 @@ export class StreamBuffer {
 
     // TTS hold: after post-text delay, keep the bubble on screen while audio plays
     if (this._holdingForTTS) {
-      const result = this.cb.shouldHoldAfterReveal?.();
+      const result = this.cb.shouldHoldAfterReveal?.(
+        this._heldText?.messageId,
+        this._heldText?.partId,
+      );
       if (result) {
         if (typeof result === 'object') {
           if (!result.holding) {
@@ -583,6 +592,8 @@ export class StreamBuffer {
           this.readIndex++;
           this.charCursor = 0;
 
+          this._heldText = { messageId: item.messageId, partId: item.partId };
+
           // Fixed pause after text finishes — gives the reader a breathing gap
           // before the next action or agent turn fires.
           if (this.postTextDelayTicks > 0) {
@@ -590,7 +601,7 @@ export class StreamBuffer {
             // If TTS hold callback exists, mark that we need to check it after delay
             if (this.cb.shouldHoldAfterReveal) {
               this._holdingForTTS = true;
-              const snap = this.cb.shouldHoldAfterReveal();
+              const snap = this.cb.shouldHoldAfterReveal(item.messageId, item.partId);
               this._holdSegmentSnapshot = typeof snap === 'object' ? snap.segmentDone : -1;
             }
             return; // next tick will count down, then advanceNonText
@@ -598,7 +609,7 @@ export class StreamBuffer {
 
           // No post-text delay — check TTS hold immediately
           {
-            const result = this.cb.shouldHoldAfterReveal?.();
+            const result = this.cb.shouldHoldAfterReveal?.(item.messageId, item.partId);
             if (result) {
               this._holdingForTTS = true;
               this._holdSegmentSnapshot = typeof result === 'object' ? result.segmentDone : -1;

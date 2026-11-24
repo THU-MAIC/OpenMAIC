@@ -597,10 +597,20 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
    * Returns true when TTS audio for the *current* segment is still playing.
    * Uses a monotonic counter so the buffer releases as soon as one segment's
    * audio finishes, even if the next segment starts immediately.
+   *
+   * Given a segment's ids, it answers for that segment only: whether it is
+   * still playing, synthesizing or queued. A short segment can finish before
+   * its text is shown, and the counter alone would then hold that text until
+   * the next segment had played as well.
    */
-  const shouldHold = useCallback(() => {
+  const shouldHold = useCallback((messageId?: string, partId?: string) => {
+    const isSegment = (item: QueueItem | null) =>
+      !!item && item.messageId === messageId && item.partId === partId;
     return {
-      holding: isPlayingRef.current || queueRef.current.length > 0,
+      holding:
+        partId === undefined
+          ? isPlayingRef.current || queueRef.current.length > 0
+          : isSegment(currentItemRef.current) || queueRef.current.some(isSegment),
       segmentDone: segmentDoneCounterRef.current,
     };
   }, []);

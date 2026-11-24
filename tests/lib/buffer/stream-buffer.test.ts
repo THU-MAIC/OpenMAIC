@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 
 describe('StreamBuffer Pi wrap-up ordering', () => {
@@ -487,5 +487,63 @@ describe('StreamBuffer speech segments', () => {
     await buffer.flush();
     expect(speakers[0]).toBe('teacher');
     expect(speakers.at(-1)).toBe('student');
+  });
+});
+
+describe('StreamBuffer speech hold per segment', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('shows the next segment once the shown one has played, not after the one playing now', () => {
+    vi.useFakeTimers();
+    // Speech plays in order; each segment's audio ends at a fixed time.
+    const endsAt: Record<string, number> = { p0: 300, p1: 900, p2: 6000 };
+    const queued: string[] = [];
+    let now = 0;
+    const done = () => queued.filter((part) => endsAt[part] <= now);
+    const firstShown: Record<string, number> = {};
+    const buffer = new StreamBuffer(
+      {
+        onAgentStart() {},
+        onAgentEnd() {},
+        onTextReveal(_messageId, partId) {
+          firstShown[partId] ??= now;
+        },
+        onActionReady() {},
+        onLiveSpeech() {},
+        onSpeechProgress() {},
+        onThinking() {},
+        onCueUser() {},
+        onDone() {},
+        onError(message) {
+          throw new Error(message);
+        },
+        onSegmentSealed(_messageId, partId) {
+          queued.push(partId);
+        },
+        shouldHoldAfterReveal(_messageId, partId) {
+          const finished = done();
+          return {
+            holding: !!partId && queued.includes(partId) && !finished.includes(partId),
+            segmentDone: finished.length,
+          };
+        },
+      },
+      { tickMs: 30, charsPerTick: 100, postTextDelayMs: 1200 },
+    );
+    buffer.pushAgentStart({ messageId: 'm1', agentId: 'teacher', agentName: 'Teacher' });
+    buffer.pushText('m1', 'A.');
+    buffer.sealSegment();
+    buffer.pushText('m1', 'B.');
+    buffer.sealSegment();
+    buffer.pushText('m1', 'C, a longer segment.');
+    buffer.pushAgentEnd({ messageId: 'm1', agentId: 'teacher' });
+    buffer.start();
+    for (; now < 8000; now += 30) vi.advanceTimersByTime(30);
+
+    // B's audio ended at 900 ms, before B was shown; C follows B's own dwell
+    // instead of waiting for C's audio to end at 6000 ms.
+    expect(firstShown.p1).toBeLessThan(1500);
+    expect(firstShown.p2).toBeLessThan(3000);
+    buffer.shutdown();
   });
 });
