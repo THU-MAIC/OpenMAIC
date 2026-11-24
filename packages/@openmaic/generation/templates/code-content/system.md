@@ -54,13 +54,7 @@ can target the same element in both cases.
     let editor = null;
 
     if (window.CodeMirror?.modes?.python) {
-      const candidate = window.CodeMirror.fromTextArea(codeInput, { mode: 'python', lineNumbers: true });
-      // Check the required scrollbar styling with either linked or inlined CSS.
-      if (getComputedStyle(candidate.getScrollerElement()).overflowX === 'scroll') {
-        editor = candidate;
-      } else {
-        candidate.toTextArea();
-      }
+      editor = window.CodeMirror.fromTextArea(codeInput, { mode: 'python', lineNumbers: true });
     }
   </script>
 </body>

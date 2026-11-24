@@ -1,4 +1,4 @@
-Create a code widget for: {{title}}
+Create a code playground widget for: {{title}}
 
 ## Programming Language
 
@@ -37,7 +37,8 @@ Create a code widget for: {{title}}
 ---
 
 Generate a complete, interactive HTML code editor with:
-1. CodeMirror editor with syntax highlighting and a textarea fallback
-2. Run, output, and test validation for a supported browser runtime
-3. Progressive hints
-4. Embedded widget configuration JSON
+1. Code editor with syntax highlighting
+2. Run button with output display
+3. Test case validation
+4. Progressive hint system
+5. Embedded widget configuration JSON
