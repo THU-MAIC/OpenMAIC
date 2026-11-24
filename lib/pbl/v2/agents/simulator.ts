@@ -244,16 +244,25 @@ export function buildNarratorSystemPrompt(
 }
 
 /** Result of one director-narrator pass. */
-const NONE_SENTINEL_WRAPPERS = /^[`*_"'“”‘’]+|[`*_"'“”‘’]+$/g;
+const NONE_SENTINEL_WRAPPERS = /^[`*_"'“”‘’«»]+|[`*_"'“”‘’«»]+$/g;
+const NONE_SENTINEL_TRAILING_PUNCTUATION = /[.。!！\s]+$/;
 
 /** The director-narrator asks for a literal `NONE` when nothing visible
  *  happened, but models routinely wrap it in light Markdown or quotes
- *  (`` `NONE` ``, `**NONE**`, `"NONE"`). Strip only the wrapping chars and
- *  accept the sentinel solely when nothing else remains, so narration that
- *  merely mentions NONE keeps its bubble. */
+ *  (`` `NONE` ``, `**NONE**`, `"NONE"`), sometimes with punctuation outside
+ *  the wrapper (`"NONE".`). Peel wrappers and trailing punctuation until
+ *  nothing changes, and accept the sentinel solely when nothing else remains,
+ *  so narration that merely mentions NONE keeps its bubble. */
 export function isNoneSentinel(text: string): boolean {
-  const stripped = text.trim().replace(NONE_SENTINEL_WRAPPERS, '').trim();
-  return /^none[.。!！\s]*$/i.test(stripped);
+  let stripped = text.trim();
+  for (let prev = ''; prev !== stripped; ) {
+    prev = stripped;
+    stripped = stripped
+      .replace(NONE_SENTINEL_WRAPPERS, '')
+      .replace(NONE_SENTINEL_TRAILING_PUNCTUATION, '')
+      .trim();
+  }
+  return /^none$/i.test(stripped);
 }
 
 /** Run the director-narrator pass: a short, non-streamed system-voice

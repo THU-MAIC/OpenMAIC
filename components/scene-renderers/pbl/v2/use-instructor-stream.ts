@@ -112,7 +112,7 @@ export function useInstructorStream(
   const [status, setStatus] = useState<StreamStatus>('idle');
   const [draftAssistant, setDraftAssistant] = useState('');
   const [streamCommittedOutput, setStreamCommittedOutput] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState<unknown>(null);
   const [simPhase, setSimPhase] = useState<SimPhase>(null);
   const projectRef = useRef<PBLProjectV2>(project);
   projectRef.current = project;
@@ -128,7 +128,7 @@ export function useInstructorStream(
     async ({ endpoint, body, initialProject }: RunOptions) => {
       if (runningRef.current || streaming) return { ok: false, project: projectRef.current };
       runningRef.current = true;
-      setError(null);
+      setStreamError(null);
       setDraftAssistant('');
       setStreamCommittedOutput(false);
       setStreaming(true);
@@ -246,7 +246,7 @@ export function useInstructorStream(
         ok = false;
         const msg = e instanceof Error ? e.message : String(e);
         log.warn(`Stream chain failed at phase=${lastPhase}: ${msg}`);
-        setError(localizeStreamError(e, t));
+        setStreamError(e);
       } finally {
         runningRef.current = false;
         setStreaming(false);
@@ -259,10 +259,13 @@ export function useInstructorStream(
 
       return { ok, project: workingProject };
     },
-    [streaming, onProjectChange, onStreamingChange, t],
+    [streaming, onProjectChange, onStreamingChange],
   );
 
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => setStreamError(null), []);
+  // Derive the notice every render so it follows a UI-language switch instead
+  // of freezing the language that was active when the turn failed.
+  const error = streamError == null ? null : localizeStreamError(streamError, t);
 
   return {
     streaming,

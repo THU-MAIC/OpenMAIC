@@ -145,6 +145,10 @@ describe('isNoneSentinel — swallowed NONE forms', () => {
     '`none`',
     '`NONE.`',
     '**`NONE`**',
+    '"NONE".',
+    '**NONE**。',
+    '`NONE`!',
+    '«NONE»',
   ])('treats %j as the sentinel', (text) => {
     expect(isNoneSentinel(text)).toBe(true);
   });
