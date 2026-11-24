@@ -107,6 +107,12 @@ export interface ProviderView {
   cloneTarget?: string;
   /** What it offers, with the models to pick from per capability. */
   capabilities: CapabilityModels;
+  /**
+   * Capabilities of its preset the vendor reported the key's account does not
+   * have: why `capabilities` leaves them out, as opposed to a capability the
+   * deployment switched off or a custom endpoint cannot serve.
+   */
+  unsupportedCapabilities?: SlotCapability[];
   /** Workspace providers only. */
   key?: { set: boolean; mask?: string; unreadable?: boolean };
 }
@@ -545,6 +551,9 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           : {}),
         ...(provider.options ? { options: { ...provider.options } } : {}),
         ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
+        ...(provider.unsupportedCapabilities
+          ? { unsupportedCapabilities: [...provider.unsupportedCapabilities] }
+          : {}),
         capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
           strictModels: usesServerCredentials(provider),
           deployment: deployment?.config,
@@ -567,6 +576,9 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           : {}),
         ...(provider.options ? { options: { ...provider.options } } : {}),
         ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
+        ...(provider.unsupportedCapabilities
+          ? { unsupportedCapabilities: [...provider.unsupportedCapabilities] }
+          : {}),
         capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
           // An official regional endpoint is the service's own, not a custom one.
           chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),

@@ -29,7 +29,11 @@ vi.mock('sonner', () => ({
 }));
 
 import { TokenPlanSettings } from '@/components/settings/token-plan-settings';
-import type { ApplyResult, ModelSettingsChange } from '@/lib/model-settings/client';
+import type {
+  ApplyResult,
+  ModelSettingsChange,
+  ModelSettingsView,
+} from '@/lib/model-settings/client';
 import type { ModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import type { ModelConfigLayer } from '@/lib/server/model-config/resolve-slot';
 import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
@@ -229,10 +233,9 @@ describe('Token Plan → connecting applies the plan’s recommended configurati
 it('shows Kimi fetch in the capability list and connects without a builtin conflict', async () => {
   const panel = mountPanel(null);
   await connectPlan('Kimi');
-  expect(document.body.textContent).toContain('settings.tokenPlan.capWebFetch');
-  expect(document.body.textContent).toContain('settings.webFetchSettings');
-  act(() => byText('settings.webFetchSettings').click());
-  expect(document.body.querySelector('ul')?.textContent).toContain('kimi');
+  // The web fetch card says the plan includes it.
+  const card = byText('settings.tokenPlan.capWebFetch', 'li');
+  expect(card.textContent).toContain('settings.tokenPlan.capIncluded');
   expect(dialog()).toBeNull();
   expect(panel.changes).toHaveLength(2);
   expect(panel.config()?.slots?.webFetch).toBe('kimi-coding-plan');
@@ -347,17 +350,26 @@ it("asks the plan's quota again after a new key is saved for it", async () => {
   );
   vi.stubGlobal('fetch', fetchMock);
   try {
-    const connected = await applyModelSettingsChange(null, {
+    let connected = await applyModelSettingsChange(null, {
       kind: 'provider',
       id: 'minimax-intl',
       preset: 'minimax-intl',
       apiKey: 'sk-cp-old-key-0001',
     });
+    connected = await applyModelSettingsChange(connected, {
+      kind: 'provider',
+      id: 'kimi-intl',
+      preset: 'kimi-intl',
+      apiKey: 'test-kimi',
+    });
     mountPanel(connected);
     await flush();
-    const quotaCalls = () =>
-      fetchMock.mock.calls.filter(([url]) => String(url).includes('plan-status')).length;
-    const before = quotaCalls();
+    const quotaCalls = (id: string) =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith(`plan-status?provider=${id}`))
+        .length;
+    const before = quotaCalls('minimax-intl');
+    const kimiBefore = quotaCalls('kimi-intl');
+    expect(kimiBefore).toBeGreaterThan(0);
     expect(before).toBeGreaterThan(0);
     act(() => byText('settings.tokenPlan.updateKey').click());
     const input = document.body.querySelector<HTMLInputElement>(
@@ -374,8 +386,125 @@ it("asks the plan's quota again after a new key is saved for it", async () => {
       (document.body.querySelector('form') as HTMLFormElement).requestSubmit();
     });
     await flush();
-    expect(quotaCalls()).toBeGreaterThan(before);
+    expect(quotaCalls('minimax-intl')).toBe(before + 1);
+    expect(quotaCalls('kimi-intl')).toBe(kimiBefore);
   } finally {
     vi.unstubAllGlobals();
   }
+});
+
+describe('the plan page tells a tier without a capability from one switched off', () => {
+  const mountView = (view: ModelSettingsView) => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const apply = vi.fn(async (): Promise<ApplyResult> => ({ ok: true, view }));
+    act(() => root.render(createElement(TokenPlanSettings, { view, apply })));
+  };
+  const videoCard = () => byText('settings.tokenPlan.capVideo', 'li');
+  const minimaxRow = () => byText('MiniMax', '[role="tab"]');
+
+  beforeEach(() => {
+    i18n.locale = 'en-US';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ quota: { status: 'unavailable' } }))),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('a Go plan the vendor reported without video: not in tier, and a warning in the list', async () => {
+    const config = await applyModelSettingsChange(
+      null,
+      { kind: 'provider', id: 'minimax-intl', preset: 'minimax-intl', apiKey: 'sk-cp-go-0001' },
+      { unsupportedCapabilities: ['video'] },
+    );
+    mountView(viewOf(config));
+    await flush();
+    expect(videoCard().textContent).toContain('settings.tokenPlan.capNotInTier');
+    expect(minimaxRow().textContent).toContain('settings.tokenPlan.missingCapability');
+  });
+
+  it('video the deployment switched off: unavailable on this connection, no tier warning', async () => {
+    const config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'minimax-intl',
+      preset: 'minimax-intl',
+      apiKey: 'sk-cp-plus-0001',
+    });
+    const view = viewOf(config);
+    // As the server answers when the operator switched MiniMax video off.
+    const providers = view.providers.map((provider) => {
+      if (provider.id !== 'minimax-intl') return provider;
+      const { video: _video, ...capabilities } = provider.capabilities;
+      return { ...provider, capabilities };
+    });
+    mountView({ ...view, providers });
+    await flush();
+    expect(videoCard().textContent).toContain('settings.tokenPlan.capUnavailable');
+    expect(videoCard().textContent).not.toContain('settings.tokenPlan.capNotInTier');
+    expect(minimaxRow().textContent).not.toContain('settings.tokenPlan.missingCapability');
+  });
+
+  it.each(['asr', 'document'] as const)(
+    'omits disabled %s from the extra capabilities',
+    async (capability) => {
+      const config = await applyModelSettingsChange(null, {
+        kind: 'provider',
+        id: 'ds',
+        preset: 'deepseek-token-plan',
+        apiKey: 'test-plan-key',
+      });
+      const view = viewOf(config);
+      const provider = view.providers.find((entry) => entry.id === 'ds')!;
+      delete provider.capabilities[capability];
+      mountView(view);
+      act(() => byText('DeepSeek', '[role="tab"]').click());
+      await flush();
+      const extras = byText('settings.tokenPlan.alsoProvides', 'p');
+      expect(extras.textContent).not.toContain(capability === 'asr' ? 'capAsr' : 'capDocument');
+      expect(extras.textContent).toContain(capability === 'asr' ? 'capDocument' : 'capAsr');
+    },
+  );
+
+  it('sums up each connected plan in the list: what is left, or that it cannot be looked up', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: RequestInfo | URL) =>
+        String(url).includes('minimax-intl')
+          ? new Response(
+              JSON.stringify({
+                quota: {
+                  status: 'available',
+                  balances: [],
+                  windows: [
+                    { period: 'hours', hours: 5, remainingPercent: 91 },
+                    { period: 'week', remainingPercent: 97 },
+                  ],
+                },
+              }),
+            )
+          : new Response(JSON.stringify({ quota: { status: 'unavailable' } })),
+      ),
+    );
+    let config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'minimax-intl',
+      preset: 'minimax-intl',
+      apiKey: 'sk-cp-go-0001',
+    });
+    config = await applyModelSettingsChange(config, {
+      kind: 'provider',
+      id: 'kimi-intl',
+      preset: 'kimi-intl',
+      apiKey: 'sk-kimi-0001',
+    });
+    mountView(viewOf(config));
+    await flush();
+    expect(minimaxRow().textContent).toContain('settings.tokenPlan.quotaRemaining|91');
+    expect(byText('Kimi', '[role="tab"]').textContent).toContain('settings.tokenPlan.quotaNa');
+    // The selected plan's card shows each window.
+    expect(document.body.textContent).toContain('settings.tokenPlan.windowHours|5');
+  });
 });

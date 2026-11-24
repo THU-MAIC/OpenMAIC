@@ -389,7 +389,7 @@ describe('Token Plan → provider and recommended slots', () => {
     click(byText('TokenDance'));
     expect(document.body.textContent).toContain('settings.tokenPlan.statusConnected');
     act(() => {
-      byLabel('settings.tokenPlan.disconnect').dispatchEvent(
+      byLabel('settings.tokenPlan.more').dispatchEvent(
         new MouseEvent('pointerdown', { bubbles: true, button: 0 }),
       );
     });
