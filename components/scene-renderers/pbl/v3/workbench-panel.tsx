@@ -135,6 +135,11 @@ export function LearningWorkbenchPanel({
   const selectedTarget = useRef<number | null>(null);
   const selectFile = useRef(editor.select);
   selectFile.current = editor.select;
+  // A teaching cue brings the file into view without selecting text or taking keyboard focus.
+  // Once the learner browses elsewhere, only a new cue should open the pointed file again.
+  useEffect(() => {
+    if (pointer) selectFile.current(pointer.path);
+  }, [pointer]);
   useEffect(() => {
     if (
       fileTarget &&

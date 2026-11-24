@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { deduplicateHandoffs, type LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import {
+  boardAt,
   boardWrites,
   narrationSegments,
   narrationSteps,
@@ -20,7 +21,7 @@ const board = (id: string, ids: string[]) =>
     status: 'succeeded',
     display: { op: 'text', label: '', seq: 1, ids },
   }) as Part;
-const point = (id: string) =>
+const point = (id: string, target: object = { path: 'a.ts', line: 3, pointer: 'laser' }) =>
   ({
     kind: 'tool',
     id,
@@ -31,7 +32,7 @@ const point = (id: string) =>
       op: 'point',
       label: '',
       seq: null,
-      target: { path: 'a.ts', line: 3, pointer: 'laser' },
+      target,
     },
   }) as Part;
 const read = (id: string) =>
@@ -171,4 +172,98 @@ it('maps a reply onto bubbles: each piece of text with the tool calls that follo
     { index: 2, ids: ['title'], clear: false },
     { index: 3, ids: ['table'], clear: false },
   ]);
+});
+
+const firstPoint = point('first', { path: 'a.ts', line: 2, end: 4, pointer: 'spotlight' });
+const secondPoint = point('next', { path: 'b.ts', line: 7, end: 9, pointer: 'spotlight' });
+const firstLink = '[setup](#pbl-file=a.ts&line=2&end=4)';
+const secondLink = '[work](#pbl-file=b.ts&line=7&end=9)';
+const close = {
+  kind: 'tool',
+  id: 'close',
+  name: 'wb_close',
+  action: 'board',
+  status: 'succeeded',
+  display: { op: 'close', label: '', seq: null },
+} as const;
+
+it('voices each passage with its own previously issued cue, retaining the original transcript', () => {
+  const words = `Inspect ${firstLink}.\n\nWhich step would you change?`;
+  const reply = entry([
+    firstPoint,
+    read('read'),
+    secondPoint,
+    text('ask', words, { canonical: true }),
+  ]);
+  const steps = narrationSteps(reply);
+  expect(steps.slice(3).map((s) => s.kind === 'say' && s.text)).toEqual([
+    'Inspect setup.',
+    'Which step would you change?',
+  ]);
+  expect(pointerAt(steps, 2)?.id).toBe('first');
+  expect(pointerAt(steps, 3)?.id).toBe('first');
+  const silent = entry([firstPoint, secondPoint]);
+  expect(pointerAt(narrationSteps({ ...silent, status: 'running' }), 1)?.id).toBe('first');
+  expect(pointerAt(narrationSteps(silent), 1)?.id).toBe('next');
+  expect(pointerAt(steps, 4)?.id).toBe('next');
+  for (const step of steps.slice(3)) {
+    if (step.kind !== 'say' || !step.passage) throw new Error('Missing passage');
+    const [partial] = toldConversation([reply], {
+      id: reply.id,
+      part: step.part,
+      said: step.passage.to,
+    });
+    expect(partial.parts.at(-1)).toMatchObject({
+      text: step === steps[3] ? words.split('\n')[0] : words,
+    });
+  }
+  // A partial Markdown link must not be spoken, or change an already queued paragraph.
+  const streamed = (body: string) =>
+    narrationSteps(entry([firstPoint, secondPoint, text('live', body, { streaming: true })]));
+  expect(streamed('Inspect [setup](#pbl').map((s) => s.kind)).toEqual(['point', 'point']);
+  const prefix = streamed(`Inspect ${firstLink}.\n\nWh`);
+  expect(prefix[2]).toMatchObject({ part: 2, text: 'Inspect setup.', streaming: false });
+  expect(pointerAt(prefix, 2)?.id).toBe('first');
+});
+
+it('never navigates from a file link alone and avoids guessing between competing ranges', () => {
+  const during = (parts: Part[], words: string) => {
+    const steps = narrationSteps(entry([...parts, text('speech', words)]));
+    return pointerAt(steps, steps.length - 1)?.id;
+  };
+  expect(during([], firstLink)).toBeUndefined();
+  expect(during([firstPoint, secondPoint], `${firstLink} and ${secondLink}`)).toBeUndefined();
+  expect(during([firstPoint, secondPoint], `\`${firstLink}\``)).toBe('next');
+  expect(during([firstPoint, secondPoint], '[a file](#pbl-file=z.ts&line=2)')).toBeUndefined();
+  expect(during([firstPoint, board('note', ['item']), secondPoint], firstLink)).toBe('next');
+  expect(
+    during([firstPoint, point('preview', { selector: '.item', pointer: 'laser' })], firstLink),
+  ).toBe('preview');
+});
+
+it('keeps the active code cue through board close and clears it for a real board action', () => {
+  const steps = (parts: Part[]) => narrationSteps(entry(parts));
+  const code = steps([
+    firstPoint,
+    close,
+    read('review'),
+    text('ask', 'Which line receives the answer?'),
+  ]);
+  expect(pointerAt(code, 3)?.id).toBe('first');
+  expect(boardAt(code, 3)?.show).toBe(false);
+  expect(pointerAt(steps([close]), 0)).toBeUndefined();
+  expect(pointerAt(steps([firstPoint, board('draw', ['item']), close]), 2)).toBeUndefined();
+  expect(
+    pointerAt(
+      steps([
+        firstPoint,
+        { ...close, name: 'wb_open', display: { op: 'open', label: '', seq: null } },
+      ]),
+      1,
+    ),
+  ).toBeUndefined();
+  expect(pointerAt(steps([firstPoint, { ...close, status: 'failed' }]), 1)?.id).toBe('first');
+  expect(
+    pointerAt(steps([point('preview', { selector: '.item', pointer: 'laser' }), close]), 1),
+  ).toBeUndefined();
 });

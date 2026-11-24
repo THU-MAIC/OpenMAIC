@@ -1,8 +1,12 @@
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { LearningBoardDisplay, LearningConversationEntry } from './conversation';
+import { parseFileReference } from './file-reference';
 
 type Part = LearningConversationEntry['parts'][number];
 export type ToolPart = Extract<Part, { kind: 'tool' }>;
 export type NarrationTarget = NonNullable<LearningBoardDisplay['target']>;
+type Point = { id: string; target: NarrationTarget };
+type PointStep = Extract<NarrationStep, { kind: 'point' }>;
 
 /**
  * One item of a reply as it is told. Each step is one part of the conversation stream, in
@@ -10,7 +14,13 @@ export type NarrationTarget = NonNullable<LearningBoardDisplay['target']>;
  * the reply's parts, which is what identifies it: a part's id changes when the stream finishes it.
  */
 export type NarrationStep = { id: string; part: number } & (
-  | { kind: 'say'; text: string; streaming: boolean }
+  | {
+      kind: 'say';
+      text: string;
+      streaming: boolean;
+      /** A paragraph of a multi-location explanation, within the original Markdown part. */
+      passage?: { from: number; to: number; point: Point | null };
+    }
   /**
    * A whiteboard call: its elements appear when the performance reaches it, and the board
    * comes into view with it, or goes out of view when the role puts it away.
@@ -25,12 +35,12 @@ export type NarrationStep = { id: string; part: number } & (
       tool: ToolPart;
     }
   /** A pointer on code or the running application, held while what follows is said. */
-  | { kind: 'point'; target: NarrationTarget; tool: ToolPart }
+  | { kind: 'point'; target: NarrationTarget; tool: ToolPart; untilSpeech?: Point }
   | { kind: 'tool'; tool: ToolPart }
 );
 
 /** Speech reads plain words: links keep their label, emphasis and code marks go. */
-function spokenText(text: string) {
+export function spokenText(text: string) {
   return text
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/[*_`#>]+/g, '')
@@ -38,21 +48,94 @@ function spokenText(text: string) {
     .trim();
 }
 
+type MarkdownBlock = ReturnType<typeof fromMarkdown>['children'][number];
+
+/** Resolve only locations the role actually pointed at before this explanation. */
+function passagePoint(block: MarkdownBlock, points: readonly Point[]) {
+  const links: string[] = [];
+  function visit(node: MarkdownBlock) {
+    if (node.type === 'link') links.push(node.url);
+    else if ('children' in node) node.children.forEach(visit);
+  }
+  visit(block);
+  let cited: Point | undefined;
+  for (const href of links) {
+    const ref = parseFileReference(href);
+    if (!ref?.line) continue;
+    const point = points.findLast(
+      ({ target }) =>
+        'path' in target &&
+        target.path === ref.path &&
+        target.line === ref.line &&
+        (target.end ?? target.line) === (ref.end ?? ref.line),
+    );
+    if (!point || (cited && point !== cited)) return null;
+    cited = point;
+  }
+  return cited ?? points.at(-1)!;
+}
+
 /** The stream parts of one reply as steps; thinking is never told. */
 export function narrationSteps(entry: LearningConversationEntry): NarrationStep[] {
-  return entry.parts.flatMap((part, index): NarrationStep[] => {
+  let codePoints: PointStep[] = [];
+  // Later cues should not flash past the first location before its explanation starts.
+  function holdForSpeech(points: PointStep[]) {
+    for (const next of points.slice(1)) next.untilSpeech = points[0];
+  }
+  const steps = entry.parts.flatMap((part, index): NarrationStep[] => {
     const at = { id: part.id, part: index };
     if (part.kind === 'text') {
       const text = spokenText(part.text);
-      return text ? [{ ...at, kind: 'say', text, streaming: !!part.streaming }] : [];
+      if (!text) return [];
+      const points = codePoints;
+      codePoints = [];
+      if (points.length < 2) return [{ ...at, kind: 'say', text, streaming: !!part.streaming }];
+
+      // Each paragraph gets its own voice segment. Its target changes at the same playhead
+      // as the words, including when muted or paused. Keep the transcript in source coordinates.
+      holdForSpeech(points);
+      const blocks = fromMarkdown(part.text).children;
+      const steps: NarrationStep[] = [];
+      for (const block of blocks) {
+        const start = block.position!.start.offset!;
+        const end = block.position!.end.offset!;
+        // The next delta may finish a link or its paragraph. Do not voice a partial cue.
+        if (part.streaming && block === blocks.at(-1)) break;
+        const words = spokenText(part.text.slice(start, end));
+        if (!words) continue;
+        steps.push({
+          ...at,
+          id: `${part.id}:passage-${start}`,
+          kind: 'say',
+          text: words,
+          streaming: false,
+          passage: {
+            from: start / part.text.length,
+            to: end / part.text.length,
+            point: passagePoint(block, points),
+          },
+        });
+      }
+      return steps;
     }
     if (part.kind !== 'tool') return [];
     const display = (
       part.action === 'board' ? (part.display ?? {}) : {}
     ) as Partial<LearningBoardDisplay>;
-    if (display.target && part.status === 'succeeded')
-      return [{ ...at, kind: 'point', target: display.target, tool: part }];
-    if (part.action === 'board' && display.op !== 'read')
+    if (display.target && part.status === 'succeeded') {
+      const point: PointStep = { ...at, kind: 'point', target: display.target, tool: part };
+      if ('path' in display.target) codePoints.push(point);
+      else codePoints = [];
+      return [point];
+    }
+    if (
+      part.action === 'board' &&
+      part.status === 'succeeded' &&
+      display.op !== 'read' &&
+      display.op !== 'close'
+    )
+      codePoints = [];
+    if (part.action === 'board' && display.op !== 'read' && display.op !== 'point')
       return [
         {
           ...at,
@@ -67,14 +150,23 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
       ];
     return [{ ...at, kind: 'tool', tool: part }];
   });
+  // While the stream is open there may still be speech. A finished, tool-only sequence
+  // retains its individual actions, including its final location.
+  if (entry.status === 'running') holdForSpeech(codePoints);
+  return steps;
 }
 
 /** The pointer in force at a step: the last one set, until the board is written again. */
 export function pointerAt(steps: readonly NarrationStep[], index: number) {
+  let closed = false;
   for (let at = Math.min(index, steps.length - 1); at >= 0; at--) {
     const step = steps[at];
-    if (step.kind === 'point') return step;
-    if (step.kind === 'board') return undefined;
+    if (step.kind === 'say' && step.passage) return step.passage.point ?? undefined;
+    if (step.kind === 'point')
+      return closed && 'selector' in step.target ? undefined : (step.untilSpeech ?? step);
+    if (step.kind !== 'board' || step.tool.status !== 'succeeded') continue;
+    if (step.show !== false) return undefined;
+    closed = true;
   }
   return undefined;
 }

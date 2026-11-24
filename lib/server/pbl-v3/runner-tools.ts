@@ -976,7 +976,7 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'point_at_code',
-        'Point at lines of a project file while you speak, the way a teacher points at a line on screen. The workbench opens the file, brings the lines into view and keeps a spotlight or a laser dot on them while you say what follows. Call it immediately before the sentence about those lines; use the whiteboard for anything that needs explaining beside the code. Read the file first so the line numbers are current.',
+        'Point at lines of a project file while you speak, the way a teacher points at a line on screen. The workbench opens the file, brings the lines into view and keeps a spotlight or a laser dot on them while you say what follows. Call it immediately before the sentence about those lines. Explain that location before pointing at another. For a multi-location review, cite the exact file range in each corresponding paragraph. Use the whiteboard for anything that needs explaining beside the code. Read the file first so the line numbers are current.',
         Type.Object({
           path,
           startLine: Type.Integer({ minimum: 1 }),

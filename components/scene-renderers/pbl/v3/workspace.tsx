@@ -602,12 +602,8 @@ function PBLV3WorkspaceContent({
     const known = !!point && view.files.includes(point.path);
     setPointer(known ? point : null);
     if (!point || !known) return;
+    setFileTarget(null);
     setShowWorkspace(true);
-    setFileTarget({
-      path: point.path,
-      studyId: view.id,
-      requestId: ++fileTargetSequence.current,
-    });
   };
   // What the stage asks of the learner, as the card by the avatar shows it: a decision, the
   // quiz, or the tests and what they found. The task drawer holds the same forms.

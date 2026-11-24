@@ -9,6 +9,7 @@ import {
   narrationSegments,
   narrationSteps,
   pointerAt,
+  spokenText,
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
@@ -330,8 +331,10 @@ export function useNarration(
   // sentence never rests a few characters short while it is being read out.
   const step = steps[head];
   const toldPart = playing && step ? step.part : -1;
-  const said =
+  const revealed =
     playing && step?.kind === 'say' && step.text ? active.text.length / step.text.length : 0;
+  const passage = step?.kind === 'say' ? step.passage : undefined;
+  const said = passage ? passage.from + revealed * (passage.to - passage.from) : revealed;
   const told = useRef({ onTold, id: entry?.id });
   useEffect(() => {
     told.current = { onTold, id: entry?.id };
@@ -343,6 +346,7 @@ export function useNarration(
   useEffect(() => () => told.current.onTold?.(null), []);
 
   const say = segment?.say;
+  const restingPart = !playing && say?.passage ? entry?.parts[say.part] : undefined;
   return {
     /** A live reply is being told; otherwise the bubble rests on the last thing said. */
     playing,
@@ -361,7 +365,9 @@ export function useNarration(
     speech:
       say && playing && steps[head]?.id === say.id
         ? { ...say, text: active.text, streaming: true }
-        : say,
+        : say && restingPart?.kind === 'text'
+          ? { ...say, text: spokenText(restingPart.text) }
+          : say,
     /** The calls that follow that text which the telling has reached, in order. */
     tools: !segment
       ? []
