@@ -341,6 +341,9 @@ for (const layout of ['windowed', 'expanded', 'fullscreen'] as const) {
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('course-end')).toHaveCount(0);
     await expect(draft).toHaveValue('Keep this unsent project question');
+    if (layout === 'expanded') {
+      await expect(workspace).toHaveAttribute('data-expanded', 'true');
+    }
     await openEnd();
     await page.getByTestId('course-end-restart').click({ timeout: 5000 });
     await expect(page.getByText('1/3', { exact: true })).toBeVisible();
@@ -380,4 +383,56 @@ for (const scene of ['slide', 'quiz'] as const) {
       expect(await page.evaluate(() => Boolean(document.fullscreenElement))).toBe(fullscreen);
     });
   }
+}
+
+for (const scene of ['slide', 'interactive', 'pbl'] as const) {
+  test(`settings paints above the completion card on ${scene}`, async ({ page }) => {
+    test.setTimeout(60000);
+    await openCourse(page, scene);
+    const next = page.getByRole('button', { name: 'Next scene' });
+    await next.click();
+    await next.click();
+    await next.click();
+    const end = page.getByTestId('course-end');
+    await expect(end).toHaveAttribute('data-skip', 'true');
+    await page.locator('button[aria-label="Settings"]').click();
+    const dialog = page.locator('[data-slot="dialog-content"]');
+    await expect(dialog).toBeVisible();
+    // Radix disables outside pointer events. Temporarily include the card in
+    // hit-testing so a visually obscured dialog cannot pass just by accepting clicks.
+    await expect
+      .poll(() =>
+        end.evaluate((card) => {
+          const dialog = document.querySelector('[data-slot="dialog-content"]');
+          if (!dialog) return false;
+          const a = card.getBoundingClientRect();
+          const b = dialog.getBoundingClientRect();
+          const left = Math.max(a.left, b.left);
+          const right = Math.min(a.right, b.right);
+          const top = Math.max(a.top, b.top);
+          const bottom = Math.min(a.bottom, b.bottom);
+          if (right <= left || bottom <= top) return false;
+          const previous = card.style.pointerEvents;
+          card.style.pointerEvents = 'auto';
+          try {
+            return dialog.contains(
+              document.elementFromPoint((left + right) / 2, (top + bottom) / 2),
+            );
+          } finally {
+            card.style.pointerEvents = previous;
+          }
+        }),
+      )
+      .toBe(true);
+    await test.info().attach('settings-over-completion', {
+      body: await page.screenshot({ path: test.info().outputPath('settings.png') }),
+      contentType: 'image/png',
+    });
+    await dialog.locator('button[aria-label="Close"]').click();
+    await expect(dialog).toHaveCount(0);
+    await expect(end).toBeVisible();
+    await page.getByTestId('course-end-close').click();
+    await expect(end).toHaveCount(0);
+    await expect(page.getByText('3/3', { exact: true })).toBeVisible();
+  });
 }

@@ -14,9 +14,9 @@ function SceneCourseEndPortal({ children }: { readonly children: ReactNode }) {
 
     // React keeps CourseEnd mounted while its portal container stays the same.
     const layer = document.createElement('div');
-    // The interactive host is z-1; an expanded PBL workspace is z-120.
-    // The portal itself must outrank both, not only its inner overlay.
-    layer.className = 'fixed z-[130] overflow-hidden';
+    // CSS raises the portal only while a PBL workspace is expanded; ordinary
+    // scene overlays must remain below header dialogs.
+    layer.className = 'ce-scene-portal fixed overflow-hidden';
     const unsubscribe = observeFullscreenPortalTarget((target) => {
       if (layer.parentElement === target) return;
       if (layer.isConnected && 'moveBefore' in target && typeof target.moveBefore === 'function') {

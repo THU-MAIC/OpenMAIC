@@ -207,6 +207,7 @@ export function PBLWorkspaceLayer({
       />
       <motion.div
         data-testid="pbl-workspace-frame"
+        data-pbl-workspace
         data-expanded={expanded}
         className={cn(
           'fixed overflow-hidden bg-background text-foreground',

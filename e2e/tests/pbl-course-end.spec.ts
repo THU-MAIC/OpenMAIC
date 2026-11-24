@@ -5,8 +5,10 @@ import { defaultTheme } from '../fixtures/test-data/slide-theme';
 import { MockApi } from '../fixtures/mock-api';
 import type { LearningView } from '@/lib/pbl/v3/types';
 
-for (const fullscreen of [false, true]) {
-  test(`PBL v3 completion preserves the expanded workspace (${fullscreen ? 'fullscreen' : 'windowed'})`, async ({
+for (const layout of ['expanded', 'fullscreen', 'docked'] as const) {
+  const fullscreen = layout === 'fullscreen';
+  const expanded = layout !== 'docked';
+  test(`PBL v3 completion preserves the workspace (${layout})`, async ({
     page,
     learningEvents,
   }) => {
@@ -156,6 +158,12 @@ for (const fullscreen of [false, true]) {
     await page.getByRole('button', { name: 'Continue Project', exact: true }).click();
     const workspace = page.getByTestId('pbl-workspace-frame');
     await expect(workspace).toHaveAttribute('data-expanded', 'true');
+    if (!expanded) {
+      await workspace
+        .getByRole('button', { name: 'Exit fullscreen workspace', exact: true })
+        .click();
+    }
+    await expect(workspace).toHaveAttribute('data-expanded', String(expanded));
     const draft = page.getByLabel('Your message', { exact: true });
     await draft.fill('Keep this unsent project question');
     const originalWorkspace = await workspace.evaluateHandle((node) => node);
@@ -174,7 +182,7 @@ for (const fullscreen of [false, true]) {
     expect(await workspace.evaluate((node, original) => node === original, originalWorkspace)).toBe(
       true,
     );
-    await expect(workspace).toHaveAttribute('data-expanded', 'true');
+    await expect(workspace).toHaveAttribute('data-expanded', String(expanded));
 
     await next.press('Enter');
     await expect(end).toHaveAttribute('data-skip', 'true');
@@ -188,7 +196,7 @@ for (const fullscreen of [false, true]) {
     expect(await workspace.evaluate((node, original) => node === original, originalWorkspace)).toBe(
       true,
     );
-    await expect(workspace).toHaveAttribute('data-expanded', 'true');
+    await expect(workspace).toHaveAttribute('data-expanded', String(expanded));
     await expect(page.locator('[data-playback-stage]:fullscreen')).toHaveCount(fullscreen ? 0 : 1);
     await originalCard.dispose();
     await next.press('Enter');

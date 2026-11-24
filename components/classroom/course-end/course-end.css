@@ -1,3 +1,13 @@
+/* Interactive hosts are z-1; docked PBL is z-auto. Keep header dialogs above
+   both, lifting the portal only for the expanded PBL workspace at z-120.
+   Both portals stay under body when moved into native fullscreen. */
+.ce-scene-portal {
+  z-index: 2;
+}
+body:has([data-pbl-workspace][data-expanded='true']) .ce-scene-portal {
+  z-index: 130;
+}
+
 /* The course-end state. Its own tokens, since it also shows outside the workspace. */
 .ce-root {
   --ce-ink: #0f172a;
