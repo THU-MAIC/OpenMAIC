@@ -48,6 +48,7 @@ import {
   emitRenderEvent,
   type PreviewErrorCode,
   type RenderEventSink,
+  type RuntimeCheckResult,
 } from './events.js';
 import { PreviewGate, PreviewRejectedError } from './preview-gate.js';
 import {
@@ -112,6 +113,8 @@ export interface AppDeps {
   ) => Promise<InteractiveRuntimeError[]>;
   /** Preview wall-clock deadline, injectable for focused route tests. */
   previewDeadlineMs?: number;
+  /** Runtime check execution-slot wait, injectable for focused route tests. */
+  interactiveRuntimeWaitMs?: number;
   /** Preview JSON byte ceiling, injectable for focused route tests. */
   previewMaxJsonBytes?: number;
   /** Extract a validated archive into a dir. Overridable in tests. */
@@ -142,6 +145,19 @@ interface PreviewPayload {
 const RENDER_OWNER_HEADER = 'x-openmaic-render-owner';
 const RENDER_OWNER_BOUND_HEADER = 'x-openmaic-render-owner-bound';
 const ADMISSION_IDENTITY_HEADER = 'x-openmaic-client';
+const INTERACTIVE_RUNTIME_CHECK_PATH = '/interactive-runtime-check';
+
+function runtimeCheckResult(
+  status: number,
+  busyTimeout: boolean,
+  aborted: boolean,
+): RuntimeCheckResult {
+  if (status === 200) return 'checked';
+  if (status === 504) return 'deadline';
+  if (busyTimeout) return 'busy_timeout';
+  if (aborted) return 'aborted';
+  return 'error';
+}
 
 function requestOwner(c: Context): RenderOwnerId | null {
   const value = c.req.header(RENDER_OWNER_HEADER)?.trim();
@@ -287,6 +303,7 @@ export function createApp(deps: AppDeps): Hono {
   const checkInteractiveRuntime =
     deps.interactiveRuntimeCheck ?? chromium.checkInteractiveRuntime.bind(chromium);
   const previewDeadlineMs = deps.previewDeadlineMs ?? config.previewDeadlineMs;
+  const interactiveRuntimeWaitMs = deps.interactiveRuntimeWaitMs ?? config.interactiveRuntimeWaitMs;
   const previewMaxJsonBytes = deps.previewMaxJsonBytes ?? config.previewMaxJsonBytes;
   const onEvent = deps.onEvent ?? emitRenderEvent;
   const previewGate =
@@ -419,7 +436,8 @@ export function createApp(deps: AppDeps): Hono {
   // A 5xx also carries why it failed, as a fixed code the handler records
   // against its request (never the error message).
   const previewFailures = new WeakMap<Request, PreviewErrorCode>();
-  const previewRoutes = ['/preview', '/interactive-runtime-check'];
+  const runtimeWaitTimeouts = new WeakSet<Request>();
+  const previewRoutes = ['/preview', INTERACTIVE_RUNTIME_CHECK_PATH];
   app.on('POST', previewRoutes, async (c, next) => {
     const startedAt = Date.now();
     await next();
@@ -431,6 +449,15 @@ export function createApp(deps: AppDeps): Hono {
       status: c.res.status,
       durationMs: Date.now() - startedAt,
       ...(errorCode ? { errorCode } : {}),
+      ...(c.req.path === INTERACTIVE_RUNTIME_CHECK_PATH
+        ? {
+            runtimeCheckResult: runtimeCheckResult(
+              c.res.status,
+              runtimeWaitTimeouts.has(c.req.raw),
+              c.req.raw.signal.aborted,
+            ),
+          }
+        : {}),
     });
   });
 
@@ -452,7 +479,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: 'Upload too large' }, 413);
     }
 
-    const runtimeCheck = c.req.path === '/interactive-runtime-check';
+    const runtimeCheck = c.req.path === INTERACTIVE_RUNTIME_CHECK_PATH;
     const identity = c.req.header('x-openmaic-client')?.trim() || 'anonymous';
     let release: () => void;
     try {
@@ -504,6 +531,51 @@ export function createApp(deps: AppDeps): Hono {
       const remainingMs = Math.ceil(expiresAt - performance.now());
       if (remainingMs <= 0) throw new PreviewTimeoutError('Preview exceeded the deadline');
       signal.throwIfAborted();
+      const request = {
+        scene: payload.scene,
+        stage: payload.stage,
+        viewport: payload.viewport,
+        signal,
+        deadlineMs: remainingMs,
+      };
+      if (checkScene) {
+        const busy = new PreviewRejectedError(
+          'Timed out waiting for preview capacity; retry shortly.',
+          'capacity_busy',
+        );
+        const waitAbort = new AbortController();
+        const waitExpiresAt = performance.now() + interactiveRuntimeWaitMs;
+        const waitTimer =
+          waitExpiresAt < expiresAt
+            ? setTimeout(() => waitAbort.abort(busy), interactiveRuntimeWaitMs)
+            : undefined;
+        waitTimer?.unref();
+        try {
+          return await previewExecutionGate.run(
+            async () => {
+              clearTimeout(waitTimer);
+              signal.throwIfAborted();
+              const now = performance.now();
+              const deadlineMs = Math.ceil(expiresAt - now);
+              if (deadlineMs <= 0) throw new PreviewTimeoutError('Preview exceeded the deadline');
+              if (now >= waitExpiresAt) throw busy;
+              const errors = await checkInteractiveRuntime({
+                ...request,
+                scene: checkScene,
+                deadlineMs,
+              });
+              signal.throwIfAborted();
+              return c.json({ errors });
+            },
+            AbortSignal.any([signal, waitAbort.signal]),
+          );
+        } catch (error) {
+          if (error === busy) runtimeWaitTimeouts.add(c.req.raw);
+          throw error;
+        } finally {
+          clearTimeout(waitTimer);
+        }
+      }
       const releaseExecution = previewExecutionGate.tryAcquire();
       if (!releaseExecution) {
         throw new PreviewRejectedError(
@@ -513,18 +585,6 @@ export function createApp(deps: AppDeps): Hono {
       }
       let png: Uint8Array;
       try {
-        const request = {
-          scene: payload.scene,
-          stage: payload.stage,
-          viewport: payload.viewport,
-          signal,
-          deadlineMs: remainingMs,
-        };
-        if (checkScene) {
-          const errors = await checkInteractiveRuntime({ ...request, scene: checkScene });
-          signal.throwIfAborted();
-          return c.json({ errors });
-        }
         png = await previewRenderer.render(request);
       } finally {
         releaseExecution();

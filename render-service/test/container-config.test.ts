@@ -25,6 +25,9 @@ describe('render-service container contract', () => {
     expect(compose).toContain('PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000');
     expect(compose).toContain('HF_STATIC_DEDUP=false');
     expect(compose).toContain('RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}');
+    expect(compose).toContain(
+      'RENDER_INTERACTIVE_RUNTIME_WAIT_MS=${RENDER_INTERACTIVE_RUNTIME_WAIT_MS:-2000}',
+    );
     expect(compose).toContain('RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}');
     expect(compose).toContain('RENDER_PREVIEW_MAX_PER_USER=${RENDER_PREVIEW_MAX_PER_USER:-2}');
     expect(compose).toContain('mem_limit: ${RENDER_SERVICE_MEMORY_LIMIT:-8g}');

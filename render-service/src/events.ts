@@ -28,6 +28,7 @@ export type RenderEventName =
   | 'preview_request';
 
 export type RenderOutcome = 'succeeded' | 'failed' | 'cancelled';
+export type RuntimeCheckResult = 'checked' | 'busy_timeout' | 'deadline' | 'aborted' | 'error';
 
 export interface RenderEvent {
   event: RenderEventName;
@@ -64,6 +65,8 @@ export interface RenderEvent {
   route?: string;
   /** HTTP status the caller received, for the synchronous preview route. */
   status?: number;
+  /** Result of an interactive runtime check, even when the page itself raises errors. */
+  runtimeCheckResult?: RuntimeCheckResult;
 }
 
 /**
@@ -135,6 +138,7 @@ const SERIALIZED_FIELDS = [
   'reason',
   'route',
   'status',
+  'runtimeCheckResult',
 ] as const satisfies readonly (keyof RenderEvent)[];
 
 function nonEmpty(event: RenderEvent): Record<string, unknown> {

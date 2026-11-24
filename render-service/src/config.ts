@@ -88,6 +88,8 @@ export const config = {
   jobDeadlineMs: intEnv('RENDER_JOB_DEADLINE_MS', 45 * 60 * 1000),
   /** Independent wall-clock deadline for synchronous single-page previews. */
   previewDeadlineMs: intEnv('RENDER_PREVIEW_TIMEOUT_MS', 20 * 1000),
+  /** Maximum wait for a shared preview execution slot during a runtime check. */
+  interactiveRuntimeWaitMs: intEnv('RENDER_INTERACTIVE_RUNTIME_WAIT_MS', 2_000),
   /** Chromium previews that execute simultaneously, independently of video renders. */
   previewMaxConcurrency: boundedIntEnv(
     'RENDER_PREVIEW_MAX_CONCURRENCY',

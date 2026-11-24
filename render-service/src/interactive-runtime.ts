@@ -2,7 +2,7 @@ import { setTimeout } from 'node:timers/promises';
 import type { Action } from '@openmaic/dsl';
 import type { Frame, Page } from 'puppeteer-core';
 
-export const INTERACTIVE_RUNTIME_DEADLINE_MS = 3_000;
+export const INTERACTIVE_RUNTIME_DEADLINE_MS = 5_000;
 const OBSERVATION_MS = 75;
 const MAX_ERRORS = 20;
 const MAX_MESSAGE_CHARS = 240;

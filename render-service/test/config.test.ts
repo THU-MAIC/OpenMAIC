@@ -19,6 +19,7 @@ const KEYS = [
   'PRODUCER_ENABLE_BROWSER_POOL',
   'RENDER_REQUIRE_BEGINFRAME',
   'RENDER_PREVIEW_TIMEOUT_MS',
+  'RENDER_INTERACTIVE_RUNTIME_WAIT_MS',
   'RENDER_PREVIEW_MAX_CONCURRENCY',
   'RENDER_PREVIEW_MAX_IN_FLIGHT',
   'RENDER_PREVIEW_MAX_PER_USER',
@@ -81,6 +82,7 @@ describe('config preview admission', () => {
   it('provides bounded defaults', async () => {
     const config = await loadConfig();
     expect(config.previewDeadlineMs).toBe(20_000);
+    expect(config.interactiveRuntimeWaitMs).toBe(2_000);
     expect(config.previewMaxConcurrency).toBe(1);
     expect(config.previewMaxInFlight).toBe(8);
     expect(config.previewMaxPerUser).toBe(2);
@@ -89,12 +91,14 @@ describe('config preview admission', () => {
 
   it('accepts explicit overrides and zero to disable the per-user cap', async () => {
     process.env.RENDER_PREVIEW_TIMEOUT_MS = '15000';
+    process.env.RENDER_INTERACTIVE_RUNTIME_WAIT_MS = '1250';
     process.env.RENDER_PREVIEW_MAX_CONCURRENCY = '2';
     process.env.RENDER_PREVIEW_MAX_IN_FLIGHT = '4';
     process.env.RENDER_PREVIEW_MAX_PER_USER = '0';
     process.env.RENDER_PREVIEW_MAX_JSON_BYTES = '1048576';
     const config = await loadConfig();
     expect(config.previewDeadlineMs).toBe(15_000);
+    expect(config.interactiveRuntimeWaitMs).toBe(1_250);
     expect(config.previewMaxConcurrency).toBe(2);
     expect(config.previewMaxInFlight).toBe(4);
     expect(config.previewMaxPerUser).toBe(0);

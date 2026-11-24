@@ -4,7 +4,9 @@ import type { Scene, Stage } from '@/lib/types/stage';
 import { abortable } from './abortable';
 import { prepareInteractiveScenePreview } from './scene-preview-content';
 
-const CHECK_TIMEOUT_MS = 4_000;
+// The render service allows 5 seconds for parsing, slot wait, and Chromium work.
+// Leave time for scene preparation, the HTTP round trip, and browser cleanup.
+const CHECK_TIMEOUT_MS = 6_000;
 const MAX_REPORTED_ERRORS = 4;
 const MAX_REPORTED_CHARS = 180;
 

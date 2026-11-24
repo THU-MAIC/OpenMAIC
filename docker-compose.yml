@@ -142,6 +142,7 @@ services:
       # per-user identity (see render-service/README.md).
       - RENDER_MAX_JOBS_PER_USER=0
       - RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}
+      - RENDER_INTERACTIVE_RUNTIME_WAIT_MS=${RENDER_INTERACTIVE_RUNTIME_WAIT_MS:-2000}
       # Separate Chromium capacity: previews can run alongside a video export.
       - RENDER_PREVIEW_MAX_CONCURRENCY=${RENDER_PREVIEW_MAX_CONCURRENCY:-1}
       - RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}

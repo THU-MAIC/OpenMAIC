@@ -31,7 +31,10 @@ beforeAll(async () => {
   ({ RenderCoordinator } = await import('../src/render-coordinator.js'));
 });
 
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
+});
 
 function previewPayload() {
   return {
@@ -102,6 +105,8 @@ function appWith(
     previewMaxJsonBytes?: number;
     resourceMode?: boolean;
     interactiveRuntimeCheck?: AppDeps['interactiveRuntimeCheck'];
+    interactiveRuntimeWaitMs?: number;
+    onEvent?: AppDeps['onEvent'];
   } = {},
 ) {
   const jobs = createMemoryJobStore();
@@ -116,9 +121,11 @@ function appWith(
     previewGate,
     previewRenderer,
     interactiveRuntimeCheck: options.interactiveRuntimeCheck,
+    interactiveRuntimeWaitMs: options.interactiveRuntimeWaitMs,
     previewDeadlineMs: options.previewDeadlineMs,
     previewMaxJsonBytes: options.previewMaxJsonBytes,
     resourceMode: options.resourceMode,
+    onEvent: options.onEvent,
   });
 }
 
@@ -149,9 +156,11 @@ describe('POST /interactive-runtime-check', () => {
       () => pending.promise,
     );
     const render = vi.fn<PreviewRenderer['render']>();
+    const onEvent = vi.fn();
     const app = appWith({ render }, undefined, {
       interactiveRuntimeCheck,
       previewExecutionGate: new Semaphore(1),
+      onEvent,
     });
     const check = app.fetch(runtimeRequest());
     try {
@@ -169,7 +178,99 @@ describe('POST /interactive-runtime-check', () => {
     await expect(response.json()).resolves.toEqual({ errors: await pending.promise });
     const request = interactiveRuntimeCheck.mock.calls[0]?.[0];
     expect(request?.scene.actions).toHaveLength(1);
-    expect(request?.deadlineMs).toBeLessThanOrEqual(3_000);
+    expect(request?.deadlineMs).toBeLessThanOrEqual(5_000);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'preview_request',
+        route: path,
+        runtimeCheckResult: 'checked',
+      }),
+    );
+  });
+
+  function setupWaitingCheck(previewDeadlineMs = 5_000) {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    const previewExecutionGate = new Semaphore(1);
+    const release = previewExecutionGate.tryAcquire()!;
+    const waitForExecution = vi.spyOn(previewExecutionGate, 'run');
+    const interactiveRuntimeCheck = vi.fn<NonNullable<AppDeps['interactiveRuntimeCheck']>>(
+      async () => [],
+    );
+    const onEvent = vi.fn();
+    const app = appWith({ render: vi.fn() }, undefined, {
+      previewExecutionGate,
+      interactiveRuntimeCheck,
+      interactiveRuntimeWaitMs: 2_000,
+      previewDeadlineMs,
+      onEvent,
+    });
+    const abort = new AbortController();
+    const check = app.fetch(new Request(runtimeRequest(), { signal: abort.signal }));
+    return {
+      check,
+      release,
+      abort,
+      previewExecutionGate,
+      waitForExecution,
+      interactiveRuntimeCheck,
+      onEvent,
+    };
+  }
+
+  it('waits for a slot and runs with the remaining deadline', async () => {
+    const { check, release, waitForExecution, interactiveRuntimeCheck } = setupWaitingCheck();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(waitForExecution).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(interactiveRuntimeCheck).not.toHaveBeenCalled();
+
+    release();
+    const response = await check;
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ errors: [] });
+    expect(interactiveRuntimeCheck).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ deadlineMs: 3_500 }),
+    );
+  });
+
+  it.each([
+    { result: 'busy_timeout', deadline: 5_000, elapsed: 2_000, status: 429 },
+    { result: 'deadline', deadline: 1_000, elapsed: 1_000, status: 504 },
+    { result: 'aborted', deadline: 5_000, elapsed: 500, status: 500 },
+  ])('removes the waiter on $result without releasing the held slot', async (test) => {
+    const {
+      check,
+      release,
+      abort,
+      previewExecutionGate,
+      waitForExecution,
+      interactiveRuntimeCheck,
+      onEvent,
+    } = setupWaitingCheck(test.deadline);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(waitForExecution).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(test.elapsed);
+    if (test.result === 'aborted') abort.abort();
+
+    const response = await check;
+    expect(response.status).toBe(test.status);
+    if (test.result === 'busy_timeout') {
+      await expect(response.json()).resolves.toMatchObject({ reason: 'capacity_busy' });
+    }
+    expect(previewExecutionGate.tryAcquire()).toBeUndefined();
+    release();
+    const nextRelease = previewExecutionGate.tryAcquire();
+    expect(nextRelease).toBeTypeOf('function');
+    expect(previewExecutionGate.tryAcquire()).toBeUndefined();
+    nextRelease?.();
+    expect(interactiveRuntimeCheck).not.toHaveBeenCalled();
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'preview_request',
+        route: path,
+        runtimeCheckResult: test.result,
+      }),
+    );
   });
 
   it('rejects non-interactive scenes and maps an expired check to HTTP 504', async () => {
