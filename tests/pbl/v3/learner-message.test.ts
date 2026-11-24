@@ -21,6 +21,7 @@ let current: ReturnType<typeof useLearnerMessage> & {
 const view = (ids: string[] = [], id = study) =>
   ({
     id,
+    state: { position: { milestoneId: 'first', stageIndex: 0 } },
     messages: [],
     conversation: ids.map((id) => ({
       id,
@@ -58,6 +59,17 @@ it('clears the submitted draft and shows its bubble immediately, ignoring an ear
   expect(current.entry?.parts).toEqual([{ kind: 'text', id: 'command', text: 'Ready' }]);
   await act(async () => root.render(createElement(Hook, { value: view(['earlier']) })));
   expect(current.entry).not.toBeNull();
+});
+
+it('removes a pending bubble on a step change and still accepts its late receipt', async () => {
+  await act(async () => current.begin(view(), 'command', 'Ready'));
+  expect(current.entry).not.toBeNull();
+  const next = view();
+  next.state.position.stageIndex++;
+  await act(async () => root.render(createElement(Hook, { value: next })));
+  expect(current.entry).toBeNull();
+  await act(async () => current.finish('command', true, next));
+  expect(current.text).toBe('');
 });
 
 it('replaces the temporary bubble when SSE arrives before HTTP and does not restore accepted text on a lost acknowledgement', async () => {

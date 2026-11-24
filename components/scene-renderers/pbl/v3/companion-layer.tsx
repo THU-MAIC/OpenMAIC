@@ -1,5 +1,5 @@
 'use client';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import {
@@ -8,7 +8,7 @@ import {
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
-import { continueActionLabel } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel, learningStep } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { Companion } from './companion';
 import { ExplainBoard } from './explain-board';
@@ -81,12 +81,23 @@ export function CompanionLayer({
   const { t } = useI18n();
   // The bubble can be put away to see the work under it; the next reply brings it back.
   const [bubbleAway, setBubbleAway] = useState<string | null>(null);
-  const bubbleKey = `${view.id}:${view.conversation?.at(-1)?.id ?? ''}:${pendingMessage?.id ?? ''}`;
+  const stageKey = `${view.id}:${view.state.position.milestoneId}:${view.state.position.stageIndex}`;
+  const conversation = useMemo(
+    () => view.conversation?.filter((entry) => entry.currentStage) ?? [],
+    [view.conversation],
+  );
+  const bubbleKey = `${stageKey}:${conversation.at(-1)?.id ?? ''}:${pendingMessage?.id ?? ''}`;
   const requesting = ['chat', 'begin', 'retry'].includes(pendingAction ?? '');
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
   const role = view.role ?? 'mentor';
   return (
-    <Narrated view={view} onBoard={onBoard} onPoint={onPoint} onTold={onTold}>
+    <Narrated
+      conversation={conversation}
+      stageKey={stageKey}
+      onBoard={onBoard}
+      onPoint={onPoint}
+      onTold={onTold}
+    >
       {(narration) => (
         <>
           {boardOpen && !waitingToStart && (
@@ -129,8 +140,15 @@ export function CompanionLayer({
                     role={
                       narration.speaker && narration.speaker !== 'user' ? narration.speaker : role
                     }
-                    speech={narration.speech}
-                    learner={learnerTurn(view.conversation ?? [], pendingMessage)}
+                    speech={
+                      narration.speech ??
+                      (!conversation.length &&
+                      !narration.playing &&
+                      view.state.status !== 'completed'
+                        ? { id: stageKey, text: t(`pblV3.journey.steps.${learningStep(view)}`) }
+                        : undefined)
+                    }
+                    learner={learnerTurn(conversation, pendingMessage)}
                     tools={narration.tools}
                     playing={narration.playing}
                     paused={narration.paused}
@@ -191,7 +209,7 @@ export function CompanionLayer({
                 // at once, not when the server says so.
                 narration.playing || view.busy || pending || pendingMessage
                   ? []
-                  : suggestedReplies(view.conversation ?? [])
+                  : suggestedReplies(conversation)
               }
             />
           )}

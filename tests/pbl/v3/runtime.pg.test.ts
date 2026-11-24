@@ -2148,6 +2148,49 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expectedAttempt: meta!.attempt,
     });
   });
+  it('keeps earlier replies in history while marking only the active step for the companion', async () => {
+    const study = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const previous: string[] = [];
+    const currentWords = async () => {
+      const entries =
+        (await learningView(principal, study.id, { passive: true })).conversation ?? [];
+      const words = (entry: (typeof entries)[number]) =>
+        entry.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : []));
+      expect(entries.flatMap(words)).toEqual(expect.arrayContaining(previous));
+      return entries.filter((entry) => entry.currentStage).flatMap(words);
+    };
+    // The implementation is by the coder; both the quiz and recap belong to the mentor.
+    for (const index of [3, 5, 6]) {
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.position.stageIndex = index;
+      row.state.milestones[0]!.stageIndex = index;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      expect(await currentWords()).toEqual([]);
+      const { sessionId } = (await study.send('begin')) as { sessionId: string };
+      expect(await currentWords()).toEqual([]);
+      const worker = 'companion-worker';
+      const claim = await agents.claimNextSession(worker, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const text = 'Instructions for step ' + index;
+      await agents.appendRunEvent(sessionId, worker, {
+        ts: Date.now(),
+        attempt: claim!.attempt,
+        type: 'message_end',
+        data: { message: { role: 'assistant', content: [{ type: 'text', text }] } },
+      });
+      await agents.finishSession(sessionId, worker, {
+        status: 'succeeded',
+        expectedAttempt: claim!.attempt,
+      });
+      expect(await currentWords()).toEqual([text]);
+      previous.push(text);
+    }
+  });
+
   it('opens each stage once without fabricating student feedback', async () => {
     const study = await freshStudy();
     const original = await store.get(study.id, principal.ownerId);

@@ -243,6 +243,7 @@ export function projectConversation(
       if (!data.pblOpening && typeof data.text === 'string')
         entries.push({
           id: `user-${event.id}`,
+          inputId: event.id,
           commandId: typeof data.pblCommandId === 'string' ? data.pblCommandId : undefined,
           at: event.ts,
           speaker: 'user',

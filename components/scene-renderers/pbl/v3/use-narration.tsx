@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -13,7 +13,7 @@ import {
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
 import { ROLE_PERSONAS } from '@/lib/pbl/v3/personas';
-import type { LearningView } from '@/lib/pbl/v3/types';
+import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import { WB_DRAW_MS } from '@/lib/choreography/timing';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -60,7 +60,8 @@ const wait = (ms: number, signal: AbortSignal) =>
  * last word.
  */
 export function useNarration(
-  view: LearningView,
+  conversation: LearningConversationEntry[],
+  stageKey: string,
   {
     onPoint,
     onBoard,
@@ -74,7 +75,7 @@ export function useNarration(
     onTold?: (told: NarrationProgress | null) => void;
   },
 ) {
-  const entry = view.conversation?.findLast((item) => !item.boundary && item.speaker !== 'user');
+  const entry = conversation.findLast((item) => !item.boundary && item.speaker !== 'user');
   const steps = useMemo(() => (entry ? narrationSteps(entry) : []), [entry]);
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);
@@ -264,12 +265,14 @@ export function useNarration(
   useEffect(() => {
     if (failed) stopRef.current();
   }, [failed]);
-  useEffect(
+  useLayoutEffect(
     () => () => {
-      run.current?.buffer.shutdown();
+      const previous = run.current;
       run.current = null;
+      previous?.buffer.shutdown();
+      ttsRef.current.cleanup();
     },
-    [],
+    [stageKey],
   );
 
   const playing = !!active && !failed;
@@ -392,12 +395,14 @@ export function useNarration(
  * a companion and never for a stage without one.
  */
 export function Narrated({
-  view,
+  conversation,
+  stageKey,
   children,
   ...handlers
-}: Parameters<typeof useNarration>[1] & {
-  view: LearningView;
+}: Parameters<typeof useNarration>[2] & {
+  conversation: LearningConversationEntry[];
+  stageKey: string;
   children: (narration: ReturnType<typeof useNarration>) => ReactNode;
 }) {
-  return children(useNarration(view, handlers));
+  return children(useNarration(conversation, stageKey, handlers));
 }

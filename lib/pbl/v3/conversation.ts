@@ -62,6 +62,8 @@ export interface LearningConversationEntry {
   inputId?: number;
   /** Learner send command, used to reconcile its local acknowledgement with HTTP/SSE. */
   commandId?: string;
+  /** This turn belongs to the active role and step in the live study view. */
+  currentStage?: true;
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   failure?: LearningRunFailure;
   omitted?: boolean;
@@ -239,7 +241,7 @@ export function markRecoveredTeachingTools(entries: readonly LearningConversatio
 export function deduplicateHandoffs(entries: readonly LearningConversationEntry[]) {
   const replies = entries.flatMap((entry) =>
     entry.parts.flatMap((part) =>
-      part.kind === 'text'
+      entry.speaker !== 'user' && part.kind === 'text'
         ? [
             {
               scope: conversationScope(entry),

@@ -20,8 +20,9 @@ export function useLearnerMessage(
   onStorageError: () => void,
   savedMessage: { id: string } | undefined,
 ) {
-  const [pending, setPending] = useState<Submission | null>(null);
+  const [pending, setPending] = useState<(Submission & { stageKey: string }) | null>(null);
   const current = useRef<Submission | null>(null);
+  const stageKey = view && `${view.state.position.milestoneId}:${view.state.position.stageIndex}`;
   const observe = useCallback(
     (observed: LearningView | null) => {
       if (!observed) return;
@@ -49,7 +50,10 @@ export function useLearnerMessage(
         text,
       };
       current.current = submission;
-      setPending(submission);
+      setPending({
+        ...submission,
+        stageKey: `${view.state.position.milestoneId}:${view.state.position.stageIndex}`,
+      });
       if (!beginPendingMessage(view.id, id, text)) onStorageError();
     },
     [onStorageError],
@@ -72,6 +76,7 @@ export function useLearnerMessage(
     pending &&
     savedMessage?.id === pending.id &&
     view?.id === pending.studyId &&
+    pending.stageKey === stageKey &&
     !confirmed(pending, view)
       ? {
           id: `sending-${pending.id}`,

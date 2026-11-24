@@ -1120,13 +1120,24 @@ export async function learningView(
   if (binding) {
     const agents = await getAgentSessionStore();
     const meta = await agents.getSession(binding.session_id);
-    latestUserSeq =
-      (
-        await store.pool.query<{ seq: number | null }>(
-          "SELECT max(seq) AS seq FROM agent_session_events WHERE session_id=$1 AND type='user_message'",
-          [binding.session_id],
-        )
-      ).rows[0]?.seq ?? undefined;
+    // The delimiter may be older than the bounded transcript. Resolve it in this
+    // role session before combining the transcript with other roles' history.
+    const {
+      rows: [anchors],
+    } = await store.pool.query<{ input: number | null; start: number | null }>(
+      `SELECT
+         (SELECT max(seq) FROM agent_session_events WHERE session_id=$1 AND type='user_message') AS input,
+         (SELECT CASE WHEN data->>'milestoneId'=$3 AND data->>'stageIndex'=$4 THEN seq END
+          FROM agent_session_events WHERE session_id=$1 AND type='pbl_stage_entered' AND seq<=$2
+          ORDER BY seq DESC LIMIT 1) AS start`,
+      [
+        binding.session_id,
+        historyThrough.get(binding.session_id) ?? 0,
+        row.state.position.milestoneId,
+        String(row.state.position.stageIndex),
+      ],
+    );
+    latestUserSeq = anchors.input ?? undefined;
     const unclosed = succeededWithoutTeachingReceipt(
       row,
       stage,
@@ -1154,6 +1165,10 @@ export async function learningView(
       binding.role,
       meta?.status === 'running' || meta?.status === 'queued',
       roleRun.status,
+    ).map((entry) =>
+      anchors.start != null && entry.inputId != null && entry.inputId > anchors.start
+        ? { ...entry, currentStage: true as const }
+        : entry,
     );
     const questions = reviewQuestions(events);
     for (const event of events) {
@@ -1266,6 +1281,7 @@ export async function learningView(
     conversation.push({
       id: `${binding!.session_id}:pending-${pendingReview.runId}`,
       speaker: binding!.role,
+      currentStage: true,
       inputId: latestUserSeq,
       parts: [
         {

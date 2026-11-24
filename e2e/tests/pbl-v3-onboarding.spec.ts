@@ -227,6 +227,87 @@ async function project(
   return { view, workbench, commands, calls, applicationCalls, publish, publishRaw, stageId };
 }
 
+for (const previous of ['tests', 'quiz'] as const) {
+  test(`retires companion instructions when leaving ${previous} without removing history`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const view = fixture.view;
+    const publish = async () => {
+      view.revision++;
+      view.activitySequence = (view.activitySequence ?? 0) + 1;
+      await fixture.publish();
+    };
+    const oldText = previous === 'tests' ? 'Run the checks again.' : 'Submit the answers.';
+    const old: NonNullable<LearningView['conversation']>[number] = {
+      id: 'previous-turn',
+      currentStage: true,
+      speaker: previous === 'tests' ? 'coder' : 'mentor',
+      status: 'succeeded',
+      parts: [
+        { kind: 'text', id: 'old-text', text: oldText },
+        {
+          kind: 'tool',
+          id: 'old-cue',
+          name: 'cue_user',
+          action: 'tool',
+          status: 'succeeded',
+          args: { options: ['Show me how', 'I am ready'] },
+        },
+      ],
+    };
+    const questions = [1, 2, 3].map((i) => ({ q: `Question ${i}?`, options: ['Yes', 'No'] }));
+    view.conversation = [old];
+    view.questions = previous === 'quiz' ? questions : [];
+    view.actions = previous === 'quiz' ? ['quiz', 'next'] : ['chat', 'next'];
+    view.state.position.stageIndex = previous === 'tests' ? 4 : 5;
+    view.stage = { kind: 'check', checker: previous };
+    view.role = previous === 'tests' ? 'coder' : 'mentor';
+    await publish();
+    const bubble = page.getByTestId('pbl-companion-speech');
+    const suggestions = page.getByTestId('pbl-companion-suggestions');
+    await expect(bubble).toContainText(oldText);
+    if (previous === 'tests') await expect(suggestions).toContainText('Show me how');
+
+    delete old.currentStage;
+    view.state.position.stageIndex++;
+    view.stage =
+      previous === 'tests'
+        ? { kind: 'check', checker: 'quiz' }
+        : {
+            kind: 'mentor_say',
+            agent: 'mentor',
+            say: 'Recap',
+            reads: [],
+            studentActions: ['chat'],
+          };
+    view.role = 'mentor';
+    view.questions = previous === 'tests' ? questions : [];
+    view.actions = previous === 'tests' ? ['quiz'] : ['chat'];
+    await publish();
+    const quiz = page.getByTestId('pbl-companion-quiz');
+    if (previous === 'tests') await expect(quiz).toContainText('Question 3?');
+    else await expect(quiz).toBeHidden();
+    await expect(bubble).not.toContainText(oldText);
+    await expect(suggestions).toBeHidden();
+    const newText = previous === 'tests' ? 'Choose an answer.' : 'Explain your result.';
+    view.conversation.push({
+      id: 'next-turn',
+      currentStage: true,
+      speaker: 'mentor',
+      status: 'succeeded',
+      parts: [{ kind: 'text', id: 'next-text', text: newText }],
+    });
+    await publish();
+    await expect(bubble).toContainText(newText);
+    await page.getByTestId('pbl-companion-avatar').click();
+    await expect(
+      page.getByTestId('pbl-assistant').getByText(oldText, { exact: true }),
+    ).toBeVisible();
+  });
+}
+
 test('the tutor companion opens a board and moves its conversation between window and dock', async ({
   page,
   learningEvents,
