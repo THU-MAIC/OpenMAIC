@@ -460,6 +460,190 @@ export function TokenPlanSettings({
     );
   };
 
+  const keyForm = (plan: TokenPlanPreset, updating: boolean) => (
+    <form
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleApply(apiKey);
+      }}
+    >
+      {/* Field and its commit share one row; the button never owns a line. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 basis-40">
+          <Input
+            type={showKey ? 'text' : 'password'}
+            autoComplete="new-password"
+            spellCheck={false}
+            aria-label={t(`${tp}.apiKey`)}
+            placeholder={plan.apiKeyPlaceholder ?? 'sk-...'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            className="h-9 bg-background pr-8"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey(!showKey)}
+            aria-label={t(`${tp}.apiKey`)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <Button type="submit" size="sm" className="shrink-0" disabled={!apiKey.trim() || saving}>
+          {t(updating ? `${tp}.updateKey` : `${tp}.saveKey`)}
+        </Button>
+      </div>
+      <p className="text-xs leading-5 text-muted-foreground">{t(`${tp}.applyModelsNote`)}</p>
+    </form>
+  );
+
+  const linkButton =
+    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-background px-3 text-xs font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring';
+
+  const detail = (plan: TokenPlanPreset) => {
+    const provider = providerOf(plan);
+    // Only the workspace's own plan can have its key updated or be disconnected.
+    const own = provider?.source === 'workspace';
+    const canConnect = !provider && !!presetOf(plan);
+    const name = presetDisplayName(plan);
+    const offered = (m: TokenPlanModality) =>
+      !provider || !!provider.capabilities[MODALITY_CAPABILITY[m]];
+    const modalities = MODALITY_ORDER.filter((m) => plan.modalities[m] && offered(m));
+    const modelCount = modalities.reduce((sum, m) => sum + planModels(plan, m).length, 0);
+    const regionLabel = plan.region
+      ? t(`settings.providerLinks.${plan.region}`)
+      : t(`${tp}.regionGlobal`);
+    const accountUrl =
+      plan.id === 'tokendance' && plan.websiteUrl
+        ? portalCreditsUrl(plan.websiteUrl)
+        : plan.websiteUrl;
+    const hasMenu = own || !!plan.subscribeUrls;
+    return (
+      <>
+        {/* Account: identity, status and region; key, priority; vendor console and actions. */}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <PresetLogo preset={plan} size="lg" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h4 className="break-words text-base font-semibold leading-6">{name}</h4>
+                {plan.name !== name && (
+                  <span className="text-xs text-muted-foreground">{plan.name}</span>
+                )}
+                <span
+                  className={cn(
+                    pill,
+                    provider
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300'
+                      : 'text-muted-foreground',
+                  )}
+                >
+                  {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
+                </span>
+                <span className={cn(pill, 'text-muted-foreground')}>{regionLabel}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
+                {provider?.source === 'deployment' && (
+                  <span>{t('settings.serverConfig.planServer')}</span>
+                )}
+                {own && provider?.key?.mask && (
+                  <span>
+                    {t(`${tp}.keyLabel`)}{' '}
+                    <span className="rounded bg-muted px-1 font-mono">{provider.key.mask}</span>
+                  </span>
+                )}
+                {provider && <span>{t(`${tp}.priority`, { n: rankOf(plan) })}</span>}
+                {!provider && <span>{t(`${tp}.connectHint`, { name })}</span>}
+              </div>
+            </div>
+          </div>
+          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
+            {own && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={() => {
+                  setEditingKey(!editingKey);
+                  setApiKey('');
+                }}
+              >
+                <KeyRound className="size-3.5" />
+                {t(editingKey ? `${tp}.cancelKeyUpdate` : `${tp}.updateKey`)}
+              </Button>
+            )}
+            {plan.websiteUrl && (
+              <a
+                href={plan.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={linkButton}
+              >
+                {t(`${tp}.consoleLink`, { name })}
+                <ExternalLink className="size-3" aria-hidden="true" />
+              </a>
+            )}
+            {hasMenu && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    aria-label={t(`${tp}.more`)}
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {/* A plan with subscription pages per site (Kimi): both stay reachable. */}
+                  {plan.subscribeUrls &&
+                    (
+                      [
+                        ['domestic', plan.subscribeUrls.domestic],
+                        ['international', plan.subscribeUrls.international],
+                      ] as const
+                    ).map(([side, url]) => (
+                      <DropdownMenuItem key={side} asChild>
+                        <a href={url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="size-4" />
+                          {t(`${tp}.subscribeOn`, { site: t(`settings.providerLinks.${side}`) })}
+                        </a>
+                      </DropdownMenuItem>
+                    ))}
+                  {own && (
+                    <DropdownMenuItem onSelect={() => setDisconnectOpen(true)}>
+                      <Unlink className="size-4" />
+                      {t(`${tp}.disconnect`)}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </div>
+
+        {own && editingKey && (
+          <div className="rounded-xl border bg-muted/20 p-4">{keyForm(plan, true)}</div>
+        )}
+
+        {!provider && !canConnect && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
+        {canConnect && (
+          <section className="space-y-3 rounded-xl border bg-muted/20 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h5 className="text-sm font-medium">{t(`${tp}.connectTitle`, { name })}</h5>
+              <CredentialStorageHint />
+            </div>
+            {keyForm(plan, false)}
+          </section>
+        )}
+
+      </>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {/* Title and the region switch: each side lists the plans its accounts can use. */}
@@ -555,162 +739,7 @@ export function TokenPlanSettings({
               const tab = tabs.includes(activeTab) ? activeTab : (tabs[0] ?? 'llm');
               return (
                 <>
-                  {/* 头部一行：身份 + 状态 + 服务级动作（更新密钥 / 管理账号 / 更多） */}
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h4 className="break-words text-sm font-semibold leading-5">
-                        {presetDisplayName(selected)}
-                      </h4>
-                      <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
-                        <span>
-                          {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
-                        </span>
-                        {provider?.source === 'deployment' && (
-                          <span>{t('settings.serverConfig.planServer')}</span>
-                        )}
-                        {own && provider?.key?.mask && (
-                          <span className="font-mono">{provider.key.mask}</span>
-                        )}
-                        {own && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingKey(!editingKey);
-                              setApiKey('');
-                            }}
-                            className="rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {t(editingKey ? `${tp}.cancelKeyUpdate` : `${tp}.updateKey`)}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
-                      {/* Balance management lives on the TokenDance portal
-                          (/credits); shown only when connected, styled like
-                          "Manage account". */}
-                      {selected.id === 'tokendance' && enabled && selected.websiteUrl && (
-                        <a
-                          href={portalCreditsUrl(selected.websiteUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {t(`${tp}.balanceManagement`)}
-                          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-                        </a>
-                      )}
-                      {/* 有订阅入口（如 Kimi）的套餐：「管理账号」只是分组标签
-                          （纯文本），跳转交给后面的国内/海外链接；无订阅入口
-                          的套餐维持「管理账号」外链。 */}
-                      {selected.subscribeUrls ? (
-                        <span className="text-xs leading-5 text-muted-foreground">
-                          {t(`${tp}.manageAccount`)}
-                        </span>
-                      ) : (
-                        selected.websiteUrl && (
-                          <a
-                            href={selected.websiteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {t(`${tp}.manageAccount`)}
-                            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />{' '}
-                          </a>
-                        )
-                      )}
-                      {/* 订阅入口（如 Kimi Coding Plan）：紧跟「管理账号」，
-                          国内/海外双链接（aff 跟随 preset 数据）。 */}
-                      {selected.subscribeUrls &&
-                        (
-                          [
-                            ['domestic', selected.subscribeUrls.domestic],
-                            ['international', selected.subscribeUrls.international],
-                          ] as const
-                        ).map(([region, url]) => (
-                          <a
-                            key={region}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {t(`settings.providerLinks.${region}`)}
-                            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-                          </a>
-                        ))}
-                      {own && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8"
-                              aria-label={t(`${tp}.disconnect`)}
-                            >
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => setDisconnectOpen(true)}>
-                              <Unlink className="size-4" />
-                              {t(`${tp}.disconnect`)}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 密钥表单：未连接或更新密钥时显示；保存即连接 */}
-                  {!enabled && !canConnect && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
-                  {(canConnect || (own && editingKey)) && (
-                    <form
-                      className="space-y-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleApply(apiKey);
-                      }}
-                    >
-                      {/* Field and its commit share one row; the button never owns a line. */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="relative min-w-0 flex-1 basis-40">
-                          <Input
-                            type={showKey ? 'text' : 'password'}
-                            autoComplete="new-password"
-                            spellCheck={false}
-                            aria-label={t(`${tp}.apiKey`)}
-                            placeholder={selected.apiKeyPlaceholder ?? 'sk-...'}
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            className="h-8 pr-8"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowKey(!showKey)}
-                            aria-label={t(`${tp}.apiKey`)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          >
-                            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                        <Button
-                          type="submit"
-                          size="sm"
-                          className="ml-auto shrink-0"
-                          disabled={!apiKey.trim() || saving}
-                        >
-                          {t(editingKey ? `${tp}.updateKey` : `${tp}.saveKey`)}
-                        </Button>
-                      </div>
-                      <CredentialStorageHint />
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        {t(`${tp}.applyModelsNote`)}
-                      </p>
-                    </form>
-                  )}
-
+                  {detail(selected)}
                   {/* View model plan: a capability · stage → plan default model
                       table; modalities with no model concept show "not disclosed". */}
                   <details className="group border-t border-border/60 pt-4">
