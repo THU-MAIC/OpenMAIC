@@ -1074,6 +1074,9 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   view.activitySequence++;
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(conversation.getByTestId('workbench-waiting-bar')).toHaveCount(1);
+  await expect(tools).toHaveAttribute('data-open', 'false');
+  await tools.getByRole('button', { name: '2 tool calls · Completed' }).click();
+  await tools.getByTestId('workbench-tool-card').first().getByRole('button').click();
   await expect(tools.locator('[data-scroll="true"]')).toContainText('Line 55');
   await expect(tools.getByText('Complete structured display', { exact: false })).toBeVisible();
   await expect(tools.locator('img')).toHaveCount(0);
@@ -1093,7 +1096,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(conversation.getByTestId('workbench-waiting-bar')).toHaveCount(0);
   await expect(conversation.getByText('Where does the value go?', { exact: true })).toBeVisible();
-  // OpenPBL groups stay open after settlement, until the learner folds them.
+  // A manually reopened completed group stays open across subsequent snapshots.
   await expect(tools).toHaveAttribute('data-open', 'true');
   const toolGroupToggle = tools.getByRole('button', {
     name: '2 tool calls · Completed',
@@ -1303,7 +1306,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
     'aria-expanded',
     'false',
   );
-  await expect(page.getByTestId('workbench-tool-group')).toHaveAttribute('data-open', 'true');
+  await expect(page.getByTestId('workbench-tool-group')).toHaveAttribute('data-open', 'false');
   await expect(page.getByTestId('workbench-waiting-bar')).toHaveCount(0);
   await expect(page.getByLabel('Your message', { exact: true })).toHaveValue('My draft answer');
   // The test control and verdict stay outside the drawer. Execution is not

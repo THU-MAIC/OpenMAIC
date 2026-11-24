@@ -23,6 +23,11 @@ const AGENTS: AgentConfig[] = Object.entries(ROLE_PERSONAS).map(([role, persona]
   id: role,
   name: role,
   role: role === 'mentor' ? 'teacher' : 'student',
+  // Unassigned project roles read native speech in the language of each sentence.
+  // The mentor inherits the learner's narrator selection.
+  ...(role !== 'mentor'
+    ? { voiceConfig: { providerId: 'browser-native-tts' as const, voiceId: 'default' } }
+    : {}),
   persona: '',
   avatar: persona.avatar,
   color: persona.color,
