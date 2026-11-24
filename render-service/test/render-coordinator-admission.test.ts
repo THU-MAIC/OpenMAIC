@@ -260,7 +260,10 @@ describe('RenderCoordinator admission control', () => {
     // A reservation taken before the close cannot become a job after it.
     const late = m.reserve(admission('bob'));
 
-    m.closeAdmission();
+    let idleCalls = 0;
+    m.closeAdmission(() => {
+      idleCalls += 1;
+    });
     expect(m.accepting).toBe(false);
     expect(m.idle).toBe(false);
     await expect(captureRejection(() => m.reserve(admission('carol')))).resolves.toMatchObject({
@@ -276,6 +279,8 @@ describe('RenderCoordinator admission control', () => {
         }),
       ),
     ).resolves.toMatchObject({ reason: 'shutting_down' });
+    // Releasing the refused reservation leaves the running render: not idle yet.
+    expect(idleCalls).toBe(0);
 
     releaseRenders();
     await waitUntil(
@@ -283,6 +288,18 @@ describe('RenderCoordinator admission control', () => {
       'the admitted render to finish',
     );
     expect(m.idle).toBe(true);
+    expect(m.accepting).toBe(false);
+    // The process exits here (main.ts passes process.exit as onIdle), once.
+    expect(idleCalls).toBe(1);
+  });
+
+  it('closeAdmission on an idle coordinator calls onIdle at once', () => {
+    const m = newCoordinator();
+    let idleCalls = 0;
+    m.closeAdmission(() => {
+      idleCalls += 1;
+    });
+    expect(idleCalls).toBe(1);
     expect(m.accepting).toBe(false);
   });
 });

@@ -97,6 +97,8 @@ export class RenderCoordinator {
   private pending = 0;
   /** Set once the process is asked to stop; see {@link closeAdmission}. */
   private admissionClosed = false;
+  /** Called once, when admission is closed and nothing is left in the system. */
+  private onIdle: (() => void) | undefined;
   private readonly maxConcurrency: number;
   private readonly maxQueue: number;
   private readonly maxJobsPerUser: number;
@@ -152,11 +154,21 @@ export class RenderCoordinator {
   /**
    * Stop admitting renders for good (the process received SIGTERM): `/health`
    * reports `accepting: false` from now on, so a caller that checks it sends
-   * its next render elsewhere or waits. Renders already admitted keep running
-   * until the process exits; nothing waits for them.
+   * its next render elsewhere or waits. Renders already admitted keep running;
+   * `onIdle` is called once nothing is reserved, queued or running (now, if
+   * the system is already empty).
    */
-  closeAdmission(): void {
+  closeAdmission(onIdle?: () => void): void {
     this.admissionClosed = true;
+    this.onIdle = onIdle;
+    this.settleIfIdle();
+  }
+
+  private settleIfIdle(): void {
+    if (!this.admissionClosed || this.inSystem > 0 || !this.onIdle) return;
+    const onIdle = this.onIdle;
+    this.onIdle = undefined;
+    onIdle();
   }
 
   /** No render is reserved, queued or running. */
@@ -203,6 +215,7 @@ export class RenderCoordinator {
     reservation.consumed = true;
     this.pending = Math.max(0, this.pending - 1);
     this.decrementIdentity(reservation.admissionIdentity);
+    this.settleIfIdle();
   }
 
   private decrementIdentity(identity: AdmissionIdentity): void {
@@ -296,6 +309,7 @@ export class RenderCoordinator {
         failure,
       });
       await this.cleanupProject(queued.record.projectDir);
+      this.settleIfIdle();
     }
     return true;
   }
@@ -511,6 +525,7 @@ export class RenderCoordinator {
       this.decrementIdentity(record.admissionIdentity);
       this.running -= 1;
       this.pump();
+      this.settleIfIdle();
     }
   }
 

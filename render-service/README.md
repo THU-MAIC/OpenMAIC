@@ -102,11 +102,13 @@ data. Identity keys are client IPs when the service runs behind
 IP address of everyone currently rendering.
 
 On `SIGTERM` the service stops admitting renders: `/health` reports
-`accepting: false` from then on and new submissions get `shutting_down`. An idle
-process exits right away. Renders already admitted are not waited for: they keep
-running until the platform's termination grace period ends and the process is
-killed, so a caller that resubmits lost renders (the app's durable export queue)
-sends them again elsewhere. The grace period does not need to cover a render.
+`accepting: false` from then on and new submissions get `shutting_down`. The
+process exits once nothing is reserved, queued or running: right away when it
+is idle, else when its last render ends. Nothing extends the platform's
+termination grace period: a render still running when it ends is killed with the
+process, so a caller that resubmits lost renders (the app's durable export
+queue) sends it again elsewhere. The grace period does not need to cover a
+render.
 
 Previews have their own execution budget, defaulting to one concurrent preview,
 independent of the video render queue. Once a preview has passed its body and

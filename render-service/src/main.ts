@@ -737,14 +737,14 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
 
   // On SIGTERM, stop admitting: `/health` reports `accepting: false`, so a
   // caller that checks it before sending a render (the app's durable export
-  // queue) sends nothing more here. Renders already running are not waited
-  // for; they end with the process, and that caller sends them again. An idle
-  // process exits now, as it did before this handler existed. The resource
-  // entrypoint has its own SIGTERM handler, which closes the resource owner
-  // and exits.
+  // queue) sends nothing more here. The process exits once nothing is left:
+  // now if it is idle, as before this handler existed, else when its last
+  // render ends. Nothing extends the platform's grace period: a render still
+  // running when it ends is killed with the process, and that caller sends it
+  // again. The resource entrypoint has its own SIGTERM handler, which closes
+  // the resource owner and exits.
   process.once('SIGTERM', () => {
-    coordinator.closeAdmission();
-    if (!resourceExecutor && coordinator.idle) process.exit(0);
+    coordinator.closeAdmission(resourceExecutor ? undefined : () => process.exit(0));
   });
 
   // Build the browser mount off the request path so the first preview does not
