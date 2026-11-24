@@ -171,11 +171,6 @@ export class RenderCoordinator {
     onIdle();
   }
 
-  /** No render is reserved, queued or running. */
-  get idle(): boolean {
-    return this.inSystem === 0;
-  }
-
   /**
    * Claim an admission slot before buffering or extracting the archive.
    * Throws {@link RenderRejectedError} with reason `queue_full` once the

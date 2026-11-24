@@ -249,7 +249,6 @@ describe('RenderCoordinator admission control', () => {
       maxConcurrency: 1,
       maxJobsPerUser: 0,
     });
-    expect(m.idle).toBe(true);
     const held = m.reserve(admission('alice'));
     const jobId = await m.submit({
       reservation: held,
@@ -265,7 +264,8 @@ describe('RenderCoordinator admission control', () => {
       idleCalls += 1;
     });
     expect(m.accepting).toBe(false);
-    expect(m.idle).toBe(false);
+    // A render is running: not idle.
+    expect(idleCalls).toBe(0);
     await expect(captureRejection(() => m.reserve(admission('carol')))).resolves.toMatchObject({
       reason: 'shutting_down',
     });
@@ -283,13 +283,11 @@ describe('RenderCoordinator admission control', () => {
     expect(idleCalls).toBe(0);
 
     releaseRenders();
-    await waitUntil(
-      async () => ((await jobs.get(jobId))?.status === 'succeeded' ? true : null),
-      'the admitted render to finish',
-    );
-    expect(m.idle).toBe(true);
+    // The process exits here (main.ts passes process.exit as onIdle).
+    await waitUntil(async () => (idleCalls > 0 ? true : null), 'onIdle after the render ends');
+    expect((await jobs.get(jobId))?.status).toBe('succeeded');
     expect(m.accepting).toBe(false);
-    // The process exits here (main.ts passes process.exit as onIdle), once.
+    // Once.
     expect(idleCalls).toBe(1);
   });
 
