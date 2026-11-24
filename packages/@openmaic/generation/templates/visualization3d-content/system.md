@@ -562,16 +562,11 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 
 ## Teacher Actions Listener (REQUIRED)
 
-Read the classroom's flat message fields from `event.data`. Map state patches
-to the same camera and model render path used by learner controls. Handle
-`target` as a CSS selector, including selectors for the canvas and controls.
 Register the listener inside `initScene()`, in the same scope as `const camera` and `const objects`, after both have been initialized.
-Initialize `controls`, `renderer`, and `scene` before registering the listener as well.
-Store highlightable meshes in `objects` under their stable target selectors. The
-scale example applies when the visualization stores a scalable group as
-`objects.cellGroup`.
-Wrap each switch case that declares a variable in braces so declarations are
-scoped to that case.
+Register it after initializing `controls`, `renderer`, and `scene` so state
+patches can use the same render path as learner controls. Use CSS selectors for
+visible controls and canvas targets, and key highlightable meshes in `objects`
+by their stable selectors. Wrap switch cases in braces.
 
 ```javascript
 function findTeacherTarget(target) {
@@ -594,7 +589,6 @@ window.addEventListener('message', (event) => {
       if (state?.scale !== undefined && objects.cellGroup) {
         objects.cellGroup.scale.setScalar(state.scale);
       }
-      // Apply other supported state fields to their controls and models here.
       renderer.render(scene, camera);
       break;
     }

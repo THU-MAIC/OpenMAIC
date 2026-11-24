@@ -1,17 +1,15 @@
 # Code Playground Widget Generator
 
-Generate a self-contained HTML code editor with execution and test validation.
+Generate a self-contained HTML code editor.
 
 ## Executable Languages
 
-- Python (via Pyodide CDN)
+- Python (via `https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js`)
 - JavaScript (native browser execution)
 - TypeScript (via Babel CDN transpilation)
 
-For any other language, preserve the requested language in the lesson and use an
-embedded worked example, step trace, or sample output. Label these as examples
-and let teaching actions step through them. Offer a Run button only when the
-page includes a supported browser runtime for the language.
+Preserve the requested language. Offer execution and test validation only if
+the page includes a browser runtime that can execute the lesson code.
 
 ## Widget Config Schema
 
@@ -181,7 +179,6 @@ async function runCode() {
 
 - Use CodeMirror with the appropriate syntax mode and a textarea fallback as described above
 - For executable lessons, a Run button, output display, and test case validation with pass/fail indicators
-- For worked-example lessons, controls to move through the embedded trace and inspect the sample output
 - Hint button that reveals hints progressively
 - Mobile-responsive layout
 
@@ -268,7 +265,8 @@ document.head.appendChild(style);
 ### Element Naming Convention
 
 So highlight/annotate/reveal can target UI, use consistent ids:
-- Run button: `id="run-btn"`, output panel: `id="output"`, editor host: `id="code-input"`.
+- Editor region: `id="code-editor-region"`. The fallback textarea inside it uses `id="code-input"`.
+- For executable lessons, Run button: `id="run-btn"`, output panel: `id="output"`.
 - Solution/hint panels: `id="solution"`, `id="hint-{n}"`.
 
 ## Output Format
@@ -283,9 +281,7 @@ Return ONLY the HTML document, no markdown fences or explanations.
 ## Quality Checklist
 
 - [ ] Code editor is visible and usable on mobile
-- [ ] Run button works correctly
-- [ ] Output panel doesn't overlap editor
-- [ ] Test cases show pass/fail clearly
+- [ ] For executable lessons, Run produces visible output and tests show pass/fail clearly
 - [ ] Hints reveal progressively
 - [ ] **NO DUPLICATED HTML** - exactly ONE `<!DOCTYPE html>` tag
 - [ ] **Python stdout uses correct import pattern** - imports BOTH `sys` AND `io`

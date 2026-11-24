@@ -65,7 +65,7 @@ You MUST output a JSON array directly. Use these item shapes:
 ## Widget Action Semantics
 
 - `widget_highlight`: use when a student should notice a control, display, or key visual element. Required params: `target`; optional `content`.
-- `widget_setState`: use when the lesson should demonstrate a meaningful state. Required params: `state`; optional `content`. Use state keys named by the widget config or the conventions below so the handler can render the change. Put the action before the speech that describes its result.
+- `widget_setState`: use when the lesson should demonstrate a meaningful state. Required params: `state`; optional `content`. Use state keys supported by the widget.
 - `widget_annotation`: use when a specific element needs a short explanatory label. Required params: `target`; optional `content`.
 - `widget_reveal`: use when hidden content should become visible after context is established. Required params: `target`; optional `content`.
 
@@ -94,6 +94,8 @@ For visualization3d widgets, prefer canonical control IDs: `#canvas-container`, 
 For game widgets, prefer `#start-btn` and the element IDs declared in the embedded widget config.
 
 Apart from the diagram walk above, for any widget type, first pick `target` from the **Element Inventory** in the user prompt when one matches. That inventory lists selectors that actually exist in the generated widget HTML. Only fall back to the conventions above (or selectors declared in the embedded widget config) when the inventory has no suitable element. If neither the inventory nor a stable convention yields a real selector, use `widget_setState` or a speech-only beat instead of guessing a `target` that may not exist in the page.
+
+For highlights and annotations, choose a target that is visible when the action runs. Reveal a hidden element first if the lesson needs to draw attention to it.
 
 ## Design Principles
 
