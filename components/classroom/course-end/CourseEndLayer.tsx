@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { visibleClientRect } from '@/lib/edit/visible-client-rect';
 import { observeFullscreenPortalTarget } from '@/lib/hooks/use-fullscreen-portal-target';
 
-function InteractiveCourseEndPortal({ children }: { readonly children: ReactNode }) {
+function SceneCourseEndPortal({ children }: { readonly children: ReactNode }) {
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
 
   const attachAnchor = useCallback((anchor: HTMLDivElement | null) => {
@@ -14,7 +14,9 @@ function InteractiveCourseEndPortal({ children }: { readonly children: ReactNode
 
     // React keeps CourseEnd mounted while its portal container stays the same.
     const layer = document.createElement('div');
-    layer.className = 'fixed z-[2] overflow-hidden';
+    // The interactive host is z-1; an expanded PBL workspace is z-120.
+    // The portal itself must outrank both, not only its inner overlay.
+    layer.className = 'fixed z-[130] overflow-hidden';
     const unsubscribe = observeFullscreenPortalTarget((target) => {
       if (layer.parentElement === target) return;
       if (layer.isConnected && 'moveBefore' in target && typeof target.moveBefore === 'function') {
@@ -62,11 +64,11 @@ function InteractiveCourseEndPortal({ children }: { readonly children: ReactNode
 }
 
 export function CourseEndLayer({
-  overInteractive,
+  overPortaledScene,
   mobileStage,
   children,
 }: {
-  readonly overInteractive: boolean;
+  readonly overPortaledScene: boolean;
   readonly mobileStage?: Element | null;
   readonly children: ReactNode;
 }) {
@@ -83,11 +85,7 @@ export function CourseEndLayer({
   // The phone stage owns its rotation and its full-screen card in the same coordinate space.
   if (mobileStage) return createPortal(overlay, mobileStage);
 
-  // The interactive host paints at z-index 1 outside the isolated canvas.
-  // Share its portal target so the card covers it without changing the iframe.
-  return overInteractive ? (
-    <InteractiveCourseEndPortal>{overlay}</InteractiveCourseEndPortal>
-  ) : (
-    overlay
-  );
+  // Interactive and PBL scenes paint outside the isolated canvas. Lift only
+  // the completion card so the scene and its unsaved runtime state stay mounted.
+  return overPortaledScene ? <SceneCourseEndPortal>{overlay}</SceneCourseEndPortal> : overlay;
 }
