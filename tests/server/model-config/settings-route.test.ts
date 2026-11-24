@@ -522,4 +522,88 @@ describe('/api/model-config', () => {
     answer = await (await get('alice')).json();
     expect(answer.revision).toBe(2);
   });
+
+  it("asks a token plan's vendor about a new key, and answers the quota to its owner only", async () => {
+    const remains = {
+      model_remains: [
+        {
+          model_name: 'general',
+          start_time: 0,
+          end_time: 18_000_000,
+          current_interval_total_count: 0,
+          current_interval_usage_count: 0,
+          current_interval_status: 1,
+          current_interval_remaining_percent: 100,
+          current_weekly_total_count: 0,
+          current_weekly_usage_count: 0,
+          current_weekly_status: 1,
+          current_weekly_remaining_percent: 97,
+          weekly_end_time: 604_800_000,
+        },
+      ],
+      base_resp: { status_code: 0, status_msg: 'success' },
+    };
+    const vendor = vi.fn(async () => new Response(JSON.stringify(remains), { status: 200 }));
+    vi.doMock('@/lib/server/media-provider-fetch', () => ({ mediaProviderFetch: vendor }));
+    try {
+      const response = await put('alice', null, {
+        kind: 'provider',
+        id: 'go',
+        preset: 'minimax-intl',
+        apiKey: 'sk-cp-go-plan-0001',
+      });
+      expect(response.status).toBe(200);
+      const view = await response.json();
+      const go = view.providers.find((entry: { id: string }) => entry.id === 'go');
+      expect(go.capabilities.video).toBeUndefined();
+      expect(go.capabilities.image).toBeDefined();
+      expect(vendor).toHaveBeenCalledTimes(1);
+
+      const { GET } = await import('@/app/api/model-config/plan-status/route');
+      const status = (user: string) =>
+        GET(
+          Object.assign(
+            new Request('http://localhost/api/model-config/plan-status?provider=go', {
+              headers: { 'x-test-session': user },
+            }),
+            { nextUrl: new URL('http://localhost/api/model-config/plan-status?provider=go') },
+          ) as never,
+        );
+      const own = await (await status('alice')).json();
+      expect(JSON.stringify(own)).not.toContain('sk-cp-go-plan-0001');
+      expect(own.quota).toMatchObject({
+        status: 'available',
+        windows: [
+          { period: 'hours', remainingPercent: 100 },
+          { period: 'week', remainingPercent: 97 },
+        ],
+      });
+      // A provider on a custom endpoint: a new key for it never goes to the vendor,
+      // neither when the endpoint is set nor when a later change leaves it out.
+      vendor.mockClear();
+      const custom = await put('alice', 1, {
+        kind: 'provider',
+        id: 'gateway',
+        preset: 'minimax-intl',
+        apiKey: 'sk-gateway-key-0001',
+        baseUrl: 'https://1.1.1.1/v1',
+      });
+      expect(custom.status).toBe(200);
+      const rekeyed = await put('alice', 2, {
+        kind: 'provider',
+        id: 'gateway',
+        preset: 'minimax-intl',
+        apiKey: 'sk-gateway-key-0002',
+      });
+      expect(rekeyed.status).toBe(200);
+      expect(vendor).not.toHaveBeenCalled();
+
+      // Another workspace has no such provider: nothing is asked with alice's key.
+      vendor.mockClear();
+      expect((await (await status('bob')).json()).quota).toEqual({ status: 'unavailable' });
+      expect(vendor).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('@/lib/server/media-provider-fetch');
+    }
+  });
 });

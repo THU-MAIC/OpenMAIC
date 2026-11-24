@@ -76,6 +76,9 @@ import {
   ServerOnlyNotice,
 } from './server-settings';
 import { MS, slotName } from './models/slot-meta';
+import { PlanQuota } from './plan-quota';
+import { UsageDashboard } from './usage-dashboard';
+import type { SlotCapability } from '@/lib/config/model-slots';
 
 const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   llm: 'settings.providers',
@@ -97,6 +100,18 @@ const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
   document: FileText,
   webSearch: Search,
   webFetch: Globe,
+};
+
+/** The slot capability a modality's provider serves. */
+const MODALITY_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
+  llm: 'chat',
+  image: 'image',
+  video: 'video',
+  tts: 'tts',
+  asr: 'asr',
+  document: 'document',
+  webSearch: 'webSearch',
+  webFetch: 'webFetch',
 };
 
 const REGIONS: readonly TokenPlanRegion[] = ['domestic', 'international'];
@@ -142,9 +157,12 @@ const MODEL_PLAN_CAPABILITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webFetch: 'settings.tokenPlan.capWebFetch',
 };
 
-function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
+function modelPlanItems(
+  preset: TokenPlanPreset,
+  offered: (m: TokenPlanModality) => boolean,
+): ModelPlanItem[] {
   const items: ModelPlanItem[] = [];
-  const llm = preset.modalities.llm;
+  const llm = offered('llm') ? preset.modalities.llm : undefined;
   if (llm) {
     items.push({ capability: 'llm', model: llm.defaultModelId ?? llm.defaultModels?.[0] });
     for (const [stageId, model] of Object.entries(llm.stageRoutes ?? {})) {
@@ -152,7 +170,7 @@ function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
     }
   }
   for (const capability of ['image', 'video', 'tts'] as const) {
-    const target = preset.modalities[capability];
+    const target = offered(capability) ? preset.modalities[capability] : undefined;
     if (target) {
       items.push({
         capability,
@@ -162,7 +180,7 @@ function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
   }
   // Modalities with no model concept (e.g. web search) do not disclose a model.
   for (const capability of ['asr', 'document', 'webSearch', 'webFetch'] as const) {
-    if (preset.modalities[capability]) items.push({ capability });
+    if (preset.modalities[capability] && offered(capability)) items.push({ capability });
   }
   return items;
 }
@@ -196,6 +214,31 @@ function modalityModels(preset: TokenPlanPreset, m: TokenPlanModality): string[]
   return [target.providerId];
 }
 
+/** This deployment's usage dashboard, loaded when opened. */
+function DeploymentUsage() {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="group border-t border-border/60 pt-4"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {t('settings.tokenPlan.deploymentUsage')}
+        <ChevronDown className="size-4 shrink-0 transition-transform motion-reduce:transition-none group-open:rotate-180" />
+      </summary>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+        {t('settings.tokenPlan.deploymentUsageNote')}
+      </p>
+      {open && (
+        <div className="mt-3">
+          <UsageDashboard />
+        </div>
+      )}
+    </details>
+  );
+}
+
 export function TokenPlanSettings({
   view,
   apply,
@@ -225,6 +268,8 @@ export function TokenPlanSettings({
   const [showKey, setShowKey] = useState(false);
   const [editingKey, setEditingKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** Bumped after each key save: the quota shown belongs to the key saved last. */
+  const [keySaves, setKeySaves] = useState(0);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   /** A connect waiting for the user to choose how to treat the slots it would replace. */
   const [pending, setPending] = useState<{
@@ -244,9 +289,16 @@ export function TokenPlanSettings({
   const providerOf = (preset: TokenPlanPreset) => planProvider(view, tokenPlanPresetId(preset.id));
   const isPresetEnabled = (preset: TokenPlanPreset): boolean => !!providerOf(preset);
 
-  // The modalities a preset declares, in display order — drives the tab bar.
+  // Whether a connected plan offers a modality: not one the account behind
+  // its key turned out not to have (the server leaves it out of the provider).
+  const offeredBy = (preset: TokenPlanPreset) => {
+    const provider = providerOf(preset);
+    return (m: TokenPlanModality) => !provider || !!provider.capabilities[MODALITY_CAPABILITY[m]];
+  };
+
+  // The modalities a plan offers, in display order — drives the tab bar.
   const presetModalities = (preset: TokenPlanPreset): TokenPlanModality[] =>
-    MODALITY_ORDER.filter((m) => preset.modalities[m]);
+    MODALITY_ORDER.filter((m) => preset.modalities[m] && offeredBy(preset)(m));
 
   const selectPreset = (preset: TokenPlanPreset) => {
     setSelectedId(preset.id);
@@ -292,6 +344,8 @@ export function TokenPlanSettings({
       if (result.status === 'partial' && result.message) {
         toast.warning(applyErrorText({ reason: result.reason ?? '', message: result.message }, t));
       }
+      // The key was saved: the quota shown must be the new key's.
+      setKeySaves((count) => count + 1);
       setApiKey('');
       setEditingKey(false);
       toast.success(t('settings.tokenPlan.saved'));
@@ -468,6 +522,9 @@ export function TokenPlanSettings({
               // Only the workspace's own plan can have its key updated or be disconnected.
               const own = provider?.source === 'workspace';
               const canConnect = !provider && !!presetOf(selected);
+              // A tab the plan no longer offers (its key's account lacks it) falls back to the first.
+              const tabs = presetModalities(selected);
+              const tab = tabs.includes(activeTab) ? activeTab : (tabs[0] ?? 'llm');
               return (
                 <>
                   {/* 头部一行：身份 + 状态 + 服务级动作（更新密钥 / 管理账号 / 更多） */}
@@ -638,7 +695,7 @@ export function TokenPlanSettings({
                       <p>{t(`${tp}.planNoteEditable`)}</p>
                     </div>
                     <dl className="mt-2 space-y-2 text-xs leading-5">
-                      {modelPlanItems(selected).map((item) => (
+                      {modelPlanItems(selected, offeredBy(selected)).map((item) => (
                         <div
                           key={`${item.capability}:${item.stageId ?? ''}`}
                           className="flex justify-between gap-4"
@@ -661,17 +718,22 @@ export function TokenPlanSettings({
                     </dl>
                   </details>
 
+                  {provider && own && provider.key?.set && (
+                    <PlanQuota key={`${provider.id}:${keySaves}`} providerId={provider.id} />
+                  )}
+
                   {/* Capabilities: a display-only tab list of the models the plan
-                      offers per modality. No status, no probing — selection and
-                      enable/disable happen on the generation bar. */}
+                      offers per modality — less what the account behind a
+                      connected key lacks. Selection and enable/disable happen
+                      on the generation bar. */}
                   <div className="space-y-3">
                     <div className="text-sm font-medium">{t(`${tp}.capabilities`)}</div>
 
                     {/* Tab bar (segmented control) */}
                     <div className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5">
-                      {presetModalities(selected).map((m) => {
+                      {tabs.map((m) => {
                         const Icon = MODALITY_ICONS[m];
-                        const isActive = activeTab === m;
+                        const isActive = tab === m;
                         return (
                           <button
                             key={m}
@@ -694,11 +756,11 @@ export function TokenPlanSettings({
 
                     {/* Tab content: static model list for the active modality */}
                     {(() => {
-                      const models = modalityModels(selected, activeTab);
+                      const models = modalityModels(selected, tab);
                       return (
                         <div className="space-y-2 rounded-md border p-3">
                           <div className="flex items-center justify-between gap-3 text-xs">
-                            <span className="font-medium">{t(MODALITY_LABEL_KEYS[activeTab])}</span>
+                            <span className="font-medium">{t(MODALITY_LABEL_KEYS[tab])}</span>
                             <span className="text-muted-foreground">
                               {t(`${tp}.modelsCount`, { n: models.length })}
                             </span>
@@ -722,6 +784,10 @@ export function TokenPlanSettings({
                       {t(`${tp}.offeredNote`)}
                     </p>
                   </div>
+
+                  {/* This deployment's usage, every service together (the
+                      usage log does not tell plans or workspaces apart). */}
+                  {enabled && <DeploymentUsage />}
                 </>
               );
             })()}

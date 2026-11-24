@@ -338,3 +338,44 @@ describe('Token Plan → mainland and international sides', () => {
     expect(panel.config()?.slots?.webFetch).toBe('kimi-intl');
   });
 });
+
+it("asks the plan's quota again after a new key is saved for it", async () => {
+  i18n.locale = 'en-US';
+  const fetchMock = vi.fn(
+    async (_url: RequestInfo | URL) =>
+      new Response(JSON.stringify({ quota: { status: 'unavailable' } }), { status: 200 }),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  try {
+    const connected = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'minimax-intl',
+      preset: 'minimax-intl',
+      apiKey: 'sk-cp-old-key-0001',
+    });
+    mountPanel(connected);
+    await flush();
+    const quotaCalls = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('plan-status')).length;
+    const before = quotaCalls();
+    expect(before).toBeGreaterThan(0);
+    act(() => byText('settings.tokenPlan.updateKey').click());
+    const input = document.body.querySelector<HTMLInputElement>(
+      '[aria-label="settings.tokenPlan.apiKey"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'sk-cp-new-key-0002',
+      );
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => {
+      (document.body.querySelector('form') as HTMLFormElement).requestSubmit();
+    });
+    await flush();
+    expect(quotaCalls()).toBeGreaterThan(before);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

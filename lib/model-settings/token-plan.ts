@@ -79,12 +79,17 @@ export function slotsHeldByHigherPlans(view: ModelSettingsView, presetId: string
   const rank = PLAN_PRESET_ORDER.indexOf(presetId);
   if (rank <= 0) return held;
   for (const higher of PLAN_PRESET_ORDER.slice(0, rank)) {
-    const connected = view.providers.some(
+    const connected = view.providers.find(
       (provider) => provider.preset === higher && usable(provider),
     );
     if (!connected) continue;
     const preset = view.presets.find((entry) => entry.id === higher);
-    for (const slot of Object.keys(preset?.recommended ?? {})) held.add(slot);
+    for (const slot of Object.keys(preset?.recommended ?? {})) {
+      // A capability the plan's account does not have holds nothing.
+      const capability = view.slots.find((entry) => entry.slot === slot)?.capability;
+      if (capability && !connected.capabilities[capability]) continue;
+      held.add(slot);
+    }
   }
   return held;
 }
@@ -203,12 +208,17 @@ export function tokenPlanAssignments(
   view: ModelSettingsView,
   recommendation: Record<string, string>,
   mode: PlanApplyMode,
+  /**
+   * The slots the overwrite was agreed for (those recommended when the user
+   * was asked); a slot recommended only since keeps its current choice.
+   */
+  agreed?: ReadonlySet<string>,
 ): Record<string, SlotAssignment> {
   const set: Record<string, SlotAssignment> = {};
   for (const slot of view.slots) {
     const recommended = recommendation[slot.slot];
     if (recommended === undefined || holds(slot, recommended)) continue;
-    if (currentChoice(slot) && mode === 'keep') continue;
+    if (currentChoice(slot) && (mode === 'keep' || (agreed && !agreed.has(slot.slot)))) continue;
     const { fallback } = assignmentRefs(slot.assignment);
     const change = slotChange(slot, {
       kind: 'model',
@@ -247,10 +257,16 @@ async function assignRecommendation(
   preset: PresetView,
   providerId: string,
   mode: PlanApplyMode,
+  agreed: ReadonlySet<string>,
 ): Promise<Exclude<FirstRunResult, { status: 'failed' }>> {
   const provider = view.providers.find((entry) => entry.id === providerId);
   if (!provider) return { status: 'partial', providerId, reason: 'not-added' };
-  const set = tokenPlanAssignments(view, tokenPlanRecommendation(view, preset, provider), mode);
+  const set = tokenPlanAssignments(
+    view,
+    tokenPlanRecommendation(view, preset, provider),
+    mode,
+    agreed,
+  );
   const assigned = Object.keys(set);
   if (!assigned.length) {
     return isLlmConfigured(view)
@@ -284,17 +300,23 @@ export async function connectTokenPlan(
 ): Promise<FirstRunResult> {
   const existing = workspacePlanProvider(view, preset.id);
   const providerId = existing?.id ?? newProviderId(view, preset.id);
+  // What the user was asked about (see connectConflicts): a capability the new
+  // key turns out to have that the old one lacked must not overwrite a choice
+  // nobody agreed to replace.
+  const agreed = new Set(
+    Object.keys(tokenPlanRecommendation(view, preset, prospectivePlanProvider(view, preset))),
+  );
   const change: ModelSettingsChange = existing
     ? { kind: 'provider', id: existing.id, preset: existing.preset, apiKey }
     : providerChange(providerId, { ...emptyDraft(preset.id), apiKey }, preset);
   const added = await apply(change, view);
-  if (added.ok) return assignRecommendation(apply, added.view, preset, providerId, mode);
+  if (added.ok) return assignRecommendation(apply, added.view, preset, providerId, mode, agreed);
   if (added.reason === 'unconfirmed') {
     if (!added.view) {
       return { status: 'partial', providerId, reason: 'unconfirmed-add', message: added.message };
     }
     if (added.view.providers.some((provider) => provider.id === providerId)) {
-      return assignRecommendation(apply, added.view, preset, providerId, mode);
+      return assignRecommendation(apply, added.view, preset, providerId, mode, agreed);
     }
   }
   return { status: 'failed', reason: added.reason, message: added.message };

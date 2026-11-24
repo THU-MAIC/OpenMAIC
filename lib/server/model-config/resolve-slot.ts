@@ -225,7 +225,9 @@ function resolveTarget(
         : `${at}: the provider has an unknown preset`,
     );
   }
-  const target = preset.capabilities[capability];
+  const target = provider.unsupportedCapabilities?.includes(capability)
+    ? undefined
+    : preset.capabilities[capability];
   if (!target) {
     throw new SlotResolutionError(
       `${at}: the provider (preset "${preset.id}") does not offer ${capability}`,
