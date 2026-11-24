@@ -271,10 +271,6 @@
         "audioMetadata": "Audio (nur Metadaten)"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "Diese Interaktion konnte nicht ausgeführt werden",
-      "dismiss": "Schließen"
-    },
     "interactiveMoreBelow": "Weiter unten geht es weiter",
     "tabs": {
       "lecture": "Notizen",

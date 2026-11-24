@@ -271,10 +271,6 @@
         "audioMetadata": "Аудио (только метаданные)"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "Этот интерактив не удалось запустить",
-      "dismiss": "Закрыть"
-    },
     "interactiveMoreBelow": "Ниже есть ещё",
     "tabs": {
       "lecture": "Заметки",

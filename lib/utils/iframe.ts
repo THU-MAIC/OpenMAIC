@@ -54,20 +54,16 @@ const STORAGE_SHIM = `<script data-iframe-storage-shim>
  * reference to a CDN lib that failed to load, …) → the script aborts and the
  * widget renders blank. The sandboxed (null-origin) iframe can't be read by the
  * editor, but it CAN `postMessage` out: this forwards `window.onerror`, unhandled
- * rejections and `console.error` to the parent, which stores them per scene and
- * feeds them to the editor agent — so it can diagnose a blank page instead of
- * guessing. Only touches `window.*` so it stays sandbox-safe and unit-testable.
+ * rejections and `console.error` to the parent for diagnostic consumers such
+ * as video export.
  *
- * The most important errors (a `JSON.parse` that aborts setup) fire SYNCHRONOUSLY
- * while srcDoc parses — potentially before the parent has subscribed its `message`
- * listener (which it installs from a passive effect after inserting the iframe).
- * To avoid losing exactly the errors this feature exists to surface, every post is
- * also buffered, and the shim re-emits the whole buffer when the parent sends a
- * `{ __maicErrorReplayRequest: true }` message once its listener is ready. The
- * parent dedups, so the live + replayed copies collapse to one.
+ * Errors can fire synchronously while srcDoc parses, before a parent's message
+ * listener is ready. The shim buffers each report and replays the buffer when
+ * it receives `{ __maicErrorReplayRequest: true }`. Consumers can receive both
+ * the live report and its replay.
  *
- * Known-benign browser notices (the ResizeObserver loop notice) are dropped, so
- * a working widget does not get the "failed to run" banner.
+ * Known-benign browser notices such as the ResizeObserver loop notice are
+ * filtered out.
  */
 const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 (function () {

@@ -271,10 +271,6 @@
         "audioMetadata": "오디오 (메타데이터만)"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "이 인터랙티브를 실행하지 못했습니다",
-      "dismiss": "닫기"
-    },
     "interactiveMoreBelow": "아래에 내용이 더 있습니다",
     "tabs": {
       "lecture": "노트",

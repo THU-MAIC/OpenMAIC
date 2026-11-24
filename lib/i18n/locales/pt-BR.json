@@ -271,10 +271,6 @@
         "audioMetadata": "Áudio (somente metadados)"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "Esta atividade interativa não pôde ser executada",
-      "dismiss": "Fechar"
-    },
     "interactiveMoreBelow": "Há mais abaixo",
     "tabs": {
       "lecture": "Anotações",

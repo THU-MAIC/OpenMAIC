@@ -271,10 +271,6 @@
         "audioMetadata": "صوت (بيانات وصفية فقط)"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "تعذر تشغيل هذا التفاعل",
-      "dismiss": "إغلاق"
-    },
     "interactiveMoreBelow": "يوجد المزيد بالأسفل",
     "tabs": {
       "lecture": "الملاحظات",
