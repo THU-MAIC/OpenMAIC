@@ -945,7 +945,8 @@
         "emptyChatHint": "{{name}}とのプロジェクトガイドはここから始まります。",
         "continueError": "続行できません：{{error}}",
         "stillTyping": "まだ入力中",
-        "handoverHint": "「次のステージへ進む」を押してください。"
+        "handoverHint": "「次のステージへ進む」を押してください。",
+        "emptyOutput": "今回は新しい応答がありませんでした。もう一度お試しください。"
       },
       "scene": {
         "expand": "展開",

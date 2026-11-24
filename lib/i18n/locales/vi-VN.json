@@ -945,7 +945,8 @@
         "emptyChatHint": "Hành trình đi qua dự án cùng {{name}} sẽ bắt đầu tại đây.",
         "continueError": "Không tiếp tục được: {{error}}",
         "stillTyping": "Vẫn đang nhập",
-        "handoverHint": "Bấm \"Sang giai đoạn tiếp theo\" để đi tiếp."
+        "handoverHint": "Bấm \"Sang giai đoạn tiếp theo\" để đi tiếp.",
+        "emptyOutput": "Lần này không có phản hồi mới. Vui lòng thử lại."
       },
       "scene": {
         "expand": "Mở rộng",

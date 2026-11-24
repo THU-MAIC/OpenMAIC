@@ -945,7 +945,8 @@
         "emptyChatHint": "Votre parcours de projet avec {{name}} commencera ici.",
         "continueError": "Impossible de continuer : {{error}}",
         "stillTyping": "Toujours en train d’écrire",
-        "handoverHint": "Cliquez sur « Passer à l’étape suivante » pour poursuivre."
+        "handoverHint": "Cliquez sur « Passer à l’étape suivante » pour poursuivre.",
+        "emptyOutput": "Aucune nouvelle réponse n'est arrivée cette fois. Veuillez réessayer."
       },
       "scene": {
         "expand": "Déplier",

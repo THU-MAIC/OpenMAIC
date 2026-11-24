@@ -47,6 +47,7 @@ import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import { trackSubmissionScore } from '@/lib/pbl/v2/operations/runtime/dynamic-signals';
 import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/kernel/progress';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import { applyInstructorEvent } from './apply-instructor-event';
 
@@ -106,6 +107,7 @@ export function useInstructorStream(
   onProjectChange: (next: PBLProjectV2) => void,
   onStreamingChange?: (active: boolean) => void,
 ): UseInstructorStream {
+  const { t } = useI18n();
   const [streaming, setStreaming] = useState(false);
   const [status, setStatus] = useState<StreamStatus>('idle');
   const [draftAssistant, setDraftAssistant] = useState('');
@@ -244,7 +246,7 @@ export function useInstructorStream(
         ok = false;
         const msg = e instanceof Error ? e.message : String(e);
         log.warn(`Stream chain failed at phase=${lastPhase}: ${msg}`);
-        setError(msg);
+        setError(localizeStreamError(e, t));
       } finally {
         runningRef.current = false;
         setStreaming(false);
@@ -257,7 +259,7 @@ export function useInstructorStream(
 
       return { ok, project: workingProject };
     },
-    [streaming, onProjectChange, onStreamingChange],
+    [streaming, onProjectChange, onStreamingChange, t],
   );
 
   const clearError = useCallback(() => setError(null), []);
@@ -347,10 +349,36 @@ export async function runOneStream(args: OneStreamArgs): Promise<PBLProjectV2> {
   }
 }
 
+/** A stream `error` frame, carrying its machine code so the UI can localize
+ *  the notice instead of rendering whatever string the server happened to
+ *  send. */
+export class PBLStreamError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'PBLStreamError';
+  }
+}
+
 export function assertNotStreamError(event: PBLSSEEvent): void {
   if (event.type === 'error') {
-    throw new Error(`${event.code}: ${event.message}`);
+    throw new PBLStreamError(event.code, `${event.code}: ${event.message}`);
   }
+}
+
+/** Turn a stream failure into what the learner reads. Codes the UI knows are
+ *  translated (the server message is locale-neutral diagnostic text); anything
+ *  else keeps its original message. */
+export function localizeStreamError(
+  error: unknown,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (error instanceof PBLStreamError && error.code === 'EMPTY_LLM_OUTPUT') {
+    return t('pbl.v2.chat.emptyOutput');
+  }
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**

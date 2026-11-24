@@ -945,7 +945,8 @@
         "emptyChatHint": "Your project walkthrough with {{name}} will start here.",
         "continueError": "Unable to continue: {{error}}",
         "stillTyping": "Still typing",
-        "handoverHint": "Click \"Continue to Next Stage\" to keep going."
+        "handoverHint": "Click \"Continue to Next Stage\" to keep going.",
+        "emptyOutput": "이번에는 새 응답이 없었습니다. 다시 시도해 주세요."
       },
       "scene": {
         "expand": "Expand",
