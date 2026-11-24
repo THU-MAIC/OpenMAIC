@@ -79,15 +79,15 @@ export function slotsHeldByHigherPlans(view: ModelSettingsView, presetId: string
   const rank = PLAN_PRESET_ORDER.indexOf(presetId);
   if (rank <= 0) return held;
   for (const higher of PLAN_PRESET_ORDER.slice(0, rank)) {
-    const connected = view.providers.find(
+    const connected = view.providers.filter(
       (provider) => provider.preset === higher && usable(provider),
     );
-    if (!connected) continue;
+    if (!connected.length) continue;
     const preset = view.presets.find((entry) => entry.id === higher);
     for (const slot of Object.keys(preset?.recommended ?? {})) {
-      // A capability the plan's account does not have holds nothing.
+      // A capability none of the plan's accounts has holds nothing.
       const capability = view.slots.find((entry) => entry.slot === slot)?.capability;
-      if (capability && !connected.capabilities[capability]) continue;
+      if (capability && !connected.some((provider) => provider.capabilities[capability])) continue;
       held.add(slot);
     }
   }

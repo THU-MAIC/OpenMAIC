@@ -169,6 +169,20 @@ describe('token plan recommendation', () => {
     expect(recommendationIn(viewOf(config), 'volcengine-ark')).toHaveProperty('video');
   });
 
+  it('a higher-priority plan holds a capability while any of its accounts has it', async () => {
+    // The deployment serves MiniMax on a full tier; the workspace's own MiniMax is a Go plan.
+    deployment({ providers: { operator: { preset: 'minimax', apiKey: 'sk-operator-full' } } });
+    const config = await applyModelSettingsChange(null, addPlan('minimax'), {
+      unsupportedCapabilities: ['video'],
+    });
+    const view = viewOf(await applyModelSettingsChange(config, addPlan('volcengine-ark')));
+    expect(view.providers.filter((provider) => provider.preset === 'minimax')).toHaveLength(2);
+    // Whichever comes first, video stays held by MiniMax.
+    expect(slotsHeldByHigherPlans(view, 'volcengine-ark')).toContain('video');
+    const reversed = { ...view, providers: [...view.providers].reverse() };
+    expect(slotsHeldByHigherPlans(reversed, 'volcengine-ark')).toContain('video');
+  });
+
   it('a new key with a capability the old one lacked keeps the choice made for it', async () => {
     // Connected on a tier without video, with video turned off.
     let config = await applyModelSettingsChange(null, addPlan('minimax-intl'), {
