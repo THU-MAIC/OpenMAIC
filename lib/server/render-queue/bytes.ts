@@ -53,7 +53,14 @@ export async function assertRenderQueueStorage(
   if (typeof base.withPrefix !== 'function') throw new RenderQueueStorageUnavailableError();
 }
 
-/** The namespace of one kind of a job's parts. */
+/**
+ * The namespace of one kind of a job's parts.
+ *
+ * Parts are deleted only from the PostgreSQL byte layer, where every export
+ * would otherwise grow the database. An object store (`writesOutsideRegistryDatabase`)
+ * keeps them: its `delete` here does nothing, and the bucket's own lifecycle
+ * decides. Pass a transaction as `queryable` to delete PostgreSQL parts in it.
+ */
 export async function renderJobBytes(
   queryable: Parameters<typeof resolveConfiguredAssetByteStore>[0],
   jobId: string,
@@ -61,7 +68,13 @@ export async function renderJobBytes(
 ): Promise<AssetByteStore> {
   const base = await resolveConfiguredAssetByteStore(queryable);
   if (typeof base.withPrefix !== 'function') throw new RenderQueueStorageUnavailableError();
-  return base.withPrefix(`render-jobs/${jobId}/${kind}/`);
+  const store = base.withPrefix(`render-jobs/${jobId}/${kind}/`);
+  if (base.writesOutsideRegistryDatabase !== true) return store;
+  return {
+    write: (hash, bytes, options) => store.write(hash, bytes, options),
+    read: (hash) => store.read(hash),
+    delete: async () => undefined,
+  };
 }
 
 function hashOf(bytes: Uint8Array): Hash {
@@ -96,13 +109,17 @@ async function* parts(source: AsyncIterable<Uint8Array>, maximum: number) {
  * Store `source` as parts. Each part is recorded (`record`, which answers
  * false once the job may no longer write) BEFORE its bytes are written, so a
  * write that fails or is interrupted still leaves a part cleanup can find.
- * Answers the total size, or null when `record` refused a part.
+ * After the write, `listed` checks the part is still on the job: if cleanup
+ * took the job's parts meanwhile, it deleted them before these bytes landed,
+ * so the writer deletes them itself. Answers the total size, or null when the
+ * job stopped taking parts.
  */
 export async function writeRenderParts(
   store: AssetByteStore,
   source: AsyncIterable<Uint8Array>,
   maximum: number,
   record: (part: RenderJobPart, totalBytes: number) => Promise<boolean>,
+  listed: (part: RenderJobPart) => Promise<boolean>,
 ): Promise<number | null> {
   let total = 0;
   for await (const chunk of parts(source, maximum)) {
@@ -110,6 +127,10 @@ export async function writeRenderParts(
     const part = { hash: hashOf(chunk), bytes: chunk.byteLength };
     if (!(await record(part, total))) return null;
     await store.write(part.hash as Hash, chunk);
+    if (!(await listed(part))) {
+      await store.delete(part.hash as Hash);
+      return null;
+    }
   }
   return total;
 }

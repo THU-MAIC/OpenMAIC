@@ -40,8 +40,6 @@ export interface RenderQueueConfig {
   lostAfterMs: number;
   /** Dispatches of one job before a lost job fails instead of being sent again. */
   maxAttempts: number;
-  /** Jobs one app process dispatches or follows at once. */
-  maxConcurrent: number;
   /** How long a finished job, and its MP4, stays downloadable. */
   retentionMs: number;
   /** An upload not finished for this long is abandoned and its parts deleted. */
@@ -60,7 +58,6 @@ export function renderQueueConfig(): RenderQueueConfig {
     leaseTtlMs: 120_000,
     lostAfterMs: 60_000,
     maxAttempts: 2,
-    maxConcurrent: 8,
     retentionMs: 30 * 60 * 1000,
     staleUploadMs: 10 * 60 * 1000,
     sweepIntervalMs: 60_000,

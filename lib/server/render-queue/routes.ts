@@ -25,6 +25,7 @@ import {
   countUnfinishedRenderJobs,
   createRenderJob,
   failRenderUpload,
+  isRenderPartListed,
   queueRenderJob,
   readRenderJob,
   recordRenderInputPart,
@@ -92,6 +93,7 @@ export async function submitQueuedRender(
       capped.stream as unknown as AsyncIterable<Uint8Array>,
       maxBytes,
       (part, totalBytes) => recordRenderInputPart(jobId, part, totalBytes),
+      (part) => isRenderPartListed(jobId, 'input', part),
     );
     if (total === 0) {
       await failRenderUpload(jobId, 'upload_empty', 'Empty export archive');

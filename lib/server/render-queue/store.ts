@@ -365,6 +365,33 @@ export async function heartbeatRenderJob(
   return result.rows[0]?.status ?? null;
 }
 
+/**
+ * Count a dispatch before the archive is sent: a worker that dies after the
+ * render service accepted the job but before it recorded the id leaves the
+ * job queued, and the next dispatch counts as another attempt. Answers the
+ * attempt this dispatch is, or null once the lease or job is gone.
+ */
+export async function beginRenderJobDispatch(lease: RenderJobLease): Promise<number | null> {
+  const { pool } = await renderQueuePersistence();
+  const result = await pool.query<{ attempt: number }>(
+    `UPDATE render_jobs SET attempt = attempt + 1, updated_at = now()
+      WHERE ${HELD} AND status = 'queued' RETURNING attempt`,
+    leaseParams(lease),
+  );
+  return result.rows[0]?.attempt ?? null;
+}
+
+/** The render service certainly did not take the job: the dispatch does not count. */
+export async function undoRenderJobDispatch(lease: RenderJobLease): Promise<void> {
+  const { pool } = await renderQueuePersistence();
+  await pool.query(
+    `UPDATE render_jobs
+        SET attempt = greatest(attempt - 1, 0), lease_worker_id = NULL, lease_heartbeat_at = NULL
+      WHERE ${HELD} AND status = 'queued'`,
+    leaseParams(lease),
+  );
+}
+
 /** The render service accepted the queued job under `renderJobId`. */
 export async function markRenderJobDispatched(
   lease: RenderJobLease,
@@ -375,7 +402,7 @@ export async function markRenderJobDispatched(
   const result = await pool.query(
     `UPDATE render_jobs
         SET status = 'dispatched', render_target = $4, render_job_id = $5,
-            attempt = attempt + 1, progress = 0, stage = NULL, updated_at = now()
+            progress = 0, stage = NULL, updated_at = now()
       WHERE ${HELD} AND status = 'queued'`,
     [...leaseParams(lease), target, renderJobId],
   );
@@ -492,64 +519,101 @@ export async function succeedRenderJob(lease: RenderJobLease): Promise<boolean> 
   return (result.rowCount ?? 0) > 0;
 }
 
-/** A job whose stored bytes are to be deleted, and whether its row goes with them. */
-export interface RenderJobCleanup {
+/** A job's stored parts the sweep has taken over: nothing records or reads them any more. */
+export interface TakenRenderParts {
   id: string;
-  parts: { input: RenderJobPart[]; output: RenderJobPart[] };
-  /** Delete the row too (it expired), rather than only its input. */
-  expired: boolean;
+  input: RenderJobPart[];
+  output: RenderJobPart[];
 }
 
 /**
- * What the sweep deletes: every part and the row of a job finished more than
- * `retentionMs` ago or abandoned mid-upload more than `staleUploadMs` ago, and
- * the input of a job that finished (after a minute, so an upload still
- * writing when it was cancelled has stopped).
+ * End the uploads that stopped writing `staleUploadMs` ago: they fail, so an
+ * upload that resumes can record no more parts, and their parts are taken
+ * with the other finished jobs' inputs.
  */
-export async function listRenderJobCleanups(options: {
-  retentionMs: number;
-  staleUploadMs: number;
-  limit?: number;
-}): Promise<RenderJobCleanup[]> {
-  const { pool } = await renderQueuePersistence();
-  const result = await pool.query<{
+export async function abandonStaleRenderUploads(
+  tx: Queryable,
+  staleUploadMs: number,
+): Promise<void> {
+  await tx.query(
+    `UPDATE render_jobs
+        SET status = 'failed', error_code = 'upload_abandoned',
+            error_message = 'The upload did not complete', finished_at = now(), updated_at = now()
+      WHERE status = 'uploading'
+        AND updated_at < now() - make_interval(secs => $1::double precision / 1000)`,
+    [staleUploadMs],
+  );
+}
+
+/**
+ * Take the input parts of finished jobs: the row forgets them in the same
+ * statement that returns them, so only the caller deletes their bytes, and a
+ * late upload write finds its part no longer listed.
+ */
+export async function takeFinishedRenderInputs(
+  tx: Queryable,
+  limit = 50,
+): Promise<TakenRenderParts[]> {
+  const result = await tx.query<{ id: string; input_parts: RenderJobPart[] }>(
+    `WITH taken AS (
+       SELECT id, input_parts FROM render_jobs
+        WHERE finished_at IS NOT NULL AND input_parts <> '[]'::jsonb
+        ORDER BY finished_at LIMIT $1 FOR UPDATE SKIP LOCKED)
+     UPDATE render_jobs r SET input_parts = '[]'::jsonb FROM taken
+      WHERE r.id = taken.id
+     RETURNING taken.id, taken.input_parts`,
+    [limit],
+  );
+  return result.rows.map((row) => ({ id: row.id, input: row.input_parts, output: [] }));
+}
+
+/**
+ * Take the jobs finished `retentionMs` ago: their rows are deleted in the
+ * statement that returns their parts.
+ */
+export async function takeExpiredRenderJobs(
+  tx: Queryable,
+  retentionMs: number,
+  limit = 50,
+): Promise<TakenRenderParts[]> {
+  const result = await tx.query<{
     id: string;
     input_parts: RenderJobPart[];
     output_parts: RenderJobPart[];
-    expired: boolean;
   }>(
-    `SELECT id, input_parts, output_parts,
-            (finished_at < now() - make_interval(secs => $1::double precision / 1000)
-             OR (status = 'uploading'
-                 AND updated_at < now() - make_interval(secs => $2::double precision / 1000))
-            ) AS expired
-       FROM render_jobs
-      WHERE (finished_at IS NOT NULL
-             AND (finished_at < now() - make_interval(secs => $1::double precision / 1000)
-                  OR (input_parts <> '[]'::jsonb AND updated_at < now() - interval '1 minute')))
-         OR (status = 'uploading'
-             AND updated_at < now() - make_interval(secs => $2::double precision / 1000))
-      ORDER BY updated_at LIMIT $3`,
-    [options.retentionMs, options.staleUploadMs, options.limit ?? 50],
+    `WITH taken AS (
+       SELECT id FROM render_jobs
+        WHERE finished_at < now() - make_interval(secs => $1::double precision / 1000)
+        ORDER BY finished_at LIMIT $2 FOR UPDATE SKIP LOCKED)
+     DELETE FROM render_jobs r USING taken WHERE r.id = taken.id
+     RETURNING r.id, r.input_parts, r.output_parts`,
+    [retentionMs, limit],
   );
   return result.rows.map((row) => ({
     id: row.id,
-    parts: { input: row.input_parts, output: row.expired ? row.output_parts : [] },
-    expired: row.expired,
+    input: row.input_parts,
+    output: row.output_parts,
   }));
 }
 
-/** After the sweep deleted a job's bytes: drop the row, or forget its input parts. */
-export async function finishRenderJobCleanup(cleanup: RenderJobCleanup): Promise<void> {
+/**
+ * Whether a part just written is still listed on its job. Read under the
+ * row's share lock, so it waits for a sweep that is taking the parts: a part
+ * no longer listed was taken (or its job deleted), and its writer deletes the
+ * bytes it wrote after the sweep's own delete.
+ */
+export async function isRenderPartListed(
+  jobId: string,
+  kind: 'input' | 'output',
+  part: RenderJobPart,
+): Promise<boolean> {
   const { pool } = await renderQueuePersistence();
-  if (cleanup.expired) {
-    await pool.query('DELETE FROM render_jobs WHERE id = $1', [cleanup.id]);
-    return;
-  }
-  await pool.query(
-    `UPDATE render_jobs SET input_parts = '[]'::jsonb WHERE id = $1 AND finished_at IS NOT NULL`,
-    [cleanup.id],
+  const column = kind === 'input' ? 'input_parts' : 'output_parts';
+  const result = await pool.query<{ listed: boolean }>(
+    `SELECT ${column} @> $2::jsonb AS listed FROM render_jobs WHERE id = $1 FOR SHARE`,
+    [jobId, JSON.stringify([{ hash: part.hash }])],
   );
+  return result.rows[0]?.listed === true;
 }
 
 export type { Queryable };

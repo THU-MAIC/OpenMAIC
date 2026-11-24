@@ -37,11 +37,12 @@ import { renderQueueConfig, type RenderQueueConfig } from './config';
 import {
   claimRenderJob,
   failRenderJob,
+  abandonStaleRenderUploads,
+  beginRenderJobDispatch,
   finishRenderJobCancel,
-  finishRenderJobCleanup,
   hasQueuedRenderJob,
   heartbeatRenderJob,
-  listRenderJobCleanups,
+  isRenderPartListed,
   markRenderJobDispatched,
   readRenderJobOutputParts,
   recordRenderOutputPart,
@@ -50,6 +51,9 @@ import {
   requeueRenderJob,
   resetRenderJobOutput,
   succeedRenderJob,
+  takeExpiredRenderJobs,
+  takeFinishedRenderInputs,
+  undoRenderJobDispatch,
   type ClaimedRenderJob,
 } from './store';
 
@@ -60,8 +64,6 @@ const DISPATCH_TIMEOUT_MS = 300_000;
 const STATUS_TIMEOUT_MS = 15_000;
 /** Time to the download's response headers, not to its last byte. */
 const DOWNLOAD_HEADERS_TIMEOUT_MS = 30_000;
-/** No MP4 the render service produces comes near this. */
-const MAX_OUTPUT_BYTES = 4 * 1024 ** 3;
 
 const RUNNER_KEY = Symbol.for('openmaic.render-queue.runner');
 const runnerState = globalThis as typeof globalThis & {
@@ -139,10 +141,21 @@ async function dispatch(
   claim: ClaimedRenderJob,
   target: string,
   signal: AbortSignal,
-): Promise<{ outcome: Outcome; renderJobId?: string }> {
+  maxAttempts: number,
+): Promise<{ outcome: Outcome; renderJobId?: string; attempt?: number }> {
   const { job, lease } = claim;
   const { pool } = await renderQueuePersistence();
   const input = await renderJobBytes(pool, job.id, 'input');
+  // Counted before sending: an accepted job whose id was never recorded (the
+  // worker died in between) is sent again by the next worker, at most up to
+  // the attempt limit.
+  const attempt = await beginRenderJobDispatch(lease);
+  if (attempt === null) return { outcome: 'lease_lost' };
+  if (attempt > maxAttempts) {
+    log.warn(`job ${job.id}: sent ${attempt - 1} times without a recorded result; failing`);
+    await failRenderJob(lease, 'render_lost', 'The render service lost the job');
+    return { outcome: 'failed' };
+  }
   let corrupt = false;
   let response: Response;
   try {
@@ -175,19 +188,19 @@ async function dispatch(
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!isRenderOwnerBoundResponse(response)) {
     log.warn(`job ${job.id}: render service must be upgraded before accepting jobs`);
-    await releaseRenderJob(lease);
+    await undoRenderJobDispatch(lease);
     return { outcome: 'dispatch_failed' };
   }
   if (response.status === 202 && typeof data.jobId === 'string') {
     if (await markRenderJobDispatched(lease, target, data.jobId)) {
-      return { outcome: 'dispatched', renderJobId: data.jobId };
+      return { outcome: 'dispatched', renderJobId: data.jobId, attempt };
     }
     // Cancelled (or taken over) while the archive was on its way.
     await cancelAtRender(target, data.jobId, job.ownerId);
     return { outcome: 'cancelled' };
   }
   if (response.status === 429 || response.status === 503) {
-    await releaseRenderJob(lease);
+    await undoRenderJobDispatch(lease);
     return { outcome: 'render_busy' };
   }
   // Anything else is this archive's answer (400, 413, or an error while the
@@ -199,13 +212,18 @@ async function dispatch(
   return { outcome: 'failed' };
 }
 
-/** Copy the finished MP4 into the job's output namespace; answers whether it is stored. */
+/**
+ * Copy the finished MP4 into the job's output namespace. `missing`: the render
+ * service no longer has it (404); `retry`: it did not answer usefully this
+ * time (a 5xx, an error mid-stream), so the next poll copies it again;
+ * `failed`: it never will (a redirect, which this mode does not follow).
+ */
 async function collect(
   claim: ClaimedRenderJob,
   target: string,
   renderJobId: string,
   signal: AbortSignal,
-): Promise<'stored' | 'missing' | 'refused'> {
+): Promise<'stored' | 'missing' | 'retry' | 'failed' | 'refused'> {
   const { job, lease } = claim;
   const { pool } = await renderQueuePersistence();
   const output = await renderJobBytes(pool, job.id, 'output');
@@ -231,20 +249,35 @@ async function collect(
       },
     );
     clearTimeout(headers);
-    // The bundled render service streams the file. A redirect (a host artifact
-    // store that hands out signed URLs) is not followed: it counts as missing.
-    if (!isRenderOwnerBoundResponse(response) || !response.ok || !response.body) {
+    if (!response.ok || !response.body || !isRenderOwnerBoundResponse(response)) {
       void response.body?.cancel().catch(() => undefined);
-      return 'missing';
+      // The bundled render service streams the file. A redirect (a host
+      // artifact store handing out signed URLs) is not followed.
+      if (response.status >= 300 && response.status < 400) {
+        await failRenderJob(
+          lease,
+          'render_output_redirect',
+          'The render service answered the download with a redirect, which is not supported',
+        );
+        return 'failed';
+      }
+      if (response.status === 404 && isRenderOwnerBoundResponse(response)) return 'missing';
+      return 'retry';
     }
     const total = await writeRenderParts(
       output,
       response.body as unknown as AsyncIterable<Uint8Array>,
-      MAX_OUTPUT_BYTES,
+      Number.POSITIVE_INFINITY,
       (part, totalBytes) => recordRenderOutputPart(lease, part, totalBytes),
+      (part) => isRenderPartListed(job.id, 'output', part),
     );
     if (total === null) return 'refused';
     return (await succeedRenderJob(lease)) ? 'stored' : 'refused';
+  } catch (error) {
+    if (signal.aborted) throw error;
+    // The parts this copy recorded are deleted by the next one.
+    log.warn(`job ${job.id}: copying the MP4 failed; retrying`, error);
+    return 'retry';
   } finally {
     clearTimeout(headers);
     signal.removeEventListener('abort', abort);
@@ -320,7 +353,7 @@ export async function runClaimedRenderJob(
       let sent: Awaited<ReturnType<typeof dispatch>> = { outcome: 'dispatch_failed' };
       dispatching = true;
       try {
-        sent = await dispatch(claim, options.target, signal);
+        sent = await dispatch(claim, options.target, signal, config.maxAttempts);
       } finally {
         dispatching = false;
         options.onDispatchSettled?.(sent.outcome === 'dispatched');
@@ -328,7 +361,7 @@ export async function runClaimedRenderJob(
       if (sent.outcome !== 'dispatched') return sent.outcome;
       target = options.target;
       renderJobId = sent.renderJobId!;
-      attempt += 1;
+      attempt = sent.attempt!;
       log.info(`job ${job.id}: dispatched (attempt ${attempt})`);
     } else {
       options.onDispatchSettled?.(true);
@@ -366,9 +399,8 @@ export async function runClaimedRenderJob(
         }
         continue;
       }
-      unreachableSince = null;
-
       const status = data.status;
+      if (status !== 'succeeded') unreachableSince = null;
       const current = await heartbeatRenderJob(lease, {
         running: status === 'running' || status === 'succeeded',
         progress: typeof data.progress === 'number' ? data.progress : 0,
@@ -381,14 +413,21 @@ export async function runClaimedRenderJob(
         let stored: Awaited<ReturnType<typeof collect>>;
         try {
           stored = await collect(claim, target, renderJobId, signal);
-        } catch (error) {
-          if (signal.aborted) break;
-          // The parts this copy recorded are deleted by the next one.
-          log.warn(`job ${job.id}: copying the MP4 failed; retrying`, error);
-          continue;
+        } catch {
+          break; // aborted
         }
         if (stored === 'stored') return 'succeeded';
+        if (stored === 'failed') return 'failed';
         if (stored === 'missing') return await lost(claim, attempt, config);
+        if (stored === 'retry') {
+          // Bounded like an unreachable service: the same finished job is
+          // copied again on the next poll, until lostAfterMs.
+          unreachableSince ??= Date.now();
+          if (Date.now() - unreachableSince >= config.lostAfterMs) {
+            return await lost(claim, attempt, config);
+          }
+          continue;
+        }
         break;
       }
       if (status === 'failed' || status === 'cancelled') {
@@ -408,32 +447,31 @@ export async function runClaimedRenderJob(
   }
 }
 
-/** Delete what finished and abandoned jobs stored, and drop the expired rows. */
+/**
+ * End abandoned uploads, delete finished jobs' inputs, and drop expired jobs
+ * with their MP4s. Each batch is taken by the statement that changes the rows
+ * (so a resumed upload or late write cannot race it) and its PostgreSQL parts
+ * are deleted in the same transaction; an object store keeps its parts (see
+ * `renderJobBytes`). Answers how many jobs it took.
+ */
 export async function sweepRenderJobs(config: RenderQueueConfig): Promise<number> {
-  const { pool } = await renderQueuePersistence();
-  const cleanups = await listRenderJobCleanups(config);
-  let swept = 0;
-  for (const cleanup of cleanups) {
-    try {
-      if (cleanup.parts.input.length > 0) {
-        await deleteRenderParts(
-          await renderJobBytes(pool, cleanup.id, 'input'),
-          cleanup.parts.input,
-        );
+  const { withTransaction } = await renderQueuePersistence();
+  return withTransaction(async (tx) => {
+    await abandonStaleRenderUploads(tx, config.staleUploadMs);
+    const taken = [
+      ...(await takeFinishedRenderInputs(tx)),
+      ...(await takeExpiredRenderJobs(tx, config.retentionMs)),
+    ];
+    for (const job of taken) {
+      if (job.input.length > 0) {
+        await deleteRenderParts(await renderJobBytes(tx, job.id, 'input'), job.input);
       }
-      if (cleanup.parts.output.length > 0) {
-        await deleteRenderParts(
-          await renderJobBytes(pool, cleanup.id, 'output'),
-          cleanup.parts.output,
-        );
+      if (job.output.length > 0) {
+        await deleteRenderParts(await renderJobBytes(tx, job.id, 'output'), job.output);
       }
-      await finishRenderJobCleanup(cleanup);
-      swept += 1;
-    } catch (error) {
-      log.warn(`job ${cleanup.id}: cleanup failed; retried on the next sweep`, error);
     }
-  }
-  return swept;
+    return taken.length;
+  });
 }
 
 export function startRenderQueueRunner(
@@ -486,7 +524,7 @@ export function startRenderQueueRunner(
       do {
         rescan = false;
         const config = configNow();
-        while (running.size < config.maxConcurrent && !stopping) {
+        while (!stopping) {
           // Jobs at the render service nobody follows, and cancellations, first.
           let claim = await claimRenderJob(workerId, {
             leaseTtlMs: config.leaseTtlMs,
@@ -536,8 +574,7 @@ export function startRenderQueueRunner(
   void scan();
   log.info(
     `render queue runner ${workerId} started (scan=${config.scanIntervalMs}ms, ` +
-      `poll=${config.pollIntervalMs}ms, leaseTtl=${config.leaseTtlMs}ms, ` +
-      `maxConcurrent=${config.maxConcurrent})`,
+      `poll=${config.pollIntervalMs}ms, leaseTtl=${config.leaseTtlMs}ms)`,
   );
 
   const handle: RenderQueueRunnerHandle = {
