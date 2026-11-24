@@ -1405,3 +1405,49 @@ it.each([
     ).toMatchObject({ status: 'failed', display: { seq: null } });
   },
 );
+
+it.each([
+  ['Which boundary will you check?', 'Where would you check the handoff?', true],
+  ['Look closely at the boundary.', 'Which boundary will you check?', false],
+])(
+  'reconciles a legacy board review with its own speaking slot: %s',
+  (spoken, registered, replace) => {
+    const review = {
+      type: 'toolCall',
+      name: 'request_skill_review',
+      id: 'review',
+      arguments: { response: registered },
+    };
+    const events = [
+      event(1, 'user_message', { pblOpening: true }),
+      event(2, 'message_end', message('Follow the two arrows.')),
+      event(3, 'tool_execution_end', { toolCallId: 'board', toolName: 'wb_draw_text' }),
+      event(4, 'message_end', {
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'The second arrow carries the result.\n\n' + spoken },
+            review,
+          ],
+        },
+      }),
+      event(5, 'tool_execution_start', {
+        toolCallId: 'review',
+        toolName: review.name,
+        args: review.arguments,
+      }),
+      event(6, 'pbl_learner_handoff', {
+        question: registered,
+        toolCallId: 'review',
+        canonical: true,
+      }),
+    ];
+    const parts = projectConversation(events, 'planner', false).flatMap((e) => e.parts);
+    expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual([
+      'Follow the two arrows.',
+      'The second arrow carries the result.\n\n' + (replace ? registered : spoken),
+      ...(replace ? [] : [registered]),
+    ]);
+    expect(parts.filter((p) => p.kind === 'tool')).toHaveLength(2);
+  },
+);

@@ -63,6 +63,7 @@ const mocked = vi.hoisted(() => ({
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: mocked.pool,
+    runtimeStore: { listSessions: async () => [], getSession: async () => undefined },
     assetStore: new PgAssetStore(mocked.pool as Pool, {
       withTransaction: async (fn) => {
         const db = await (mocked.pool as Pool).connect();
@@ -5155,6 +5156,66 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     });
   });
 
+  it.each(['spoken', 'tool-only', 'continuation', 'restated', 'new question'] as const)(
+    'registers one board review from %s delivery',
+    async (mode) => {
+      const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+      process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+      try {
+        const study = await freshStudy();
+        const { sessionId } = (await study.send('begin')) as { sessionId: string };
+        const worker = startAgentRunner();
+        await worker.stop();
+        const claim = await agents.claimNextSession(worker.workerId, process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+        const question = 'Ready to try the first example?';
+        const speech = 'The project connects a question to a reply.\n\n' + question;
+        const summary = 'Look at the highlighted return value.';
+        const receipt = {
+          type: 'tool-call',
+          toolName: 'request_skill_review',
+          toolCallId: 'record-review',
+          input:
+            mode === 'restated'
+              ? { question: 'Shall we start the first example now?' }
+              : mode === 'tool-only' || mode === 'new question'
+                ? { question }
+                : {},
+        };
+        const text = mode === 'new question' ? summary : speech;
+        mocked.responses =
+          mode === 'continuation'
+            ? [textResponse(speech), [receipt, modelFinish('tool-calls')]]
+            : [
+                [
+                  ...(mode === 'tool-only' ? [] : [{ type: 'text-delta', text }]),
+                  receipt,
+                  modelFinish('tool-calls'),
+                ],
+              ];
+        await runSession({ running: new Map(), shuttingDown: false }, claim!);
+        const session = await agents.getSession(sessionId);
+        expect(session?.status, session?.error ?? undefined).toBe('succeeded');
+        expect((await store.binding(sessionId))?.guided?.pending?.question).toBe(question);
+        const view = await learningView(principal, study.id, { passive: true });
+        const parts = view.conversation!.flatMap((entry) => entry.parts);
+        expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
+          mode === 'new question'
+            ? [summary, question]
+            : [mode === 'tool-only' ? question : speech],
+        );
+        expect(
+          parts.filter((p) => p.kind === 'tool' && p.name === 'request_skill_review'),
+        ).toHaveLength(1);
+      } finally {
+        if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+        else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
+      }
+    },
+  );
   it('rejects feedback for an unopened section instead of silently reopening the first lesson', async () => {
     const study = await freshStudy(),
       opening = (await study.send('begin')) as { sessionId: string };

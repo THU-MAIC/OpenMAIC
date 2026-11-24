@@ -199,8 +199,8 @@ describe('selective task emphasis and readable plans', () => {
       const input = fixture(index);
       const prompt = renderTeachingPrompt(input).systemPrompt;
       expect(prompt).toContain(learnerExpressionRules);
-      expect(prompt).toContain('不强制添加行动段');
-      expect(prompt).toContain('只提交一份完整回复');
+      expect(prompt).toContain('need no action paragraph');
+      expect(prompt).toContain('submit one complete reply');
       if (input.stage.kind === 'check') {
         expect(prompt).toContain('do not require any chat answer');
         expect(prompt).toContain(

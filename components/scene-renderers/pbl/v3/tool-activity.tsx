@@ -28,7 +28,14 @@ const names = {
 };
 
 /** Same salient-field order and 80-character collapsed preview as OpenPBL. */
-function inputSummary(input: unknown): string {
+function inputSummary(part: ToolPart): string {
+  if (
+    part.action === 'review' ||
+    part.name === 'respond_to_learner' ||
+    part.name === 'request_learner_help'
+  )
+    return '';
+  const input = part.args;
   let value = input;
   if (input && typeof input === 'object') {
     const record = input as Record<string, unknown>;
@@ -50,7 +57,7 @@ function ToolCard({ part, stack, t }: { part: ToolPart; stack: string; t: Transl
   const hasProgress =
     !!progress && !!(progress.text || progress.percent !== undefined || progressData);
   const expandable = part.args != null || !!output || !!display || hasProgress;
-  const summary = inputSummary(part.args);
+  const summary = inputSummary(part);
   // Reuse host labels/icons only; its content-generation disclosure rules do not apply here.
   const { icon: Icon, label } = presentTool(
     { key: part.id, kind: 'tool', text: '', toolName: part.name ?? names[part.action] },
@@ -172,7 +179,7 @@ function ToolCard({ part, stack, t }: { part: ToolPart; stack: string; t: Transl
 export function ToolActivity({ tools, t }: { tools: ToolPart[]; t: Translator }) {
   if (!tools.length) return null;
   if (tools.length === 1) return <ToolCard part={tools[0]} stack="single" t={t} />;
-  const completed = tools.every((part) => part.status === 'succeeded');
+  const completed = tools.every((part) => part.status !== 'running');
   return <ToolActivityGroup key={String(completed)} tools={tools} t={t} completed={completed} />;
 }
 
@@ -186,9 +193,10 @@ function ToolActivityGroup({
   completed: boolean;
 }) {
   const [open, setOpen] = useState(!completed);
-  const status = tools.some((tool) => tool.status === 'running')
+  const failed = tools.filter((tool) => tool.status === 'failed').length;
+  const status = !completed
     ? 'running'
-    : tools.some((tool) => tool.status === 'failed')
+    : failed
       ? 'error'
       : tools.some((tool) => tool.status === 'interrupted')
         ? 'cancelled'
@@ -210,9 +218,13 @@ function ToolActivityGroup({
         </span>
         <span className={styles.toolGroup.meta}>
           ·{' '}
-          {t(
-            status === 'cancelled' ? 'pblV3.toolDetails.stopped' : `workbench.tool.group.${status}`,
-          )}
+          {status === 'error'
+            ? t('workbench.tool.group.failed', { count: failed })
+            : status === 'cancelled'
+              ? t('pblV3.toolDetails.stopped')
+              : status === 'running'
+                ? t('pblV3.activity.running')
+                : t('workbench.tool.group.done')}
         </span>
         <span className={styles.toolGroup.car} aria-hidden="true">
           <ChevronRight size={13} />
@@ -269,7 +281,7 @@ export function BubbleTools({ tools, t }: { tools: readonly ToolPart[]; t: Trans
         const name = drawn?.op
           ? `${t('whiteboard.title')} · ${t(`pblV3.board.ops.${drawn.op}`)}`
           : label;
-        const summary = drawn ? (drawn.label ?? '') : inputSummary(part.args);
+        const summary = drawn ? (drawn.label ?? '') : inputSummary(part);
         const running = part.status === 'running';
         return (
           <li

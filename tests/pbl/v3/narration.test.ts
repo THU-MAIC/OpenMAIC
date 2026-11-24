@@ -123,7 +123,7 @@ it('keeps what the role said between board calls beside the recorded closing', (
     'e',
     'question-1',
   ]);
-  // Speech the recorded reply repeats is the echo it always was.
+  // The spoken introduction stays before the board action; only the new question follows it.
   const [echoed] = deduplicateHandoffs([
     entry([
       text('a', 'Start with the overview.', { messageId: 1 }),
@@ -133,9 +133,9 @@ it('keeps what the role said between board calls beside the recorded closing', (
       }),
     ]),
   ]);
-  expect(echoed.parts.filter((part) => part.kind === 'text').map((part) => part.id)).toEqual([
-    'question-1',
-  ]);
+  expect(
+    narrationSteps(echoed).map((step) => (step.kind === 'say' ? step.text : step.kind)),
+  ).toEqual(['Start with the overview.', 'board', 'Which step would you try first?']);
 });
 
 it('maps a reply onto bubbles: each piece of text with the tool calls that follow it', () => {

@@ -2135,6 +2135,7 @@ async function executeSession(
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
       emit(event.type, event);
       if (event.type === 'message_end') {
+        teaching?.observeReviewSpeech?.(event.message);
         // A tool call becomes pending as soon as its assistant frame is
         // emitted, so an abort can queue its receipt even while that frame is
         // still waiting on the ordered write chain. A result stops being
@@ -2391,6 +2392,14 @@ async function executeSession(
             }),
         });
         adoptPreload(repair, false);
+        if (teaching?.observeReviewSpeech) {
+          // A resumed review can still record a question spoken before the worker stopped.
+          // Only the latest learner input owns this closing.
+          const start = agent.state.messages.findLastIndex((message) => message.role === 'user');
+          if (start >= 0)
+            for (const message of agent.state.messages.slice(start))
+              teaching.observeReviewSpeech(message);
+        }
         const filePreload =
           teaching?.preloadMessages(agent.state.messages, {
             api: driver.piModel.api,

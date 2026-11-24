@@ -67,7 +67,12 @@ import {
 } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
-import { LEARNER_HANDOFF_EVENT, reviewResponse, supportTurnSequences } from './review-question';
+import {
+  LEARNER_HANDOFF_EVENT,
+  reviewResponse,
+  spokenReviewClosing,
+  supportTurnSequences,
+} from './review-question';
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -84,6 +89,7 @@ export async function teachingRunnerConfig(input: {
   const bound = binding;
   // With the whiteboard on, the reply is what the role says beside it; the lesson is on the board.
   const boardTeaching = pblWhiteboardEnabled() && pblWhiteboardTeachingRole(bound.role);
+  const spokenReview = boardTeaching ? spokenReviewClosing() : undefined;
   const row = await store.get(bound.study_id, input.ownerId),
     project = projectFor(row),
     stage = stageFor(row);
@@ -300,7 +306,7 @@ export async function teachingRunnerConfig(input: {
                     if (
                       name === 'request_learner_help' ||
                       name === 'respond_to_learner' ||
-                      (name === 'request_skill_review' && review.state.pending?.displayText)
+                      (name === 'request_skill_review' && review.state.pending)
                     ) {
                       // Publish the learner-facing handoff atomically with its turn receipt.
                       const sequence = await store
@@ -313,8 +319,10 @@ export async function teachingRunnerConfig(input: {
                             ...(name === 'request_skill_review'
                               ? {
                                   runId: review.state.pending!.runId,
-                                  question: review.state.pending!.displayText,
-                                  canonical: true,
+                                  question:
+                                    review.state.pending!.displayText ??
+                                    review.state.pending!.question,
+                                  canonical: !boardTeaching,
                                 }
                               : {
                                   ...review.state.handoff!,
@@ -751,33 +759,51 @@ export async function teachingRunnerConfig(input: {
       ),
       tool(
         'request_skill_review',
-        'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
-        Type.Object({
-          response: Type.String({
-            minLength: 1,
-            description: boardTeaching
-              ? 'How you close the turn, nothing more: at most one plain sentence that sums up, then ONE closing question or invitation in its own final paragraph. You already gave the explanation as ordinary spoken text between your whiteboard calls, and the welcome, lesson and file guidance are on the whiteboard; none of that is repeated here: no headings, lists, tables or code. Write the question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question.'
-              : 'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
-          }),
-          approval: Type.Optional(Type.Boolean()),
-        }),
-        async (current, p, _callId, signal) => {
-          if (typeof p.response !== 'string')
+        boardTeaching
+          ? 'Record the closing question or invitation you just spoke and wait for the learner. Write it once, in its own final paragraph of ordinary text in the message calling this tool. The host records that paragraph verbatim. If the preceding stop or cue_user already delivered it, call this tool alone. For a tool-only question with no spoken closing, put that one question in question instead. Set approval only for an explicit request to approve the current artifact.'
+          : 'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
+        boardTeaching
+          ? Type.Object({
+              question: Type.Optional(
+                Type.String({
+                  minLength: 1,
+                  description:
+                    'Only for a tool-only closing that has not been spoken. Omit when recording spoken words.',
+                }),
+              ),
+              approval: Type.Optional(Type.Boolean()),
+            })
+          : Type.Object({
+              response: Type.String({
+                minLength: 1,
+                description:
+                  'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
+              }),
+              approval: Type.Optional(Type.Boolean()),
+            }),
+        async (current, p, callId, signal) => {
+          const delivery = spokenReview
+            ? spokenReview.forCall(callId, 'question' in p ? p.question : undefined)
+            : 'response' in p
+              ? p.response
+              : undefined;
+          if (typeof delivery !== 'string')
             throw sandboxInvalid(
-              'Use response for the complete reply including its one closing question; do not send separate explanation/question fields.',
+              boardTeaching
+                ? 'No spoken closing is available for this call. Ask the learner the intended question in the final paragraph of the message calling request_skill_review.'
+                : 'Use response for the complete reply including its one closing question; do not send separate explanation/question fields.',
             );
-          const { response, question } = reviewResponse(p.response);
+          const { response, question } = reviewResponse(delivery);
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
           const approval =
             artifactApprovalRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          review.checkpoint(question, hash, approval, response);
+          review.checkpoint(question, hash, approval, boardTeaching ? undefined : response);
           return {
             value: {
               question,
-              response,
-              canonical: true,
+              ...(boardTeaching ? {} : { response, canonical: true }),
               waitForStudent: true,
             },
           };
@@ -1102,6 +1128,7 @@ export async function teachingRunnerConfig(input: {
   const historyWindow: TeachingHistoryWindow = {
     stageKey: bound.stage_key,
     initialContext,
+    spokenReview: boardTeaching,
     studentTurns: bound.feedback_seq,
     automaticEntry: latest?.pblOpening === true,
     ...(stage.kind === 'produce' && stage.writes === 'plan' && planText !== undefined
@@ -1125,6 +1152,7 @@ export async function teachingRunnerConfig(input: {
       review.state.welcome === 'pending'
         ? { mode: 'disabled' }
         : { mode: 'enabled', effort: 'low', level: 'low' },
+    observeReviewSpeech: spokenReview?.observe,
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
     needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
@@ -1321,7 +1349,11 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. ' +
+    (window.spokenReview
+      ? 'For a delivered teaching question, call request_skill_review without text to record the existing closing question.'
+      : 'For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question.') +
+    ' Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
   window.continuationInstruction = instruction;
   return true;
 }

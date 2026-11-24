@@ -303,6 +303,50 @@ test('keeps the preview footer reachable while the companion conversation follow
   await expect.poll(async () => (await win.boundingBox())?.height).toBe(moved.height);
 });
 
+test('folds adjacent failed tools after the final call settles and keeps the errors inspectable', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  const read = (id: string, status: 'failed' | 'running') => ({
+    kind: 'tool' as const,
+    id,
+    action: 'read' as const,
+    status,
+    args: { path: id },
+    result: 'Could not read ' + id,
+  });
+  const first = read('a.txt', 'failed'),
+    second = read('b.txt', 'running');
+  fixture.view.conversation = [
+    { id: 'inspection', speaker: 'coder', status: 'running', parts: [first, second] },
+  ];
+  const publish = async () => {
+    fixture.view.activitySequence++;
+    await fixture.publish();
+  };
+  await publish();
+  const group = page.getByTestId('workbench-tool-group');
+  await expect(group).toHaveAttribute('data-open', 'true');
+  second.status = 'failed';
+  await publish();
+  await expect(group).toHaveAttribute('data-open', 'false');
+  const header = group.getByRole('button', { name: '2 tool calls · 2 failed' });
+  await header.click();
+  await group.getByRole('button', { name: /a.txt/ }).click();
+  await expect(group.getByText('Could not read a.txt')).toBeVisible();
+  await publish();
+  await expect(group).toHaveAttribute('data-open', 'true');
+  fixture.view.conversation[0]!.parts = [
+    first,
+    { id: 'note', kind: 'text', text: 'Inspect the second path.' },
+    second,
+  ];
+  await publish();
+  await expect(group).toHaveCount(0);
+  await expect(page.getByTestId('workbench-tool-card')).toHaveCount(2);
+});
+
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();
 

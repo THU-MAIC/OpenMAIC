@@ -1,4 +1,5 @@
 import 'server-only';
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
@@ -12,6 +13,51 @@ export function reviewResponse(response: string): { response: string; question: 
     .at(-1)!
     .trim();
   return { response: text, question };
+}
+
+/** A board review records the question the learner just heard. Only this assistant
+ * frame, a suggested-replies call, or a plain stop awaiting a receipt can supply it. */
+export function spokenReviewClosing() {
+  let pending: string | undefined;
+  let current: string | undefined;
+  let calls: string[] = [];
+  return {
+    observe(message: AgentMessage) {
+      if (message.role === 'toolResult') return;
+      calls = [];
+      current = undefined;
+      if (
+        message.role !== 'assistant' ||
+        message.stopReason === 'error' ||
+        message.stopReason === 'aborted'
+      ) {
+        pending = undefined;
+        return;
+      }
+      const tools = message.content.filter((part) => part.type === 'toolCall');
+      calls = tools.filter((tool) => tool.name === 'request_skill_review').map((tool) => tool.id);
+      if (!calls.length && tools.some((tool) => tool.name !== 'cue_user')) {
+        pending = undefined;
+        return;
+      }
+      const spoken = message.content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n\n')
+        .trim();
+      if (spoken) {
+        current = reviewResponse(spoken).question;
+        pending = current;
+      }
+    },
+    forCall(id: string, standalone?: string) {
+      if (!calls.includes(id)) return standalone;
+      // A tool-only question is a fresh delivery. An introductory statement can also
+      // precede it. If the model already asked in this frame, record what was heard.
+      if (standalone && (!current || !/[?？][*_`"'”’）)\s]*$/u.test(current))) return standalone;
+      return pending ?? standalone;
+    },
+  };
 }
 
 /** Support-only inputs stay in history but cannot become later understanding/approval evidence. */

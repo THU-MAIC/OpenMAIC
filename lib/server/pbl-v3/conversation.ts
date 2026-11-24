@@ -302,6 +302,12 @@ export function projectConversation(
       }
       messageId ??= event.id;
       const content = Array.isArray(message.content) ? message.content : [];
+      const reviewCall = content.find(
+        (block) => block?.type === 'toolCall' && block.name === 'request_skill_review',
+      );
+      const closingIndex = reviewCall
+        ? content.findLastIndex((block) => block?.type === 'text')
+        : -1;
       for (const [index, raw] of content.entries()) {
         const block = record(raw);
         if (block.type !== 'text' && block.type !== 'thinking') continue;
@@ -328,6 +334,8 @@ export function projectConversation(
           if (typeof timing.startedAt === 'number') part.startedAt = timing.startedAt;
           if (typeof timing.endedAt === 'number') part.endedAt = timing.endedAt;
         }
+        if (part.kind === 'text' && index === closingIndex && typeof reviewCall?.id === 'string')
+          part.reviewReceiptId = `question-${event.attempt}-${reviewCall.id}`;
         part.text = text;
         part.streaming =
           event.type !== 'message_end' && (part.kind !== 'thinking' || part.endedAt === undefined);

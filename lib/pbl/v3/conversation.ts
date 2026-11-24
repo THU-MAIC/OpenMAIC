@@ -82,6 +82,8 @@ export interface LearningConversationEntry {
         text: string;
         streaming?: boolean;
         canonical?: true;
+        /** The legacy review receipt requested in the very same assistant message. */
+        reviewReceiptId?: string;
       }
     | {
         kind: 'thinking';
@@ -253,32 +255,82 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
     ),
   );
   // At a whiteboard the role speaks between its board calls and records only the closing in
-  // the review tool. That speech is the explanation, not an echo: it goes only when the
-  // recorded reply repeats it.
-  const spoken = new Set(
-    entries.flatMap((entry) =>
-      entry.parts.some((part) => part.kind === 'tool' && part.action === 'board')
-        ? entry.parts.filter((part) => part.kind === 'text' && !part.canonical)
-        : [],
-    ),
+  // the review tool. Keep the teaching steps at their original positions.
+  const boardTurns = new Set(
+    entries
+      .filter(
+        (entry) =>
+          entry.inputId !== undefined &&
+          entry.parts.some((part) => part.kind === 'tool' && part.action === 'board'),
+      )
+      .map((entry) => `${conversationScope(entry)}:${entry.inputId}`),
   );
-  const recorded = replies.filter((reply) => reply.canonical);
-  const duplicates = new Set<LearningConversationEntry['parts'][number]>(
-    [...handoffEchoes(replies)]
+  const spoken = new Set(
+    replies
       .filter(
         (reply) =>
-          !spoken.has(reply.part) ||
-          recorded.some(
-            (committed) =>
-              committed.scope === reply.scope &&
-              committed.inputId === reply.inputId &&
-              committed.text.includes(reply.text),
-          ),
+          !reply.handoff &&
+          reply.inputId !== undefined &&
+          boardTurns.has(`${reply.scope}:${reply.inputId}`),
       )
       .map((reply) => reply.part),
   );
+  const recorded = replies.filter((reply) => reply.canonical);
+  const duplicates = new Set<LearningConversationEntry['parts'][number]>();
+  const revised = new Map<LearningConversationEntry['parts'][number], string>();
+  const boardReceipts = new Set<(typeof replies)[number]>();
+  for (const receipt of recorded) {
+    if (receipt.inputId === undefined) continue;
+    const speech = replies.filter(
+      (reply) =>
+        spoken.has(reply.part) &&
+        reply.scope === receipt.scope &&
+        reply.inputId === receipt.inputId &&
+        !reply.handoff,
+    );
+    if (!speech.length) continue;
+    boardReceipts.add(receipt);
+    // Keep the original stream position when a recovery receipt copies already spoken words.
+    if (speech.some((reply) => reply.text.trimEnd().endsWith(receipt.text.trim()))) {
+      duplicates.add(receipt.part);
+      continue;
+    }
+    // Older board agents could author a closing question twice in a single tool-call frame.
+    // Preserve the explanation, with the registered question in its original speaking slot.
+    let remaining = receipt.text.trim();
+    for (const reply of speech) {
+      const prefix = reply.text.trim();
+      if (prefix && remaining.startsWith(prefix + '\n'))
+        remaining = remaining.slice(prefix.length).trimStart();
+    }
+    if (remaining !== receipt.text.trim()) {
+      if (remaining) revised.set(receipt.part, remaining);
+      else duplicates.add(receipt.part);
+    }
+    const source = speech.find((reply) => reply.part.reviewReceiptId === receipt.part.id);
+    if (!source) continue;
+    const paragraphs = source.text.trimEnd().split(/\r?\n[ \t]*\r?\n/);
+    const last = paragraphs.at(-1)!;
+    const closing = receipt.text
+      .trim()
+      .split(/\r?\n[ \t]*\r?\n/)
+      .at(-1)!;
+    const asks = (text: string) => /[?？][*_`"'”’）)\s]*$/u.test(text);
+    if (paragraphs.length > 1 && asks(last) && asks(closing)) {
+      revised.set(source.part, source.text.trimEnd().slice(0, -last.length) + closing);
+      duplicates.add(receipt.part);
+    }
+  }
+  for (const echo of handoffEchoes(replies)) {
+    if (!spoken.has(echo.part) && !boardReceipts.has(echo)) duplicates.add(echo.part);
+  }
   const deduplicated = entries.flatMap((entry) => {
-    const parts = entry.parts.filter((part) => !duplicates.has(part));
+    const parts = entry.parts
+      .filter((part) => !duplicates.has(part))
+      .map((part) => {
+        const text = revised.get(part);
+        return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
+      });
     if (
       entry.parts.length &&
       !parts.length &&
