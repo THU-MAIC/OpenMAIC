@@ -1,6 +1,12 @@
 import sharp from 'sharp';
 
+/** Media keyframes, and the default for other derived images. */
 export const MAX_DERIVED_IMAGES = 100;
+/**
+ * Images kept from one document. Higher than for media: a long textbook has
+ * a few hundred figures, and derived images do not count as materials.
+ */
+export const MAX_DOCUMENT_IMAGES = 300;
 export const MAX_DERIVED_IMAGE_BYTES = 2 * 1024 * 1024;
 const DERIVED_IMAGE_ATTEMPTS = [
   { dimension: 2048, quality: 82 },
