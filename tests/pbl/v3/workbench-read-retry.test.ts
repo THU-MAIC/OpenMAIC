@@ -159,7 +159,7 @@ it('offers a draft-preserving read retry without a discard confirmation or an au
 it('shows saving for a healthy dirty file during the debounce while another file retains a blocked draft', async () => {
   await blockedDraft();
   await act(async () => button('main.py').click());
-  expect(host.textContent).toContain('pblV3.ide.saved');
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
   expect(host.textContent).not.toContain('pblV3.ide.draftRetained');
   await edit('Healthy edit');
   expect(host.textContent).toContain('pblV3.ide.saving');
@@ -173,6 +173,24 @@ it('shows saving for a healthy dirty file during the debounce while another file
   expect(onSave.mock.calls[0]?.[0]).toBe('main.py');
   expect(host.textContent).toContain('pblV3.ide.saved');
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+});
+
+it('shows the active file save confirmation for 2.4 seconds while a background write is pending', async () => {
+  await fixture();
+  const background = Promise.withResolvers<{ hash: string }>();
+  onSave.mockResolvedValueOnce({ hash: 'b'.repeat(64) }).mockReturnValueOnce(background.promise);
+  await edit('Background plan');
+  await act(async () => button('main.py').click());
+  await edit('Active code');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(onSave.mock.calls.map(([path]) => path)).toEqual(['main.py', 'PLAN.md']);
+  expect(host.textContent).toContain('pblV3.ide.saved');
+  await act(async () => vi.advanceTimersByTimeAsync(2399));
+  expect(host.textContent).toContain('pblV3.ide.saved');
+  await act(async () => vi.advanceTimersByTimeAsync(1));
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
+  await act(async () => background.resolve({ hash: 'c'.repeat(64) }));
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
 });
 
 it('a healthy tab retains a visible retry action while another file pauses the save queue', async () => {
@@ -206,7 +224,7 @@ it('clears the paused queue indicator on a clean healthy tab without authorizing
   expect(host.textContent).toContain('pblV3.ide.saveFailed');
   await act(async () => button('pblV3.ide.saveFailed').click());
   expect(onSave).toHaveBeenCalledTimes(1);
-  expect(host.textContent).toContain('pblV3.ide.saved');
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
   expect(host.textContent).not.toContain('pblV3.ide.saveFailed');
   await act(async () => button('PLAN.md ●').click());
   expect(host.textContent).toContain('pblV3.ide.saveFailed');
@@ -214,4 +232,20 @@ it('clears the paused queue indicator on a clean healthy tab without authorizing
   expect(onSave).toHaveBeenCalledTimes(2);
   expect(onSave.mock.calls[1]![3]).toBe(request);
   expect(host.textContent).not.toContain('pblV3.ide.saveFailed');
+});
+
+it('loads the updated file after discarding a draft without showing a save confirmation', async () => {
+  await fixture();
+  await edit('Unsent plan draft');
+  vi.mocked(fetch).mockResolvedValueOnce(
+    Response.json({ text: 'Updated by the tutor', hash: 'c'.repeat(64) }),
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[aria-label="pblV3.workbench.discard"]')!.click(),
+  );
+  expect(window.confirm).toHaveBeenCalledTimes(1);
+  expect(host.querySelector('textarea')!.value).toBe('Updated by the tutor');
+  await act(async () => vi.advanceTimersByTimeAsync(750));
+  expect(onSave).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain('pblV3.ide.saved');
 });

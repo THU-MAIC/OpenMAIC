@@ -22,7 +22,8 @@
     "waiting": "처리 중",
     "emptyTitle": "새 대화를 시작하세요",
     "emptyHint": "원하는 변경을 설명하거나 @ 로 교실을 지정해 주세요",
-    "copyReply": "Copy Agent reply"
+    "copyReply": "답변 복사",
+    "copied": "복사됨"
   },
   "question": {
     "waiting": "답변을 기다리고 있습니다",

@@ -50,13 +50,14 @@ export function FileExplorer({
         >
           <FileCode2 size={14} className="shrink-0 text-sky-500" />
           <span className="truncate">{name}</span>
-          {dirty(path) ? (
-            <span aria-label={t('pblV3.workbench.unsaved')}>●</span>
-          ) : (
-            !editable(path) && (
-              <LockKeyhole size={11} className="ml-auto shrink-0 text-muted-foreground" />
-            )
-          )}
+          {/* One trailing slot for the dirty dot and the read-only lock, so the row's right edge never moves. */}
+          <span className="ml-auto flex w-3 shrink-0 justify-end">
+            {dirty(path) ? (
+              <span aria-label={t('pblV3.workbench.unsaved')}>●</span>
+            ) : !editable(path) ? (
+              <LockKeyhole size={11} className="text-muted-foreground" />
+            ) : null}
+          </span>
         </button>
       );
     });
