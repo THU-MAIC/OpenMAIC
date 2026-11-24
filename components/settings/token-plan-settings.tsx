@@ -370,117 +370,171 @@ export function TokenPlanSettings({
     return `${model} · ${provider}`;
   };
 
+  const planRow = (preset: TokenPlanPreset, index: number) => {
+    const provider = providerOf(preset);
+    const active = selected?.id === preset.id;
+    const missing = missingLabels(provider);
+    return (
+      <button
+        type="button"
+        role="tab"
+        key={preset.id}
+        aria-selected={active}
+        tabIndex={active ? 0 : -1}
+        ref={(node) => {
+          if (node) tabRefs.current.set(preset.id, node);
+          else tabRefs.current.delete(preset.id);
+        }}
+        onClick={() => selectPreset(preset)}
+        onKeyDown={(event) => {
+          const delta =
+            event.key === 'ArrowRight' || event.key === 'ArrowDown'
+              ? 1
+              : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                ? -1
+                : 0;
+          if (!delta && event.key !== 'Home' && event.key !== 'End') return;
+          event.preventDefault();
+          const next =
+            plans[
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? plans.length - 1
+                  : (index + delta + plans.length) % plans.length
+            ];
+          selectPreset(next);
+          tabRefs.current.get(next.id)?.focus();
+        }}
+        className={cn(
+          'flex w-full min-w-0 flex-col gap-1 rounded-lg border px-3 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring',
+          active ? 'border-border bg-background shadow-sm' : 'border-transparent hover:bg-muted/60',
+        )}
+      >
+        <span className="flex w-full min-w-0 items-center gap-3">
+          <PresetLogo preset={preset} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium leading-5">
+              {presetDisplayName(preset)}
+            </span>
+            <span className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+              <span
+                className={cn(
+                  'size-1.5 shrink-0 rounded-full',
+                  provider ? 'bg-emerald-500' : 'bg-muted-foreground/40',
+                )}
+                aria-hidden="true"
+              />
+              <span className="truncate">
+                {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
+              </span>
+            </span>
+          </span>
+          <span className="flex shrink-0 flex-col items-end text-xs leading-5">
+            {provider ? (
+              <>
+                <span className="text-[11px] text-muted-foreground">#{rankOf(preset)}</span>
+                <span className="font-medium">
+                  {provider.source === 'workspace' && provider.key?.set ? (
+                    <QuotaSummary entry={quotas.entries[provider.id]} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">{t(`${tp}.setUp`)}</span>
+            )}
+          </span>
+        </span>
+        {/* The tier lacks a capability: said under the whole row, not squeezed beside the quota. */}
+        {missing.length > 0 && (
+          <span className="flex items-start gap-1 pl-11 text-xs leading-4 text-amber-600 dark:text-amber-400">
+            <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+            <span>
+              {t(`${tp}.missingCapability`, { name: missing.join(t(`${tp}.listSeparator`)) })}
+            </span>
+          </span>
+        )}
+      </button>
+    );
+  };
+
   return (
-    <div className="flex max-w-4xl flex-col gap-6">
-      <div>
-        <h3 className="text-sm font-semibold mb-1">{t(`${tp}.title`)}</h3>
-        <p className="text-xs text-muted-foreground">{t(`${tp}.desc`)}</p>
+    <div className="flex flex-col gap-4">
+      {/* Title and the region switch: each side lists the plans its accounts can use. */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold">{t(`${tp}.title`)}</h3>
+          <p className="text-xs text-muted-foreground">{t(`${tp}.subtitle`)}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            id="token-plan-region-label"
+            className="flex items-center gap-1 text-xs text-muted-foreground"
+          >
+            <Globe className="size-3.5" aria-hidden="true" />
+            {t(`${tp}.region`)}
+          </span>
+          <div
+            className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
+            role="group"
+            aria-labelledby="token-plan-region-label"
+          >
+            {REGIONS.map((side) => (
+              <button
+                key={side}
+                type="button"
+                aria-pressed={region === side}
+                onClick={() => selectRegion(side)}
+                className={cn(
+                  'rounded-md px-3 py-1 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
+                  region === side
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground/80',
+                )}
+              >
+                {t(`settings.providerLinks.${side}`)}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* 1:2 比例分割：服务商列表不需要太宽，右侧密钥/能力详情是主体 */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <div className="flex min-w-0 flex-col gap-3">
-          {/* Region: filters the plan list below to the plans that region's accounts can use. */}
-          <div className="space-y-1.5">
-            <div
-              id="token-plan-region-label"
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-            >
-              <Globe className="size-3.5" aria-hidden="true" />
-              {t(`${tp}.region`)}
+      <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        {/* Plans: connected in priority order, then the ones to set up. */}
+        <div
+          className="flex min-w-0 flex-col gap-4 rounded-xl bg-muted/30 p-2"
+          role="tablist"
+          aria-label={t(`${tp}.selectPlan`)}
+          aria-orientation="vertical"
+        >
+          {connected.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span>{t(`${tp}.connectedCount`, { n: connected.length })}</span>
+                <span className="normal-case tracking-normal">{t(`${tp}.priorityOrder`)}</span>
+              </div>
+              {connected.map((plan) => planRow(plan, plans.indexOf(plan)))}
             </div>
-            <div
-              className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
-              role="group"
-              aria-labelledby="token-plan-region-label"
-            >
-              {REGIONS.map((side) => (
-                <button
-                  key={side}
-                  type="button"
-                  aria-pressed={region === side}
-                  onClick={() => selectRegion(side)}
-                  className={cn(
-                    'flex-1 rounded-md py-1.5 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
-                    region === side
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground/80',
-                  )}
-                >
-                  {t(`settings.providerLinks.${side}`)}
-                </button>
-              ))}
+          )}
+          {available.length > 0 && (
+            <div className="space-y-1">
+              <div className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t(`${tp}.availableCount`, { n: available.length })}
+              </div>
+              {available.map((plan) => planRow(plan, plans.indexOf(plan)))}
             </div>
-            <p className="text-xs text-muted-foreground">
+          )}
+          <div className="mt-auto space-y-1 border-t px-2 pt-3 text-[11px] leading-4 text-muted-foreground">
+            <p>
               {t(
                 region === 'domestic'
                   ? `${tp}.regionHintDomestic`
                   : `${tp}.regionHintInternational`,
               )}
             </p>
-          </div>
-
-          {/* Service tablist (collapses to a 3-column grid on small screens) */}
-          <div
-            className="grid grid-cols-3 content-start gap-1 rounded-xl bg-muted/40 p-1 sm:grid-cols-1 sm:gap-1 sm:bg-transparent sm:p-0"
-            role="tablist"
-            aria-label={t(`${tp}.selectPlan`)}
-          >
-            {plans.map((preset, index) => {
-              const enabled = isPresetEnabled(preset);
-              const active = selected?.id === preset.id;
-              return (
-                <button
-                  type="button"
-                  role="tab"
-                  key={preset.id}
-                  aria-selected={active}
-                  tabIndex={active ? 0 : -1}
-                  ref={(node) => {
-                    if (node) tabRefs.current.set(preset.id, node);
-                    else tabRefs.current.delete(preset.id);
-                  }}
-                  onClick={() => selectPreset(preset)}
-                  onKeyDown={(event) => {
-                    const delta =
-                      event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                        ? 1
-                        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                          ? -1
-                          : 0;
-                    if (!delta && event.key !== 'Home' && event.key !== 'End') return;
-                    event.preventDefault();
-                    const next =
-                      plans[
-                        event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? plans.length - 1
-                            : (index + delta + plans.length) % plans.length
-                      ];
-                    selectPreset(next);
-                    tabRefs.current.get(next.id)?.focus();
-                  }}
-                  className={cn(
-                    'flex min-w-0 flex-col items-center gap-2 rounded-lg px-2 py-3 text-center outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:flex-row sm:gap-3 sm:px-3 sm:py-2 sm:text-left',
-                    active
-                      ? 'bg-background text-foreground shadow-sm sm:bg-accent/70 sm:shadow-none'
-                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                  )}
-                >
-                  <PresetLogo preset={preset} />
-                  <span className="min-w-0">
-                    <span className="block break-words text-sm font-medium leading-5">
-                      {presetDisplayName(preset)}
-                    </span>
-                    <span className="flex items-center justify-center gap-1 text-xs leading-5 text-muted-foreground sm:justify-start">
-                      {enabled && <Check className="size-3 shrink-0" />}
-                      {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+            <p>{t(`${tp}.priorityNote`)}</p>
           </div>
         </div>
 
