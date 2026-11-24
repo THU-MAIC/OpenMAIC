@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
 import { prepareInteractiveHtmlScenes } from '@/lib/video-export-app/prepare-interactive-html';
 import type { Scene } from '@/lib/types/stage';
 
@@ -37,6 +38,48 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html).toContain("connect-src 'none'");
     expect(html).toContain("worker-src 'none'");
     expect(html).toContain('interactive-worker-disabled');
+  });
+
+  it('packages scenes and verifies raw Pyodide archives on a plain HTTP origin', async () => {
+    const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+    const bytes = new Uint8Array([0, 128, 255, 25, 52]);
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const lockfile = JSON.stringify({
+      packages: {
+        numpy: { file_name: 'numpy.whl', depends: [], sha256: hash },
+        corrupt: { file_name: 'corrupt.whl', depends: [], sha256: '0'.repeat(64) },
+      },
+    });
+    const plain = { ...scene('<output>ordinary scene</output>'), id: 'plain' };
+    const python = scene(`<script src="${root}pyodide.js"></script>
+      <script>loadPyodide({packages: ['numpy', 'corrupt']});</script>`);
+    const random = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+    vi.stubGlobal('crypto', { getRandomValues: random });
+    try {
+      const prepared = await prepareInteractiveHtmlScenes([plain, python], {
+        baseUrl: 'http://192.0.2.10:3000',
+        fetcher: async (url) => ({
+          bytes: url.endsWith('.whl')
+            ? bytes
+            : new TextEncoder().encode(url.endsWith('/pyodide-lock.json') ? lockfile : '42'),
+          contentType: 'application/octet-stream',
+        }),
+      });
+      for (const widget of [plain, python]) {
+        const html = prepared.content(`interactive:${widget.id}`);
+        expect(prepared.html(widget)).toMatchObject({ present: true });
+        expect(prepared.html(widget)?.contentHash).toBe(
+          createHash('sha256').update(html!).digest('hex'),
+        );
+      }
+      const html = prepared.content('interactive:widget');
+      expect(html).toContain(
+        `numpy.whl":["application/octet-stream","${Buffer.from(bytes).toString('base64')}"]`,
+      );
+      expect(html).not.toContain('corrupt.whl');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps the doctype first when authored HTML omits an explicit head', async () => {

@@ -6,6 +6,7 @@
  */
 import type { Scene } from '@/lib/types/stage';
 import { createAssetFetcher, inlineHtmlAssets, type FetchAsset } from '@/lib/export/inline-assets';
+import { sha256BytesHex } from '@/lib/legacy-browser-import/digest';
 import { injectIntoDocumentHead } from '@/lib/utils/html-document';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 import type { InteractiveHtmlMeta, InteractiveHtmlSource } from '@/lib/video-export/deps';
@@ -222,12 +223,6 @@ function stripInvalidFontFallbacks(html: string): string {
   );
 }
 
-async function sha256(value: string): Promise<string> {
-  const bytes = new TextEncoder().encode(value);
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
 class PreparedInteractiveHtmlSetImpl implements PreparedInteractiveHtmlSet {
   constructor(
     private readonly bySceneId: ReadonlyMap<string, InteractiveHtmlMeta>,
@@ -306,7 +301,8 @@ export async function prepareInteractiveHtmlScenes(
           staticCaptureInjection(),
         ),
       );
-      const size = new TextEncoder().encode(packaged).byteLength;
+      const bytes = new TextEncoder().encode(packaged);
+      const size = bytes.byteLength;
       if (size > maxBytes) {
         bySceneId.set(scene.id, {
           id: assetId,
@@ -317,7 +313,7 @@ export async function prepareInteractiveHtmlScenes(
         continue;
       }
 
-      const contentHash = await sha256(packaged);
+      const contentHash = await sha256BytesHex(bytes);
       bySceneId.set(scene.id, { id: assetId, present: true, contentHash });
       byAssetId.set(assetId, packaged);
     } catch (error) {

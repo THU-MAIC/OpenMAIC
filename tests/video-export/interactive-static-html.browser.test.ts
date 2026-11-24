@@ -369,6 +369,69 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
     },
   );
 
+  it.each([false, true])(
+    'rejects a delayed micropip network install before capture (handled: %s)',
+    async (handled) => {
+      const page = await browser.newPage();
+      const remoteRequests: string[] = [];
+      await page.route('https://**', (route) => {
+        remoteRequests.push(route.request().url());
+        return route.abort();
+      });
+      try {
+        const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+        await load(
+          page,
+          await emittedFixture(
+            `<script src="${root}pyodide.js"></script><output>Loading</output>
+        <script>
+          async function init() {
+            const pyodide = await loadPyodide();
+            await pyodide.runPythonAsync("import micropip; await micropip.install('widget-package')");
+            document.querySelector('output').textContent = 'Ready';
+          }
+          ${handled ? "init().catch(() => { document.querySelector('output').textContent = 'Offline preview'; });" : 'init();'}
+        </script>`,
+            async (url) => ({
+              bytes: new TextEncoder().encode(
+                url.endsWith('/pyodide.js')
+                  ? `
+          window.loadPyodide = async () => ({
+            async runPythonAsync() {
+              await new Promise(resolve => setTimeout(resolve, 400));
+              await fetch(new Request('https://pypi.org/pypi/widget-package/json'));
+            }
+          });`
+                  : '42',
+              ),
+              contentType: 'application/octet-stream',
+            }),
+          ),
+        );
+        const host = page.locator('[data-interactive-static-host]');
+        await page
+          .locator(
+            '[data-interactive-static-state="frozen"], [data-interactive-static-state="fallback"]',
+          )
+          .waitFor({ state: 'attached' });
+        expect(await host.getAttribute('data-interactive-static-state')).toBe(
+          handled ? 'frozen' : 'fallback',
+        );
+        if (handled) {
+          const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+          expect(await child.locator('output').textContent()).toBe('Offline preview');
+        } else {
+          expect(await host.locator('[data-interactive-fallback]').textContent()).toContain(
+            'Python package download unavailable offline',
+          );
+        }
+        expect(remoteRequests).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
   it.each([
     { handled: true, state: 'frozen', delay: 400 },
     { handled: false, state: 'fallback', delay: 0 },

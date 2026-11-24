@@ -7,6 +7,7 @@ import {
   type SourcePatch,
 } from '@/lib/export/html-asset-inventory';
 import { toDataUri, type FetchAsset } from '@/lib/export/inline-assets-shared';
+import { randomBrowserId, sha256BytesHex } from '@/lib/legacy-browser-import/digest';
 
 // Pyodide's core WebAssembly alone can exceed the regular 8 MiB asset limit.
 export const MAX_VIDEO_CAPTURE_ASSET_BYTES = 12 * 1024 * 1024;
@@ -218,13 +219,7 @@ async function fetchPyodidePackageFiles(
     if (size > remainingBytes) continue;
     // The capture fetch shim serves a Response directly, so check the hash
     // here instead of relying on the browser to enforce fetch integrity.
-    if (sha256) {
-      const hash = await crypto.subtle.digest('SHA-256', Uint8Array.from(asset.bytes));
-      const hex = Array.from(new Uint8Array(hash), (byte) =>
-        byte.toString(16).padStart(2, '0'),
-      ).join('');
-      if (hex !== sha256) continue;
-    }
+    if (sha256 && (await sha256BytesHex(Uint8Array.from(asset.bytes))) !== sha256) continue;
     files.set(filename, { filename, mime: 'application/octet-stream', asset });
     remainingBytes -= size;
   }
@@ -319,6 +314,14 @@ async function inlinePyodide(
       return start();
     }));
   }
+  function isPyPiRequest(url) {
+    if (typeof url !== 'string') return false;
+    let target;
+    try { target = new URL(url); } catch (_) { return false; }
+    if (target.protocol !== 'https:' && target.protocol !== 'http:') return false;
+    return target.hostname === 'pypi.org' || target.hostname === 'pypi.python.org' ||
+      target.hostname === 'files.pythonhosted.org';
+  }
   window.fetch = function (input, options) {
     const request = input instanceof Request ? input : undefined;
     const url = request ? request.url : input instanceof URL ? input.href : input;
@@ -329,6 +332,9 @@ async function inlinePyodide(
     if (method === 'GET' && typeof key === 'string' && Object.hasOwn(files, key)) {
       const [mime, base64] = files[key];
       return Promise.resolve(new Response(decode(base64), { headers: { 'Content-Type': mime } }));
+    }
+    if (isPyPiRequest(url)) {
+      return Promise.reject(new Error('Python package download unavailable offline'));
     }
     return fetchOriginal(input, options);
   };
@@ -341,6 +347,21 @@ async function inlinePyodide(
           // Keep Pyodide's own error reporting when the widget handles it.
           const checkedNames = typeof args[0]?.errorCallback === 'function' ? undefined : names;
           return loadWithEmbeddedPackages(checkedNames, () => loadPackage.call(this, names, ...args));
+        };
+      }
+      if (typeof pyodide?.runPythonAsync === 'function') {
+        const runPythonAsync = pyodide.runPythonAsync;
+        pyodide.runPythonAsync = function (...args) {
+          const evaluation = runPythonAsync.apply(this, args).catch(function (error) {
+            // The renderer limits diagnostic length. Put the final Python
+            // exception line before its traceback while preserving the error.
+            if (error?.name === 'PythonError') {
+              const summary = error.message.trimEnd().split('\\n').at(-1);
+              error.stack = summary + '\\n' + (error.stack || error.message);
+            }
+            throw error;
+          });
+          return window.__openmaicWaitForStaticRuntime(evaluation);
         };
       }
       return pyodide;
@@ -408,7 +429,7 @@ export async function prepareCaptureAssets(
         let source: string | undefined;
         if (runtime) {
           // Keep the large runtime out of the HTML parsing and rewrite passes.
-          const marker = `openmaic-capture-${crypto.randomUUID()}`;
+          const marker = `openmaic-capture-${randomBrowserId()}`;
           source = `data:text/javascript,${marker}`;
           const payload = `<!--${marker}-->`;
           runtimeScripts.set(source, runtime.src);
