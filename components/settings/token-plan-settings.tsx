@@ -1,35 +1,32 @@
 'use client';
 
-// The "Token Plan" section: a two-column panel with a service tablist on the
-// left (logo, display-name mapping, status row, keyboard navigation) and a
-// one-line header on the right (status / update key / manage-account link / ⋯
-// menu disconnect). A plan is a provider of the workspace's model settings on
-// the server: saving its key adds that provider (or replaces its key) and
-// applies the plan's recommended configuration to the slots. When that would
-// replace models the workspace picked, the user is asked first: the plan's
-// setup, or keep theirs and fill only the empty slots. Disconnecting removes
-// the provider. A plan the server configures is shown as connected, read-only.
+// The "Token Plan" section. On the left, the region's plans: the connected
+// ones in priority order, each with what is left of its quota (or its
+// balance) and a warning when its tier lacks a capability, then the ones not
+// connected. On the right, the selected plan: its account (key, priority,
+// vendor console), its quota as meters with reset times, what it gives the
+// workspace as one card per capability, and its models and default routing
+// folded away. A plan is a provider of the workspace's model settings on the
+// server: saving its key adds that provider (or replaces its key) and applies
+// the plan's recommended configuration to the slots. When that would replace
+// models the workspace picked, the user is asked first: the plan's setup, or
+// keep theirs and fill only the empty slots. Disconnecting removes the
+// provider. A plan the server configures is shown as connected, read-only.
 
 import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
+  ChevronDown,
+  CircleAlert,
+  ExternalLink,
   Eye,
   EyeOff,
-  Check,
-  ChevronDown,
-  ExternalLink,
+  Globe,
+  KeyRound,
+  Layers,
   MoreHorizontal,
   Unlink,
-  MessageSquare,
-  Image as ImageIcon,
-  Video,
-  Volume2,
-  Mic,
-  FileText,
-  Search,
-  Globe,
-  type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -59,7 +56,12 @@ import {
   type TokenPlanRegion,
 } from '@/lib/config/token-plan-presets';
 import { tokenPlanPresetId } from '@/lib/config/preset-ids';
-import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
+import type {
+  ApplyChange,
+  ModelSettingsView,
+  PresetView,
+  ProviderView,
+} from '@/lib/model-settings/client';
 import { modelName, providerLabel, splitRef } from '@/lib/model-settings/edit';
 import { planProvider } from '@/lib/model-settings/services';
 import { tokenPlanListed } from '@/lib/model-settings/shape';
@@ -76,43 +78,8 @@ import {
   ServerOnlyNotice,
 } from './server-settings';
 import { MS, slotName } from './models/slot-meta';
-import { PlanQuota } from './plan-quota';
-import { UsageDashboard } from './usage-dashboard';
-import type { SlotCapability } from '@/lib/config/model-slots';
-
-const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
-  llm: 'settings.providers',
-  image: 'settings.imageSettings',
-  video: 'settings.videoSettings',
-  tts: 'settings.ttsSettings',
-  asr: 'settings.asrSettings',
-  document: 'settings.pdfSettings',
-  webSearch: 'settings.webSearchSettings',
-  webFetch: 'settings.webFetchSettings',
-};
-
-const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
-  llm: MessageSquare,
-  image: ImageIcon,
-  video: Video,
-  tts: Volume2,
-  asr: Mic,
-  document: FileText,
-  webSearch: Search,
-  webFetch: Globe,
-};
-
-/** The slot capability a modality's provider serves. */
-const MODALITY_CAPABILITY: Record<TokenPlanModality, SlotCapability> = {
-  llm: 'chat',
-  image: 'image',
-  video: 'video',
-  tts: 'tts',
-  asr: 'asr',
-  document: 'document',
-  webSearch: 'webSearch',
-  webFetch: 'webFetch',
-};
+import { CARD_CAPABILITIES, PlanCapabilities, planModels } from './plan-capabilities';
+import { PlanQuotaCard, QuotaSummary, usePlanQuotas } from './plan-quota';
 
 const REGIONS: readonly TokenPlanRegion[] = ['domestic', 'international'];
 
@@ -134,7 +101,7 @@ function portalCreditsUrl(base: string): string {
   }
 }
 
-/** 「查看模型方案」行：能力（· 环节）→ 套餐默认模型；无模型概念的模态不披露。 */
+/** Models & default routing rows: capability (· stage) → the plan's default model. */
 interface ModelPlanItem {
   capability: TokenPlanModality;
   stageId?: string;
@@ -156,6 +123,18 @@ const MODEL_PLAN_CAPABILITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webSearch: 'settings.tokenPlan.capWebSearch',
   webFetch: 'settings.tokenPlan.capWebFetch',
 };
+
+/** The slot capability a modality's provider serves. */
+const MODALITY_CAPABILITY = {
+  llm: 'chat',
+  image: 'image',
+  video: 'video',
+  tts: 'tts',
+  asr: 'asr',
+  document: 'document',
+  webSearch: 'webSearch',
+  webFetch: 'webFetch',
+} as const satisfies Record<TokenPlanModality, string>;
 
 function modelPlanItems(
   preset: TokenPlanPreset,
@@ -186,13 +165,15 @@ function modelPlanItems(
 }
 
 /** Service logo container: TokenDance uses a filled black background, others white with size-6. */
-function PresetLogo({ preset }: { preset: TokenPlanPreset }) {
-  if (!preset.icon) return <span className="size-8 shrink-0 rounded-lg bg-muted" />;
+function PresetLogo({ preset, size = 'md' }: { preset: TokenPlanPreset; size?: 'md' | 'lg' }) {
+  const box = size === 'lg' ? 'size-10' : 'size-8';
+  if (!preset.icon) return <span className={cn(box, 'shrink-0 rounded-lg bg-muted')} />;
   return (
     <span
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg',
-        preset.id === 'tokendance' ? 'bg-black' : 'bg-background',
+        box,
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-lg border',
+        preset.id === 'tokendance' ? 'border-transparent bg-black' : 'bg-background',
       )}
     >
       {}
@@ -205,39 +186,7 @@ function PresetLogo({ preset }: { preset: TokenPlanPreset }) {
   );
 }
 
-/** The models a preset declares for one modality (display-only, no probing). */
-function modalityModels(preset: TokenPlanPreset, m: TokenPlanModality): string[] {
-  const target = preset.modalities[m];
-  if (!target) return [];
-  if (target.defaultModels?.length) return target.defaultModels;
-  if (target.defaultModelId) return [target.defaultModelId];
-  return [target.providerId];
-}
-
-/** This deployment's usage dashboard, loaded when opened. */
-function DeploymentUsage() {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  return (
-    <details
-      className="group border-t border-border/60 pt-4"
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        {t('settings.tokenPlan.deploymentUsage')}
-        <ChevronDown className="size-4 shrink-0 transition-transform motion-reduce:transition-none group-open:rotate-180" />
-      </summary>
-      <p className="mt-2 text-xs leading-5 text-muted-foreground">
-        {t('settings.tokenPlan.deploymentUsageNote')}
-      </p>
-      {open && (
-        <div className="mt-3">
-          <UsageDashboard />
-        </div>
-      )}
-    </details>
-  );
-}
+const pill = 'inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium';
 
 export function TokenPlanSettings({
   view,
@@ -247,6 +196,7 @@ export function TokenPlanSettings({
   apply: ApplyChange;
 }) {
   const { t, locale } = useI18n();
+  const tp = 'settings.tokenPlan';
 
   // The page opens on the side matching the interface language; mainland
   // plans are for the Simplified Chinese interface.
@@ -254,22 +204,31 @@ export function TokenPlanSettings({
     locale === 'zh-CN' ? 'domestic' : 'international',
   );
 
+  /** The plan's preset as the server offers it to the workspace (absent: the workspace cannot add it). */
+  const presetOf = (preset: TokenPlanPreset) =>
+    view.presets.find((entry) => entry.id === tokenPlanPresetId(preset.id));
+  /** The plan's provider in the settings: connected when there is one. */
+  const providerOf = (preset: TokenPlanPreset) => planProvider(view, tokenPlanPresetId(preset.id));
+
   // A region's plans connecting can still change something with, and the
   // ones already connected (to manage or disconnect); see tokenPlanListed.
-  const plansIn = (side: TokenPlanRegion) =>
-    TOKEN_PLAN_PRESETS.filter((plan) => {
+  // Connected plans come first, in priority order (the preset order).
+  const plansIn = (side: TokenPlanRegion) => {
+    const listed = TOKEN_PLAN_PRESETS.filter((plan) => {
       if (!tokenPlanInRegion(plan, side)) return false;
-      const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
+      const preset = presetOf(plan);
       return !!preset && tokenPlanListed(view, preset);
     });
-  const plans = plansIn(region);
+    const connected = listed.filter((plan) => !!providerOf(plan));
+    return { connected, available: listed.filter((plan) => !providerOf(plan)) };
+  };
+  const { connected, available } = plansIn(region);
+  const plans = [...connected, ...available];
   const [selectedId, setSelectedId] = useState<string>(plans[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [editingKey, setEditingKey] = useState(false);
   const [saving, setSaving] = useState(false);
-  /** Bumped after each key save: the quota shown belongs to the key saved last. */
-  const [keySaves, setKeySaves] = useState(0);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   /** A connect waiting for the user to choose how to treat the slots it would replace. */
   const [pending, setPending] = useState<{
@@ -277,32 +236,48 @@ export function TokenPlanSettings({
     key: string;
     conflicts: PlanConflict[];
   } | null>(null);
-  const [activeTab, setActiveTab] = useState<TokenPlanModality>('llm');
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const selected = plans.find((p) => p.id === selectedId) ?? plans[0] ?? null;
 
-  /** The plan's preset as the server offers it to the workspace (absent: the workspace cannot add it). */
-  const presetOf = (preset: TokenPlanPreset) =>
-    view.presets.find((entry) => entry.id === tokenPlanPresetId(preset.id));
-  /** The plan's provider in the workspace's settings: connected when there is one. */
-  const providerOf = (preset: TokenPlanPreset) => planProvider(view, tokenPlanPresetId(preset.id));
-  const isPresetEnabled = (preset: TokenPlanPreset): boolean => !!providerOf(preset);
+  // The quota of each connected plan with a key of the workspace's own (the
+  // deployment's are not the workspace's to ask about).
+  const quotaIds = connected
+    .map(providerOf)
+    .filter(
+      (provider): provider is ProviderView =>
+        provider?.source === 'workspace' && !!provider.key?.set,
+    )
+    .map((provider) => provider.id);
+  const quotas = usePlanQuotas(quotaIds);
 
-  // Whether a connected plan offers a modality: not one the account behind
-  // its key turned out not to have (the server leaves it out of the provider).
-  const offeredBy = (preset: TokenPlanPreset) => {
-    const provider = providerOf(preset);
-    return (m: TokenPlanModality) => !provider || !!provider.capabilities[MODALITY_CAPABILITY[m]];
+  /** A connected plan's priority among the region's connected plans. */
+  const rankOf = (plan: TokenPlanPreset) => connected.indexOf(plan) + 1;
+
+  /** How a card names a service: a connected plan with its rank, else its provider. */
+  const serviceName = (providerId: string): string => {
+    const provider = view.providers.find((entry) => entry.id === providerId);
+    const plan = provider
+      ? TOKEN_PLAN_PRESETS.find((entry) => tokenPlanPresetId(entry.id) === provider.preset)
+      : undefined;
+    if (!plan) return providerLabel(view, providerId, t);
+    const rank = connected.includes(plan) ? ` (#${rankOf(plan)})` : '';
+    // Another connection of the plan shown: say whose it is.
+    const whose =
+      selected && plan.id === selected.id && provider
+        ? ` · ${t(provider.source === 'deployment' ? `${tp}.deploymentConnection` : `${tp}.workspaceConnection`)}`
+        : '';
+    return `${presetDisplayName(plan)}${rank}${whose}`;
   };
 
-  // The modalities a plan offers, in display order — drives the tab bar.
-  const presetModalities = (preset: TokenPlanPreset): TokenPlanModality[] =>
-    MODALITY_ORDER.filter((m) => preset.modalities[m] && offeredBy(preset)(m));
+  /** The capabilities a connected plan's account lacks, as card labels. */
+  const missingLabels = (provider: ProviderView | undefined) =>
+    CARD_CAPABILITIES.filter(({ capability }) =>
+      provider?.unsupportedCapabilities?.includes(capability),
+    ).map(({ label }) => t(label));
 
   const selectPreset = (preset: TokenPlanPreset) => {
     setSelectedId(preset.id);
-    setActiveTab(presetModalities(preset)[0] ?? 'llm');
     setApiKey('');
     setEditingKey(false);
     setDisconnectOpen(false);
@@ -312,8 +287,9 @@ export function TokenPlanSettings({
   const selectRegion = (side: TokenPlanRegion) => {
     if (side === region) return;
     setRegion(side);
-    const first = plansIn(side)[0];
-    if (first) selectPreset(first);
+    const { connected: first, available: rest } = plansIn(side);
+    const next = first[0] ?? rest[0];
+    if (next) selectPreset(next);
   };
 
   // Disconnect = remove the plan's provider; the stages that used it follow
@@ -345,7 +321,7 @@ export function TokenPlanSettings({
         toast.warning(applyErrorText({ reason: result.reason ?? '', message: result.message }, t));
       }
       // The key was saved: the quota shown must be the new key's.
-      setKeySaves((count) => count + 1);
+      if (quotaIds.includes(result.providerId)) quotas.refresh(result.providerId, true);
       setApiKey('');
       setEditingKey(false);
       toast.success(t('settings.tokenPlan.saved'));
@@ -393,8 +369,6 @@ export function TokenPlanSettings({
         modelId);
     return `${model} · ${provider}`;
   };
-
-  const tp = 'settings.tokenPlan';
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
