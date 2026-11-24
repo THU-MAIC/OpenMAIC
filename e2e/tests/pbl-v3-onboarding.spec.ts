@@ -272,6 +272,90 @@ for (const mode of assistantModes) {
   });
 }
 
+for (const mode of assistantModes) {
+  test(`quiz in the ${mode} marks only the last submitted option`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const { view } = fixture;
+    const publish = async () => {
+      view.revision++;
+      await fixture.publish();
+    };
+    view.state.position.stageIndex = 5;
+    view.stage = { kind: 'check', checker: 'quiz' };
+    view.role = 'mentor';
+    view.actions = ['quiz'];
+    const question: LearningView['questions'][number] = {
+      q: 'Which direction?',
+      options: ['East', 'West'],
+    };
+    view.questions = [question];
+    await publish();
+    await useAssistantMode(page, mode);
+    if (mode !== 'bubble')
+      await page.getByRole('button', { name: 'Current task', exact: true }).click();
+    const form =
+      mode === 'bubble'
+        ? page.getByTestId('pbl-companion-quiz')
+        : page.getByRole('region', { name: 'Current task details' });
+    const east = form.getByRole('radio', { name: /East/ });
+    const west = form.getByRole('radio', { name: /West/ });
+    const correct = form.getByRole('radio', { name: /Last submission: correct/ });
+    const incorrect = form.getByRole('radio', { name: /Last submission: review this answer/ });
+    await east.check();
+    await expect(correct).toHaveCount(0);
+    await expect(incorrect).toHaveCount(0);
+    await form.getByRole('button', { name: 'Submit answers', exact: true }).click();
+    await expect.poll(() => fixture.commands.filter((c) => c === 'quiz').length).toBe(1);
+    const collected = view.state.collected.greeting!;
+    collected.quiz = {
+      id: 'first',
+      attempt: 1,
+      answers: [0],
+      passed: false,
+      score: 0,
+      total: 1,
+      wrong: [0],
+    };
+    question.feedback = { selectedAnswer: 0, passed: false };
+    await publish();
+    await expect(incorrect).toBeChecked();
+    await west.check();
+    await expect(west).toBeChecked();
+    await expect(incorrect).not.toBeChecked();
+    await expect(east).toHaveAccessibleName(/Last submission: review this answer/);
+    await expect(correct).toHaveCount(0);
+    await expect(
+      form.getByText('Selection changed. Submit again to update feedback.'),
+    ).toBeVisible();
+    await form.getByRole('button', { name: 'Submit changes', exact: true }).click();
+    await expect.poll(() => fixture.commands.filter((c) => c === 'quiz').length).toBe(2);
+    collected.quiz = {
+      id: 'second',
+      attempt: 2,
+      answers: [1],
+      passed: true,
+      score: 1,
+      total: 1,
+      wrong: [],
+    };
+    question.feedback = { selectedAnswer: 1, passed: true };
+    await publish();
+    await expect(west).toHaveAccessibleName(/Last submission: correct/);
+    await expect(correct).toBeChecked();
+    await expect(incorrect).toHaveCount(0);
+
+    // Older attempts can have a question verdict without a recorded option index.
+    delete collected.quiz.answers;
+    delete question.feedback.selectedAnswer;
+    await publish();
+    await expect(form.getByTestId('pbl-quiz-feedback')).toContainText('Last submission: correct');
+    await expect(correct).toHaveCount(0);
+  });
+}
+
 for (const previous of ['tests', 'quiz'] as const) {
   test(`retires companion instructions when leaving ${previous} without removing history`, async ({
     page,

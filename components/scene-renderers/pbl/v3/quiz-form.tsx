@@ -1,5 +1,6 @@
 'use client';
-import { Check, ClipboardCheck, LoaderCircle } from 'lucide-react';
+import { useId } from 'react';
+import { Check, ClipboardCheck, LoaderCircle, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,7 @@ export function QuizForm({
   onSubmit: () => void;
 }) {
   const { t } = useI18n();
+  const formId = useId();
   return (
     <>
       {questions.map((question, index) => (
@@ -47,34 +49,70 @@ export function QuizForm({
             <p className="min-w-0 break-words pt-0.5 font-semibold leading-6">{question.q}</p>
           </div>
           <div className="grid gap-2">
-            {question.options.map((option, i) => (
-              <label className="group relative block" data-selected={answers[index] === i} key={i}>
-                <input
-                  type="radio"
-                  className="peer absolute inset-0 z-10 m-0 size-full cursor-pointer opacity-0 disabled:cursor-default"
-                  name={`quiz-${index}`}
-                  disabled={submitting}
-                  checked={answers[index] === i}
-                  onChange={() => onAnswer(index, i)}
-                />
-                <span className="grid grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-start gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-card-foreground transition-colors peer-hover:border-primary/40 peer-hover:bg-accent/40 peer-checked:border-primary/65 peer-checked:bg-primary/10 peer-focus-visible:border-primary peer-disabled:cursor-default peer-disabled:opacity-65 motion-reduce:transition-none">
-                  <span
-                    aria-hidden="true"
-                    className="inline-flex size-7 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground group-data-[selected=true]:bg-primary group-data-[selected=true]:text-primary-foreground"
-                  >
-                    {i < 26 ? String.fromCharCode(65 + i) : i + 1}
-                  </span>
-                  <span className="min-w-0 whitespace-pre-wrap break-words py-1 leading-5 group-has-[:focus-visible]:underline group-has-[:focus-visible]:decoration-2 group-has-[:focus-visible]:underline-offset-4">
-                    {option}
-                  </span>
-                  <Check
-                    aria-hidden="true"
-                    size={16}
-                    className="invisible mt-1.5 text-primary group-data-[selected=true]:visible"
+            {question.options.map((option, i) => {
+              const selected = answers[index] === i;
+              const result =
+                question.feedback?.selectedAnswer === i ? question.feedback : undefined;
+              return (
+                <label className="relative block" data-selected={selected} key={i}>
+                  <input
+                    type="radio"
+                    className="peer absolute inset-0 z-10 m-0 size-full cursor-pointer opacity-0 disabled:cursor-default"
+                    name={`${formId}-quiz-${index}`}
+                    disabled={submitting}
+                    checked={selected}
+                    onChange={() => onAnswer(index, i)}
                   />
-                </span>
-              </label>
-            ))}
+                  <span
+                    className={cn(
+                      'flex items-start gap-2.5 rounded-lg border px-2.5 py-2 text-card-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-65',
+                      result
+                        ? result.passed
+                          ? 'border-emerald-500/70 bg-emerald-500/10'
+                          : 'border-red-500/70 bg-red-500/10'
+                        : selected
+                          ? 'border-foreground/60 bg-muted'
+                          : 'border-border bg-card peer-hover:bg-accent/40',
+                    )}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground"
+                    >
+                      {i < 26 ? String.fromCharCode(65 + i) : i + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 whitespace-pre-wrap break-words py-1 leading-5">
+                      {option}
+                    </span>
+                    {result &&
+                      (result.passed ? (
+                        <Check
+                          aria-hidden="true"
+                          size={18}
+                          className="mt-1 shrink-0 text-emerald-700 dark:text-emerald-300"
+                        />
+                      ) : (
+                        <X
+                          aria-hidden="true"
+                          size={18}
+                          className="mt-1 shrink-0 text-red-700 dark:text-red-300"
+                        />
+                      ))}
+                    {result && (
+                      <span className="sr-only">
+                        {t(result.passed ? 'pblV3.quizCorrect' : 'pblV3.quizIncorrect')}
+                      </span>
+                    )}
+                    <span
+                      aria-hidden="true"
+                      className="mt-1.5 flex size-4 shrink-0 items-center justify-center rounded-full border border-current text-muted-foreground"
+                    >
+                      {selected && <span className="size-2 rounded-full bg-current" />}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
           </div>
           {question.feedback && (
             <div
@@ -84,7 +122,7 @@ export function QuizForm({
                 'mt-3 rounded-lg border p-3 text-sm',
                 question.feedback.passed
                   ? 'border-emerald-500/30 bg-emerald-500/10'
-                  : 'border-amber-500/30 bg-amber-500/10',
+                  : 'border-red-500/30 bg-red-500/10',
               )}
             >
               <p className="font-semibold">
