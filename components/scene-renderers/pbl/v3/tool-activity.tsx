@@ -170,9 +170,22 @@ function ToolCard({ part, stack, t }: { part: ToolPart; stack: string; t: Transl
 }
 
 export function ToolActivity({ tools, t }: { tools: ToolPart[]; t: Translator }) {
-  const [open, setOpen] = useState(true);
   if (!tools.length) return null;
   if (tools.length === 1) return <ToolCard part={tools[0]} stack="single" t={t} />;
+  const completed = tools.every((part) => part.status === 'succeeded');
+  return <ToolActivityGroup key={String(completed)} tools={tools} t={t} completed={completed} />;
+}
+
+function ToolActivityGroup({
+  tools,
+  t,
+  completed,
+}: {
+  tools: ToolPart[];
+  t: Translator;
+  completed: boolean;
+}) {
+  const [open, setOpen] = useState(!completed);
   const status = tools.some((tool) => tool.status === 'running')
     ? 'running'
     : tools.some((tool) => tool.status === 'failed')
