@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles } from 'lucide-react';
+import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles, BarChart3 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useAgentRuntimeAvailable } from '@/lib/hooks/use-agent-runtime-available';
 import { settingsSections } from '@/lib/model-settings/shape';
@@ -299,8 +299,24 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               )}
             </div>
 
-            {/* Footer: every change is saved as it is made; only close here. */}
+            {/* Footer: every change is saved as it is made; only close here. The
+                Token Plan section links this deployment's usage (in System). */}
             <div className="flex items-center justify-end gap-3 px-5 py-3 border-t bg-muted/30">
+              {activeSection === 'token-plan' && listed('general') && (
+                <p className="mr-auto flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  <BarChart3 className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span>{t('settings.tokenPlan.deploymentUsage')}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{t('settings.tokenPlan.deploymentUsageNote')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSection('general')}
+                    className="rounded-sm font-medium text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {t('settings.tokenPlan.viewStats')} →
+                  </button>
+                </p>
+              )}
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 {t('settings.close')}
               </Button>
