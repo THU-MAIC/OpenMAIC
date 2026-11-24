@@ -12,6 +12,7 @@ import { learningProgress } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { PLAYBACK_SPEEDS, useSettingsStore } from '@/lib/store/settings';
 import { cn } from '@/lib/utils';
+import { COMPANION_RIGHT, COMPANION_SIZE, companionHomeBottom } from './companion-placement';
 import { LearnerComposer } from './learner-composer';
 
 /** Stage progress drawn as one arc segment per stage around the avatar. */
@@ -95,17 +96,11 @@ function ProgressRing({
   );
 }
 
-/**
- * Which ring segment the pointer has settled on. A pointer only passing over the avatar
- * names nothing, and moving from one segment to the next changes the name without the
- * label leaving in between.
- */
-const AVATAR = 76;
 /** The avatar's outer edge lines up with what it carries: both stand this far in. */
 const INSET = 24;
 const PLACE_KEY = 'pbl-companion-place';
 /** Where the avatar rests: its distance from the right and bottom edges of the workspace. */
-const HOME = { right: 40, bottom: 28 };
+type Placement = { right: number; bottom: number };
 
 /**
  * The avatar can be dragged anywhere in the workspace, up to its edges, and stays where it was
@@ -114,7 +109,7 @@ const HOME = { right: 40, bottom: 28 };
  */
 function usePlacement() {
   const [node, setRoot] = useState<HTMLDivElement | null>(null);
-  const [place, setPlace] = useState(HOME);
+  const [place, setPlace] = useState<Placement | null>(null);
   const [area, setArea] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState(false);
   useEffect(() => {
@@ -136,11 +131,14 @@ function usePlacement() {
     return () => observer.disconnect();
   }, [node]);
   // Anywhere in the workspace, up to its edges: the controls open toward the middle.
-  const fit = (at: typeof HOME) => ({
-    right: Math.max(40, Math.min(at.right, Math.max(40, area.width - AVATAR - 40))),
-    bottom: Math.max(16, Math.min(at.bottom, Math.max(16, area.height - AVATAR - 16))),
+  const fit = (at: Placement) => ({
+    right: Math.max(
+      COMPANION_RIGHT,
+      Math.min(at.right, area.width - COMPANION_SIZE - COMPANION_RIGHT),
+    ),
+    bottom: Math.max(16, Math.min(at.bottom, area.height - COMPANION_SIZE - 16)),
   });
-  const at = area.width ? fit(place) : place;
+  const at = fit(place ?? { right: COMPANION_RIGHT, bottom: companionHomeBottom(area.height) });
   const onPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     if (event.button !== 0) return;
     const start = { x: event.clientX, y: event.clientY, ...at };
@@ -177,12 +175,12 @@ function usePlacement() {
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
-  const top = area.height - at.bottom - AVATAR;
+  const top = area.height - at.bottom - COMPANION_SIZE;
   // What the avatar carries opens above it, or below when the avatar is high in the workspace.
   const below = area.height > 0 && top < Math.min(360, area.height * 0.45);
-  const left = area.width - at.right - AVATAR;
+  const left = area.width - at.right - COMPANION_SIZE;
   // The avatar is in the left half: the room, and so everything it carries, is to its right.
-  const start = area.width > 0 && left + AVATAR / 2 < area.width / 2;
+  const start = area.width > 0 && left + COMPANION_SIZE / 2 < area.width / 2;
   return {
     setRoot,
     dragging,
@@ -200,6 +198,11 @@ function usePlacement() {
   };
 }
 
+/**
+ * Which ring segment the pointer has settled on. A pointer only passing over the avatar
+ * names nothing, and moving from one segment to the next changes the name without the
+ * label leaving in between.
+ */
 function useSettledHover() {
   const [settled, setSettled] = useState<number | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

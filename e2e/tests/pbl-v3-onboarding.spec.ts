@@ -142,7 +142,8 @@ async function project(
   await page.route('https://onboarding-preview.test/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: '<!doctype html><label>Preview task<input aria-label="Preview task"></label>',
+      body: `<!doctype html><label>Preview task<input aria-label="Preview task"></label>
+        <button style="position:fixed;bottom:16px;right:16px;padding:8px 16px">Send message</button>`,
     }),
   );
   await page.route('**/api/pbl/v3**', async (route) => {
@@ -256,6 +257,50 @@ test('the tutor companion opens a board and moves its conversation between windo
   await expect(conversation.locator('[data-window-drag]')).toHaveCount(0);
   await page.getByTestId('pbl-assistant-close').click();
   await expect(avatar).toBeVisible();
+});
+
+test('keeps the preview footer reachable while the companion conversation follows the workbench', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await project(page, learningEvents, { started: true, explanationBoard: true });
+  const avatar = page.getByTestId('pbl-companion-avatar');
+  await expect(avatar).toBeVisible();
+  const preview = page.getByTestId('pbl-application-open');
+  if ((await preview.getAttribute('aria-expanded')) !== 'true') await preview.click();
+  await expect(preview).toHaveAttribute('aria-expanded', 'true');
+  const send = page
+    .frameLocator('[data-testid="pbl-application-panel"] iframe')
+    .getByRole('button', { name: 'Send message' });
+  await send.click({ trial: true });
+  await avatar.click();
+  const workspace = page.locator('[data-pbl-tour-legacy="workspace-toggle"]');
+  if ((await workspace.getAttribute('aria-pressed')) !== 'true') await workspace.click();
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 1180, height: 730 },
+    { width: 1280, height: 560 },
+  ]) {
+    await page.setViewportSize(size);
+    await send.click({ trial: true });
+    await avatar.click({ trial: true });
+  }
+
+  const win = page.getByTestId('pbl-assistant-window');
+  const original = (await win.boundingBox())!;
+  const header = (await win.locator('[data-window-drag]').boundingBox())!;
+  await page.mouse.move(header.x + header.width / 2, header.y + header.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(header.x + header.width / 2 - 160, header.y + header.height / 2 + 20, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  const moved = (await win.boundingBox())!;
+  expect(moved.x).toBeLessThan(original.x - 100);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(async () => (await win.boundingBox())?.x).toBe(moved.x);
+  await expect.poll(async () => (await win.boundingBox())?.height).toBe(moved.height);
 });
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');

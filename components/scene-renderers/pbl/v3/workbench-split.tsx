@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { FloatingWindow } from '@/components/ui/floating-window';
+import { CONVERSATION_MIN_HEIGHT, initialConversationWindow } from './companion-placement';
 
 export function WorkbenchSplit({
   workspace,
@@ -173,12 +174,9 @@ export function WorkbenchSplit({
           <FloatingWindow
             testId="pbl-assistant-window"
             minWidth={340}
-            minHeight={360}
-            initial={({ width, height }) => {
-              const w = Math.min(440, width - 32);
-              const h = Math.min(620, height - 140);
-              return { x: width - w - 16, y: Math.max(height - h - 116, 16), width: w, height: h };
-            }}
+            minHeight={CONVERSATION_MIN_HEIGHT}
+            initial={initialConversationWindow}
+            followBoundsUntilMoved
             className="z-[35] overflow-hidden rounded-2xl border bg-background shadow-2xl"
           >
             {assistant}

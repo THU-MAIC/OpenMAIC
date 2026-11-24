@@ -37,6 +37,7 @@ function clamp(rect: WindowRect, bounds: { width: number; height: number }, min:
  */
 export function FloatingWindow({
   initial,
+  followBoundsUntilMoved = false,
   minWidth = 320,
   minHeight = 220,
   className,
@@ -44,6 +45,7 @@ export function FloatingWindow({
   testId,
 }: {
   initial: (bounds: { width: number; height: number }) => WindowRect;
+  followBoundsUntilMoved?: boolean;
   minWidth?: number;
   minHeight?: number;
   className?: string;
@@ -52,18 +54,18 @@ export function FloatingWindow({
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [rect, setRect] = useState<WindowRect | null>(null);
+  const manuallyPlaced = useRef(false);
   const min = { x: 0, y: 0, width: minWidth, height: minHeight };
   const bounds = () => {
     const parent = root.current?.offsetParent as HTMLElement | null;
     return { width: parent?.clientWidth ?? 0, height: parent?.clientHeight ?? 0 };
   };
-  // The first placement waits for the parent to have a size and is taken once; later moves
-  // belong to the learner.
   const place = () =>
     setRect((current) => {
       const limit = bounds();
       if (!limit.width || !limit.height) return current;
-      return clamp(current ?? initial(limit), limit, min);
+      const useInitial = !current || (followBoundsUntilMoved && !manuallyPlaced.current);
+      return clamp(useInitial ? initial(limit) : current, limit, min);
     });
   useLayoutEffect(() => {
     place();
@@ -87,8 +89,10 @@ export function FloatingWindow({
       x0 = event.clientX,
       y0 = event.clientY,
       limit = bounds();
-    const move = (e: PointerEvent) =>
+    const move = (e: PointerEvent) => {
+      if (e.clientX !== x0 || e.clientY !== y0) manuallyPlaced.current = true;
       setRect(clamp(apply(start, e.clientX - x0, e.clientY - y0), limit, min));
+    };
     const stop = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', stop);
