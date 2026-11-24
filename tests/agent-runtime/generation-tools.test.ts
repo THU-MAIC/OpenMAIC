@@ -905,6 +905,54 @@ describe('generation and deck tools', () => {
     });
   });
 
+  it('says in generate_actions content that narration was skipped when no TTS is available', async () => {
+    const current = state(document([slide('a', 1, 'Intro')]));
+    const unavailable = vi.fn(async () => ({
+      available: false,
+      changed: false,
+      generated: 0,
+      skipped: 0,
+      failed: [],
+    }));
+    const run = (generateActions: () => Promise<unknown[]>, synthesizeAudio?: boolean) =>
+      find(
+        buildGenerationTools(
+          deps(current.store, {
+            generateActions: vi.fn(generateActions),
+            synthesizeTts: unavailable,
+          }),
+        ),
+        'generate_actions',
+      ).execute('call', {
+        stageId: 'stage-test',
+        order: 1,
+        ...(synthesizeAudio === undefined ? {} : { synthesizeAudio }),
+      } as never);
+    const skippedNote =
+      'Narration audio was skipped: no enabled server TTS capability is available.';
+
+    const speech = await run(async () => [{ id: 'speech-a', type: 'speech', text: 'Hello' }]);
+    const speechText = (speech.content[0] as { text: string }).text;
+    expect(speechText).toBe(`Persisted 1 known actions for "Intro". ${skippedNote}`);
+    expect((speech as { isError?: boolean }).isError).toBeFalsy();
+    expect(speech.details).toMatchObject({ audio: { available: false } });
+
+    // A page without speech has nothing to narrate, so there is nothing to report.
+    const silent = await run(async () => [{ id: 'spot-a', type: 'spotlight', elementId: 'el-1' }]);
+    expect((silent.content[0] as { text: string }).text).toBe(
+      'Persisted 1 known actions for "Intro".',
+    );
+
+    // An explicit opt-out is the caller's own choice: no synthesis and no note.
+    unavailable.mockClear();
+    const optedOut = await run(
+      async () => [{ id: 'speech-b', type: 'speech', text: 'Hello' }],
+      false,
+    );
+    expect((optedOut.content[0] as { text: string }).text).not.toContain(skippedNote);
+    expect(unavailable).not.toHaveBeenCalled();
+  });
+
   it('counts narration failures by error code without provider bodies', async () => {
     const current = state(document([slide('a', 1, 'Intro')]));
     const raw = 'RAW_PROVIDER_BODY secret-upstream';
