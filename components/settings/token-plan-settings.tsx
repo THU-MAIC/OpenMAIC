@@ -640,6 +640,88 @@ export function TokenPlanSettings({
           </section>
         )}
 
+        {provider && own && provider.key?.set && (
+          <PlanQuotaCard
+            name={name}
+            entry={quotas.entries[provider.id]}
+            onRefresh={() => void quotas.refresh(provider.id)}
+            accountUrl={accountUrl}
+          />
+        )}
+
+        <PlanCapabilities
+          view={view}
+          plan={plan}
+          provider={provider}
+          name={name}
+          serviceName={serviceName}
+        />
+
+        {/* Models & default routing: the plan's default per capability and
+            stage, and the models it offers; changed on the generation bar and
+            in Course Model Config. */}
+        <details className="group rounded-xl border">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="flex items-center gap-2">
+              <Layers className="size-4 text-muted-foreground" aria-hidden="true" />
+              {t(`${tp}.modelsRouting`)}
+              <span className="text-xs font-normal text-muted-foreground">
+                · {t(`${tp}.modelsCount`, { n: modelCount })}
+              </span>
+            </span>
+            <ChevronDown className="size-4 shrink-0 transition-transform motion-reduce:transition-none group-open:rotate-180" />
+          </summary>
+          <div className="space-y-4 border-t px-4 py-3">
+            <dl className="space-y-1.5 text-xs leading-5">
+              {modelPlanItems(plan, offered).map((item) => (
+                <div
+                  key={`${item.capability}:${item.stageId ?? ''}`}
+                  className="flex justify-between gap-4"
+                >
+                  <dt className="text-muted-foreground">
+                    {t(MODEL_PLAN_CAPABILITY_LABEL_KEYS[item.capability])}
+                    {item.stageId
+                      ? ` · ${
+                          MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId]
+                            ? t(MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId])
+                            : item.stageId
+                        }`
+                      : ''}
+                  </dt>
+                  <dd className="break-all text-right font-mono">
+                    {item.model ?? t(`${tp}.planUnavailable`)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {modalities
+                .filter((m) => planModels(plan, m).length > 0)
+                .map((m) => (
+                  <div key={m} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium">{t(MODEL_PLAN_CAPABILITY_LABEL_KEYS[m])}</span>
+                      <span className="text-muted-foreground">
+                        {t(`${tp}.modelsCount`, { n: planModels(plan, m).length })}
+                      </span>
+                    </div>
+                    <ul className="space-y-0.5">
+                      {planModels(plan, m).map((id) => (
+                        <li key={id} className="truncate font-mono text-xs text-muted-foreground">
+                          {id}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+            <div className="space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+              <p>{t(`${tp}.offeredNote`)}</p>
+              <p>{t(`${tp}.planNoteEntitlement`)}</p>
+              <p>{t(`${tp}.planNoteEditable`)}</p>
+            </div>
+          </div>
+        </details>
       </>
     );
   };
@@ -722,132 +804,9 @@ export function TokenPlanSettings({
           </div>
         </div>
 
-        {/* 右列：服务详情（头部一行制 + 密钥表单 + 能力区块） */}
         {selected && (
-          <div
-            className="min-w-0 space-y-5 sm:border-l sm:border-border/60 sm:pl-6"
-            role="tabpanel"
-          >
-            {(() => {
-              const enabled = isPresetEnabled(selected);
-              const provider = providerOf(selected);
-              // Only the workspace's own plan can have its key updated or be disconnected.
-              const own = provider?.source === 'workspace';
-              const canConnect = !provider && !!presetOf(selected);
-              // A tab the plan no longer offers (its key's account lacks it) falls back to the first.
-              const tabs = presetModalities(selected);
-              const tab = tabs.includes(activeTab) ? activeTab : (tabs[0] ?? 'llm');
-              return (
-                <>
-                  {detail(selected)}
-                  {/* View model plan: a capability · stage → plan default model
-                      table; modalities with no model concept show "not disclosed". */}
-                  <details className="group border-t border-border/60 pt-4">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {t(`${tp}.modelPlan`)}
-                      <ChevronDown className="size-4 shrink-0 transition-transform motion-reduce:transition-none group-open:rotate-180" />
-                    </summary>
-                    <div className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
-                      <p>{t(`${tp}.planNoteEntitlement`)}</p>
-                      <p>{t(`${tp}.planNoteEditable`)}</p>
-                    </div>
-                    <dl className="mt-2 space-y-2 text-xs leading-5">
-                      {modelPlanItems(selected, offeredBy(selected)).map((item) => (
-                        <div
-                          key={`${item.capability}:${item.stageId ?? ''}`}
-                          className="flex justify-between gap-4"
-                        >
-                          <dt className="text-muted-foreground">
-                            {t(MODEL_PLAN_CAPABILITY_LABEL_KEYS[item.capability])}
-                            {item.stageId
-                              ? ` · ${
-                                  MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId]
-                                    ? t(MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId])
-                                    : item.stageId
-                                }`
-                              : ''}
-                          </dt>
-                          <dd className="break-all text-right font-mono">
-                            {item.model ?? t(`${tp}.planUnavailable`)}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </details>
-
-                  {provider && own && provider.key?.set && (
-                    <PlanQuota key={`${provider.id}:${keySaves}`} providerId={provider.id} />
-                  )}
-
-                  {/* Capabilities: a display-only tab list of the models the plan
-                      offers per modality — less what the account behind a
-                      connected key lacks. Selection and enable/disable happen
-                      on the generation bar. */}
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium">{t(`${tp}.capabilities`)}</div>
-
-                    {/* Tab bar (segmented control) */}
-                    <div className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5">
-                      {tabs.map((m) => {
-                        const Icon = MODALITY_ICONS[m];
-                        const isActive = tab === m;
-                        return (
-                          <button
-                            key={m}
-                            onClick={() => setActiveTab(m)}
-                            className={cn(
-                              'relative flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all',
-                              isActive
-                                ? 'bg-background text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground/80',
-                            )}
-                          >
-                            <Icon className="size-3.5" />
-                            <span className="hidden truncate sm:inline">
-                              {t(MODALITY_LABEL_KEYS[m])}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Tab content: static model list for the active modality */}
-                    {(() => {
-                      const models = modalityModels(selected, tab);
-                      return (
-                        <div className="space-y-2 rounded-md border p-3">
-                          <div className="flex items-center justify-between gap-3 text-xs">
-                            <span className="font-medium">{t(MODALITY_LABEL_KEYS[tab])}</span>
-                            <span className="text-muted-foreground">
-                              {t(`${tp}.modelsCount`, { n: models.length })}
-                            </span>
-                          </div>
-                          <ul className="space-y-1">
-                            {models.map((id) => (
-                              <li
-                                key={id}
-                                className="flex items-center gap-2 text-xs text-muted-foreground"
-                              >
-                                <span className="size-1 shrink-0 rounded-full bg-muted-foreground/40" />
-                                <span className="truncate font-mono">{id}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()}
-
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      {t(`${tp}.offeredNote`)}
-                    </p>
-                  </div>
-
-                  {/* This deployment's usage, every service together (the
-                      usage log does not tell plans or workspaces apart). */}
-                  {enabled && <DeploymentUsage />}
-                </>
-              );
-            })()}
+          <div className="min-w-0 space-y-4" role="tabpanel">
+            {detail(selected)}
           </div>
         )}
       </div>
