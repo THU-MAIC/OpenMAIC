@@ -14,6 +14,17 @@ describe('sanitizeFailureReason', () => {
   });
 
   it.each([
+    ["'/tmp/render/Private Course/index.html'", "'[path]'"],
+    ['"/tmp/render/Teacher\'s Notes/a.mp3"', '"[path]"'],
+    ["'C:\\Users\\Private User\\course.html'", "'[path]'"],
+    ["'/tmp/render/Teacher's Private Notes/a.mp3'", "'[path]'"],
+  ])('masks a whole quoted path with spaces or quotes: %s', (quoted, masked) => {
+    const reason = sanitizeFailureReason(`ENOENT: no such file or directory, open ${quoted}`);
+    expect(reason).toBe(`ENOENT: no such file or directory, open ${masked}`);
+    expect(reason).not.toMatch(/Private|Teacher|Course|Notes/);
+  });
+
+  it.each([
     'https://example.com/private?token=secret',
     'http://192.0.2.10:9000/render/abc',
     'www.example.com/a?b=c',
