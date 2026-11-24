@@ -10,6 +10,7 @@ import {
 import { capBodyStream } from '@/lib/server/capped-stream';
 import { clientIdentity } from '@/lib/server/client-identity';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { isRenderDurableQueueEnabled } from '@/lib/server/render-queue/config';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ExportVideo Render API');
@@ -23,8 +24,10 @@ const SUBMIT_TIMEOUT_MS = 300_000;
 /**
  * Submit an export ZIP for MP4 rendering. Streams the multipart body straight
  * to the render service (no `formData()` buffering here) and relays its
- * `202 { jobId }`. Returns 501 when the service is not configured so the client
- * can degrade to a local ZIP download.
+ * `202 { jobId }`; with `RENDER_DURABLE_QUEUE=true` it stores the body and
+ * queues the job in PostgreSQL instead (`lib/server/render-queue/`). Returns
+ * 501 when the service is not configured so the client can degrade to a local
+ * ZIP download.
  */
 export async function POST(req: NextRequest) {
   return withRequestOwner(req, async ({ ownerId }, responseHeaders) => {
@@ -47,6 +50,11 @@ export async function POST(req: NextRequest) {
     const contentType = req.headers.get('content-type') ?? '';
     if (!contentType.includes('multipart/form-data') || !req.body) {
       return answer(apiError('INVALID_REQUEST', 400, 'Expected multipart/form-data'));
+    }
+
+    if (isRenderDurableQueueEnabled()) {
+      const { submitQueuedRender } = await import('@/lib/server/render-queue/routes');
+      return answer(await submitQueuedRender(req, req.body, ownerId, MAX_UPLOAD_BYTES));
     }
 
     // Forward the raw multipart body verbatim, bounded to MAX_UPLOAD_BYTES of

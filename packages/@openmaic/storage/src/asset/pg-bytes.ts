@@ -22,8 +22,87 @@ function asUint8Array(value: Uint8Array | ArrayBuffer): Uint8Array {
   return new Uint8Array(value.slice(0));
 }
 
+/** The namespace shape the S3 layer accepts too: one or more `segment/`. */
+const NAMESPACE = /^(?:[A-Za-z0-9_-]+\/)+$/;
+
+/**
+ * One isolated namespace of `asset_prefixed_bytes`, from
+ * {@link PgAssetByteStore.withPrefix}. Every statement names its prefix, so
+ * it cannot read, write or delete a key of another namespace, and it never
+ * touches `asset_blobs`.
+ *
+ * Its bytes live in the registry's own database, so it does not declare
+ * `writesOutsideRegistryDatabase`. Nothing calls it inside a registry
+ * transaction: its consumer keeps its own metadata.
+ */
+class PgPrefixedByteStore implements AssetByteStore {
+  constructor(
+    private readonly queryable: Queryable,
+    private readonly prefix: string,
+  ) {
+    if (!NAMESPACE.test(prefix)) throw new Error('Invalid object namespace');
+  }
+
+  withPrefix(prefix: string): AssetByteStore {
+    if (!prefix) throw new Error('An isolated namespace must not be empty');
+    return new PgPrefixedByteStore(this.queryable, this.prefix + prefix);
+  }
+
+  async write(hash: ContentHash, bytes: Uint8Array): Promise<void> {
+    try {
+      await this.queryable.query(
+        `INSERT INTO asset_prefixed_bytes (prefix, key, bytes) VALUES ($1, $2, $3)
+         ON CONFLICT (prefix, key) DO UPDATE SET bytes = EXCLUDED.bytes`,
+        [this.prefix, hash, bytes],
+      );
+    } catch {
+      throw byteStoreFailure('write');
+    }
+  }
+
+  async read(hash: ContentHash): Promise<Uint8Array | null> {
+    let result: { rows: ByteRow[] };
+    try {
+      result = await this.queryable.query<ByteRow>(
+        'SELECT bytes FROM asset_prefixed_bytes WHERE prefix = $1 AND key = $2',
+        [this.prefix, hash],
+      );
+    } catch {
+      throw byteStoreFailure('read');
+    }
+    const bytes = result.rows[0]?.bytes;
+    return bytes === undefined || bytes === null ? null : asUint8Array(bytes);
+  }
+
+  async delete(hash: ContentHash): Promise<void> {
+    try {
+      await this.queryable.query(
+        'DELETE FROM asset_prefixed_bytes WHERE prefix = $1 AND key = $2',
+        [this.prefix, hash],
+      );
+    } catch {
+      throw byteStoreFailure('delete');
+    }
+  }
+}
+
 export class PgAssetByteStore implements AssetByteStore {
   constructor(private readonly queryable: Queryable) {}
+
+  /**
+   * An isolated namespace in `asset_prefixed_bytes` (asset migration v5),
+   * never in `asset_blobs`: an unreferenced `asset_blobs` row is the
+   * collector's to reclaim. The namespace's consumer records its keys and
+   * deletes them; nothing here expires them.
+   *
+   * This layer still does not declare `writesOutsideRegistryDatabase`, so a
+   * consumer that requires bytes outside the registry database (sandbox
+   * checkpoints) stays off on it.
+   */
+  withPrefix(prefix: string): AssetByteStore {
+    if (!prefix) throw new Error('An isolated namespace must not be empty');
+    return new PgPrefixedByteStore(this.queryable, prefix);
+  }
 
   async write(hash: ContentHash, bytes: Uint8Array): Promise<void> {
     try {

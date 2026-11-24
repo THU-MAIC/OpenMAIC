@@ -51,6 +51,11 @@ services:
       # MP4 export disabled and degrades to the ZIP-download path — this URL
       # being set does not, by itself, advertise a working render.
       - RENDER_SERVICE_URL=http://render-service:9000
+      # With RENDER_DURABLE_QUEUE=true the per-owner export limit is the app's.
+      # No limit here, as the render service below runs with
+      # RENDER_MAX_JOBS_PER_USER=0: every caller shares one identity in this
+      # topology.
+      - RENDER_QUEUE_MAX_JOBS_PER_OWNER=${RENDER_QUEUE_MAX_JOBS_PER_OWNER:-0}
     networks:
       - default # outbound internet (LLM/media provider APIs, etc.)
       - render # reach the render service over the isolated network
@@ -128,6 +133,9 @@ services:
       - PRODUCER_HEADLESS_SHELL_PATH=/usr/bin/chromium-headless-shell
       - RENDER_MAX_CONCURRENCY=1
       - RENDER_MAX_CONCURRENT_EXTRACTIONS=1
+      # With the app's RENDER_DURABLE_QUEUE=true, set this to 1 (the concurrency
+      # above) so exports wait in PostgreSQL instead of this service's memory.
+      - RENDER_MAX_QUEUE=${RENDER_MAX_QUEUE:-20}
       # Long compositions still need CDP headroom even with one explicit worker.
       - PRODUCER_PUPPETEER_PROTOCOL_TIMEOUT_MS=900000
       # OpenMAIC's long slide exports currently exhaust producer's 15s static
