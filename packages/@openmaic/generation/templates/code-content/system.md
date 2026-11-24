@@ -2,11 +2,16 @@
 
 Generate a self-contained HTML code editor with execution and test validation.
 
-## Supported Languages
+## Executable Languages
 
 - Python (via Pyodide CDN)
 - JavaScript (native browser execution)
 - TypeScript (via Babel CDN transpilation)
+
+For any other language, preserve the requested language in the lesson and use an
+embedded worked example, step trace, or sample output. Label these as examples
+and let teaching actions step through them. Offer a Run button only when the
+page includes a supported browser runtime for the language.
 
 ## Widget Config Schema
 
@@ -54,13 +59,15 @@ pyodide.runPython('import sys; sys.stdout = io.StringIO()');
 
 ### 3. Load Required Packages Before Execution
 
-If user code needs packages like numpy, load them during initialization:
+If the lesson needs a package in the Pyodide distribution, declare it literally
+in the startup code and wait for it before rendering the lesson view:
 ```javascript
 await pyodide.loadPackage(['numpy']);
 ```
 
-`micropip` is included with Pyodide but is not loaded by default. If generated
-code installs PyPI packages with `micropip`, load it before importing it:
+`micropip` can be used for an optional learner-initiated online feature. Keep
+PyPI downloads out of startup and teaching actions. Load `micropip` before
+importing it:
 
 ```javascript
 await pyodide.loadPackage('micropip');
@@ -92,19 +99,22 @@ let pyodide = null;
 
 async function initPyodide() {
     pyodide = await loadPyodide();
-    // Load any packages user code might need
-    await pyodide.loadPackage(['numpy']);
+    // Load the distribution packages explicitly required by this lesson here.
     document.getElementById('run-btn').disabled = false;
     document.getElementById('status').textContent = 'Python ready';
 }
-initPyodide();
+const ready = initPyodide();
+window.__openmaicWaitForStaticRuntime?.(ready) ?? ready;
 
 async function runCode() {
     if (!pyodide) {
         alert('Python environment not ready');
         return;
     }
-    const code = editor.getValue();
+    const input = document.getElementById('code-input');
+    const code = typeof editor !== 'undefined' && typeof editor?.getValue === 'function'
+        ? editor.getValue()
+        : input?.value ?? '';
     try {
         // MUST import sys AND io before using StringIO
         await pyodide.runPythonAsync(`
@@ -123,10 +133,10 @@ async function runCode() {
 
 ## Technical Requirements
 
-- Use CodeMirror or Monaco via CDN for editing
+- Use a textarea as the offline editor. CodeMirror can enhance it when the complete editor and syntax modules are bundled as static browser assets.
 - Syntax highlighting for the language
-- Run button with output display
-- Test case validation with pass/fail indicators
+- For executable lessons, a Run button, output display, and test case validation with pass/fail indicators
+- For worked-example lessons, controls to move through the embedded trace and inspect the sample output
 - Hint button that reveals hints progressively
 - Mobile-responsive layout
 
@@ -156,10 +166,13 @@ window.addEventListener('message', function(event) {
         // Guard the identifier itself: `editor?.setValue` still throws
         // ReferenceError when no `editor` variable is declared (e.g. a
         // textarea-only widget). `typeof editor` is safe for that case.
-        if (typeof editor !== 'undefined' && typeof editor.setValue === 'function') editor.setValue(state.code);
+        if (typeof editor !== 'undefined' && typeof editor?.setValue === 'function') editor.setValue(state.code);
         else { const ta = document.getElementById('code-input'); if (ta) ta.value = state.code; }
       }
-      if (state && state.run && typeof runCode === 'function') runCode();
+      if (state && state.run && typeof runCode === 'function') {
+        const rendered = runCode();
+        window.__openmaicWaitForStaticRuntime?.(rendered) ?? rendered;
+      }
       break;
 
     case 'HIGHLIGHT_ELEMENT':

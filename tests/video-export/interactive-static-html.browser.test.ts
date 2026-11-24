@@ -28,8 +28,9 @@ function interactiveScene(html: string): Scene {
 async function emittedFixture(
   html: string,
   fetcher?: FetchAsset,
+  actions: Scene['actions'] = [],
 ): Promise<{ index: string; child: string }> {
-  const scene = interactiveScene(html);
+  const scene = { ...interactiveScene(html), actions };
   const prepared = await prepareInteractiveHtmlScenes([scene], { fetcher });
   const ir = compileVideoTimeline(
     { stage: { id: 'stage', name: 'Interactive smoke' }, scenes: [scene] },
@@ -158,6 +159,16 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
         let id = 0;
         window.requestAnimationFrame = () => ++id;
         window.cancelAnimationFrame = () => {};
+        Object.defineProperty(performance, 'now', { configurable: true, value: () => 0 });
+        Reflect.set(window, '__HF_VIRTUAL_TIME__', {});
+        Reflect.set(
+          window,
+          'Date',
+          new Proxy(Date, {
+            construct: (target, args, subclass) =>
+              Reflect.construct(target, args.length ? args : [0], subclass),
+          }),
+        );
       });
       await load(
         page,
@@ -167,11 +178,11 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
             const canvas = document.querySelector('canvas');
             const context = canvas.getContext('2d');
             function frame() {
-              context.fillStyle = 'red';
+              context.fillStyle = new Date().getFullYear() > 2000 ? 'red' : 'black';
               context.fillRect(0, 0, 10, 10);
               requestAnimationFrame(frame);
             }
-            requestAnimationFrame(frame);
+            requestAnimationFrame(() => requestAnimationFrame(frame));
           </script>`),
       );
 
@@ -185,6 +196,321 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
       ]);
 
       expect(pixel).toEqual([255, 0, 0, 255]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits for an older widget to draw after a delayed startup timer', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`<output>Loading</output><script>
+        setTimeout(() => document.querySelector('output').textContent = 'Ready', 650);
+      </script>`),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(await page.frames()[1].locator('output').textContent()).toBe('Ready');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('keeps a working offline preview after a handled optional request fails', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`<output>Loading</output><script>
+        window.__openmaicWaitForStaticRuntime(fetch('https://optional-data.test/example.json')
+          .catch(() => { document.querySelector('output').textContent = 'Offline preview'; }));
+      </script>`),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-interactive-static-host]')
+            .getAttribute('data-interactive-static-state'),
+        )
+        .toBe('frozen');
+      expect(await page.frames()[1].locator('output').textContent()).toBe('Offline preview');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits for a draw registered by a late lazy image load', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`<output>Loading</output><script>
+        setTimeout(() => {
+          const image = new Image();
+          image.loading = 'lazy';
+          image.style.cssText = 'position:absolute;top:12000px';
+          image.onload = () => {
+            window.__openmaicWaitForStaticRuntime(new Promise(resolve => {
+              requestAnimationFrame(() => {
+                document.querySelector('output').textContent = 'Drawn';
+                resolve();
+              });
+            }));
+          };
+          image.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>';
+          document.body.append(image);
+        }, 30);
+      </script>`),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(await page.frames()[1].locator('output').textContent()).toBe('Drawn');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.each(['timer', 'animation frame'])(
+    'advances teaching work scheduled for a later %s',
+    async (kind) => {
+      const page = await browser.newPage();
+      try {
+        await load(
+          page,
+          await emittedFixture(
+            `<output>Before</output><script>
+        window.addEventListener('message', ({data}) => {
+          if (data.type !== 'SET_WIDGET_STATE') return;
+          const pending = new Promise(resolve => {
+            function paint() { document.querySelector('output').textContent = 'After'; resolve(); }
+            if (data.state.kind === 'timer') setTimeout(paint, 200);
+            else {
+              const end = performance.now() + 200;
+              function tick(now) { if (now >= end) paint(); else requestAnimationFrame(tick); }
+              requestAnimationFrame(tick);
+            }
+          });
+          window.__openmaicWaitForStaticRuntime(pending);
+        });
+      </script>`,
+            undefined,
+            [
+              { id: 'change', type: 'widget_setState', state: { kind } },
+              {
+                id: 'speech',
+                type: 'speech',
+                text: 'The new state is shown during this narration.',
+              },
+            ],
+          ),
+        );
+        await page.evaluate(() =>
+          Promise.race([
+            Reflect.get(window, '__openmaicInteractiveReady'),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Initial seek did not acknowledge')), 1500),
+            ),
+          ]),
+        );
+        const child = page.frames()[1];
+        expect(await child.locator('output').textContent()).toBe('Before');
+        await page.evaluate(async () => {
+          Reflect.get(window, '__timelines').openmaic.time(0.2, true);
+          await Reflect.get(window, '__hfWaitForSeekCompletion')();
+        });
+        expect(await child.locator('output').textContent()).toBe('After');
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it('loads declared dynamic script and data offline and reports undeclared network access', async () => {
+    const page = await browser.newPage();
+    try {
+      const root = 'https://offline-assets.test';
+      const requests: string[] = [];
+      page.on('request', (request) => {
+        if (request.url().startsWith(root)) requests.push(request.url());
+      });
+      await load(
+        page,
+        await emittedFixture(
+          `
+        <script type="application/json" data-openmaic-offline-assets>["${root}/lib.js","${root}/data.json"]</script>
+        <output>Loading</output><script>
+          const root = '${root}';
+          window.__openmaicWaitForStaticRuntime((async () => {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = window.__openmaicOfflineAsset(root + '/lib.js');
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.append(script);
+            });
+            const response = await window.__openmaicFetchOfflineAsset(root + '/data.json');
+            document.querySelector('output').textContent = window.convert(await response.json());
+          })());
+        </script>`,
+          async (url) => ({
+            bytes: new TextEncoder().encode(
+              url.endsWith('.js') ? 'window.convert = value => value.answer;' : '{"answer":42}',
+            ),
+            contentType: url.endsWith('.js') ? 'text/javascript' : 'application/json',
+          }),
+        ),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(await page.frames()[1].locator('output').textContent()).toBe('42');
+      expect(requests).toEqual([]);
+    } finally {
+      await page.close();
+    }
+
+    const blockedPage = await browser.newPage();
+    try {
+      await load(
+        blockedPage,
+        await emittedFixture(`<script>
+        const root = 'https://offline-assets.test';
+        const script = document.createElement('script');
+        script.src = root + '/lib.js';
+        document.head.append(script);
+      </script>`),
+      );
+      await blockedPage.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(
+        await blockedPage.locator('[data-interactive-fallback-reason]').textContent(),
+      ).toContain('Offline capture blocked script-src-elem: https://offline-assets.test/lib.js');
+    } finally {
+      await blockedPage.close();
+    }
+  });
+
+  it('settles native work beside scene timers and preserves their task order', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<output id="ready">Before</output><output id="timer"></output><script>
+        window.addEventListener('message', ({data}) => {
+          if (data.type !== 'SET_WIDGET_STATE') return;
+          const started = Date.now();
+          let firstFinished = false;
+          setTimeout(() => Promise.resolve().then(() => { firstFinished = true; }), 100);
+          setTimeout(() => { document.querySelector('#timer').textContent = firstFinished + ':' + (Date.now() - started); }, 100);
+          window.__openmaicWaitForStaticRuntime(scheduler.postTask(() => {
+            document.querySelector('#ready').textContent = 'Native work done';
+          }, { delay: 200 }));
+        });
+      </script>`,
+          undefined,
+          [
+            { id: 'change', type: 'widget_setState', state: {} },
+            { id: 'speech', type: 'speech', text: 'Now we show the result.' },
+          ],
+        ),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      const child = page.frames()[1];
+      expect(await child.locator('#ready').textContent()).toBe('Native work done');
+      expect(await child.locator('#timer').textContent()).toBe('');
+      await page.evaluate(async () => {
+        Reflect.get(window, '__timelines').openmaic.time(0.1, true);
+        await Reflect.get(window, '__hfWaitForSeekCompletion')();
+      });
+      expect(await child.locator('#timer').textContent()).toBe('true:100');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('renders state and reveal actions by narration time, including backward seeks and effect expiry', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await page.addInitScript(() => {
+        Reflect.set(window, '__hfWaitForSeekCompletion', () => {
+          Reflect.set(window, '__openmaicOriginalWaited', true);
+        });
+      });
+      await load(
+        page,
+        await emittedFixture(
+          `
+        <div id="first" hidden>First</div><div id="second" hidden>Second</div><output>0</output>
+        <script>
+          window.addEventListener('message', ({data, source}) => {
+            if (source !== window.parent) return;
+            if (data.type === 'REVEAL_ELEMENT') document.querySelector(data.target).hidden = false;
+            if (data.type === 'SET_WIDGET_STATE') {
+              window.__openmaicWaitForStaticRuntime(new Promise((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                  document.querySelector('output').textContent = data.state.completedSteps.length;
+                  resolve();
+                }));
+              }));
+            }
+            if (data.type === 'ANNOTATE_ELEMENT') {
+              const note = document.createElement('aside');
+              note.textContent = data.content;
+              document.body.append(note);
+              setTimeout(() => note.remove(), 300);
+            }
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'First look at the starting diagram.' },
+            { id: 'reveal-1', type: 'widget_reveal', target: '#first' },
+            {
+              id: 'middle',
+              type: 'speech',
+              text: 'Now we have completed the first step in the lesson.',
+            },
+            { id: 'state', type: 'widget_setState', state: { completedSteps: ['first'] } },
+            { id: 'reveal-2', type: 'widget_reveal', target: '#second' },
+            {
+              id: 'note',
+              type: 'widget_annotation',
+              target: '#second',
+              content: '"Second" </script>',
+            },
+            { id: 'ending', type: 'speech', text: 'Notice the second part of the diagram.' },
+          ],
+        ),
+      );
+      const [first, second, note] = await page.locator('[data-widget-actions]').evaluate((host) => {
+        const actions = JSON.parse(host.getAttribute('data-widget-actions')!);
+        return [actions[0].at, actions[2].at, actions[3].at] as number[];
+      });
+      async function seek(ms: number) {
+        await page.evaluate(async (time) => {
+          await Reflect.get(window, '__openmaicInteractiveReady');
+          Reflect.get(window, '__timelines').openmaic.time(time / 1000, true);
+          await Reflect.get(window, '__hfWaitForSeekCompletion')();
+        }, ms);
+        return page.frames()[1];
+      }
+
+      let child = await seek(note + 40);
+      expect(await child.locator('#first').isVisible()).toBe(true);
+      expect(await child.locator('#second').isVisible()).toBe(true);
+      expect(await child.locator('output').textContent()).toBe('1');
+      expect(await child.locator('aside').textContent()).toBe('"Second" </script>');
+      child = await seek(note + 350);
+      expect(await child.locator('aside').count()).toBe(0);
+      child = await seek(first - 1);
+      expect(await child.locator('#first').isVisible()).toBe(false);
+      expect(await child.locator('#second').isVisible()).toBe(false);
+      expect(await child.locator('output').textContent()).toBe('0');
+      child = await seek(first);
+      expect(await child.locator('#first').isVisible()).toBe(true);
+      expect(await child.locator('#second').isVisible()).toBe(false);
+      child = await seek(second);
+      expect(await child.locator('#second').isVisible()).toBe(true);
+      expect(await page.evaluate(() => Reflect.get(window, '__openmaicOriginalWaited'))).toBe(true);
     } finally {
       await page.close();
     }

@@ -207,7 +207,7 @@
     "fake-indexeddb": "^6.2.5",
     "fontkit": "2.0.4",
     "gsap": "^3.15.0",
-    "hyperframes": "0.7.60",
+    "hyperframes": "0.7.107",
     "prettier": "3.8.1",
     "rollup": "^4.35.0",
     "rollup-plugin-typescript2": "^0.36.0",

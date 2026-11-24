@@ -62,24 +62,55 @@ it('runs the 3D listener with scene-local state and the platform message fields'
   expect(listener).toBeDefined();
 
   const setPosition = vi.fn();
+  const setScale = vi.fn();
   const setEmissive = vi.fn();
-  const context = createContext({ setPosition, setEmissive });
+  const updateControls = vi.fn();
+  const render = vi.fn();
+  const canvas = { style: { outline: '' }, removeAttribute: vi.fn() };
+  const info = { textContent: '' };
+  const context = createContext({
+    setPosition,
+    setScale,
+    setEmissive,
+    updateControls,
+    render,
+    document: {
+      querySelector: (selector: string) => (selector === '#canvas-container' ? canvas : null),
+      getElementById: () => info,
+    },
+    setTimeout: () => {},
+  });
   runInContext(
     `const window = {
        addEventListener(type, listener) { this[type] = listener; }
      };
      function initScene() {
        const camera = { position: { set: setPosition } };
-       const objects = { '#earth': [{ material: { emissive: { set: setEmissive } } }] };
+       const controls = { update: updateControls };
+       const renderer = { render };
+       const scene = {};
+       const objects = {
+         '#earth': [{ material: { emissive: { set: setEmissive } } }],
+         cellGroup: { scale: { setScalar: setScale } },
+       };
        ${listener}
      }
      initScene();
-     window.message({ data: { type: 'SET_WIDGET_STATE', state: { cameraPosition: [1, 2, 3] } } });
-     window.message({ data: { type: 'HIGHLIGHT_ELEMENT', target: '#earth' } });`,
+     window.message({ data: { type: 'SET_WIDGET_STATE', state: { cameraPosition: [1, 2, 3], scale: 2 } } });
+     window.message({ data: { type: 'HIGHLIGHT_ELEMENT', target: '#earth' } });
+     window.message({ data: { type: 'HIGHLIGHT_ELEMENT', target: '#canvas-container' } });
+     window.message({ data: { type: 'ANNOTATE_ELEMENT', target: '#canvas-container', content: 'Orbit' } });
+     window.message({ data: { type: 'REVEAL_ELEMENT', target: '#canvas-container' } });`,
     context,
   );
   expect(setPosition).toHaveBeenCalledWith(1, 2, 3);
+  expect(setScale).toHaveBeenCalledWith(2);
+  expect(updateControls).toHaveBeenCalledOnce();
+  expect(render).toHaveBeenCalledTimes(2);
   expect(setEmissive).toHaveBeenCalledWith(0xffff00);
+  expect(canvas.style.outline).toBe('3px solid #a78bfa');
+  expect(info.textContent).toBe('Orbit');
+  expect(canvas.removeAttribute).toHaveBeenCalledWith('hidden');
 });
 
 it('executes the canonical projection on initial render, update, reset, and timer paths', async () => {

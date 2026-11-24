@@ -252,7 +252,7 @@ function placeholderContent(scene: VideoTimelineScene, reason: string, reasonAtt
     .join('\n');
 }
 
-/** The base layer for one scene: snapshot, packaged frozen HTML, or placeholder. */
+/** The base layer for one scene: snapshot, packaged interactive HTML, or placeholder. */
 function sceneBaseId(scene: VideoTimelineScene): string {
   return `scene-${scene.index + 1}-base`;
 }
@@ -272,13 +272,23 @@ function renderBase(scene: VideoTimelineScene, labels: VideoExportLabels): strin
   if (scene.base.kind === 'visual-segments') return '';
   if (scene.base.kind === 'interactive-html' && scene.base.assetRef) {
     const contentId = interactiveBaseContentId(scene);
+    const actions = scene.markers.flatMap(({ startMs, widgetMessage }) =>
+      widgetMessage
+        ? [
+            {
+              at: (Math.round(startMs * 10) - Math.round(scene.startMs * 10)) / 10,
+              message: widgetMessage,
+            },
+          ]
+        : [],
+    );
     const fallback = placeholderContent(
       scene,
       labels.interactive.fallback,
       'data-interactive-fallback-reason',
     );
     return [
-      `<div ${clip} data-interactive-static-host data-scene-id="${escapeHtml(scene.id)}" data-ready-timeout-ms="${scene.base.readyTimeoutMs}" data-content-hash="${escapeHtml(scene.base.contentHash)}" style="position:absolute;inset:0">`,
+      `<div ${clip} data-interactive-static-host data-scene-id="${escapeHtml(scene.id)}" data-ready-timeout-ms="${scene.base.readyTimeoutMs}" data-content-hash="${escapeHtml(scene.base.contentHash)}" data-widget-actions="${escapeHtml(JSON.stringify(actions))}" style="position:absolute;inset:0">`,
       `  <div id="${contentId}" data-interactive-static-visibility-wrapper style="position:absolute;inset:0;background:#0f172a;visibility:hidden;opacity:0">`,
       `    <div data-interactive-fallback>${fallback}</div>`,
       `    <iframe data-interactive-static-frame data-src="${escapeHtml(assetUrl(scene.base.assetRef))}" title="${escapeHtml(scene.title)}" sandbox="allow-scripts" style="position:absolute;inset:0;width:100%;height:100%;border:0;visibility:hidden;pointer-events:none;background:#fff"></iframe>`,
@@ -315,7 +325,7 @@ function interactiveStaticBridgeScript(labels: InteractiveFallbackLabels): strin
   const localized = JSON.stringify(labels);
   const diagnosticCodes = JSON.stringify(RUNTIME_DIAGNOSTIC_CODES);
   return `
-function initializeOpenMaicInteractiveStaticFrames() {
+function initializeOpenMaicInteractiveStaticFrames(timeline) {
   var hosts = Array.from(document.querySelectorAll('[data-interactive-static-host]'));
   window.__openmaicVideoDiagnostics = window.__openmaicVideoDiagnostics || [];
   window.__openmaicVideoManifest = window.__openmaicVideoManifest || { runtimeDiagnostics: [] };
@@ -337,76 +347,170 @@ function initializeOpenMaicInteractiveStaticFrames() {
       : labels.readyFailure;
     return detail && detail !== 'ready' ? prefix + ': ' + detail : prefix;
   }
-  return Promise.all(hosts.map(function (host) {
-    return new Promise(function (resolve) {
+  var controllers = hosts.map(function (host) {
       var sceneId = host.getAttribute('data-scene-id') || 'interactive';
       var timeoutMs = Number(host.getAttribute('data-ready-timeout-ms')) || 8000;
       var iframe = host.querySelector('[data-interactive-static-frame]');
       var fallback = host.querySelector('[data-interactive-fallback]');
       var reason = host.querySelector('[data-interactive-fallback-reason]');
+      // Use integer microseconds for comparison, including fractional FPS.
+      var start = Math.round(Number(host.getAttribute('data-start')) * 1000000);
+      var end = start + Math.round(Number(host.getAttribute('data-duration')) * 1000000);
+      var actions = JSON.parse(host.getAttribute('data-widget-actions'));
       var loaded = false;
-      var settled = false;
+      var failed = false;
       var runtimeErrors = [];
+      var pending;
+      var timer;
+      var requestId = 0;
+      var cursor = 0;
+      var position = -1;
+      var needsTime = false;
 
-      function finish(ok, code, message) {
-        if (settled) return;
-        settled = true;
+      function complete(ok) {
         clearTimeout(timer);
+        var request = pending;
+        pending = undefined;
+        if (request) request.resolve(ok);
+      }
+
+      function fail(code, detail) {
+        if (failed) return;
+        failed = true;
         window.removeEventListener('message', onMessage);
-        if (ok) {
-          iframe.style.visibility = 'visible';
-          fallback.style.display = 'none';
-          host.setAttribute('data-interactive-static-state', 'frozen');
-        } else {
-          iframe.style.visibility = 'hidden';
-          fallback.style.display = 'block';
-          if (reason) reason.textContent = message;
-          host.setAttribute('data-interactive-static-state', 'fallback');
-          host.setAttribute('data-interactive-diagnostic', code);
-          record(sceneId, code, message);
-          iframe.remove();
-        }
-        resolve({ sceneId: sceneId, ok: ok, code: code });
+        var message = messageFor(code, detail);
+        fallback.style.display = 'block';
+        if (reason) reason.textContent = message;
+        host.setAttribute('data-interactive-static-state', 'fallback');
+        host.setAttribute('data-interactive-diagnostic', code);
+        record(sceneId, code, message);
+        iframe.remove();
+        complete(false);
       }
 
       function onMessage(event) {
         if (event.source !== iframe.contentWindow) return;
         var data = event.data || {};
         if (data.__maicInteractive === true && data.kind === 'runtime-error') {
-          runtimeErrors.push('[' + (data.errorKind || 'error') + '] ' + String(data.message || 'runtime error'));
+          var detail = '[' + (data.errorKind || 'error') + '] ' + String(data.message || 'runtime error');
+          if (!pending) fail('interactive-runtime-failure', detail);
+          else if (runtimeErrors.length < 1) runtimeErrors.push(detail);
           return;
         }
         if (data[${flag}] !== true) return;
         if (data.kind === 'failure') {
-          var failureCode = data.code || 'interactive-ready-failure';
-          finish(false, failureCode, messageFor(failureCode, data.message));
-        } else if (data.kind === 'frozen') {
+          fail(data.code || 'interactive-ready-failure', data.message);
+        } else if (pending && data.kind === pending.kind && data.requestId === pending.id) {
           if (runtimeErrors.length > 0) {
-          finish(false, 'interactive-runtime-failure', messageFor('interactive-runtime-failure', runtimeErrors[0]));
-          } else {
-            finish(true, 'interactive-static-ready', 'ready');
+            fail('interactive-runtime-failure', runtimeErrors[0]);
+            return;
           }
+          needsTime = data.needsTime === true;
+          iframe.style.visibility = 'visible';
+          fallback.style.display = 'none';
+          host.setAttribute('data-interactive-static-state', 'frozen');
+          complete(true);
         }
       }
 
       window.addEventListener('message', onMessage);
-      iframe.addEventListener('load', function () {
-        loaded = true;
-        try { iframe.contentWindow.postMessage({ __maicErrorReplayRequest: true }, '*'); } catch (_) {}
-      }, { once: true });
-      iframe.addEventListener('error', function () {
-        finish(false, 'interactive-load-failure', messageFor('interactive-load-failure'));
-      }, { once: true });
-      var timer = setTimeout(function () {
-        finish(
-          false,
-          loaded ? 'interactive-ready-timeout' : 'interactive-load-timeout',
-          messageFor(loaded ? 'interactive-ready-timeout' : 'interactive-load-timeout')
-        );
-      }, timeoutMs);
-      iframe.setAttribute('src', iframe.getAttribute('data-src'));
+      function exchange(kind, id, send) {
+        return new Promise(function (resolve) {
+          pending = { kind: kind, id: id, resolve: resolve };
+          timer = setTimeout(function () {
+            if (kind === 'sought') fail('interactive-runtime-failure', 'Widget actions did not settle before capture');
+            else fail(loaded ? 'interactive-ready-timeout' : 'interactive-load-timeout', runtimeErrors[0]);
+          }, timeoutMs);
+          try { send(); } catch (error) { fail('interactive-runtime-failure', error.message); }
+        });
+      }
+
+      function load() {
+        loaded = false;
+        needsTime = false;
+        runtimeErrors = [];
+        cursor = 0;
+        position = -1;
+        var frame = iframe;
+        frame.addEventListener('load', function () { if (iframe === frame) loaded = true; }, { once: true });
+        frame.addEventListener('error', function () {
+          if (iframe === frame) fail('interactive-load-failure');
+        }, { once: true });
+        return exchange('frozen', undefined, function () {
+          frame.src = frame.getAttribute('data-src');
+        });
+      }
+
+      async function seek(time) {
+        if (failed || time < start || time >= end || actions.length === 0) return;
+        var next = (time - start) / 1000;
+        if (next === position) return;
+        if (next < position && cursor > 0) {
+          var frame = iframe.cloneNode(false);
+          frame.removeAttribute('src');
+          frame.style.visibility = 'hidden';
+          iframe.replaceWith(frame);
+          iframe = frame;
+          if (!await load()) return;
+        }
+        var first = cursor;
+        while (cursor < actions.length && actions[cursor].at <= next) cursor++;
+        if (first === cursor && !needsTime) return;
+        position = next;
+        var id = ++requestId;
+        await exchange('sought', id, function () {
+          iframe.contentWindow.postMessage({ [${flag}]: true, kind: 'seek', requestId: id,
+            time: next, actions: actions.slice(first, cursor) }, '*');
+        });
+      }
+
+      return { ready: load(), seek: seek, firstAction: actions.length ? start + Math.round(actions[0].at * 1000) : undefined, end: end };
+  });
+
+  return Promise.all(controllers.map(function (controller) { return controller.ready; })).then(function () {
+    var timed = controllers.filter(function (controller) { return controller.firstAction !== undefined; });
+    if (timed.length === 0) return;
+    var pending;
+    var desired;
+    function update() {
+      // GSAP can seek just past the target and back in a single task. Only
+      // apply the final time. Serialize seeks during playback and scrubbing.
+      desired = Math.round(timeline.time() * 1000000);
+      if (!pending) pending = Promise.resolve().then(async function () {
+        try {
+          while (desired !== undefined) {
+            var time = desired;
+            desired = undefined;
+            await Promise.all(timed.map(function (controller) { return controller.seek(time); }));
+          }
+        } finally {
+          pending = undefined;
+        }
+      });
+      return pending;
+    }
+
+    var waitForRendererSeek;
+    async function waitForSeek() {
+      if (waitForRendererSeek) await waitForRendererSeek.apply(this, arguments);
+      await update();
+    }
+    function bindSeek() {
+      // Hyperframes exposes this hook after mounting its runtime. Chain its own
+      // wait when our GSAP property is evaluated by a real render seek.
+      if (window.__hfWaitForSeekCompletion !== waitForSeek) {
+        waitForRendererSeek = window.__hfWaitForSeekCompletion;
+        window.__hfWaitForSeekCompletion = waitForSeek;
+      }
+    }
+    // Keep static-frame reuse available outside the spans affected by actions.
+    timed.forEach(function (controller) {
+      var clock = { get position() { return 0; }, set position(_) { bindSeek(); update(); } };
+      timeline.to(clock, { position: 1, duration: (controller.end - controller.firstAction) / 1000000, ease: 'none' }, controller.firstAction / 1000000);
     });
-  }));
+    bindSeek();
+    return update();
+  });
 }
 `;
 }
@@ -1166,11 +1270,16 @@ Self-contained [Hyperframes](https://github.com/heygen-com/hyperframes) composit
 for the classroom **${project.stageName}**. Everything needed to render is in this
 folder — no network access, no CDN.
 
+Interactive pages start offline. Teaching messages, their timers, and the animation frames
+they start follow the scene clock. Startup animation loops pause between teaching actions.
+Capture waits for registered browser work that can finish at the current scene time.
+If initialization or a seek exceeds its deadline, the video shows a fallback card with a diagnostic.
+
 - \`index.html\` — the composition (one data-composition-id=${optionValue(project.compositionId)} stage, one paused GSAP timeline on \`window.__timelines\`).
 - ${optionValue(project.manifestPath)} — the \`VideoTimeline\` manifest / export report (scenes, timing, assets, diagnostics).
 - Runtime interactive diagnostics are exposed live through \`window.__openmaicVideoManifest.runtimeDiagnostics\` and the machine-readable DOM report in \`index.html\`.
 - \`subtitles.srt\` / \`subtitles.vtt\` — narration subtitles.
-- \`assets/frames\`, \`assets/audio\`, \`assets/media\`, \`assets/interactive\` — slide snapshots, narration audio, embedded video clips, frozen interactive pages.
+- \`assets/frames\`, \`assets/audio\`, \`assets/media\`, \`assets/interactive\` — slide snapshots, narration audio, embedded video clips, and offline interactive pages with timed teaching actions.
 - ${optionValue(project.gsapVendorPath)} — vendored GSAP (determinism: no CDN at render time).
 - \`LICENSES/Inter-OFL-1.1.txt\` — license for the font embedded in \`index.html\`.
 ${
@@ -1182,8 +1291,8 @@ ${
 ## Render
 
 \`\`\`bash
-npx hyperframes preview                       # scrub locally in the browser
-npx hyperframes render --output video.mp4 --resolution ${project.width}x${project.height}
+npx hyperframes@0.7.107 preview               # scrub locally in the browser
+npx hyperframes@0.7.107 render --output video.mp4
 \`\`\`
 
 Duration: ~${seconds}s at ${project.width}×${project.height}.
@@ -1216,7 +1325,7 @@ ${labelsFence}
 ## Verify
 
 \`\`\`bash
-npx hyperframes lint                          # no CDN, no non-deterministic APIs, explicit durations
+npx hyperframes@0.7.107 lint                  # no CDN, no non-deterministic APIs, explicit durations
 \`\`\`
 `;
 }
@@ -1339,7 +1448,7 @@ window.__timelines = window.__timelines || {};
 ${
   hasInteractiveHtml
     ? `${interactiveStaticBridgeScript(labels.interactive)}
-window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames();
+window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames(tl);
 window.__openmaicInteractiveReady.then(function () {
   window.__timelines[${JSON.stringify(compositionId)}] = tl;
 });`

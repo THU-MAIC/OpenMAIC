@@ -65,7 +65,7 @@ You MUST output a JSON array directly. Use these item shapes:
 ## Widget Action Semantics
 
 - `widget_highlight`: use when a student should notice a control, display, or key visual element. Required params: `target`; optional `content`.
-- `widget_setState`: use when the lesson should demonstrate a meaningful state. Required params: `state`; optional `content`.
+- `widget_setState`: use when the lesson should demonstrate a meaningful state. Required params: `state`; optional `content`. Use state keys named by the widget config or the conventions below so the handler can render the change. Put the action before the speech that describes its result.
 - `widget_annotation`: use when a specific element needs a short explanatory label. Required params: `target`; optional `content`.
 - `widget_reveal`: use when hidden content should become visible after context is established. Required params: `target`; optional `content`.
 
@@ -75,7 +75,7 @@ For procedural-skill widgets, prefer these stable targets when they are present:
 - Step controls: `#step-1-control`, `#step-2-control`
 - Progress display: `#progress-display`
 - Reset button: `#reset-btn`
-- State fields for `widget_setState`: `completedSteps`, `currentStep`, `feedback`
+- State fields for `widget_setState`: `completedSteps` is an array of exact step IDs from the widget, e.g. `["step-1", "step-2"]`. Use `currentStep` and `feedback` only when the widget supports them.
 
 For simulation widgets, prefer IDs like `#angle-slider`, `#velocity-slider`, `#result-display`, or selectors from the embedded widget config.
 
@@ -87,7 +87,7 @@ For diagram widgets, the narration walks the diagram. These rules take priority 
 - `widget_highlight` and `widget_annotation` on a node also use `#node-{id}`.
 - The walk sets the length of the sequence, so the 3-8 item guidance does not limit it. Keep each node's speech short.
 
-For visualization3d widgets, prefer canonical control IDs: `#canvas-container`, `#controls`, `#zoom-in-btn`, `#zoom-out-btn`, `#speed-slider`, `#reset-btn`, `#info`.
+For visualization3d widgets, prefer canonical control IDs: `#canvas-container`, `#controls`, `#zoom-in-btn`, `#zoom-out-btn`, `#speed-slider`, `#reset-btn`, `#info`. Use `cameraPosition: [x, y, z]` in a state patch when the narration needs to show a specific camera position.
 
 For game widgets, prefer `#start-btn` and the element IDs declared in the embedded widget config.
 

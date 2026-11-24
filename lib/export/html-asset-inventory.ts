@@ -62,6 +62,7 @@ export interface HtmlAssetInventory {
   classicScripts: HtmlTextElement[];
   moduleScripts: HtmlTextElement[];
   importmaps: HtmlTextElement[];
+  captureAssetManifests: HtmlTextElement[];
   styles: HtmlTextElement[];
   styleAttributes: Array<{ css: string; range?: SourceRange }>;
   svgPresentationAttributes: Array<{
@@ -181,6 +182,7 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
     classicScripts: [],
     moduleScripts: [],
     importmaps: [],
+    captureAssetManifests: [],
     styles: [],
     styleAttributes: [],
     svgPresentationAttributes: [],
@@ -268,6 +270,12 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
     }
     if (text?.tagName === 'script' && type === 'module') inventory.moduleScripts.push(text);
     if (text?.tagName === 'script' && type === 'importmap') inventory.importmaps.push(text);
+    if (
+      text?.tagName === 'script' &&
+      type === 'application/json' &&
+      'data-openmaic-offline-assets' in attrs
+    )
+      inventory.captureAssetManifests.push(text);
 
     for (const child of element.childNodes) if (isElement(child)) visit(child);
     if (isTemplate(element)) {

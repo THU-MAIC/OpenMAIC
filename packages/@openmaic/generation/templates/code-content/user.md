@@ -38,7 +38,7 @@ Create a code playground widget for: {{title}}
 
 Generate a complete, interactive HTML code editor with:
 1. Code editor with syntax highlighting
-2. Run button with output display
-3. Test case validation
-4. Progressive hint system
+2. Run, output, and test validation for a supported browser runtime
+3. Worked examples and step controls for lessons that use a language without a supported runtime
+4. Progressive hints
 5. Embedded widget configuration JSON

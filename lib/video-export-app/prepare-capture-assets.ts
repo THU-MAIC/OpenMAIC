@@ -21,6 +21,44 @@ const PYODIDE_BOOT_FILES = [
   ['pyodide-lock.json', 'application/json'],
 ] as const;
 const PYODIDE_PAYLOAD_END = '}</script>';
+const MAX_DECLARED_OFFLINE_ASSETS = 64;
+
+async function collectOfflineAssets(
+  manifests: readonly HtmlTextElement[],
+  fetcher: FetchAsset,
+  maxHtmlBytes: number,
+) {
+  const urls = new Set<string>();
+  for (const manifest of manifests) {
+    const entries: unknown = JSON.parse(manifest.content);
+    if (!Array.isArray(entries)) throw new Error('offline asset manifest must be a JSON array');
+    for (const entry of entries) {
+      if (typeof entry !== 'string') throw new Error('offline asset URLs must be strings');
+      const url = new URL(entry);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password) {
+        throw new Error('offline asset URLs must be absolute HTTP(S) URLs without credentials');
+      }
+      urls.add(url.href);
+      if (urls.size > MAX_DECLARED_OFFLINE_ASSETS) throw new Error('too many offline assets');
+    }
+  }
+
+  const assets: Array<[string, string]> = [];
+  const unresolved: string[] = [];
+  let remaining = maxHtmlBytes;
+  for (const url of urls) {
+    const asset = await fetcher(url);
+    if (!asset) {
+      unresolved.push(url);
+      continue;
+    }
+    const data = toDataUri(asset.bytes, asset.contentType);
+    remaining -= data.length + url.length;
+    if (remaining < 0) throw new Error('declared offline assets exceed the capture size limit');
+    assets.push([url, data]);
+  }
+  return { assets, unresolved };
+}
 
 function scriptSourcesInBody(body: Program['body'] | BlockStatement['body']): Literal[] {
   const sources: Literal[] = [];
@@ -333,6 +371,9 @@ async function inlinePyodide(
       const [mime, base64] = files[key];
       return Promise.resolve(new Response(decode(base64), { headers: { 'Content-Type': mime } }));
     }
+    if (typeof key === 'string' && key.startsWith(localRoot)) {
+      return Promise.reject(new TypeError('Pyodide runtime file unavailable offline: ' + key.slice(localRoot.length)));
+    }
     if (isPyPiRequest(url)) {
       return Promise.reject(new Error('Python package download unavailable offline'));
     }
@@ -382,6 +423,11 @@ export async function prepareCaptureAssets(
   maxHtmlBytes: number,
 ) {
   const inventory = analyzeHtmlAssetInventory(html);
+  const offline = await collectOfflineAssets(
+    inventory.captureAssetManifests,
+    fetcher,
+    maxHtmlBytes,
+  );
   const patches: SourcePatch[] = [];
   const scripts = [...inventory.classicScripts, ...inventory.moduleScripts];
   let requestedPackages: Set<string> | undefined;
@@ -468,6 +514,7 @@ export async function prepareCaptureAssets(
   }
   return {
     html: applySourcePatches(html, patches),
+    offline,
     embedRuntimes(packaged: string) {
       if (!runtimePayloads.size) return packaged;
       for (const [marker, runtime] of runtimeScripts) {
