@@ -37,7 +37,6 @@ export interface RenderJob {
   status: RenderJobStatus;
   inputContentType: string;
   inputParts: RenderJobPart[];
-  inputBytes: number;
   outputParts: RenderJobPart[];
   outputBytes: number;
   renderTarget: string | null;
@@ -67,7 +66,6 @@ interface RenderJobRow extends Record<string, unknown> {
   status: RenderJobStatus;
   input_content_type: string;
   input_parts: RenderJobPart[];
-  input_bytes: string | number;
   output_parts: RenderJobPart[];
   output_bytes: string | number;
   render_target: string | null;
@@ -82,7 +80,7 @@ interface RenderJobRow extends Record<string, unknown> {
 }
 
 const COLUMNS = `id, owner_id, status, input_content_type, input_parts,
-  input_bytes, output_parts, output_bytes, render_target, render_job_id, attempt,
+  output_parts, output_bytes, render_target, render_job_id, attempt,
   lease_generation, progress, stage, error_code, error_message, created_at`;
 
 function renderJob(row: RenderJobRow): RenderJob {
@@ -92,7 +90,6 @@ function renderJob(row: RenderJobRow): RenderJob {
     status: row.status,
     inputContentType: row.input_content_type,
     inputParts: row.input_parts,
-    inputBytes: Number(row.input_bytes),
     outputParts: row.output_parts,
     outputBytes: Number(row.output_bytes),
     renderTarget: row.render_target,
@@ -188,15 +185,14 @@ export async function createRenderJob(input: {
 export async function recordRenderInputPart(
   jobId: string,
   part: RenderJobPart,
-  totalBytes: number,
   queryable?: Queryable,
 ): Promise<boolean> {
   const db = queryable ?? (await renderQueuePersistence()).pool;
   const result = await db.query(
     `UPDATE render_jobs
-        SET input_parts = input_parts || $2::jsonb, input_bytes = $3, updated_at = now()
+        SET input_parts = input_parts || $2::jsonb, updated_at = now()
       WHERE id = $1 AND status = 'uploading' RETURNING id`,
-    [jobId, JSON.stringify([part]), totalBytes],
+    [jobId, JSON.stringify([part])],
   );
   return result.rows.length > 0;
 }

@@ -35,7 +35,6 @@ CREATE TABLE IF NOT EXISTS render_jobs (
   status              TEXT NOT NULL,
   input_content_type  TEXT NOT NULL,
   input_parts         JSONB NOT NULL DEFAULT '[]'::jsonb,
-  input_bytes         BIGINT NOT NULL DEFAULT 0,
   output_parts        JSONB NOT NULL DEFAULT '[]'::jsonb,
   output_bytes        BIGINT NOT NULL DEFAULT 0,
   render_target       TEXT,

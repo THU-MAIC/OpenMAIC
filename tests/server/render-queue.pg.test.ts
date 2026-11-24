@@ -618,7 +618,7 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
         yield new Uint8Array(randomBytes(1024));
       })(),
       1024 * 1024,
-      (part, totalBytes, queryable) => recordRenderInputPart(jobId, part, totalBytes, queryable),
+      (part, _totalBytes, queryable) => recordRenderInputPart(jobId, part, queryable),
     );
     await writing;
     const swept = sweep(0);
@@ -632,9 +632,9 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     expect((await row(jobId))?.input_parts).toEqual([]);
     expect(await storedParts(jobId)).toBe(0);
     // A resumed upload cannot record another part.
-    expect(
-      await recordRenderInputPart(jobId, { hash: 'sha256-' + '0'.repeat(64), bytes: 1 }, 1),
-    ).toBe(false);
+    expect(await recordRenderInputPart(jobId, { hash: 'sha256-' + '0'.repeat(64), bytes: 1 })).toBe(
+      false,
+    );
   });
 
   it('records no part whose bytes failed to store', async () => {
@@ -656,7 +656,7 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
           yield new Uint8Array(randomBytes(1024));
         })(),
         1024 * 1024,
-        (part, totalBytes, queryable) => recordRenderInputPart(jobId, part, totalBytes, queryable),
+        (part, _totalBytes, queryable) => recordRenderInputPart(jobId, part, queryable),
       ),
     ).rejects.toBeInstanceOf(RenderPartStoreError);
     expect((await row(jobId))?.input_parts).toEqual([]);

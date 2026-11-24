@@ -90,7 +90,7 @@ export async function submitQueuedRender(
       'input',
       capped.stream as unknown as AsyncIterable<Uint8Array>,
       maxBytes,
-      (part, totalBytes, queryable) => recordRenderInputPart(jobId, part, totalBytes, queryable),
+      (part, _totalBytes, queryable) => recordRenderInputPart(jobId, part, queryable),
     );
     if (total === 0) {
       await failRenderUpload(jobId, 'upload_empty', 'Empty export archive');
