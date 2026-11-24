@@ -4,7 +4,6 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InteractiveIframeHost } from '@/components/scene-renderers/InteractiveIframeHost';
 import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
-import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -74,7 +73,6 @@ describe('interactive frame fit to content', () => {
   beforeEach(() => {
     useInteractiveIframePool.setState({ reset: resetPool });
     resetPool();
-    useSceneRuntimeErrors.setState({ errors: {} });
     useWidgetIframeStore.setState({
       sendMessageByScene: {},
       documentTokenByScene: {},
@@ -128,15 +126,21 @@ describe('interactive frame fit to content', () => {
     expect(cue()).toBeNull();
   });
 
-  it('yields the bottom edge to the runtime error banner', async () => {
+  it('keeps the cue visible after an iframe runtime error', async () => {
     await renderHost();
     await report({ width: 1280, height: 1600 }, 880);
     await report({ width: 1707, height: 1600 }, 640);
     expect(cue()).not.toBeNull();
-    await act(async () => {
-      useSceneRuntimeErrors.getState().addError('scene-a', '[error] boom');
+    const message = 'ReferenceError: example is not defined';
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: iframe().contentWindow,
+          data: { __maicInteractive: true, kind: 'runtime-error', errorKind: 'error', message },
+        }),
+      );
     });
-    expect(document.querySelector('[data-testid="interactive-runtime-error"]')).not.toBeNull();
-    expect(cue()).toBeNull();
+    expect(iframe().parentElement?.textContent).not.toContain(message);
+    expect(cue()).not.toBeNull();
   });
 });

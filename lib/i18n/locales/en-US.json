@@ -271,10 +271,6 @@
         "audioMetadata": "Audio (metadata only)"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "This interactive failed to run",
-      "dismiss": "Dismiss"
-    },
     "interactiveMoreBelow": "More below",
     "tabs": {
       "lecture": "Notes",

@@ -271,10 +271,6 @@
         "audioMetadata": "音声（メタデータのみ）"
       }
     },
-    "interactiveRuntimeError": {
-      "title": "このインタラクティブは実行できませんでした",
-      "dismiss": "閉じる"
-    },
     "interactiveMoreBelow": "下に続きがあります",
     "tabs": {
       "lecture": "ノート",
