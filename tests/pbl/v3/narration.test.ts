@@ -6,6 +6,7 @@ import {
   narrationSegments,
   narrationSteps,
   pointerAt,
+  spokenText,
   toldConversation,
 } from '@/lib/pbl/v3/narration';
 
@@ -266,4 +267,41 @@ it('keeps the active code cue through board close and clears it for a real board
   expect(
     pointerAt(steps([point('preview', { selector: '.item', pointer: 'laser' }), close]), 1),
   ).toBeUndefined();
+});
+
+it('reveals a file hint and its entire review question as a Markdown link arrives in chunks', () => {
+  const prefix = 'Read ';
+  const link = '[PLAN.md](#pbl-file=PLAN.md&line=12)';
+  const question = ' before answering. Which step will you change?';
+  let delivered = '';
+  const source = prefix + link + question;
+  for (let end = 1; end <= source.length; end++) {
+    const steps = narrationSteps(
+      entry([text('reply', source.slice(0, end), { streaming: end < source.length })]),
+    );
+    const words = steps[0]?.kind === 'say' ? steps[0].text : '';
+    expect(words.startsWith(delivered)).toBe(true);
+    expect(words).not.toContain('#pbl-file');
+    delivered = words;
+  }
+  expect(delivered).toBe(prefix + 'PLAN.md' + question);
+  const literal = narrationSteps(entry([text('reply', 'Inspect array[0]')]));
+  expect(literal[0]).toMatchObject({ text: 'Inspect array[0]' });
+});
+
+it('retains literal brackets on seal and never reopens a link inside a finished destination', () => {
+  for (const source of [
+    'Inspect array[0]',
+    'Review an unfinished [reference',
+    'Great! Inspect ![diagram](guide.png) then choose.',
+    'Read [sample](#pbl-file=src/[id].ts&line=2), then [notes](#pbl-file=b.md).',
+  ]) {
+    let revealed = '';
+    for (let end = 1; end <= source.length; end++) {
+      const next = spokenText(source.slice(0, end), end < source.length);
+      expect(next.startsWith(revealed)).toBe(true);
+      revealed = next;
+    }
+    expect(revealed).toBe(spokenText(source));
+  }
 });

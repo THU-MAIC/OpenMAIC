@@ -40,9 +40,14 @@ export type NarrationStep = { id: string; part: number } & (
 );
 
 /** Speech reads plain words: links keep their label, emphasis and code marks go. */
-export function spokenText(text: string) {
+export function spokenText(text: string, streaming = false) {
+  // The playback buffer only appends. Consume complete links first and withhold a
+  // possible final link (including an image's "!") until its label is stable.
   return text
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(
+      /!?\[([^\]]*)\]\([^)]*\)|!?\[[^\]]*(?:\](?:\([^)]*)?)?$|!$/gu,
+      (match, label: string | undefined) => label ?? (streaming ? '' : match),
+    )
     .replace(/[*_`#>]+/g, '')
     .replace(/[ \t]+/g, ' ')
     .trim();
@@ -85,7 +90,7 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
   const steps = entry.parts.flatMap((part, index): NarrationStep[] => {
     const at = { id: part.id, part: index };
     if (part.kind === 'text') {
-      const text = spokenText(part.text);
+      const text = spokenText(part.text, part.streaming);
       if (!text) return [];
       const points = codePoints;
       codePoints = [];
