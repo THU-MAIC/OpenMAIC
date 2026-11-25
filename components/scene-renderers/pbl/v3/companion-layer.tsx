@@ -92,6 +92,8 @@ export function CompanionLayer({
   );
   const bubbleKey = `${stageKey}:${conversation.at(-1)?.id ?? ''}:${pendingMessage?.id ?? ''}`;
   const requesting = ['chat', 'begin', 'retry'].includes(pendingAction ?? '');
+  const awaitingDecisionOpening =
+    view.stage.kind === 'dialogue' && (view.needsOpening || pendingAction === 'begin');
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
   const role = view.role ?? 'mentor';
   return (
@@ -209,7 +211,7 @@ export function CompanionLayer({
               sending={pendingAction === 'chat'}
               showControls={introducing}
               // What the stage asks of the learner comes once the role has said so.
-              task={narration.playing || view.busy ? undefined : task}
+              task={awaitingDecisionOpening || narration.playing || view.busy ? undefined : task}
               suggestions={
                 // What is on offer answers the last reply; once something is sent it is gone
                 // at once, not when the server says so.

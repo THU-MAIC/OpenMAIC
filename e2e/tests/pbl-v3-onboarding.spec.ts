@@ -485,8 +485,17 @@ for (const mode of assistantModes) {
     page,
     learningEvents,
   }) => {
-    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    let begin!: () => void;
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      explanationBoard: true,
+      beginGate: new Promise<void>((resolve) => {
+        begin = resolve;
+      }),
+    });
     const { view } = fixture;
+    await useAssistantMode(page, mode);
+    view.needsOpening = true;
     view.state.position.stageIndex = 1;
     view.stage = {
       kind: 'dialogue',
@@ -506,9 +515,37 @@ for (const mode of assistantModes) {
     ];
     view.revision++;
     await fixture.publish();
-    await useAssistantMode(page, mode);
-    if (mode !== 'bubble')
+    await expect.poll(() => fixture.commands.includes('begin')).toBe(true);
+    const bubbleTask = page.getByTestId('pbl-companion-task');
+    if (mode === 'bubble') {
+      await expect(bubbleTask).toHaveCount(0);
+    } else {
       await page.getByRole('button', { name: 'Current task', exact: true }).click();
+      await expect(page.getByTestId('pbl-decision-response')).toBeVisible();
+    }
+    begin();
+    await expect.poll(() => view.busy).toBe(true);
+    const introduction = 'Choose a direction and explain your choice.';
+    view.conversation = [
+      {
+        id: 'decision-opening',
+        currentStage: true,
+        speaker: 'discussion',
+        status: 'running',
+        parts: [{ id: 'opening-text', kind: 'text', text: introduction }],
+      },
+    ];
+    view.revision++;
+    await fixture.publish();
+    if (mode === 'bubble') {
+      await expect(page.getByTestId('pbl-companion-speech')).toContainText('Choose');
+      await expect(bubbleTask).toHaveCount(0);
+    }
+    view.busy = false;
+    view.roleRun = { status: 'succeeded', failure: null, canRetry: false };
+    view.conversation[0].status = 'succeeded';
+    view.revision++;
+    await fixture.publish();
     const form = page.getByTestId('pbl-decision-response').filter({ visible: true });
     await form.getByRole('button', { name: 'North' }).click();
     await form.getByRole('textbox').fill('It matches the goal.');
