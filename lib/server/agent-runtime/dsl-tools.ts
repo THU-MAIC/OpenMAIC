@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import { collectCourseIssues } from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { validateAppScene } from '@/lib/document-store/validators';
@@ -147,6 +148,20 @@ export const GREP_COURSE_SCHEMA = Type.Object({
 type ReadParams = Static<typeof READ_COURSE_SCHEMA>;
 type PatchParams = Static<typeof PATCH_COURSE_SCHEMA>;
 type GrepParams = Static<typeof GREP_COURSE_SCHEMA>;
+
+export const LIST_COURSE_ISSUES_TOOL_NAME = 'list_course_issues';
+const MAX_LISTED_ISSUES = 50;
+
+export const LIST_COURSE_ISSUES_SCHEMA = Type.Object({
+  stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
+  sceneId: Type.Optional(
+    Type.String({
+      description: 'List one page only: its scene id, as read_stage or list_scenes report it.',
+    }),
+  ),
+});
+
+type ListIssuesParams = Static<typeof LIST_COURSE_ISSUES_SCHEMA>;
 
 function toolResult(text: string, details: Record<string, unknown>, isError = false) {
   return {
@@ -1375,8 +1390,73 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
     },
   };
 
-  return [readCourse, patchCourse, grepCourse] as unknown as AgentTool<never, never>[];
+  /**
+   * The course's current problems, derived by the same `collectCourseIssues`
+   * the editor's issues list and page markers use (RFC #1899), so the agent and
+   * the owner see one list, and a fixed cause is gone from both. Read-only.
+   *
+   * What the server cannot see is said, not guessed: narration a browser may
+   * still hold on the owner's device is marked "possibly local audio". An
+   * interactive page's runtime errors are not listed here: generate_scene and
+   * patch_stage report them when they write the page.
+   */
+  const listIssues: AgentTool<typeof LIST_COURSE_ISSUES_SCHEMA, unknown> = {
+    name: LIST_COURSE_ISSUES_TOOL_NAME,
+    label: 'List course issues',
+    description:
+      "List what is currently wrong in a stage, page by page, at most 50: speech-without-audio (narration text with no generated audio; generate_tts), media-not-generated (an image or video slot still holding a generation placeholder; generate_image or generate_video), dangling-cue (a spotlight, laser or play_video cue bound to an element that is gone, or play_video bound to a non-video; rebind or remove with patch_stage), empty-actions (a page with no playback actions; generate_actions), and empty-speech, unbound-cue, empty-discussion (an action missing its text, element or topic; patch_stage). Each issue carries its page's 1-based `page` (matching the editor's issues list) plus its `scenePath` (address it by that with patch_stage/grep_stage), and the actionId or elementId it is about. An issue marked 'possibly local audio' may still play from the owner's device. Interactive runtime errors are not listed: generate_scene and patch_stage report them when they write an interactive page. Call it again after fixing to confirm the issue is gone.",
+    parameters: LIST_COURSE_ISSUES_SCHEMA,
+    async execute(_id, params: ListIssuesParams) {
+      const loaded = await loadCourse(deps, params.stageId);
+      if ('error' in loaded) return toolResult(loaded.error, {}, true);
+      const scenes = [...loaded.doc.scenes].sort((a, b) => a.order - b.order);
+      const target =
+        params.sceneId === undefined
+          ? scenes
+          : scenes.filter((scene) => scene.id === params.sceneId);
+      if (target.length === 0 && params.sceneId !== undefined)
+        return toolResult(`Scene ${JSON.stringify(params.sceneId)} was not found.`, {}, true);
+      const issues = collectCourseIssues(
+        { scenes: target },
+        // A run that cannot synthesize narration does not report its absence.
+        deps.capabilities ? { narrationEnabled: deps.capabilities.isAvailable('tts') } : {},
+      );
+      const byId = new Map(target.map((scene) => [scene.id, scene]));
+      const listed = issues.slice(0, MAX_LISTED_ISSUES).map((issue, _i, _arr) => {
+        const scene = byId.get(issue.sceneId)!;
+        // `page` is the 1-based position in the sorted scene list so the agent
+        // can say "page 3" and match what the editor's list shows, independent
+        // of non-contiguous `order` values after deletions.
+        const page = scenes.indexOf(scene) + 1;
+        return {
+          kind: issue.kind,
+          severity: issue.severity,
+          scenePath: `/scenes/${scene.id}`,
+          page,
+          order: scene.order,
+          title: scene.title,
+          ...(issue.actionId ? { actionId: issue.actionId } : {}),
+          ...(issue.elementId ? { elementId: issue.elementId } : {}),
+          ...(issue.evidence === 'local-audio-unchecked' ? { note: 'possibly local audio' } : {}),
+        };
+      });
+      const details = {
+        stageId: loaded.stageId,
+        total: issues.length,
+        truncated: listed.length < issues.length,
+        issues: listed,
+      };
+      return toolResult(JSON.stringify(details, null, 2), details);
+    },
+  };
+
+  return [readCourse, patchCourse, grepCourse, listIssues] as unknown as AgentTool<never, never>[];
 }
 
-export const DSL_COURSE_TOOL_NAMES = ['read_stage', 'patch_stage', 'grep_stage'] as const;
+export const DSL_COURSE_TOOL_NAMES = [
+  'read_stage',
+  'patch_stage',
+  'grep_stage',
+  LIST_COURSE_ISSUES_TOOL_NAME,
+] as const;
 export const DSL_COURSE_WRITE_TOOLS = ['patch_stage'] as const;

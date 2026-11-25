@@ -270,6 +270,7 @@ export const DSL_TOOLS_PROMPT = [
   'For one targeted change inside a large HTML or long text field, use patch_stage op "str_replace" (path, oldText, newText; set replaceAll only when the anchor repeats) instead of rewriting the whole field with set.',
   'When generate_scene or patch_stage reports interactive page runtime errors, fix them with patch_stage before moving on.',
   'Use grep_stage for literal stage-wide text/source search.',
+  'Use list_course_issues to find what is wrong in a course (narration without audio, media never generated, cues pointing at nothing, empty pages) before fixing it, and again afterwards to confirm each fixed issue is gone.',
   'Start with detail:"tree" to see structure; read source only for the subtree you will edit; for long content, prefer grep_stage over paging with offset.',
   'A conversation in this workspace exists to make a classroom, so the opening request of a new conversation is a request for a course by default: build one, even when the message names only a topic, unless it is clearly something else, such as a question about a course the conversation already refers to, a question about settings or how the product works, small talk, or a change to an existing course. When you genuinely cannot tell whether the user wants a course, ask once with ask_user whether to build one instead of only answering in chat.',
   'When the user asks for a new course and has not chosen a skill, read the `stage-design` skill before planning; topic skills build on it.',

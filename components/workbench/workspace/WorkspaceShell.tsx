@@ -175,6 +175,13 @@ import { isMacPlatform, isNewChatShortcut, isSearchShortcut } from '@/lib/workbe
 import type { LibraryMaterial } from '@/lib/workbench/material-library-client';
 import { hostPageItems, useWorkbenchShellExtensions } from '@/lib/workbench/shell-extensions';
 import type { MaterialSeed, MaterialSeedTarget } from '@/components/workbench/compose-extras';
+import {
+  dropStagedAgentFix,
+  nextAgentFixSeedKey,
+  peekStagedAgentFix,
+  type AgentFixDraftSeed,
+  type AgentFixRequest,
+} from '@/lib/workbench/agent-fix-handoff';
 import { pendingQuestion } from '@/components/workbench/chat/question-card-state';
 import { FetchEventSource } from '@/lib/utils/fetch-event-source';
 
@@ -300,12 +307,21 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    * it drops it, so it can never land in a conversation they went to instead.
    */
   const [materialSeed, setMaterialSeed] = useState<MaterialSeed | null>(null);
+  /**
+   * "Fix with agent" from a course: the issue on its way to an empty
+   * conversation beside that course, as draft text the owner reviews. Held
+   * until the composer it names takes it, then dropped — like the material
+   * seed, an event, never a conversation's remembered state.
+   */
+  const [agentFixSeed, setAgentFixSeed] = useState<AgentFixDraftSeed | null>(null);
   // Back and Forward are the teacher's navigation too. Nothing in the
   // workspace raises `popstate` itself, so this is never the hand-over's own
   // navigation (a push) or a background change (a replace).
   useEffect(() => {
     const dropMaterialSeed = () => {
       setMaterialSeed(null);
+      setAgentFixSeed(null);
+      dropStagedAgentFix();
       setNewConversationRequested(false);
     };
     window.addEventListener('popstate', dropMaterialSeed);
@@ -315,6 +331,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const materialSeedKeys = useRef(0);
   const consumeMaterialSeed = useCallback((key: number) => {
     setMaterialSeed((current) => (current?.key === key ? null : current));
+  }, []);
+  const consumeAgentFixSeed = useCallback((key: number) => {
+    setAgentFixSeed((current) => (current?.key === key ? null : current));
   }, []);
   const ownerSessionClient = useRef<OwnerSessionClient | null>(null);
   const shellGeneration = useRef(0);
@@ -653,6 +672,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       collapse.expandClassroom();
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       goTo(withView(withCourse(panes, next.activeCourseId), null));
     },
     [collapse, courseTabs, goTo, panes, persistCourseTabs],
@@ -674,6 +694,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       persistCourseTabs(next);
       collapse.expandClassroom();
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       setNewConversationRequested(startConversation);
       setDraftNamesCourse(startConversation);
       if (startConversation) {
@@ -716,6 +737,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       setNarrowFocus('chat');
       collapse.expandChat();
       setMaterialSeed(null);
+      setAgentFixSeed(null);
+      dropStagedAgentFix();
       goTo(withView(withSession(panes, sessionId), null));
     },
     [collapse, goTo, panes],
@@ -784,6 +807,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       const next = activateCourseTab(courseTabs, courseId);
       if (next === courseTabs) return;
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       setCourseTabs(next);
       persistCourseTabs(next);
       goTo(withCourse(panes, next.activeCourseId));
@@ -832,6 +856,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
   const openView = useCallback(
     (view: string) => {
       setMaterialSeed(null);
+      setAgentFixSeed(null);
+      dropStagedAgentFix();
       goTo(withView(panes, view));
     },
     [goTo, panes],
@@ -886,6 +912,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
    */
   const leaveView = useCallback(() => {
     setMaterialSeed(null);
+    setAgentFixSeed(null);
+    dropStagedAgentFix();
     goTo(withView(panes, null));
   }, [goTo, panes]);
 
@@ -1059,6 +1087,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     persistCourseTabs(NO_COURSE_TABS);
     setNewConversationRequested(false);
     setMaterialSeed(null);
+    setAgentFixSeed(null);
     setComposerReset((value) => value + 1);
   };
 
@@ -1129,6 +1158,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     setNarrowFocus('chat');
     collapse.expandChat();
     setMaterialSeed(null);
+    setAgentFixSeed(null);
+    dropStagedAgentFix();
     // The teacher's own choice, so it also leaves the knowledge base page.
     if (panes.courseId) {
       if (panes.sessionId || panes.view) {
@@ -1170,6 +1201,42 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     startNewConversation();
     setDraftNamesCourse(true);
   };
+  /**
+   * "Fix with agent" (issue #2329): "Edit with AI" for one observed problem —
+   * an empty conversation beside the course, naming it, with the problem
+   * pre-filled for the owner to review and send. Set only AFTER
+   * `startNewConversation`, which drops any earlier hand-over. Only for the
+   * course on screen: a request from anywhere else is stale.
+   *
+   * Unlike "Edit with AI", its entry (the editor's issues list) is
+   * reachable while the classroom is full screen, where every other pane
+   * steps aside: the conversation it opens would be there but hidden, so full
+   * screen ends first — exactly the pane's own "exit full screen", which keeps
+   * the classroom mounted.
+   */
+  const startAgentFix = (request: AgentFixRequest) => {
+    if (request.courseId !== panes.courseId) return;
+    useWorkbenchStore.getState().setPlaybackOn(false);
+    // Browser fullscreen (presentation mode inside the pane) hides the chat
+    // behind the stage and captures keyboard focus; exit it first so the
+    // prefilled composer is immediately visible and no key goes to the stage.
+    if (document.fullscreenElement) void document.exitFullscreen();
+    talkAboutCourse();
+    setAgentFixSeed({
+      key: nextAgentFixSeedKey(),
+      ownerKey: `draft:${request.courseId}`,
+      courseId: request.courseId,
+      text: request.prefill,
+    });
+  };
+  // Stable for the memoised classroom pane; always runs the latest render's.
+  const startAgentFixRef = useRef(startAgentFix);
+  useLayoutEffect(() => {
+    startAgentFixRef.current = startAgentFix;
+  });
+  const [startAgentFixStable] = useState(
+    () => (request: AgentFixRequest) => startAgentFixRef.current(request),
+  );
   // Stable for the memoised classroom pane; always runs the latest render's.
   const talkAboutCourseRef = useRef(talkAboutCourse);
   useLayoutEffect(() => {
@@ -1755,6 +1822,26 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
     access: courseAccess,
     generating: courseGenerating,
   });
+  // "Fix with agent" from the standalone classroom arrives staged in this tab
+  // (see `lib/workbench/agent-fix-handoff`): taken once the course it names is
+  // the one open here and the viewer's access to it is known. Only a course a
+  // conversation could change gets one; any other answer drops it.
+  useEffect(() => {
+    const staged = peekStagedAgentFix();
+    if (!staged) return;
+    if (staged.courseId !== panes.courseId) {
+      dropStagedAgentFix();
+      return;
+    }
+    if (courseAccess === 'unknown') return;
+    // A run-generated course's owner arrives while `useRunCourse` is still
+    // reading the manifest and scenes (2-3 round trips after the access answer).
+    // Keep the request staged; `readOnlyCourse` changes when the run read
+    // completes and re-triggers this effect. The 2-minute TTL bounds the wait.
+    if (courseAccess === 'owner' && courseGenerating) return;
+    dropStagedAgentFix();
+    if (!readOnlyCourse) startAgentFixRef.current(staged);
+  }, [panes.courseId, courseAccess, readOnlyCourse, courseGenerating]);
   // The names of courses that are not in the list (someone else's), as their
   // documents loaded here: a tab says what it is, not "untitled".
   const loadedStageId = useStageStore((s) => s.stage?.id ?? null);
@@ -1843,6 +1930,7 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
       // The teacher closing a tab; `closeCourse` alone is also the end of a
       // course deletion, which is not a navigation of theirs.
       setMaterialSeed(null);
+      setAgentFixSeed(null);
       closeCourse(courseId);
     },
     [closeCourse, closePreview, previewTab.requestKey],
@@ -2181,6 +2269,8 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             navigation={courseNavigation}
             materialSeed={materialSeed}
             onMaterialSeedConsumed={consumeMaterialSeed}
+            agentFixSeed={agentFixSeed}
+            onAgentFixSeedConsumed={consumeAgentFixSeed}
             newConversation={composerReset}
             conversation={panes.sessionId ?? (draftCourseId ? `draft:${draftCourseId}` : null)}
             draftConversation={draftConversation}
@@ -2249,6 +2339,9 @@ function WorkspaceShellController({ initialPanes }: { readonly initialPanes: Wor
             onTalkAboutCourse={
               browsingCourse && !readOnlyCourse ? talkAboutCourseStable : undefined
             }
+            // A conversation can only take a course's problems on while it
+            // could change the course.
+            onAgentFix={readOnlyCourse ? undefined : startAgentFixStable}
           />
         ) : null}
 

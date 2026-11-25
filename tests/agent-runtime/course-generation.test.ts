@@ -145,6 +145,18 @@ describe('read tools on a course being generated', () => {
     expect(textOf(grep).startsWith(NOTICE)).toBe(true);
   });
 
+  it('start list_course_issues with the notice too', async () => {
+    const tools = withCourseGenerationNotice(dslTools(storeOf()), lookup);
+    const listed = await run(tools, 'list_course_issues', { stageId: GENERATING });
+    expect(textOf(listed).startsWith(`${NOTICE}\n\n`)).toBe(true);
+    expect(listed.details?.generation).toEqual({
+      generating: true,
+      generationState: 'generating',
+      scenesCompleted: 2,
+      scenesTotal: 8,
+    });
+  });
+
   it('leave a finished course, an error result and every other tool alone', async () => {
     const base = dslTools(storeOf());
     const tools = withCourseGenerationNotice(base, lookup);

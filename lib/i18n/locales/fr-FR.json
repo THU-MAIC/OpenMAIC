@@ -787,6 +787,29 @@
     "dock": {
       "elementRefHint": "Références d’éléments — choisissez les éléments à joindre au prochain message",
       "globalTools": "Outils globaux"
+    },
+    "issues": {
+      "buttonLabel": "Problèmes du cours",
+      "buttonLabelWithCount": "Problèmes du cours ({{count}})",
+      "summary": "{{count}} problèmes",
+      "summary_one": "{{count}} problème",
+      "summary_other": "{{count}} problèmes",
+      "empty": "Aucun problème trouvé dans ce cours.",
+      "goTo": "Voir",
+      "fixWithAgent": "Corriger avec l’IA",
+      "pageLabel": "Page {{index}} · {{title}}",
+      "untitledPage": "Page sans titre",
+      "fixPrefillIssue": "Veuillez corriger ce problème sur « {{page}} » : {{issue}}.",
+      "fixPrefillCourse": "Veuillez vérifier les problèmes de ce cours et les corriger.",
+      "kind": {
+        "speechWithoutAudio": "La narration n’a pas d’audio",
+        "mediaNotGenerated": "L’image ou la vidéo n’a pas été générée",
+        "danglingCue": "Une action vise un élément qui n’existe plus",
+        "emptyActions": "La page n’a aucune action",
+        "emptySpeech": "Le texte de narration est vide",
+        "unboundCue": "Une action n’est associée à aucun élément",
+        "emptyDiscussion": "La discussion n’a pas de sujet"
+      }
     }
   },
   "whiteboard": {

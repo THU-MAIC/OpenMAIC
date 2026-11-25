@@ -758,6 +758,29 @@
     "dock": {
       "elementRefHint": "Referências de elementos — escolha elementos para enviar na próxima mensagem",
       "globalTools": "Ferramentas globais"
+    },
+    "issues": {
+      "buttonLabel": "Problemas do curso",
+      "buttonLabelWithCount": "Problemas do curso ({{count}})",
+      "summary": "{{count}} problemas",
+      "summary_one": "{{count}} problema",
+      "summary_other": "{{count}} problemas",
+      "empty": "Nenhum problema encontrado neste curso.",
+      "goTo": "Ver",
+      "fixWithAgent": "Corrigir com IA",
+      "pageLabel": "Página {{index}} · {{title}}",
+      "untitledPage": "Página sem título",
+      "fixPrefillIssue": "Corrija este problema em \"{{page}}\": {{issue}}.",
+      "fixPrefillCourse": "Verifique os problemas deste curso e corrija-os.",
+      "kind": {
+        "speechWithoutAudio": "A narração não tem áudio",
+        "mediaNotGenerated": "A imagem ou o vídeo não foi gerado",
+        "danglingCue": "Uma ação aponta para um elemento que não existe mais",
+        "emptyActions": "A página não tem ações",
+        "emptySpeech": "O texto da narração está vazio",
+        "unboundCue": "Uma ação não está vinculada a nenhum elemento",
+        "emptyDiscussion": "A discussão não tem tópico"
+      }
     }
   },
   "stage": {

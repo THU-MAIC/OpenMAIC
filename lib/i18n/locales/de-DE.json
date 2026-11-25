@@ -787,6 +787,29 @@
     "dock": {
       "elementRefHint": "Elementverweise – Elemente für die nächste Nachricht auswählen",
       "globalTools": "Globale Werkzeuge"
+    },
+    "issues": {
+      "buttonLabel": "Probleme im Kurs",
+      "buttonLabelWithCount": "Probleme im Kurs ({{count}})",
+      "summary": "{{count}} Probleme",
+      "summary_one": "{{count}} Problem",
+      "summary_other": "{{count}} Probleme",
+      "empty": "In diesem Kurs wurden keine Probleme gefunden.",
+      "goTo": "Anzeigen",
+      "fixWithAgent": "Mit KI beheben",
+      "pageLabel": "Seite {{index}} · {{title}}",
+      "untitledPage": "Unbenannte Seite",
+      "fixPrefillIssue": "Bitte behebe dieses Problem auf „{{page}}“: {{issue}}.",
+      "fixPrefillCourse": "Bitte prüfe diesen Kurs auf Probleme und behebe sie.",
+      "kind": {
+        "speechWithoutAudio": "Sprechertext ohne Audio",
+        "mediaNotGenerated": "Bild oder Video wurde nicht erzeugt",
+        "danglingCue": "Eine Aktion verweist auf ein Element, das nicht mehr existiert",
+        "emptyActions": "Die Seite hat keine Aktionen",
+        "emptySpeech": "Sprechertext ist leer",
+        "unboundCue": "Eine Aktion ist mit keinem Element verknüpft",
+        "emptyDiscussion": "Diskussionsrunde ohne Thema"
+      }
     }
   },
   "whiteboard": {

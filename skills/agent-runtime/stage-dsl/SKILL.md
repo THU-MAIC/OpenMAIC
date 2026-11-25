@@ -43,6 +43,7 @@ reorder, and retitle pages with `edit_deck`.
 | Read a scene | `read_stage` | `path:/scenes/<order|sceneId>` with the required detail |
 | Edit scene content or actions | `patch_stage` | `target:/scenes/<order|sceneId>` and scene-root JSON Pointer ops |
 | Search visible text or source | `grep_stage` | literal search over the whole stage |
+| Find what is wrong in a stage | `list_course_issues` | missing narration audio, ungenerated media, cues bound to nothing, empty pages; call again after fixing to confirm |
 | List stages in folders | `list_folder_stages` | returns the explicit `stageId` required by every stage tool |
 | Insert, delete, reorder, or retitle pages | `edit_deck` | page-list operations stay outside the document patcher |
 | Plan and build a new stage | conversation + `create_stage` + `generate_scene` | settle the page plan in conversation, then call `generate_scene` once per page with an explicit brief |

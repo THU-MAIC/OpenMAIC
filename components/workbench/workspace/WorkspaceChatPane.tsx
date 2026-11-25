@@ -19,6 +19,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { WorkbenchChat } from '@/components/workbench/WorkbenchChat';
 import type { MaterialSeed } from '@/components/workbench/compose-extras';
+import type { AgentFixDraftSeed } from '@/lib/workbench/agent-fix-handoff';
 import { PaneFoldButton } from './PaneFoldButton';
 
 /** The split's timing: a gentle ease-out, a little slow on purpose. */
@@ -46,6 +47,8 @@ export function WorkspaceChatPane({
   resizeHandle,
   materialSeed,
   onMaterialSeedConsumed,
+  agentFixSeed,
+  onAgentFixSeedConsumed,
   newConversation,
   conversation,
 }: {
@@ -95,6 +98,9 @@ export function WorkspaceChatPane({
   /** A knowledge base hand-over, passed through to the chat's composer. */
   readonly materialSeed?: MaterialSeed | null;
   readonly onMaterialSeedConsumed?: (key: number) => void;
+  /** A "Fix with agent" hand-off, passed through to the chat's composer. */
+  readonly agentFixSeed?: AgentFixDraftSeed | null;
+  readonly onAgentFixSeedConsumed?: (key: number) => void;
   /** Bumped each time a new chat is asked for, passed through to the composer. */
   readonly newConversation?: number;
   /** The conversation this pane was navigated to, passed through to the composer. */
@@ -278,6 +284,8 @@ export function WorkspaceChatPane({
               covered={covered}
               materialSeed={materialSeed}
               onMaterialSeedConsumed={onMaterialSeedConsumed}
+              agentFixSeed={agentFixSeed}
+              onAgentFixSeedConsumed={onAgentFixSeedConsumed}
               newConversation={newConversation}
               conversation={conversation}
             />

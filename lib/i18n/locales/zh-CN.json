@@ -787,6 +787,29 @@
     "dock": {
       "elementRefHint": "元素引用 —— 选中元素随下一条消息发给 Agent",
       "globalTools": "全局工具"
+    },
+    "issues": {
+      "buttonLabel": "课程问题",
+      "buttonLabelWithCount": "课程问题（{{count}}）",
+      "summary": "{{count}} 个问题",
+      "summary_one": "{{count}} 个问题",
+      "summary_other": "{{count}} 个问题",
+      "empty": "这门课程暂未发现问题。",
+      "goTo": "前往",
+      "fixWithAgent": "用 AI 修复",
+      "pageLabel": "第 {{index}} 页 · {{title}}",
+      "untitledPage": "未命名页面",
+      "fixPrefillIssue": "请修复「{{page}}」的问题：{{issue}}。",
+      "fixPrefillCourse": "请检查这门课程中的问题并修复。",
+      "kind": {
+        "speechWithoutAudio": "讲解缺少音频",
+        "mediaNotGenerated": "图片或视频未生成",
+        "danglingCue": "动作指向的元素已不存在",
+        "emptyActions": "本页没有任何动作",
+        "emptySpeech": "讲解文字为空",
+        "unboundCue": "动作未绑定元素",
+        "emptyDiscussion": "讨论缺少主题"
+      }
     }
   },
   "whiteboard": {

@@ -787,6 +787,29 @@
     "dock": {
       "elementRefHint": "요소 참조 — 다음 메시지와 함께 보낼 요소 선택",
       "globalTools": "전역 도구"
+    },
+    "issues": {
+      "buttonLabel": "코스 문제",
+      "buttonLabelWithCount": "코스 문제 ({{count}})",
+      "summary": "문제 {{count}}개",
+      "summary_one": "문제 {{count}}개",
+      "summary_other": "문제 {{count}}개",
+      "empty": "이 코스에서 발견된 문제가 없습니다.",
+      "goTo": "이동",
+      "fixWithAgent": "AI로 수정",
+      "pageLabel": "{{index}}페이지 · {{title}}",
+      "untitledPage": "제목 없는 페이지",
+      "fixPrefillIssue": "「{{page}}」의 문제를 수정해 주세요: {{issue}}.",
+      "fixPrefillCourse": "이 코스의 문제를 확인하고 수정해 주세요.",
+      "kind": {
+        "speechWithoutAudio": "내레이션에 오디오가 없습니다",
+        "mediaNotGenerated": "이미지 또는 동영상이 생성되지 않았습니다",
+        "danglingCue": "동작이 가리키는 요소가 더 이상 없습니다",
+        "emptyActions": "이 페이지에 동작이 없습니다",
+        "emptySpeech": "내레이션 텍스트가 비어 있습니다",
+        "unboundCue": "동작에 연결된 요소가 없습니다",
+        "emptyDiscussion": "토론 주제가 없습니다"
+      }
     }
   },
   "whiteboard": {

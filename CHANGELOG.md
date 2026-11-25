@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Provider configuration (1.6.0): migrate provider environment variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings. Startup logs the names of detected legacy settings at error level and continues so a workspace without a model can open first-run setup. Existing `${VAR}` references and operator force-off settings still work.
 - API clients: remove deprecated provider headers such as `x-api-key` and `x-model`. The server returns HTTP 400 with migration instructions. `/api/health` ignores deprecated provider headers. Replace `/api/server-providers` with `/api/generate-classroom/capabilities` for generation capabilities or `/api/health` for scene concurrency. [Migration guide](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration)
+### Features
+
+- Editor: a course's problems are listed in one place, an issues list in the edit dock grouped by page. It is derived from the course itself, so an entry disappears once its cause is fixed. "Fix with AI" hands one issue, or the whole list, to an empty conversation beside the course with the problem pre-filled; nothing is sent until the owner sends it. The Pro agent can list the same issues with `list_course_issues`. [#2329](https://github.com/THU-MAIC/OpenMAIC/issues/2329)
 
 ### Other Changes
 

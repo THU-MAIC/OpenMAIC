@@ -787,6 +787,29 @@
     "dock": {
       "elementRefHint": "要素参照 — 次のメッセージと一緒に送る要素を選ぶ",
       "globalTools": "全体ツール"
+    },
+    "issues": {
+      "buttonLabel": "コースの問題",
+      "buttonLabelWithCount": "コースの問題（{{count}}）",
+      "summary": "{{count}} 件の問題",
+      "summary_one": "{{count}} 件の問題",
+      "summary_other": "{{count}} 件の問題",
+      "empty": "このコースに問題は見つかりませんでした。",
+      "goTo": "移動",
+      "fixWithAgent": "AIで修正",
+      "pageLabel": "ページ {{index}} · {{title}}",
+      "untitledPage": "無題のページ",
+      "fixPrefillIssue": "「{{page}}」の問題を修正してください：{{issue}}。",
+      "fixPrefillCourse": "このコースの問題を確認して修正してください。",
+      "kind": {
+        "speechWithoutAudio": "ナレーションの音声がありません",
+        "mediaNotGenerated": "画像または動画が生成されていません",
+        "danglingCue": "アクションの対象要素が存在しません",
+        "emptyActions": "このページにアクションがありません",
+        "emptySpeech": "ナレーションのテキストが空です",
+        "unboundCue": "アクションに要素が紐付けられていません",
+        "emptyDiscussion": "ディスカッションの主題がありません"
+      }
     }
   },
   "whiteboard": {
