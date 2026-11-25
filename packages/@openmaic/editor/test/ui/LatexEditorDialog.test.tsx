@@ -50,16 +50,18 @@ describe('LatexEditorDialog', () => {
     const onRecoverableError = vi.fn();
 
     let root: Root | undefined;
-    await act(async () => {
-      root = hydrateRoot(container, dialog, { onRecoverableError });
-    });
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, dialog, { onRecoverableError });
+      });
 
-    expect(onRecoverableError).not.toHaveBeenCalled();
-    expect(screen.getByRole('dialog').parentElement?.parentElement).toBe(document.body);
-    expect(screen.getByLabelText('LaTeX source')).toHaveFocus();
-
-    act(() => root?.unmount());
-    container.remove();
+      expect(onRecoverableError).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog').parentElement?.parentElement).toBe(document.body);
+      expect(screen.getByLabelText('LaTeX source')).toHaveFocus();
+    } finally {
+      act(() => root?.unmount());
+      container.remove();
+    }
   });
 
   it('disables confirm and announces an error for invalid Latex', () => {
