@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-
-// A client-supplied provider base URL must be validated in every environment,
-// not only when NODE_ENV === 'production'. The self-hosting escape hatch is
-// ALLOW_LOCAL_NETWORKS, which the guard itself honors.
+import { middleware } from '@/middleware';
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
 
 const mocks = vi.hoisted(() => ({
   generateImage: vi.fn(),
@@ -26,29 +24,6 @@ vi.mock('@/lib/logger', () => ({
   }),
 }));
 
-const IMAGE_ENV_PREFIXES = [
-  'IMAGE_OPENAI',
-  'IMAGE_SEEDREAM',
-  'IMAGE_QWEN_IMAGE',
-  'IMAGE_NANO_BANANA',
-  'IMAGE_MINIMAX',
-  'IMAGE_GROK',
-  'IMAGE_LEMONADE',
-  'IMAGE_COMFYUI',
-];
-
-function stubImageEnvAbsent() {
-  for (const prefix of IMAGE_ENV_PREFIXES) {
-    vi.stubEnv(`${prefix}_API_KEY`, undefined);
-    vi.stubEnv(`${prefix}_BASE_URL`, undefined);
-    vi.stubEnv(`${prefix}_MODELS`, undefined);
-    vi.stubEnv(`${prefix}_ENABLED`, undefined);
-  }
-  // OpenAI also has a generic image fallback outside the IMAGE_* namespace.
-  vi.stubEnv('OPENAI_API_KEY', undefined);
-  vi.stubEnv('OPENAI_BASE_URL', undefined);
-}
-
 function imageRequest(headers: Record<string, string> = {}): NextRequest {
   return new NextRequest('http://localhost/api/generate/image', {
     method: 'POST',
@@ -57,79 +32,62 @@ function imageRequest(headers: Record<string, string> = {}): NextRequest {
   });
 }
 
-describe('generate image — client-supplied base URL guard applies in every environment', () => {
+describe('generate image provider configuration', () => {
   beforeEach(() => {
-    vi.unstubAllEnvs();
-    stubImageEnvAbsent();
+    vi.stubEnv('ACCESS_CODE', '');
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', undefined);
-    vi.resetModules();
-    mocks.generateImage.mockReset();
-    mocks.generateImage.mockResolvedValue({ url: 'https://example.com/img.png' });
+    mocks.generateImage.mockReset().mockResolvedValue({ url: 'https://example.com/img.png' });
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            photo: {
+              preset: 'openai-image',
+              apiKey: 'server-key',
+              baseUrl: 'http://images.example.com/v1',
+              models: ['gpt-image-1'],
+            },
+          },
+          slots: { image: 'photo:gpt-image-1' },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    setDeploymentConfigForTests();
   });
 
-  it('rejects a private-network base URL when NODE_ENV is not production', async () => {
-    vi.stubEnv('NODE_ENV', 'development');
+  it.each([undefined, 'true'])(
+    'rejects old endpoint headers in development when ALLOW_LOCAL_NETWORKS=%s',
+    async (allowLocal) => {
+      vi.stubEnv('NODE_ENV', 'development');
+      vi.stubEnv('ALLOW_LOCAL_NETWORKS', allowLocal);
+      const response = await middleware(
+        imageRequest({ 'x-base-url': 'https://provider.example.test' }),
+      );
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain('x-base-url');
+      expect(mocks.generateImage).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses the model and endpoint from the configured image slot', async () => {
     const { POST } = await import('@/app/api/generate/image/route');
-
-    const res = await POST(
-      imageRequest({
-        'x-image-provider': 'openai-image',
-        'x-api-key': 'client-key',
-        'x-image-model': 'gpt-image-2',
-        'x-base-url': 'http://192.168.1.10/v1/',
-      }),
-    );
-    const json = await res.json();
-
-    expect(res.status).toBe(403);
-    expect(json).toMatchObject({ success: false, errorCode: 'INVALID_URL' });
-    expect(mocks.generateImage).not.toHaveBeenCalled();
-  });
-
-  it('still allows a private-network base URL when ALLOW_LOCAL_NETWORKS=true', async () => {
-    vi.stubEnv('NODE_ENV', 'development');
-    vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
-    const { POST } = await import('@/app/api/generate/image/route');
-
-    const res = await POST(
-      imageRequest({
-        'x-image-provider': 'openai-image',
-        'x-api-key': 'client-key',
-        'x-image-model': 'gpt-image-2',
-        'x-base-url': 'http://192.168.1.10/v1/',
-      }),
-    );
-
-    expect(res.status).toBe(200);
+    const response = await POST(imageRequest());
+    expect(response.status).toBe(200);
     expect(mocks.generateImage).toHaveBeenCalledWith(
       expect.objectContaining({
         providerId: 'openai-image',
-        apiKey: 'client-key',
-        model: 'gpt-image-2',
-        baseUrl: 'http://192.168.1.10/v1/',
+        apiKey: 'server-key',
+        model: 'gpt-image-1',
+        baseUrl: 'http://images.example.com/v1',
       }),
       expect.anything(),
     );
-  });
-
-  it("applies the request's model to the server's default provider, as before slots", async () => {
-    vi.stubEnv('IMAGE_OPENAI_API_KEY', 'server-key');
-    vi.stubEnv('IMAGE_OPENAI_MODELS', 'gpt-image-1');
-    const { POST } = await import('@/app/api/generate/image/route');
-
-    const res = await POST(imageRequest({ 'x-image-model': 'gpt-image-1' }));
-    expect(res.status).toBe(200);
-    expect(mocks.generateImage).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: 'openai-image', model: 'gpt-image-1' }),
-      expect.anything(),
-    );
-
-    // Without a request model, the explicitly listed default is used.
-    const missing = await POST(imageRequest());
-    expect(missing.status).toBe(200);
   });
 });

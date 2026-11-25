@@ -1,7 +1,5 @@
 /**
- * The document slot of a deployment configured only through the legacy
- * PDF_* provider variables (no openmaic.yml): the real provider loader,
- * translation and slot lookup, end to end.
+ * Document configuration before and after moving provider settings to openmaic.yml.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -46,55 +44,13 @@ async function documentServices() {
   return resolveExtractionServices();
 }
 
-describe('document slot from the legacy provider variables', () => {
-  it('resolves to self-hosted MinerU from its key and base URL', async () => {
+describe('document slot migration', () => {
+  it('leaves the document slot unassigned even when old credentials are complete', async () => {
     vi.stubEnv('PDF_MINERU_API_KEY', 'env-key');
     vi.stubEnv('PDF_MINERU_BASE_URL', 'https://mineru.example');
-    const services = await documentServices();
-    expect(services.documentStatus).toBe('default');
-    expect(services.document).toMatchObject({
-      providerId: 'mineru',
-      apiKey: 'env-key',
-      baseUrl: 'https://mineru.example',
-      managed: true,
-      origin: 'default',
-    });
-  });
-
-  it('resolves to MinerU Cloud from its key alone, ahead of self-hosted MinerU', async () => {
-    vi.stubEnv('PDF_MINERU_BASE_URL', 'https://mineru.example');
-    vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'cloud-key');
-    const services = await documentServices();
-    expect(services.document).toMatchObject({ providerId: 'mineru-cloud', apiKey: 'cloud-key' });
-  });
-
-  it('prefers MinerU over an unpdf entry listed before it', async () => {
-    vi.stubEnv('PDF_UNPDF_BASE_URL', 'http://unpdf.example');
-    vi.stubEnv('PDF_MINERU_BASE_URL', 'https://mineru.example');
-    expect((await documentServices()).document).toMatchObject({ providerId: 'mineru' });
-  });
-
-  it('resolves to MiniCPM-OCR from its hosted API key alone', async () => {
-    vi.stubEnv('PDF_MINICPM_OCR_API_KEY', 'ocr-key');
-    const services = await documentServices();
-    expect(services.document).toMatchObject({
-      providerId: 'minicpm-ocr',
-      apiKey: 'ocr-key',
-      managed: true,
-      origin: 'default',
-    });
-    expect(services.document?.baseUrl).toBeUndefined();
-  });
-
-  it('resolves to a keyless self-hosted MiniCPM-OCR from its base URL alone', async () => {
-    vi.stubEnv('PDF_MINICPM_OCR_BASE_URL', 'http://ocr.internal/api');
-    const services = await documentServices();
-    expect(services.document).toMatchObject({
-      providerId: 'minicpm-ocr',
-      baseUrl: 'http://ocr.internal/api',
-      managed: true,
-    });
-    expect(services.document?.apiKey).toBeUndefined();
+    vi.stubEnv('ALIDOCMIND_ACCESS_KEY_ID', 'legacy-id');
+    vi.stubEnv('ALIDOCMIND_ACCESS_KEY_SECRET', 'legacy-secret');
+    expect((await documentServices()).documentStatus).toBe('unassigned');
   });
 
   it('leaves the slot unassigned without the variable each service needs', async () => {

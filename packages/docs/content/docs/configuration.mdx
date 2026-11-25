@@ -13,7 +13,7 @@ OpenMAIC has three configuration sources, and each has one job:
 
 `DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
-Earlier releases configured models only through provider environment variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_ROUTES`. Those still work for now, with the exception of `MODEL_ROUTES`, and are deprecated; see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration).
+Earlier releases configured models only through provider environment variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_ROUTES`. Since 1.6.0, use Model Settings or `openmaic.yml`; see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration).
 
 ## Models and providers
 
@@ -27,7 +27,7 @@ A capability is available exactly when its slot resolves to an assignment. There
 
 ### openmaic.yml
 
-The server reads `openmaic.yml` from the directory it starts in (the repository root; `/app` in the Docker image). Set `OPENMAIC_CONFIG` to use another path; a relative path is resolved against the same directory, and the file must then exist. Without the file, the server uses the web settings and, while they are still set, the [legacy variables](#migrating-from-the-legacy-configuration).
+The server reads `openmaic.yml` from the directory it starts in (the repository root; `/app` in the Docker image). Set `OPENMAIC_CONFIG` to use another path; a relative path is resolved against the same directory, and the file must then exist. Without the file, the server uses the web settings.
 
 The file is read once at startup: restart the server after changing it. It is validated completely before the server starts. An unset `${VAR}`, an unknown preset or slot, a reference to a provider that is not declared, or a provider that does not offer a slot's capability stops the server, and each problem is listed with its location:
 
@@ -312,11 +312,11 @@ A deployment that wants users to reach internal services declares those provider
 
 Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
 
-The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has nothing assigned or, on a server still configured through the legacy variables, only a default those translate to (as `DEFAULT_MODEL` always ranked below the model a request named); a default in `openmaic.yml`, the workspace's own choice and a locked slot win, and a slot set to `null` refuses the request whatever it names. With `allowUserKeys: false` they are ignored altogether. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
+Starting in 1.6.0, requests with deprecated provider headers such as `x-model` or `x-api-key` return HTTP 400. Remove the headers and configure the provider and slots through Model Settings or `openmaic.yml`. Use `/api/generate-classroom/capabilities` for course-generation capability discovery and `/api/health` for the scene concurrency value previously returned by `/api/server-providers`.
 
 ### Migrating from the legacy configuration
 
-When `openmaic.yml` is absent, the server translates the legacy configuration at startup and logs a deprecation notice, plus a notice for each entry that could not carry over:
+Starting in 1.6.0, startup logs the names of detected legacy provider settings and continues. A workspace with no saved configuration or configured model can use first-run setup. To migrate operator-managed providers, declare them and their assignments in `openmaic.yml` as follows.
 
 | Legacy setting | Becomes |
 | --- | --- |
@@ -325,10 +325,10 @@ When `openmaic.yml` is absent, the server translates the legacy configuration at
 | `DEFAULT_MODEL` | The `llm` assignment, as a default a workspace can override (not locked). The `agent` slot stays off, as before |
 | `MODEL_FALLBACK` | The fallback of `DEFAULT_MODEL`. Without `DEFAULT_MODEL` it is dropped with a notice |
 | The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | The default assignment of that capability (`DEFAULT_IMAGE_PROVIDER` picks the image provider) |
-| `MODEL_ROUTES` | **Not translated.** The server refuses to start (see below) |
+| `MODEL_ROUTES` | Rewrite the per-stage selections as slots (see below) |
 | `<CAP>_<VENDOR>_ENABLED=false` | Still honoured: the provider stays off whatever assigns it |
 
-When `openmaic.yml` exists, the provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` are ignored for model resolution, with a notice. `<CAP>_<VENDOR>_ENABLED=false` still applies; to turn a capability off, set its slot to `null` instead.
+Provider variables and `server-providers.yml` no longer assign models or supply credentials automatically. Keep environment variables referenced as `${VAR}` in the new file. Existing operator force-off settings still apply.
 
 **Environment variables.** Before:
 
@@ -411,13 +411,7 @@ slots:
 
 Each section of `server-providers.yml` becomes providers with the matching preset (`providers` → chat presets, `tts`, `asr`, `pdf` → document, `image`, `video`, `web-search`), and `accessKeyId`/`accessKeySecret` move under `credentials`.
 
-**MODEL_ROUTES.** A server that sets `MODEL_ROUTES` without `openmaic.yml` does not start:
-
-```text
-MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
-```
-
-Per-stage routes do not map one to one onto slots, so they are not translated. Rewrite each route as the slot its stage belongs to:
+**MODEL_ROUTES.** Per-stage routes do not map one to one onto slots, so they are not translated. Rewrite each route as the slot its stage belongs to:
 
 | `MODEL_ROUTES` stage | Slot |
 | --- | --- |
@@ -541,7 +535,7 @@ LLM_THINKING_DISABLED=false
 
 ## Legacy provider environment variables
 
-These variables and `server-providers.yml` are the configuration of earlier releases. They still work when there is no `openmaic.yml` (see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration)) and are deprecated: they will be removed two minor versions after the model settings ship. With `openmaic.yml`, use them only as the source of `${VAR}` references. `DEFAULT_MODEL` and `MODEL_FALLBACK` are covered in the migration section; `MODEL_ROUTES` is no longer read.
+These reference tables describe the legacy names for migration. Declare providers and slots in `openmaic.yml` and use `${VAR}` references for values held in the environment.
 
 ### LLM providers
 

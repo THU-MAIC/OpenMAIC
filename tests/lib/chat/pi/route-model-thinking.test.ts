@@ -181,22 +181,14 @@ describe('POST /api/chat/pi model and thinking resolution', () => {
     );
   });
 
-  it('forwards parsed x-model-routes user routes into chat-adapter resolution', async () => {
+  it('forwards request-body model and thinking into chat-adapter resolution', async () => {
     const { POST } = await import('@/app/api/chat/pi/route');
-    const response = await POST(
-      makeRequest(
-        makeBody(),
-        JSON.stringify({ 'chat-adapter': { model: 'anthropic:claude-sonnet-4' } }),
-      ),
-    );
+    const response = await POST(makeRequest(makeBody()));
     await response.text();
 
     expect(response.status).toBe(200);
     expect(mocks.resolveModel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stage: 'chat-adapter',
-        userRoutes: { 'chat-adapter': { model: 'anthropic:claude-sonnet-4' } },
-      }),
+      expect.objectContaining({ stage: 'chat-adapter', modelString: 'client:model' }),
     );
   });
 

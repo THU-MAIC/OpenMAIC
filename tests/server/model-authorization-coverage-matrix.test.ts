@@ -89,6 +89,11 @@ vi.mock('@/lib/config/feature-flags', async (original) => ({
   isServerPersistenceConfigured: () => true,
   isAgentRuntimeConfigured: () => true,
 }));
+vi.mock('@/lib/persistence/owner-merges', async (original) => ({
+  ...(await original<typeof import('@/lib/persistence/owner-merges')>()),
+  isOwnerRetired: async () => false,
+  canonicalizeStoredOwner: async (ownerId: string) => ownerId,
+}));
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({ pool: {} }),
 }));
@@ -226,12 +231,12 @@ const ROUTES: RouteCase[] = [
     path: 'verify-model',
     invoke: async (m) =>
       (await import('@/app/api/verify-model/route')).POST(
-        request('/api/verify-model', { model: `openai:${m}` }),
+        request('/api/verify-model', { provider: 'openai', model: m }),
       ),
   },
   ...(['instructor', 'simulator', 'evaluate', 'open-task'] as const).map((endpoint) => ({
     path: `pbl/v2/${endpoint}`,
-    invoke: async (m: string) => {
+    invoke: async () => {
       const handlers = {
         instructor: await import('@/app/api/pbl/v2/instructor/route'),
         simulator: await import('@/app/api/pbl/v2/simulator/route'),
@@ -239,73 +244,48 @@ const ROUTES: RouteCase[] = [
         'open-task': await import('@/app/api/pbl/v2/open-task/route'),
       };
       return handlers[endpoint].POST(
-        request(
-          `/api/pbl/v2/${endpoint}`,
-          {
-            model: `openai:${m}`,
-            project: { id: 'p' },
-            userMessage: 'hi',
-            kind: 'final',
-            phase: 'greeting',
-          },
-          { 'x-model': `openai:${m}` },
-        ),
+        request(`/api/pbl/v2/${endpoint}`, {
+          project: { id: 'p' },
+          userMessage: 'hi',
+          kind: 'final',
+          phase: 'greeting',
+        }),
       );
     },
   })),
   {
     path: 'quiz-grade',
-    invoke: async (m) =>
+    invoke: async () =>
       (await import('@/app/api/quiz-grade/route')).POST(
-        request(
-          '/api/quiz-grade',
-          { model: `openai:${m}`, question: 'Q', userAnswer: 'A', points: 1 },
-          { 'x-model': `openai:${m}` },
-        ),
+        request('/api/quiz-grade', { question: 'Q', userAnswer: 'A', points: 1 }),
       ),
   },
   {
     path: 'generate/image',
-    invoke: async (m) =>
+    invoke: async () =>
       (await import('@/app/api/generate/image/route')).POST(
-        request(
-          '/api/generate/image',
-          { prompt: 'A tree' },
-          { 'x-image-provider': 'seedream', 'x-image-model': m },
-        ),
+        request('/api/generate/image', { prompt: 'A tree' }),
       ),
   },
   {
     path: 'verify-image-provider',
     invoke: async (m) =>
       (await import('@/app/api/verify-image-provider/route')).POST(
-        request(
-          '/api/verify-image-provider',
-          {},
-          { 'x-image-provider': 'seedream', 'x-image-model': m },
-        ),
+        request('/api/verify-image-provider', { provider: 'seedream', model: m }),
       ),
   },
   {
     path: 'generate/video',
-    invoke: async (m) =>
+    invoke: async () =>
       (await import('@/app/api/generate/video/route')).POST(
-        request(
-          '/api/generate/video',
-          { prompt: 'A river' },
-          { 'x-video-provider': 'seedance', 'x-video-model': m },
-        ),
+        request('/api/generate/video', { prompt: 'A river' }),
       ),
   },
   {
     path: 'verify-video-provider',
     invoke: async (m) =>
       (await import('@/app/api/verify-video-provider/route')).POST(
-        request(
-          '/api/verify-video-provider',
-          {},
-          { 'x-video-provider': 'seedance', 'x-video-model': m },
-        ),
+        request('/api/verify-video-provider', { provider: 'seedance', model: m }),
       ),
   },
   {
@@ -417,21 +397,10 @@ const ROUTES: RouteCase[] = [
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.saved = null;
-  vi.stubEnv('DATABASE_URL', '');
-  for (const name of [
-    'OPENAI',
-    'IMAGE_SEEDREAM',
-    'VIDEO_SEEDANCE',
-    'TTS_OPENAI',
-    'ASR_OPENAI',
-    'WEB_SEARCH_CLAUDE',
-  ]) {
-    vi.stubEnv(`${name}_API_KEY`, 'server');
-    vi.stubEnv(`${name}_MODELS`, 'allowed');
-  }
+  vi.stubEnv('DATABASE_URL', 'postgresql://test.invalid/openmaic');
   runtime.setDeploymentConfigForTests({
     layer: { source: 'deployment', config: { providers } },
-    legacy: true,
+    legacy: false,
     notices: [],
   });
   runtime.setWorkspaceLayerLoaderForTests(async () => ({
@@ -506,10 +475,7 @@ describe('server model authorization coverage matrix', () => {
     [
       'web-search model',
       async () => {
-        await resolveWebSearchConnection(null, {
-          webSearchProviderId: 'claude',
-          webSearchModelId: mocks.model,
-        });
+        await resolveWebSearchConnection('test-owner');
         mocks.upstream();
       },
     ],
@@ -609,6 +575,11 @@ describe('server model authorization coverage matrix', () => {
   );
   it('chat/pi refuses an unauthorized search model before starting the LLM stream', async () => {
     vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', 'true');
+    mocks.model = 'allowed';
+    runtime.setWorkspaceLayerLoaderForTests(async () => ({
+      source: 'workspace',
+      config: { slots: { llm: 'openai:allowed', webSearch: 'claude:unlisted' } },
+    }));
     const response = await (
       await import('@/app/api/chat/pi/route')
     ).POST(

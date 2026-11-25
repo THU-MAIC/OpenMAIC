@@ -36,7 +36,7 @@ const globalState = globalThis as typeof globalThis & { [STATE_KEY]?: Deployment
 /**
  * The deployment layer, loaded on first use and kept for
  * the life of the process (openmaic.yml applies on restart). Startup calls
- * this so that a broken file or a leftover MODEL_ROUTES stops the server
+ * this so that a broken deployment file stops the server
  * before it serves anything, and prints the notices once.
  */
 export function deploymentConfig(): DeploymentLayer {

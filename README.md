@@ -137,7 +137,7 @@ The slots you write are the server's defaults; users can change them, or connect
 | --- | --- |
 | Slots, presets, fallbacks, `lock`, `allowUserKeys`, `OPENMAIC_SECRET_KEY` | [Configuration](packages/docs/content/docs/configuration.mdx) |
 | Every provider preset and model ID | [Supported models](packages/docs/content/docs/supported-models.mdx) |
-| Upgrading: provider variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_FALLBACK` still work without `openmaic.yml`; `MODEL_ROUTES` must become slots | [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration) |
+| Upgrading: migrate provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings | [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration) |
 | Which models users may pick: a provider whose key the server holds and that selects an upstream model offers only the models in its `models` list (`*_MODELS`), plus the slot, default and fallback models | [Model authorization](packages/docs/content/docs/configuration.mdx#model-authorization-for-server-managed-providers) |
 
 **Providers:** OpenAI, Azure OpenAI, Anthropic, Amazon Bedrock, Google Gemini, DeepSeek, Qwen, Kimi, MiniMax, Grok (xAI), OpenRouter, TokenDance, Doubao, Tencent Hunyuan/TokenHub, Xiaomi MiMo, GLM (Zhipu), Ollama, [Lemonade](#lemonade-local-ai) and [FunASR](#funasr-local-asr) (local), and any OpenAI-compatible API.

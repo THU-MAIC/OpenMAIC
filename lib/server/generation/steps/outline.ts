@@ -13,7 +13,7 @@ import { prepareVisionImages } from '../vision-images';
 import { attachedModelFallback, fallbackMaxOutputTokens } from '@/lib/ai/model-fallbacks';
 import { streamLLM } from '@/lib/ai/llm';
 import {
-  resolveFallbackModel,
+  type FallbackResolution,
   shouldFallbackFor,
   logFallbackFired,
 } from '@/lib/server/llm-fallback';
@@ -586,18 +586,11 @@ async function streamOutlines(
   // shared log line live in lib/server/llm-fallback.ts — one place, same
   // semantics as the non-streaming callLLM path.
   const maybeFallback = async (error: unknown, text?: string): Promise<boolean> => {
-    if (fellBack) return false;
-    // The fallback only protects primaries the SERVER resolved (routed
-    // stage or server-configured provider). A client-supplied x-model
-    // with a garbage key must never be allowed to burn the operator's
-    // fallback key by failing on purpose.
-    if (!model.serverManaged) return false;
+    if (fellBack || !model.serverManaged) return false;
     if (!shouldFallbackFor(error, text)) return false;
-    let fallback: Awaited<ReturnType<typeof resolveFallbackModel>>;
+    let fallback: FallbackResolution | null | undefined;
     try {
-      // The slot's own fallback when the model came from a slot.
-      const attached = attachedModelFallback(languageModel);
-      fallback = attached ? await attached() : await resolveFallbackModel();
+      fallback = await attachedModelFallback(languageModel)?.();
     } catch {
       // Misconfigured fallback provider — keep the real error instead of
       // surfacing e.g. "API key required for provider: …" to the caller.

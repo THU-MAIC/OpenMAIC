@@ -33,9 +33,9 @@ vi.mock('@/lib/persistence/schema-boot-check', () => ({
   startRuntimeSchemaMonitor: vi.fn(),
 }));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({ startAssetCollectorSchedule }));
-vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
 vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeConfigured: () => false,
+  isAgentRuntimeEnabled: () => false,
   isServerPersistenceConfigured: () => false,
 }));
 
@@ -103,17 +103,20 @@ describe('model configuration at boot', () => {
     expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
   });
 
-  it('refuses to start with MODEL_ROUTES and no configuration file', async () => {
+  it('warns and completes startup with MODEL_ROUTES and no configuration file', async () => {
     vi.stubEnv('OPENMAIC_CONFIG', '');
     vi.spyOn(process, 'cwd').mockReturnValue(dir);
     vi.stubEnv('MODEL_ROUTES', '{"scene-content":"openai:gpt-5.6"}');
     const { register } = await import('@/instrumentation');
 
-    await expect(register()).rejects.toThrow(/MODEL_ROUTES does not carry over/);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(register()).resolves.toBeUndefined();
 
-    expect(exit).toHaveBeenCalledWith(1);
-    expect(stderr[0]).toContain('write the per-stage models as slots in openmaic.yml');
-    expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+    expect(warn.mock.calls.flat().join(' ')).toContain(
+      'Deprecated provider settings detected: MODEL_ROUTES',
+    );
+    expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
   });
 
   it('boots with MODEL_ROUTES left over next to a configuration file', async () => {

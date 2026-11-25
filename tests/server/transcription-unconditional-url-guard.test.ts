@@ -21,30 +21,14 @@ vi.mock('@/lib/audio/asr-providers', async (importOriginal) => {
   };
 });
 
-vi.mock('@/lib/server/provider-config', () => ({
+vi.mock('@/lib/server/provider-config', async (original) => ({
+  ...(await original<typeof import('@/lib/server/provider-config')>()),
   isServerConfiguredProvider: () => mocks.serverManaged,
   isServerProviderDisabled: () => mocks.serverDisabled,
   resolveASRApiKey: (_id: string, clientKey?: string | null) => clientKey || 'server-key',
   resolveASRBaseUrl: (_id: string, clientBaseUrl?: string | null) => clientBaseUrl || undefined,
   resolveASRModel: (_id: string, clientModel?: string | null) => clientModel || 'whisper-1',
   resolveServerASRProviderId: () => undefined,
-  // No legacy configuration: the request's own provider is what resolves.
-  getServerProviderConfig: () => ({
-    providers: {},
-    tts: {},
-    asr: {},
-    pdf: {},
-    image: {},
-    video: {},
-    webSearch: {},
-    disabled: {
-      tts: new Set(),
-      asr: new Set(),
-      image: new Set(),
-      video: new Set(),
-      webSearch: new Set(),
-    },
-  }),
 }));
 
 vi.mock('@/lib/logger', () => ({
@@ -73,7 +57,7 @@ async function postTranscription(baseUrl: string) {
 }
 
 describe('transcription — client-supplied base URL guard applies in every environment', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     delete process.env.ALLOW_LOCAL_NETWORKS;
@@ -81,6 +65,7 @@ describe('transcription — client-supplied base URL guard applies in every envi
     mocks.transcribeAudio.mockResolvedValue({ text: 'hello' });
     mocks.serverManaged = false;
     mocks.serverDisabled = false;
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests();
   });
 
   it('rejects a private-network base URL when NODE_ENV is not production', async () => {
@@ -103,18 +88,24 @@ describe('transcription — client-supplied base URL guard applies in every envi
         source: 'deployment',
         config: {
           providers: {
-            openai: { preset: 'openai-whisper', apiKey: 'server-key', models: ['whisper-1'] },
+            openai: {
+              preset: 'openai-whisper',
+              apiKey: 'server-key',
+              baseUrl: 'http://asr.example.com/v1',
+              models: ['whisper-1'],
+            },
           },
+          slots: { asr: 'openai:whisper-1' },
         },
       },
-      legacy: true,
+      legacy: false,
       notices: [],
     });
     const res = await postTranscription('');
 
     expect(res.status).toBe(200);
     expect(mocks.transcribeAudio).toHaveBeenCalledWith(
-      expect.objectContaining({ providerId: 'openai', publicOnly: false, managed: true }),
+      expect.objectContaining({ providerId: 'openai-whisper', publicOnly: false, managed: true }),
       expect.any(File),
     );
   });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { APICallError } from 'ai';
 
+import { attachModelFallback } from '@/lib/ai/model-fallbacks';
 import { createLogger } from '@/lib/logger';
 
 const streamLLMMock = vi.fn();
@@ -10,7 +11,7 @@ vi.mock('@/lib/ai/llm', () => ({
 }));
 
 const fallbackMocks = vi.hoisted(() => ({
-  resolveFallbackModel: vi.fn(),
+  loadSlotFallback: vi.fn(),
   shouldFallbackFor: vi.fn(),
   logFallbackFired: vi.fn(),
 }));
@@ -68,8 +69,10 @@ function streamError(statusCode: number, message: string): APICallError {
 const OUTLINE_TEXT = '{"languageDirective":"English","outlines":[{"title":"Intro"}]}';
 
 function resolvedModel(serverManaged: boolean) {
+  const model = { provider: 'openai.responses', modelId: 'gpt-5.4' };
+  if (serverManaged) attachModelFallback(model as never, fallbackMocks.loadSlotFallback);
   return {
-    model: { provider: 'openai.responses', modelId: 'gpt-5.4' },
+    model,
     modelInfo: { capabilities: {} },
     modelString: 'openai:gpt-5.4',
     thinkingConfig: undefined,
@@ -80,10 +83,10 @@ function resolvedModel(serverManaged: boolean) {
 describe('outline step fallback wiring', () => {
   beforeEach(() => {
     streamLLMMock.mockReset();
-    fallbackMocks.resolveFallbackModel.mockReset();
+    fallbackMocks.loadSlotFallback.mockReset();
     fallbackMocks.shouldFallbackFor.mockReset();
     fallbackMocks.logFallbackFired.mockReset();
-    fallbackMocks.resolveFallbackModel.mockResolvedValue({
+    fallbackMocks.loadSlotFallback.mockResolvedValue({
       model: 'fallback-model',
       modelString: 'qwen:deepseek-v4-pro',
     });
@@ -106,7 +109,7 @@ describe('outline step fallback wiring', () => {
 
     expect(events.some((e) => e.type === 'error' && e.error === 'unauthorized')).toBe(true);
     expect(streamLLMMock).toHaveBeenCalledTimes(3);
-    expect(fallbackMocks.resolveFallbackModel).not.toHaveBeenCalled();
+    expect(fallbackMocks.loadSlotFallback).not.toHaveBeenCalled();
     expect(fallbackMocks.logFallbackFired).not.toHaveBeenCalled();
   });
 
@@ -155,7 +158,7 @@ describe('outline step fallback wiring', () => {
 
     // Initial attempt + MAX_STREAM_RETRIES same-model retries, no fallback round.
     expect(streamLLMMock).toHaveBeenCalledTimes(3);
-    expect(fallbackMocks.resolveFallbackModel).not.toHaveBeenCalled();
+    expect(fallbackMocks.loadSlotFallback).not.toHaveBeenCalled();
     expect(fallbackMocks.logFallbackFired).not.toHaveBeenCalled();
     expect(events.some((e) => e.type === 'error')).toBe(true);
   });
@@ -169,7 +172,7 @@ describe('outline step fallback wiring', () => {
     const events = await outlineEvents(resolvedModel(true));
 
     expect(streamLLMMock).toHaveBeenCalledTimes(1);
-    expect(fallbackMocks.resolveFallbackModel).not.toHaveBeenCalled();
+    expect(fallbackMocks.loadSlotFallback).not.toHaveBeenCalled();
     const errorEvent = events.find((e) => e.type === 'error');
     expect(errorEvent?.error).toBe('LLM response blocked by content filter');
   });

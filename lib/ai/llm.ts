@@ -340,9 +340,7 @@ function recordUsageSafe(
  * @param thinking - Optional per-call thinking config (overrides global LLM_THINKING_DISABLED)
  * @param fallbackOptions - Optional knobs. `{ enabled: false }` skips the
  *   retryable-failure model fallback for this call (e.g. verify-model).
- *   `serverManaged: true` must be passed (from resolveModel's stamp of the
- *   same name) for the fallback to arm at all: it only protects primaries the
- *   server resolved, never a client-supplied model.
+ *   Uses the fallback attached by server-side slot resolution.
  */
 export async function callLLM<T extends GenerateTextParams>(
   params: T,
@@ -354,29 +352,11 @@ export async function callLLM<T extends GenerateTextParams>(
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
-  // The fallback only protects primaries the SERVER resolved (a routed stage
-  // or a server-configured provider). resolveModel stamps `serverManaged` on
-  // its result and every production caller passes it through here; a
-  // client-supplied model (x-model with a garbage key) must never be allowed
-  // to burn the operator's fallback key, so an absent stamp means NOT armed.
-  // Model probes and evaluations must preserve the requested model's identity.
-  // A model resolved through a slot carries its slot's fallback, which is
-  // server configuration by construction: that is authorization enough. The
-  // serverManaged stamp gates only MODEL_FALLBACK on the request path.
   const attached = attachedModelFallback(params.model);
-  const allowFallback =
-    fallbackOptions?.enabled !== false &&
-    (attached !== undefined || fallbackOptions?.serverManaged === true) &&
-    !requiresExactModel(source);
-  // Resolve the fallback once up front. The empty-output safety net below only
-  // arms when a fallback model is actually configured; without this gate an
-  // empty result would flip from success to failure for operators who never
-  // configured one. A model resolved through a slot brings its slot's
-  // fallback (possibly none); only a model from the older request path falls
-  // back to MODEL_FALLBACK.
-  const fallback = allowFallback
-    ? await (attached ? loadFallbackSafe(attached, source) : resolveFallbackModelSafe(source))
-    : null;
+  const fallback =
+    attached && fallbackOptions?.enabled !== false && !requiresExactModel(source)
+      ? await loadFallbackSafe(attached, source)
+      : null;
 
   /** One generateText round for the given params; validates when asked to. */
   async function runRound(
@@ -467,7 +447,7 @@ export async function callLLM<T extends GenerateTextParams>(
         );
         continue;
       }
-      if (allowFallback && shouldFallbackFor(round.error, undefined)) {
+      if (fallback && shouldFallbackFor(round.error, undefined)) {
         triggerFallback = true;
         fallbackCause = round.error;
       }
@@ -532,17 +512,6 @@ async function loadFallbackSafe(
 ): Promise<FallbackModel | null> {
   try {
     return await load();
-  } catch (err) {
-    log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
-    return null;
-  }
-}
-
-/** Lazily resolve the fallback model; never throws (fallback is best-effort). */
-async function resolveFallbackModelSafe(source: string): Promise<FallbackModel | null> {
-  try {
-    const { resolveFallbackModel } = await import('@/lib/server/llm-fallback');
-    return await resolveFallbackModel();
   } catch (err) {
     log.warn(`[${source}] Fallback model resolution failed, skipping fallback:`, err);
     return null;

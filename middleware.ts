@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import {
+  DEPRECATED_PROVIDER_HEADERS,
+  PROVIDER_MIGRATION_URL,
+} from '@/lib/config/provider-migration';
+
 import { isAgentRuntimeConfigured, isWorkbenchEnabled } from '@/lib/config/feature-flags';
 import { verifyAccessTokenEdge } from '@/lib/server/access-token-edge';
 import {
@@ -47,9 +52,27 @@ export async function middleware(request: NextRequest) {
     pathname,
   });
 
+  // Keep the existing access gate ahead of migration errors.
+  const forward = () => {
+    if (pathname.startsWith('/api/')) {
+      const deprecated = DEPRECATED_PROVIDER_HEADERS.filter((name) => request.headers.has(name));
+      if (deprecated.length) {
+        return NextResponse.json(
+          {
+            success: false,
+            errorCode: 'INVALID_REQUEST',
+            error: `Remove deprecated provider headers: ${deprecated.join(', ')}. Configure providers and slots in OpenMAIC instead. Migration: ${PROVIDER_MIGRATION_URL}`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+    return next(request, identity);
+  };
+
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
-    return next(request, identity);
+    return forward();
   }
 
   // Whitelist: access-code endpoints, health check
@@ -60,7 +83,7 @@ export async function middleware(request: NextRequest) {
   // Check cookie — validate HMAC signature, not just existence
   const cookie = request.cookies.get('openmaic_access');
   if (cookie?.value && (await verifyAccessTokenEdge(cookie.value, accessCode))) {
-    return next(request, identity);
+    return forward();
   }
 
   // API requests without valid cookie → 401

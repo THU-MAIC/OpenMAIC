@@ -1281,8 +1281,26 @@ describe('PR2 Native Child route production wiring', () => {
   ])(
     '$label through the real Native route and same-Child continuation',
     async (testCase) => {
-      if (testCase.serverApiKey) process.env.TAVILY_API_KEY = testCase.serverApiKey;
-      if (testCase.serverBaseUrl) process.env.TAVILY_BASE_URL = testCase.serverBaseUrl;
+      const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
+      setDeploymentConfigForTests({
+        layer: testCase.serverApiKey
+          ? {
+              source: 'deployment',
+              config: {
+                providers: {
+                  search: {
+                    preset: 'tavily',
+                    apiKey: testCase.serverApiKey,
+                    baseUrl: testCase.serverBaseUrl,
+                  },
+                },
+                slots: { webSearch: 'search' },
+              },
+            }
+          : null,
+        legacy: false,
+        notices: [],
+      });
       const directorResponses = [
         [
           toolCall('delegate-1', 'call_agent', {

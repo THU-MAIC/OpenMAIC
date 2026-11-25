@@ -12,8 +12,7 @@ import type { SlotCapability } from '@/lib/config/model-slots';
 /**
  * Server-side Provider Configuration
  *
- * Loads provider configs from YAML (primary) + environment variables (fallback).
- * Keys never leave the server — only provider IDs and metadata are exposed via API.
+ * Compatibility helpers for request-body settings and operator force-off policy.
  */
 
 import fs from 'fs';
@@ -69,12 +68,8 @@ export interface ServerConfig {
 // Env-var prefix mappings
 // ---------------------------------------------------------------------------
 
-/**
- * Env-var prefix → LLM provider-id mapping (e.g. `DEEPSEEK_API_KEY` configures
- * the `deepseek` provider). Exported for boot-time config validation, which
- * checks `<PREFIX>_MODELS` pins against the provider's key env.
- */
-export const LLM_ENV_MAP: Record<string, string> = {
+/** Legacy provider prefixes used for migration warnings. */
+const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
   AZURE_OPENAI: 'azure',
   ATLASCLOUD: 'atlascloud',
@@ -131,13 +126,6 @@ const PDF_LEGACY_ENV = Object.values(PDF_PROVIDERS).flatMap((provider) =>
 const PDF_ENV_MAP: Record<string, string> = Object.fromEntries(
   PDF_LEGACY_ENV.map(({ provider, env }) => [env.prefix, provider.id]),
 );
-const PDF_BASE_URL_OPTIONAL_PROVIDERS = new Set(
-  PDF_LEGACY_ENV.filter(({ env }) => env.baseUrlOptional).map(({ provider }) => provider.id),
-);
-const PDF_KEYLESS_PROVIDERS = new Set(
-  PDF_LEGACY_ENV.filter(({ env }) => env.keyless).map(({ provider }) => provider.id),
-);
-
 const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_OPENAI: 'openai-image',
   IMAGE_SEEDREAM: 'seedream',
@@ -247,8 +235,8 @@ function loadYamlFile(filename: string): YamlData {
     const parsed = yaml.load(raw) as Record<string, unknown> | null;
     if (!parsed || typeof parsed !== 'object') return {};
     return parsed as YamlData;
-  } catch (e) {
-    log.warn(`[ServerProviderConfig] Failed to load ${filename}:`, e);
+  } catch {
+    log.warn(`[ServerProviderConfig] Failed to read force-off settings from ${filename}`);
     return {};
   }
 }
@@ -256,90 +244,6 @@ function loadYamlFile(filename: string): YamlData {
 // ---------------------------------------------------------------------------
 // Env-var helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Normalize a configured model list the same way the env-var path does:
- * trim whitespace and drop empty entries. The YAML path stores model arrays
- * verbatim, so without this a garbage `models: [""]` would surface as a
- * truthy pin (its first entry, an empty string). Returns undefined when
- * nothing survives normalization ("no models configured").
- */
-function normalizeModelList(models: string[] | undefined): string[] | undefined {
-  const parsed = models?.map((model) => model.trim()).filter(Boolean);
-  return parsed && parsed.length > 0 ? parsed : undefined;
-}
-
-function loadEnvSection(
-  envMap: Record<string, string>,
-  yamlSection: Record<string, Partial<ServerProviderEntry>> | undefined,
-  {
-    requiresBaseUrl = false,
-    keylessProviders = new Set<string>(),
-    baseUrlOptionalProviders = new Set<string>(),
-  }: {
-    requiresBaseUrl?: boolean;
-    keylessProviders?: Set<string>;
-    baseUrlOptionalProviders?: Set<string>;
-  } = {},
-): Record<string, ServerProviderEntry> {
-  const result: Record<string, ServerProviderEntry> = {};
-  const requiresBaseUrlForProvider = (providerId: string) =>
-    requiresBaseUrl && !baseUrlOptionalProviders.has(providerId);
-
-  // First, add everything from YAML as defaults
-  if (yamlSection) {
-    for (const [id, entry] of Object.entries(yamlSection)) {
-      if (
-        requiresBaseUrlForProvider(id)
-          ? !!entry?.baseUrl
-          : entry?.apiKey || (entry?.baseUrl && keylessProviders.has(id))
-      ) {
-        result[id] = {
-          apiKey: entry.apiKey || '',
-          baseUrl: entry.baseUrl,
-          models: normalizeModelList(entry.models),
-          proxy: entry.proxy,
-        };
-      }
-    }
-  }
-
-  // Then, apply env vars (env takes priority over YAML)
-  for (const [prefix, providerId] of Object.entries(envMap)) {
-    const envApiKey = process.env[`${prefix}_API_KEY`] || undefined;
-    const envBaseUrl = process.env[`${prefix}_BASE_URL`] || undefined;
-    const envModelsStr = process.env[`${prefix}_MODELS`];
-    const envModels = envModelsStr
-      ? envModelsStr
-          .split(',')
-          .map((m) => m.trim())
-          .filter(Boolean)
-      : undefined;
-
-    if (result[providerId]) {
-      // YAML entry exists — env vars override individual fields
-      if (envApiKey) result[providerId].apiKey = envApiKey;
-      if (envBaseUrl) result[providerId].baseUrl = envBaseUrl;
-      if (envModels) result[providerId].models = envModels;
-      continue;
-    }
-
-    // Activate on API key, or base URL alone for keyless providers (e.g. Ollama)
-    if (
-      requiresBaseUrlForProvider(providerId)
-        ? !envBaseUrl
-        : !(envApiKey || (envBaseUrl && keylessProviders.has(providerId)))
-    )
-      continue;
-    result[providerId] = {
-      apiKey: envApiKey || '',
-      baseUrl: envBaseUrl,
-      models: envModels,
-    };
-  }
-
-  return result;
-}
 
 /** Parse a boolean-ish env value. Falsey words ⇒ false; anything else ⇒ true. */
 function parseBooleanEnv(raw: string): boolean {
@@ -386,52 +290,47 @@ function collectDisabledProviders(yamlData: YamlData): Record<CapabilitySection,
 // ---------------------------------------------------------------------------
 
 const DEFAULT_FILENAME = 'server-providers.yml';
-const OPENAI_IMAGE_PROVIDER_ID = 'openai-image';
 const ALIDOCMIND_PROVIDER_ID = 'alidocmind';
-const BEDROCK_PROVIDER_ID = 'bedrock';
+let config: ServerConfig | undefined;
 
-/** Cache keyed by YAML filename (empty string = default file). */
-const _configs: Map<string, ServerConfig> = new Map();
-
-/**
- * AliDocMind is server-configured when AK/SK are provided via env
- * (ALIDOCMIND_ACCESS_KEY_ID/SECRET) or YAML. It uses AK/SK rather than a single
- * apiKey, so it needs its own fallback rather than PDF_ENV_MAP's apiKey shape.
- */
-function applyAliDocMindFallback(
-  pdfConfig: Record<string, ServerProviderEntry>,
-  yamlPdfSection: Record<string, Partial<ServerProviderEntry>> | undefined,
-): Record<string, ServerProviderEntry> {
-  const yamlEntry = yamlPdfSection?.[ALIDOCMIND_PROVIDER_ID];
-  const accessKeyId = process.env.ALIDOCMIND_ACCESS_KEY_ID || yamlEntry?.accessKeyId;
-  const accessKeySecret = process.env.ALIDOCMIND_ACCESS_KEY_SECRET || yamlEntry?.accessKeySecret;
-  if (!accessKeyId || !accessKeySecret) {
-    // AliDocMind can only be server-managed with an AK/SK pair. The generic
-    // loader may have created a bare entry from a YAML `baseUrl` alone — drop
-    // it so the provider stays UNMANAGED (clients supply their own creds)
-    // rather than "managed" with no usable credentials, which would both lock
-    // the provider out and silently discard client-entered AK/SK.
-    delete pdfConfig[ALIDOCMIND_PROVIDER_ID];
-    return pdfConfig;
-  }
-
-  // Merge the AK/SK into any entry the generic env/YAML loader already created.
-  // That loader copies only apiKey/baseUrl/models/proxy — never AK/SK — and a
-  // YAML entry with a `baseUrl` makes it create the entry, so returning early
-  // here would leave a "managed" provider with no usable credentials.
-  const existing = pdfConfig[ALIDOCMIND_PROVIDER_ID];
-  pdfConfig[ALIDOCMIND_PROVIDER_ID] = {
-    apiKey: existing?.apiKey ?? '',
-    accessKeyId,
-    accessKeySecret,
-    baseUrl:
-      existing?.baseUrl || yamlEntry?.baseUrl || process.env.ALIDOCMIND_BASE_URL || undefined,
-    models: existing?.models,
-    proxy: existing?.proxy,
-  };
-  return pdfConfig;
+export function deprecatedProviderSettings(
+  env: Readonly<Record<string, string | undefined>>,
+  referencedEnv: ReadonlySet<string>,
+): string[] {
+  const prefixes = new Set(
+    [
+      LLM_ENV_MAP,
+      TTS_ENV_MAP,
+      ASR_ENV_MAP,
+      PDF_ENV_MAP,
+      IMAGE_ENV_MAP,
+      VIDEO_ENV_MAP,
+      WEB_SEARCH_ENV_MAP,
+    ].flatMap((map) => Object.keys(map)),
+  );
+  const names = [
+    ...Array.from(prefixes).flatMap((prefix) =>
+      ['API_KEY', 'BASE_URL', 'MODELS'].map((suffix) => `${prefix}_${suffix}`),
+    ),
+    'ALIDOCMIND_ACCESS_KEY_ID',
+    'ALIDOCMIND_ACCESS_KEY_SECRET',
+    'BEDROCK_REGION',
+    'DEFAULT_IMAGE_PROVIDER',
+    'DEFAULT_MODEL',
+    'MODEL_FALLBACK',
+    'MODEL_ROUTES',
+    ...Object.values(WEB_SEARCH_PROVIDERS).flatMap(({ enableEnvVar }) =>
+      enableEnvVar && env[enableEnvVar]?.trim() && parseBooleanEnv(env[enableEnvVar])
+        ? [enableEnvVar]
+        : [],
+    ),
+  ];
+  const detected = [...new Set(names)].filter(
+    (name) => env[name]?.trim() && !referencedEnv.has(name),
+  );
+  if (fs.existsSync(path.join(process.cwd(), DEFAULT_FILENAME))) detected.push(DEFAULT_FILENAME);
+  return detected.sort();
 }
-
 /**
  * Server-owned AliDocMind AK/SK, if this deployment manages the provider.
  * Returns undefined when AliDocMind is not server-configured (client must
@@ -465,171 +364,22 @@ export function resolveServerMediaExtractorConfig(): {
     accessKeyId: credentials?.accessKeyId,
     accessKeySecret: credentials?.accessKeySecret,
     baseUrl: credentials?.baseUrl,
-    allowEnvFallback: true,
+    allowEnvFallback: false,
   };
-}
-
-function applyOpenAIImageFallback(
-  imageConfig: Record<string, ServerProviderEntry>,
-  yamlImageSection: Record<string, Partial<ServerProviderEntry>> | undefined,
-): Record<string, ServerProviderEntry> {
-  if (imageConfig[OPENAI_IMAGE_PROVIDER_ID]) return imageConfig;
-
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return imageConfig;
-
-  const yamlOpenAIImage = yamlImageSection?.[OPENAI_IMAGE_PROVIDER_ID];
-  imageConfig[OPENAI_IMAGE_PROVIDER_ID] = {
-    apiKey,
-    baseUrl:
-      yamlOpenAIImage?.baseUrl || process.env.IMAGE_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL,
-    models:
-      splitModels(process.env.IMAGE_OPENAI_MODELS) ?? normalizeModelList(yamlOpenAIImage?.models),
-    proxy: yamlOpenAIImage?.proxy,
-  };
-  return imageConfig;
-}
-
-function splitModels(models: string | undefined): string[] | undefined {
-  const parsed = models
-    ?.split(',')
-    .map((model) => model.trim())
-    .filter(Boolean);
-  return parsed && parsed.length > 0 ? parsed : undefined;
-}
-
-function applyBedrockProviderConfig(
-  providers: Record<string, ServerProviderEntry>,
-  yamlProviders: Record<string, Partial<ServerProviderEntry>> | undefined,
-): Record<string, ServerProviderEntry> {
-  const yamlBedrock = yamlProviders?.[BEDROCK_PROVIDER_ID];
-  const envApiKey = process.env.BEDROCK_API_KEY || undefined;
-  const envBaseUrl = process.env.BEDROCK_BASE_URL || undefined;
-  const envRegion = process.env.BEDROCK_REGION?.trim() || undefined;
-  const envModels = splitModels(process.env.BEDROCK_MODELS);
-  const hasExplicitBedrockEnv =
-    !!envRegion ||
-    !!envModels ||
-    !!envApiKey ||
-    !!envBaseUrl ||
-    !!process.env.AWS_BEARER_TOKEN_BEDROCK;
-  const hasYamlBedrock = Object.prototype.hasOwnProperty.call(
-    yamlProviders ?? {},
-    BEDROCK_PROVIDER_ID,
-  );
-
-  if (!providers[BEDROCK_PROVIDER_ID] && !hasExplicitBedrockEnv && !hasYamlBedrock) {
-    return providers;
-  }
-
-  providers[BEDROCK_PROVIDER_ID] = {
-    apiKey: envApiKey || yamlBedrock?.apiKey || providers[BEDROCK_PROVIDER_ID]?.apiKey || '',
-    baseUrl: envBaseUrl || yamlBedrock?.baseUrl || providers[BEDROCK_PROVIDER_ID]?.baseUrl,
-    models:
-      envModels ||
-      normalizeModelList(yamlBedrock?.models) ||
-      providers[BEDROCK_PROVIDER_ID]?.models,
-    proxy: yamlBedrock?.proxy || providers[BEDROCK_PROVIDER_ID]?.proxy,
-  };
-
-  return providers;
-}
-
-function buildConfig(yamlData: YamlData): ServerConfig {
-  const image = applyOpenAIImageFallback(
-    loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
-      keylessProviders: new Set(['lemonade']),
-    }),
-    yamlData.image,
-  );
-  const providers = applyBedrockProviderConfig(
-    loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
-      keylessProviders: new Set(['ollama', 'lemonade', BEDROCK_PROVIDER_ID]),
-    }),
-    yamlData.providers,
-  );
-
-  const webSearch = loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
-    keylessProviders: new Set(['brave', 'searxng']),
-  });
-  for (const provider of Object.values(WEB_SEARCH_PROVIDERS)) {
-    if (!provider.sharedChatProviderId) continue;
-    const explicit = yamlData['web-search']?.[provider.id];
-    const optIn = provider.enableEnvVar && process.env[provider.enableEnvVar];
-    if (!explicit && !(optIn?.trim() && parseBooleanEnv(optIn))) continue;
-    const shared = providers[provider.sharedChatProviderId];
-    const configured = webSearch[provider.id];
-    const apiKey = configured?.apiKey || shared?.apiKey;
-    // Append shared accounts after existing search providers, including when
-    // their explicit YAML entry was loaded earlier, preserving default order.
-    delete webSearch[provider.id];
-    if (!apiKey) continue;
-    webSearch[provider.id] = {
-      apiKey,
-      baseUrl: configured?.baseUrl ?? explicit?.baseUrl ?? shared?.baseUrl,
-      proxy: configured?.proxy ?? explicit?.proxy ?? shared?.proxy,
-      // Search has no model selector; chat pins must stay on the chat account.
-      models: undefined,
-    };
-  }
-
-  return {
-    providers,
-    tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
-      keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
-    }),
-    asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
-      keylessProviders: new Set(['funasr-asr', 'lemonade-asr']),
-    }),
-    pdf: applyAliDocMindFallback(
-      loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
-        requiresBaseUrl: true,
-        // Declared per provider in the PDF registry: a default endpoint lets
-        // a key alone activate it, and a self-hosted service may take none.
-        baseUrlOptionalProviders: PDF_BASE_URL_OPTIONAL_PROVIDERS,
-        keylessProviders: PDF_KEYLESS_PROVIDERS,
-      }),
-      yamlData.pdf,
-    ),
-    image,
-    video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch,
-    disabled: collectDisabledProviders(yamlData),
-  };
-}
-
-function logConfig(config: ServerConfig, label: string): void {
-  const counts = [
-    Object.keys(config.providers).length,
-    Object.keys(config.tts).length,
-    Object.keys(config.asr).length,
-    Object.keys(config.pdf).length,
-    Object.keys(config.image).length,
-    Object.keys(config.video).length,
-    Object.keys(config.webSearch).length,
-  ];
-  if (counts.some((c) => c > 0)) {
-    log.info(
-      `[ServerProviderConfig] Loaded (${label}): ${counts[0]} LLM, ${counts[1]} TTS, ${counts[2]} ASR, ${counts[3]} PDF, ${counts[4]} Image, ${counts[5]} Video, ${counts[6]} WebSearch providers`,
-    );
-  }
 }
 
 function getConfig(): ServerConfig {
-  const cached = _configs.get('');
-  if (cached) return cached;
-
-  const yamlData = loadYamlFile(DEFAULT_FILENAME);
-  const config = buildConfig(yamlData);
-  // Environment variables are always read; the file only when it has content.
-  logConfig(
-    config,
-    Object.keys(yamlData).length > 0
-      ? `${DEFAULT_FILENAME} and environment variables`
-      : 'environment variables',
-  );
-  _configs.set('', config);
-  return config;
+  // The old file is read only for its force-off policy until that policy is migrated.
+  return (config ??= {
+    providers: {},
+    tts: {},
+    asr: {},
+    pdf: {},
+    image: {},
+    video: {},
+    webSearch: {},
+    disabled: collectDisabledProviders(loadYamlFile(DEFAULT_FILENAME)),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,24 +890,4 @@ function resolveManagedMediaModel(
   else if (clientModel !== undefined || deploymentDefaultModel(id, section))
     throw new ModelAuthorizationError();
   return model;
-}
-
-/** The exact legacy setting to declare a provider's authorized model ids. */
-export function providerModelsSetting(
-  section: keyof Omit<ServerConfig, 'disabled'>,
-  providerId: string,
-): string {
-  const maps = {
-    providers: LLM_ENV_MAP,
-    tts: TTS_ENV_MAP,
-    asr: ASR_ENV_MAP,
-    image: IMAGE_ENV_MAP,
-    video: VIDEO_ENV_MAP,
-    webSearch: WEB_SEARCH_ENV_MAP,
-    pdf: PDF_ENV_MAP,
-  };
-  const prefix = Object.entries(maps[section]).find(([, id]) => id === providerId)?.[0];
-  return prefix
-    ? `${prefix}_MODELS or server-providers.yml ${section}.${providerId}.models`
-    : `server-providers.yml ${section}.${providerId}.models`;
 }

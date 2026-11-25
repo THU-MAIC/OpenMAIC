@@ -6,8 +6,7 @@
  * empty output, network error, rate limit 429, capacity 503) or an explicit
  * provider quota refusal, retry once on a different model. The retry model is
  * the `fallback` of the capability slot's assignment (RFC #1701), which the
- * resolved model carries with it (lib/ai/model-fallbacks.ts); a model from the
- * older request path retries on `MODEL_FALLBACK`.
+ * resolved model carries with it (lib/ai/model-fallbacks.ts).
  *
  * `verify-model` and `eval-*` opt out: they probe the exact model the
  * user typed in, and answering from a different model would report a dead or
@@ -24,9 +23,6 @@
 
 import { APICallError, RetryError } from 'ai';
 import type { LanguageModel } from 'ai';
-import { getModel, parseModelString } from '@/lib/ai/providers';
-import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
-import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { createLogger } from '@/lib/logger';
 import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
 import {
@@ -43,34 +39,6 @@ export interface FallbackResolution {
   modelString: string;
   /** Known maximum output tokens of the fallback; absent for unknown models. */
   outputWindow?: number;
-}
-
-/**
- * Resolve the fallback model for a stage, or null when none is configured.
- *
- * For a model from the older request path only: a model resolved through a
- * capability slot carries its slot's fallback (see lib/ai/model-fallbacks.ts).
- * That leaves the global `MODEL_FALLBACK`, built from server config only
- * (never client headers).
- */
-export async function resolveFallbackModel(): Promise<FallbackResolution | null> {
-  const fallbackStr = process.env.MODEL_FALLBACK?.trim();
-  if (!fallbackStr) return null;
-
-  const { providerId, modelId } = parseModelString(fallbackStr);
-  const apiKey = resolveApiKey(providerId, '');
-  const baseUrl = resolveBaseUrl(providerId);
-  const proxy = resolveProxy(providerId);
-  const { model, modelInfo } = getModel({
-    providerId,
-    modelId,
-    apiKey,
-    baseUrl,
-    proxy,
-    // Re-validate every redirect hop of the outbound request, same as resolveModel.
-    fetchImpl: fetchWithRedirectValidation,
-  });
-  return { model, modelString: fallbackStr, outputWindow: modelInfo?.outputWindow };
 }
 
 /**

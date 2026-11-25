@@ -1,7 +1,21 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
+import type { ModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
+
+async function deployment(config: ModelConfigFile | null) {
+  const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
+  if (!config) {
+    setDeploymentConfigForTests();
+    return;
+  }
+  setDeploymentConfigForTests({
+    layer: { source: 'deployment', config },
+    legacy: false,
+    notices: [],
+  });
+}
 
 describe('server web search config', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     delete process.env.TAVILY_API_KEY;
@@ -25,7 +39,10 @@ describe('server web search config', () => {
     delete process.env.KIMI_API_KEY;
     delete process.env.KIMI_BASE_URL;
     delete process.env.WEB_SEARCH_KIMI_ENABLED;
+    await deployment(null);
   });
+
+  afterEach(() => deployment(null));
 
   it('rejects client-controlled base URLs outside the provider allowlist', async () => {
     const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
@@ -84,17 +101,26 @@ describe('server web search config', () => {
     });
   });
 
-  it('resolves Exa classroom config from server environment variables', async () => {
-    vi.stubEnv('EXA_API_KEY', 'exa-server-key');
-    vi.stubEnv('EXA_BASE_URL', 'https://proxy.example.com/exa');
-    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
-
-    expect(await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'exa' })).toEqual({
-      providerId: 'exa',
-      apiKey: 'exa-server-key',
-      baseUrl: 'https://proxy.example.com/exa',
-    });
-  });
+  it.each([
+    ['exa', 'exa', 'https://proxy.example.com/exa', 'exa-server-key'],
+    ['firecrawl', 'firecrawl', 'https://firecrawl.example.com', 'fc-server-key'],
+    ['minimax-search', 'minimax', 'https://api.minimaxi.com', 'minimax-server-key'],
+    ['searxng', 'searxng', 'http://search.example.com:6060', undefined],
+  ])(
+    'resolves the %s backend from the webSearch slot',
+    async (preset, providerId, baseUrl, apiKey) => {
+      await deployment({
+        providers: { search: { preset, baseUrl, apiKey } },
+        slots: { webSearch: 'search' },
+      });
+      const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+      expect(await resolveClassroomWebSearchConfig(null)).toMatchObject({
+        providerId,
+        baseUrl,
+        apiKey: apiKey ?? '',
+      });
+    },
+  );
 
   it('allows official Firecrawl client base URLs and resolves client credentials', async () => {
     const { resolveClassroomWebSearchConfig, resolveSafeClientWebSearchBaseUrl } =
@@ -116,20 +142,6 @@ describe('server web search config', () => {
       providerId: 'firecrawl',
       apiKey: 'fc-client-key',
       baseUrl: 'https://api.firecrawl.dev',
-    });
-  });
-
-  it('resolves Firecrawl classroom config from server environment variables', async () => {
-    vi.stubEnv('FIRECRAWL_API_KEY', 'fc-server-key');
-    vi.stubEnv('FIRECRAWL_BASE_URL', 'https://firecrawl.internal');
-    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
-
-    expect(
-      await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'firecrawl' }),
-    ).toEqual({
-      providerId: 'firecrawl',
-      apiKey: 'fc-server-key',
-      baseUrl: 'https://firecrawl.internal',
     });
   });
 
@@ -160,17 +172,22 @@ describe('server web search config', () => {
     });
   });
 
-  it("keeps a classroom request's own provider and key over the server's configured one", async () => {
-    vi.stubEnv('TAVILY_API_KEY', 'server-tavily');
+  it('keeps the request body usable until the webSearch slot is assigned', async () => {
     const { resolveClassroomWebSearchConfig, resolveWebSearchConnection } =
       await import('@/lib/server/web-search-config');
     const requested = { webSearchProviderId: 'exa' as const, webSearchApiKey: 'exa-client-key' };
-
     expect(await resolveClassroomWebSearchConfig(null, requested)).toMatchObject({
       providerId: 'exa',
       apiKey: 'exa-client-key',
     });
-    // The 1.1.x /api/web-search route preferred the operator's backend.
+    await deployment({
+      providers: { search: { preset: 'tavily', apiKey: 'server-tavily' } },
+      slots: { webSearch: 'search' },
+    });
+    expect(await resolveClassroomWebSearchConfig(null, requested)).toMatchObject({
+      providerId: 'tavily',
+      apiKey: 'server-tavily',
+    });
     expect(
       await resolveWebSearchConnection(null, requested, { preferServerProvider: true }),
     ).toMatchObject({ providerId: 'tavily', apiKey: 'server-tavily' });
@@ -189,8 +206,16 @@ describe('server web search config', () => {
   });
 
   it('uses server base URL for classroom web search config instead of client-controlled URLs', async () => {
-    vi.stubEnv('BOCHA_API_KEY', 'bocha-server-key');
-    vi.stubEnv('BOCHA_BASE_URL', 'http://internal-proxy.local/bocha');
+    await deployment({
+      providers: {
+        search: {
+          preset: 'bocha',
+          apiKey: 'bocha-server-key',
+          baseUrl: 'http://bocha.example.com/v1',
+        },
+      },
+      slots: { webSearch: 'search' },
+    });
 
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
@@ -203,7 +228,7 @@ describe('server web search config', () => {
     ).toEqual({
       providerId: 'bocha',
       apiKey: 'bocha-server-key',
-      baseUrl: 'http://internal-proxy.local/bocha',
+      baseUrl: 'http://bocha.example.com/v1',
     });
   });
 
@@ -215,21 +240,6 @@ describe('server web search config', () => {
       apiKey: '',
       baseUrl: undefined,
     });
-  });
-
-  it('resolves MiniMax classroom web search config from dedicated server env vars', async () => {
-    vi.stubEnv('WEB_SEARCH_MINIMAX_API_KEY', 'minimax-server-key');
-    vi.stubEnv('WEB_SEARCH_MINIMAX_BASE_URL', 'https://api.minimaxi.com');
-
-    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
-
-    expect(await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'minimax' })).toEqual(
-      {
-        providerId: 'minimax',
-        apiKey: 'minimax-server-key',
-        baseUrl: 'https://api.minimaxi.com',
-      },
-    );
   });
 
   it('allows official Claude client base URLs and rejects others', async () => {
@@ -263,33 +273,18 @@ describe('server web search config', () => {
     });
   });
 
-  it("applies the request's Claude model to the server's default search provider", async () => {
-    vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
-    vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-opus-5');
+  it('uses the configured Claude model even if an old request body names another model', async () => {
+    await deployment({
+      providers: {
+        search: { preset: 'claude', apiKey: 'sk-server-key', models: ['claude-opus-5'] },
+      },
+      slots: { webSearch: 'search:claude-opus-5' },
+    });
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
-
-    expect(
-      await resolveClassroomWebSearchConfig(null, { webSearchModelId: 'claude-opus-5' }),
-    ).toMatchObject({ providerId: 'claude', claudeModelId: 'claude-opus-5' });
-  });
-
-  it('refuses an unlisted Claude model instead of substituting a server model', async () => {
-    vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'sk-server-key');
-    vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://api.anthropic.com/v1');
-    vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
-
-    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
-
-    await expect(
-      resolveClassroomWebSearchConfig(null, {
-        webSearchProviderId: 'claude',
-        webSearchModelId: 'claude-haiku-4-5',
-      }),
-    ).rejects.toThrow('not authorized');
     expect(
       await resolveClassroomWebSearchConfig(null, {
         webSearchProviderId: 'claude',
-        webSearchModelId: 'claude-opus-5',
+        webSearchModelId: 'claude-haiku-4-5',
       }),
     ).toMatchObject({ providerId: 'claude', claudeModelId: 'claude-opus-5' });
   });
@@ -307,20 +302,6 @@ describe('server web search config', () => {
     );
   });
 
-  it('resolves SearXNG classroom web search config from server base URL', async () => {
-    vi.stubEnv('SEARXNG_BASE_URL', 'http://192.168.161.100:6060');
-
-    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
-
-    expect(await resolveClassroomWebSearchConfig(null, { webSearchProviderId: 'searxng' })).toEqual(
-      {
-        providerId: 'searxng',
-        apiKey: '',
-        baseUrl: 'http://192.168.161.100:6060',
-      },
-    );
-  });
-
   it('returns undefined for SearXNG classroom config without a base URL', async () => {
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
@@ -330,18 +311,17 @@ describe('server web search config', () => {
   });
 
   it('keeps Baidu sub-source toggles in classroom web search config', async () => {
-    vi.stubEnv('BAIDU_API_KEY', 'baidu-server-key');
-
     const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
 
     expect(
       await resolveClassroomWebSearchConfig(null, {
         webSearchProviderId: 'baidu',
+        webSearchApiKey: 'request-baidu-key',
         baiduSubSources: { webSearch: false, baike: true, scholar: false },
       }),
     ).toEqual({
       providerId: 'baidu',
-      apiKey: 'baidu-server-key',
+      apiKey: 'request-baidu-key',
       baseUrl: undefined,
       baiduSubSources: { webSearch: false, baike: true, scholar: false },
     });

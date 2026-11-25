@@ -68,12 +68,25 @@ function ttsRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
+async function speechSlot(preset: string, config: { apiKey?: string; baseUrl?: string }) {
+  const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
+  setDeploymentConfigForTests({
+    layer: {
+      source: 'deployment',
+      config: { providers: { speech: { preset, ...config } }, slots: { tts: 'speech' } },
+    },
+    legacy: false,
+    notices: [],
+  });
+}
+
 describe('POST /api/generate/tts missing-key contract (#665)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     clearTtsEnv();
     yamlOverride = null;
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests();
     mocks.generateTTS.mockReset().mockResolvedValue({ audio: new Uint8Array([1]), format: 'wav' });
   });
 
@@ -106,7 +119,7 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
   });
 
   it('uses a server-configured key (managed provider) so no client key is needed', async () => {
-    yamlOverride = 'tts:\n  openai-tts:\n    apiKey: sk-server\n';
+    await speechSlot('openai-tts', { apiKey: 'sk-server' });
     const { POST } = await import('@/app/api/generate/tts/route');
     const res = await POST(ttsRequest({ ttsProviderId: 'openai-tts', ttsVoice: 'alloy' }));
 
@@ -118,7 +131,7 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
   });
 
   it("keeps the request's voice on the server's provider when it names no provider", async () => {
-    yamlOverride = 'tts:\n  openai-tts:\n    apiKey: sk-server\n';
+    await speechSlot('openai-tts', { apiKey: 'sk-server' });
     const { POST } = await import('@/app/api/generate/tts/route');
 
     expect((await POST(ttsRequest({ ttsVoice: 'nova' }))).status).toBe(200);
@@ -149,7 +162,7 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
     // A server-managed keyless provider owns a local base URL; the key guard
     // must not fire, and a server-configured localhost backend is allowed under
     // the operator's ALLOW_LOCAL_NETWORKS opt-in.
-    yamlOverride = 'tts:\n  voxcpm-tts:\n    baseUrl: http://localhost:8000/v1\n';
+    await speechSlot('voxcpm-tts', { baseUrl: 'http://localhost:8000/v1' });
     vi.stubEnv('ALLOW_LOCAL_NETWORKS', 'true');
     const { POST } = await import('@/app/api/generate/tts/route');
     const res = await POST(ttsRequest({ ttsProviderId: 'voxcpm-tts', ttsVoice: 'auto' }));
@@ -162,7 +175,7 @@ describe('POST /api/generate/tts missing-key contract (#665)', () => {
   });
 
   it('marks a server-configured provider as managed, so its local endpoint needs no opt-in', async () => {
-    yamlOverride = 'tts:\n  voxcpm-tts:\n    baseUrl: http://127.0.0.1:8000/v1\n';
+    await speechSlot('voxcpm-tts', { baseUrl: 'http://127.0.0.1:8000/v1' });
     const { POST } = await import('@/app/api/generate/tts/route');
     const res = await POST(ttsRequest({ ttsProviderId: 'voxcpm-tts', ttsVoice: 'auto' }));
 

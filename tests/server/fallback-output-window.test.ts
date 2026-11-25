@@ -20,8 +20,6 @@ const requests: Array<{ primary: boolean; maxOutputTokens?: number }> = [];
 
 beforeEach(() => {
   requests.length = 0;
-  vi.stubEnv('MODEL_FALLBACK', 'google:gemini-3.8-flash');
-  vi.stubEnv('GOOGLE_API_KEY', 'test-key');
   transport.mockImplementation(async (input, init) => {
     const url = String(input);
     const primary = url.startsWith('https://api.openai.com/');
@@ -98,8 +96,8 @@ async function streamed(
 }
 
 describe('fallback output window at the provider boundary', () => {
-  it.each(['slot', 'global'] as const)('caps generated text on the %s fallback', async (route) => {
-    const primary = await primaryModel(route);
+  it('caps generated text on the slot fallback', async () => {
+    const primary = await primaryModel('slot');
     const result = await callLLM(
       { model: primary.model, prompt: 'hello', maxOutputTokens: 128000 },
       'test-generate',
@@ -123,8 +121,8 @@ describe('fallback output window at the provider boundary', () => {
     ]);
   });
 
-  it.each(['slot', 'global'] as const)("caps the outline step's own %s fallback", async (route) => {
-    const primary = await primaryModel(route);
+  it("caps the outline step's slot fallback", async () => {
+    const primary = await primaryModel('slot');
     const result = await generateOutlines(
       { requirements: { requirement: 'Teach photosynthesis' }, model: primary },
       {
@@ -245,16 +243,14 @@ describe('model identity probes', () => {
     },
   );
 
-  it('does not use MODEL_FALLBACK for eval even when server-managed is enabled', async () => {
+  it('ignores retired MODEL_FALLBACK on a normal call without a slot fallback', async () => {
+    vi.stubEnv('MODEL_FALLBACK', 'google:gemini-3.8-flash');
+    vi.stubEnv('GOOGLE_API_KEY', 'test-key');
     const primary = await primaryModel('global');
     await expect(
-      callLLM(
-        { model: primary.model, prompt: 'hello' },
-        'eval-outline-language',
-        undefined,
-        undefined,
-        { serverManaged: true },
-      ),
+      callLLM({ model: primary.model, prompt: 'hello' }, 'test-generate', undefined, undefined, {
+        serverManaged: true,
+      }),
     ).rejects.toThrow('Quota exhausted');
     expect(requests.map((r) => r.primary)).toEqual([true]);
   });

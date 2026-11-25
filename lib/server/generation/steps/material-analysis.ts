@@ -296,7 +296,7 @@ export async function analyzeMaterial(
               : requestConfig.accessKeySecret || undefined,
             // Env fallback is a last resort for a managed provider whose creds
             // weren't resolved above (defensive; resolver already covers env+YAML).
-            allowEnvFallback: mediaManaged,
+            allowEnvFallback: false,
           },
     });
     trace.resolvedProviderId = mediaArtifact.metadata.providerId || requestConfig.providerId || '';
@@ -459,7 +459,7 @@ export async function analyzeMaterial(
       : requestConfig.accessKeySecret || undefined,
     // Env fallback is a last resort for a managed provider (defensive; the
     // resolver already covers env+YAML).
-    allowEnvFallback: managed,
+    allowEnvFallback: false,
     managed,
   };
 
