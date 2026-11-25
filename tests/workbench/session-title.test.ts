@@ -249,4 +249,5 @@ const BLANK: WorkbenchFold = {
   waitingKey: null,
   waitingArmed: false,
   stageId: null,
+  contextBlocked: false,
 };

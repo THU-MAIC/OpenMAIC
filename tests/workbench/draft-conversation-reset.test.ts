@@ -138,6 +138,8 @@ function driveARunningSession(): void {
   store.setPlaybackOn(true);
   // `byUser` so the pin is dirty too — the fold only ever raises `panelOpen`.
   store.setPanelOpen(true, true);
+  // Drive contextBlocked to true so the reset test can verify it clears.
+  useWorkbenchStore.setState({ contextBlocked: true });
 }
 
 /** The store's DATA fields, in a stable order. Actions are not state. */

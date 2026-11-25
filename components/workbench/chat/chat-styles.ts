@@ -71,6 +71,12 @@ export const wbStyles = {
       'inline-flex w-fit cursor-pointer items-center gap-0.5 rounded-[var(--wb-radius-sm)] border-0 bg-transparent p-0 font-inherit text-[11px] leading-[17px] text-[var(--wb-text-muted)] transition-colors duration-[var(--wb-duration-base)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
     detail:
       'm-0 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[var(--wb-radius-sm)] border border-[var(--wb-line)] bg-[var(--wb-surface-raised)] p-2 font-[family-name:var(--wb-font-mono)] text-[11px] leading-[16.5px] text-[var(--wb-text-muted)]',
+    // The way out of a terminal notice, e.g. the context-limit block's new
+    // chat. The one notice affordance allowed to look like a button: on a
+    // blocked conversation the composer is closed, so this IS the primary
+    // action (the disclosure below stays metadata on purpose).
+    action:
+      'inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-[var(--wb-radius-sm)] border border-[var(--wb-line)] bg-[var(--wb-surface-raised)] px-2 py-1 text-[11px] leading-[17px] font-medium text-[var(--wb-text)] transition-colors duration-[var(--wb-duration-base)] hover:border-[var(--wb-text-muted)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus-ring)] motion-reduce:transition-none',
   },
   // Cancel notice only. Success has no mark; this is a WeChat-style caption
   // (icon + one faint line, centered), not a full-width rule with a label.

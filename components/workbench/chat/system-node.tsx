@@ -14,9 +14,10 @@
  * text with a provider error string in it (that is a log line).
  */
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Info } from 'lucide-react';
+import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Info, SquarePen } from 'lucide-react';
 import type { ChatNode } from '@/lib/workbench/session-store';
 import { defaultWorkbenchTranslator, type WorkbenchTranslator } from '@/lib/i18n/workbench';
+import { useNewChatHost } from '@/lib/workbench/new-chat-host';
 import { wbStyles as styles } from './chat-styles';
 import { presentSystemNotice, repeatLabel, repeatTitle } from './system-notice';
 
@@ -37,6 +38,9 @@ export function SystemNode({
 }) {
   const notice = presentSystemNotice(node, t);
   const [open, setOpen] = useState(false);
+  // The workspace publishes the action only while a conversation is mounted;
+  // without it the notice still explains, it just cannot offer the exit.
+  const startNewChat = useNewChatHost((s) => s.start);
   // `stopped` is the centered caption's tone and never reaches this component;
   // fall back to the neutral icon rather than rendering nothing.
   const tone = notice.tone === 'stopped' ? 'info' : notice.tone;
@@ -74,6 +78,17 @@ export function SystemNode({
           ) : null}
         </div>
         {notice.hint ? <p className={styles.systemNotice.hint}>{notice.hint}</p> : null}
+        {notice.action === 'newChat' && startNewChat ? (
+          <button
+            type="button"
+            data-testid="workbench-system-new-chat"
+            onClick={startNewChat}
+            className={styles.systemNotice.action}
+          >
+            <SquarePen size={11} aria-hidden="true" />
+            {t('workbench.system.startNewChat')}
+          </button>
+        ) : null}
         {notice.detail ? (
           <>
             <button

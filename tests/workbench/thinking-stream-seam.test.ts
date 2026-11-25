@@ -58,6 +58,7 @@ const blankFold: WorkbenchFold = {
   waitingKey: null,
   waitingArmed: false,
   stageId: null,
+  contextBlocked: false,
 };
 
 function event(id: number, type: string, data: unknown): WorkbenchEvent {

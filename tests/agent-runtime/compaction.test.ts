@@ -784,13 +784,54 @@ describe('agent runtime compaction runtime', () => {
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
+      // Planned, not attempted: no summary call is paid for, and the reason
+      // says so — a resend only adds to this history, so it blocks for good
+      // instead of reading as a retryable summary failure.
       await expect(runtime.transformContext(history)).rejects.toMatchObject({
-        reason: 'summary_failed',
+        reason: 'summary_input_too_large',
       });
       expect(summarize).not.toHaveBeenCalled();
       expect(runtime.getTrace().lastSummaryFailure).toMatchObject({
         errorName: 'SummaryInputTooLargeError',
         errorCode: 'chunk_limit',
+      });
+      expect((await session.getEntries()).some((entry) => entry.type === 'compaction')).toBe(false);
+    } finally {
+      runtime.dispose();
+      warn.mockRestore();
+    }
+  });
+
+  it('blocks before any summary call when one message to summarize exceeds the summary window', async () => {
+    const session = await new InMemorySessionRepo().create();
+    // One early message larger than any summary request can carry, then a
+    // short recent tail the cut can keep: compaction must summarize the giant
+    // and cannot, whatever the provider does.
+    const history: AgentMessage[] = [
+      { role: 'user', content: `giant ${'g'.repeat(100_000)}`, timestamp: 0 } as AgentMessage,
+      assistantText('ack', 1),
+      ...Array.from({ length: 6 }, (_, index) =>
+        index % 2 === 0
+          ? ({ role: 'user', content: `q${index} short`, timestamp: index + 2 } as AgentMessage)
+          : assistantText(`a${index} short`, index + 2),
+      ),
+    ];
+    for (const message of history) await session.appendMessage(message);
+    const summarize = vi.fn();
+    const runtime = createAgentCompactionRuntime({
+      streamFn: summaryStream('unused', summarize),
+      contextWindow: 16_000,
+      compactionSession: { required: true, acquire: async () => session },
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      await expect(runtime.transformContext(history)).rejects.toMatchObject({
+        reason: 'summary_input_too_large',
+      });
+      expect(summarize).not.toHaveBeenCalled();
+      expect(runtime.getTrace().lastSummaryFailure).toMatchObject({
+        errorName: 'SummaryInputTooLargeError',
+        errorCode: 'message_too_large',
       });
       expect((await session.getEntries()).some((entry) => entry.type === 'compaction')).toBe(false);
     } finally {

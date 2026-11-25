@@ -2084,7 +2084,8 @@ async function executeSession(
             contextWindow: trace.contextWindow,
             targetTokens: trace.targetTokens,
             reservedOutputTokens: trace.effectiveOutputTokens,
-            ...(reason === 'summary_failed' && trace.lastSummaryFailure
+            ...((reason === 'summary_failed' || reason === 'summary_input_too_large') &&
+            trace.lastSummaryFailure
               ? { summaryFailure: trace.lastSummaryFailure }
               : {}),
           });

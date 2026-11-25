@@ -80,6 +80,32 @@ describe('presentSystemNotice', () => {
     expect(notice.hint).toBeUndefined();
     expect(notice.detail).toBeUndefined();
   });
+
+  it('adds the newChat action to context-budget limit notices and not to others', () => {
+    const limitKeys = [
+      'workbench.system.contextSummaryFailed',
+      'workbench.system.contextStillTooLarge',
+      'workbench.system.contextNoBoundary',
+    ] as const;
+    for (const copyKey of limitKeys) {
+      expect(
+        presentSystemNotice({ key: 'x', kind: 'system', tone: 'error', text: '', copyKey }).action,
+        `expected newChat for ${copyKey}`,
+      ).toBe('newChat');
+    }
+    // Misconfigured budget: an operator fix, not a user action.
+    expect(
+      presentSystemNotice({
+        key: 'y',
+        kind: 'system',
+        tone: 'error',
+        text: '',
+        copyKey: 'workbench.system.contextBudgetInvalid',
+      }).action,
+    ).toBeUndefined();
+    // Ordinary failure: the retry in the composer is the way out, not a new chat.
+    expect(presentSystemNotice(failure('e1')).action).toBeUndefined();
+  });
 });
 
 describe('isSameNotice', () => {

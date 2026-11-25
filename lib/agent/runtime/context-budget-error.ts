@@ -6,6 +6,7 @@
  */
 export type ContextBudgetReason =
   | 'summary_failed'
+  | 'summary_input_too_large'
   | 'still_oversized'
   | 'invalid_output_budget'
   | 'no_compaction_boundary';
@@ -21,7 +22,7 @@ export class ContextBudgetError extends Error {
 }
 
 const CONTEXT_BUDGET_MESSAGE =
-  /^CONTEXT_BUDGET_EXCEEDED:(summary_failed|still_oversized|invalid_output_budget|no_compaction_boundary)$/;
+  /^CONTEXT_BUDGET_EXCEEDED:(summary_failed|summary_input_too_large|still_oversized|invalid_output_budget|no_compaction_boundary)$/;
 
 /**
  * Recover the reason from the error string. Pi reduces a thrown context
@@ -40,6 +41,10 @@ export function contextBudgetCopyKey(error: string): `workbench.${string}` | und
   switch (reason) {
     case 'summary_failed':
       return 'workbench.system.contextSummaryFailed';
+    case 'summary_input_too_large':
+      // Reuses the "too long" copy: the history is too large even to be
+      // summarized, so this conversation cannot continue.
+      return 'workbench.system.contextStillTooLarge';
     case 'still_oversized':
       return 'workbench.system.contextStillTooLarge';
     case 'no_compaction_boundary':
@@ -60,9 +65,8 @@ export function contextBudgetHintKey(error: string): `workbench.${string}` | und
   switch (reason) {
     case 'summary_failed':
       // A retry re-runs the summary, which helps when the provider hiccuped.
-      // It cannot help when the history itself is too large to summarize
-      // (SummaryInputTooLargeError) or the summary route keeps rejecting the
-      // call, so the advice names the way out of the conversation too.
+      // It cannot help when the summary route keeps rejecting the call, so the
+      // advice names the way out of the conversation too.
       return 'workbench.system.retryOrNewChatHint';
     // Both also fire for one oversized input, not only a long history: with
     // compaction off, or when the latest message is too large for any cut, a
@@ -70,6 +74,12 @@ export function contextBudgetHintKey(error: string): `workbench.${string}` | und
     // shortening the input as well as the new chat.
     case 'still_oversized':
     case 'no_compaction_boundary':
+      return 'workbench.system.shortenOrNewChatHint';
+    case 'summary_input_too_large':
+      // No hint of its own: it reuses the oversized-input advice. Shortening
+      // cannot rescue this conversation (its composer is closed, and the
+      // notice's Start a new chat is the way out), but the advice holds for
+      // the new chat when one oversized message was the cause.
       return 'workbench.system.shortenOrNewChatHint';
     case 'invalid_output_budget':
       return undefined;

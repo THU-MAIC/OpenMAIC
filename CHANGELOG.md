@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Features
+
+- Workbench: a conversation that hit the model's context limit offers "Start a new chat" on its terminal notice. When the history is too large even to be summarized, its composer also closes with a placeholder saying why, instead of accepting messages that would fail again. [#2338](https://github.com/THU-MAIC/OpenMAIC/issues/2338)
+
 ## [1.5.0] - 2026-11-24
 
 1.5.0 is the general release of **a brand-new home, redesigned end to end** (see [1.5.0-rc.1](#150-rc1---2026-11-10) and the release candidates after it). With the workbench enabled (`NEXT_PUBLIC_WORKBENCH_ENABLED`, still off by default), the home page is the workbench: the course takes shape beside the conversation, and one full-screen classroom handles both learning and editing. This section collects what is new in 1.5.0 beyond [1.5.0-rc.3](#150-rc3---2026-11-17): the workspace home and the classroom adapt to phones, slide editing and playback move to the package canvases, long agent conversations are compacted instead of failing at the provider, Token Plan gains international plans, and the video export dialog shows the render queue.

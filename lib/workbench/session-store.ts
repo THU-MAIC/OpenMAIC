@@ -27,6 +27,7 @@ import { supportedLocaleOf } from '@/lib/i18n/types';
 import {
   contextBudgetCopyKey,
   contextBudgetHintKey,
+  contextBudgetReason,
 } from '@/lib/agent/runtime/context-budget-error';
 import { isSkillLoadTool, skillLoadId } from './skill-load';
 import {
@@ -319,6 +320,19 @@ export function sessionBuildsCourse(
 /** The fold's half of the store: everything `foldEvent` may read or write. */
 export interface WorkbenchFold {
   status: SessionStatus;
+  /**
+   * The conversation is over: a run ended because its history is too large
+   * even to be summarized (`CONTEXT_BUDGET_EXCEEDED:summary_input_too_large`).
+   * A resend only adds to that history, so no resend can succeed: the
+   * composer closes and the failure notice offers a new chat instead. The
+   * other context-budget failures are not this: the next message can still
+   * get through (it adds a cut point, or retries a failed summary request),
+   * so the composer stays open beside the same notice. Assigned on EVERY
+   * terminal `session_end` — a later end that is not the block (another
+   * client ran after a model switch, say) clears it — which is what keeps the
+   * flag a pure function of the applied event prefix, replaying exactly.
+   */
+  contextBlocked: boolean;
   lastEventId: number;
   error: string | null;
   courseTitle: string | null;
@@ -618,6 +632,7 @@ export function createInitialSessionState(): WorkbenchSessionState {
     // not arrived yet is presumed running, so the button does not flash SEND
     // before flipping to STOP.
     status: 'idle',
+    contextBlocked: false,
     lastEventId: 0,
     error: null,
     epoch: 0,
@@ -1805,6 +1820,13 @@ export function foldEvent(state: WorkbenchFold, event: WorkbenchEvent): Workbenc
     case 'session_end': {
       const status = (data.status as SessionStatus) ?? 'succeeded';
       next.status = status;
+      // Assigned on EVERY terminal end, not only the failure: a later clean
+      // end (another client ran after a model switch) must lift the block.
+      {
+        const cause = status === 'failed' ? (data.error ? String(data.error).trim() : '') : '';
+        next.contextBlocked =
+          status === 'failed' && contextBudgetReason(cause) === 'summary_input_too_large';
+      }
       // A run ending is not a conversation ending. Success leaves no mark:
       // the next user bubble is the break. Cancel is a small centered note.
       // Failure stays loud so it cannot be scrolled past.
