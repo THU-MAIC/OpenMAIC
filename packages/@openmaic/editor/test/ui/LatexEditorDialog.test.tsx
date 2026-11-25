@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { hydrateRoot, type Root } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatexEditorDialog } from '../../src/ui/latex/LatexEditorDialog';
 
@@ -38,6 +40,26 @@ describe('LatexEditorDialog', () => {
 
     expect(backdrop?.parentElement).toBe(document.body);
     expect(container.contains(backdrop)).toBe(false);
+  });
+
+  it('hydrates server markup without a mismatch and focuses the source once open', async () => {
+    const dialog = <LatexEditorDialog initialLatex="x^2" onConfirm={vi.fn()} onClose={vi.fn()} />;
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(dialog);
+    document.body.appendChild(container);
+    const onRecoverableError = vi.fn();
+
+    let root: Root | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, dialog, { onRecoverableError });
+    });
+
+    expect(onRecoverableError).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog').parentElement?.parentElement).toBe(document.body);
+    expect(screen.getByLabelText('LaTeX source')).toHaveFocus();
+
+    act(() => root?.unmount());
+    container.remove();
   });
 
   it('disables confirm and announces an error for invalid Latex', () => {
