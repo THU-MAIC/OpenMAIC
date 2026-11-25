@@ -7,7 +7,9 @@ import { getWhiteboardRuntimeService } from './store';
 export async function refreshWhiteboardRuntimeProjection(
   stageId: string,
   minimumLastSeq?: number,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false;
   // The runtime lives behind the browser's HTTP persistence seam; a server
   // render has no projection to refresh.
   if (typeof window === 'undefined') {
@@ -20,6 +22,7 @@ export async function refreshWhiteboardRuntimeProjection(
     const state = await getWhiteboardRuntimeService().read(stageId);
     const canvas = useCanvasStore.getState();
     if (
+      signal?.aborted ||
       useStageStore.getState().stage?.id !== stageId ||
       canvas.runtimeWhiteboardProjectionGeneration !== generation ||
       (minimumLastSeq !== undefined && (state.lastSeq ?? -1) < minimumLastSeq)

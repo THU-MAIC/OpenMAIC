@@ -42,6 +42,7 @@ import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
+import { withAbort } from '@/lib/web-fetch/abort';
 
 const log = createLogger('ChatSessions');
 const SOFT_CLOSE_TIMEOUT_MS = 15_000;
@@ -260,7 +261,7 @@ type StatelessStreamConsumerFactory = (
   controller: AbortController,
   sessionType: SessionType,
 ) => {
-  onEvent: (event: StatelessEvent) => void;
+  onEvent: (event: StatelessEvent) => void | Promise<void>;
   onIterationEnd: () => Promise<{
     directorState: DirectorState | undefined;
     totalAgents: number;
@@ -463,6 +464,8 @@ export async function runPiSingleRequest(
   let sawDoneEvent = false;
   let sawAgentOutput = false;
   let failedWithoutOutput = false;
+  let presentation: Promise<void> | undefined;
+  let presentationFailure: { error: unknown } | undefined;
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -487,11 +490,32 @@ export async function runPiSingleRequest(
       }
       if (isVisibleAgentOutput(event)) sawAgentOutput = true;
       if (event.type === 'done') sawDoneEvent = true;
-      consumer.onEvent(event);
+
+      // The Native child waits for visibility replies. Keep reading and answer
+      // these queries even while a previous drawing is being loaded.
+      if (event.type === 'whiteboard' && event.data.kind === 'visibility_query') {
+        consumer.onEvent(event);
+        continue;
+      }
+
+      const pending = presentation
+        ? presentation.then(() => {
+            if (!controller.signal.aborted && !presentationFailure) return consumer.onEvent(event);
+          })
+        : consumer.onEvent(event);
+      if (pending) {
+        presentation = pending.catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          presentationFailure = { error };
+          void reader.cancel().catch(() => {});
+        });
+      }
     }
   }
 
+  if (presentation) await presentation;
   if (controller.signal.aborted) return;
+  if (presentationFailure) throw presentationFailure.error;
   if (failedWithoutOutput) {
     clearLiveSessionAfterError(sessionId, t('chat.error.teacherNoResponse'));
     onStopSessionRef.current?.({ sessionId, source: 'error' });
@@ -561,12 +585,13 @@ export async function respondToWhiteboardVisibilityQuery(
 /**
  * Apply a Native whiteboard event. Returns true when it was a whiteboard action
  * that took effect (a committed change, or the board opened or closed), which
- * ends the speech segment before it. A visibility query only reads.
+ * ends the speech segment before it. A projection returns a promise for the
+ * drawing required by subsequent speech. A visibility query only reads.
  */
 export function consumePiWhiteboardEvent(
   data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'],
   signal: AbortSignal,
-): boolean {
+): boolean | Promise<boolean> {
   if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return false;
   if (data.kind === 'visibility_query') {
     void respondToWhiteboardVisibilityQuery(data, signal).catch((error) => {
@@ -575,8 +600,7 @@ export function consumePiWhiteboardEvent(
     return false;
   }
   if (data.kind === 'projection') {
-    void refreshWhiteboardRuntimeProjection(data.stageId, data.lastSeq);
-    return true;
+    return waitForPiWhiteboardProjection(data.stageId, data.lastSeq, signal);
   }
   const canvas = useCanvasStore.getState();
   if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return false;
@@ -585,6 +609,24 @@ export function consumePiWhiteboardEvent(
   if (canvas.whiteboardOpen === open) return false;
   canvas.setWhiteboardOpen(open);
   return true;
+}
+
+async function waitForPiWhiteboardProjection(
+  stageId: string,
+  lastSeq: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const hasProjection = () => {
+    const projection = useCanvasStore.getState().runtimeWhiteboardProjection;
+    return projection?.stageId === stageId && (projection.lastSeq ?? -1) >= lastSeq;
+  };
+  const refresh = () =>
+    withAbort(refreshWhiteboardRuntimeProjection(stageId, lastSeq, signal), signal);
+
+  if (hasProjection() || (await refresh()) || hasProjection()) return true;
+  if (signal.aborted || useStageStore.getState().stage?.id !== stageId) return false;
+  // Opening the board can start a newer background refresh and supersede ours.
+  return (await refresh()) || hasProjection();
 }
 
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
@@ -1215,10 +1257,15 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         if (event.type === 'whiteboard') {
           // A whiteboard action ends the text before it, as an action item does,
           // so that text goes to speech synthesis without waiting for the turn.
-          if (consumePiWhiteboardEvent(event.data, controller.signal)) {
-            currentBuffer?.sealSegment();
-          }
-          return;
+          const effect = consumePiWhiteboardEvent(event.data, controller.signal);
+          if (!effect) return;
+          currentBuffer?.sealSegment();
+          if (effect === true) return;
+          return effect.then((applied) => {
+            if (!applied && !controller.signal.aborted) {
+              throw new Error(t('chat.error.streamInterrupted'));
+            }
+          });
         }
         if (!currentBuffer) {
           currentBuffer = createBufferForSession(sessionId, sessionType);
@@ -1307,7 +1354,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       return { onEvent, onIterationEnd };
     },
-    [createBufferForSession],
+    [createBufferForSession, t],
   );
 
   /**

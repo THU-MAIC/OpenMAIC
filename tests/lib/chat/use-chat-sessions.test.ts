@@ -415,6 +415,73 @@ describe('lectureActionPersistParams', () => {
 });
 
 describe('runPiSingleRequest', () => {
+  it('waits for a drawing before presenting later narration and answers visibility queries meanwhile', async () => {
+    let finishProjection!: () => void;
+    const projection = new Promise<void>((resolve) => {
+      finishProjection = resolve;
+    });
+    const events = [
+      { type: 'whiteboard', data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 } },
+      { type: 'text_delta', data: { content: 'The drawing shows the result.' } },
+      { type: 'whiteboard', data: { kind: 'visibility_query', stageId: 'stage-1', queryId: 'q1' } },
+      { type: 'done', data: {} },
+    ];
+    const onEvent = vi.fn((event: StatelessEvent) => {
+      if (event.type === 'whiteboard' && event.data.kind === 'projection') return projection;
+    });
+    const onIterationEnd = vi.fn(async () => null);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')),
+      ),
+    );
+
+    const request = runPiSingleRequest(
+      'session-1',
+      {
+        messages: [],
+        storeState: {
+          stage: null,
+          scenes: [],
+          currentSceneId: null,
+          mode: 'autonomous',
+          whiteboardOpen: false,
+        },
+        config: { agentIds: ['teacher'] },
+      },
+      new AbortController(),
+      'qa',
+      () => ({ onEvent, onIterationEnd }),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      {},
+      (key) => key,
+    );
+    try {
+      await vi.waitFor(() =>
+        expect(onEvent.mock.calls.map(([event]) => event)).toEqual([events[0], events[2]]),
+      );
+      expect(onIterationEnd).not.toHaveBeenCalled();
+      finishProjection();
+      await request;
+      expect(onEvent.mock.calls.map(([event]) => event)).toEqual([
+        events[0],
+        events[2],
+        events[1],
+        events[3],
+      ]);
+      expect(onIterationEnd).toHaveBeenCalledOnce();
+    } finally {
+      finishProjection();
+      await request;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ['qa', 'tool_calling_required', 'toolCallingRequired'],
     ['discussion', 'tool_calling_required', 'toolCallingRequired'],
@@ -880,13 +947,15 @@ describe('Pi Native whiteboard Browser events', () => {
     expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
   });
 
-  it('reports a committed change as an action, but not one for another Stage or after abort', () => {
+  it('waits for a committed projection, and ignores one for another Stage or after abort', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(null, { status: 404 })),
     );
     const projection = { kind: 'projection', stageId: 'stage-1', lastSeq: 1 } as const;
-    expect(consumePiWhiteboardEvent(projection, new AbortController().signal)).toBe(true);
+    await expect(consumePiWhiteboardEvent(projection, new AbortController().signal)).resolves.toBe(
+      false,
+    );
     expect(
       consumePiWhiteboardEvent(
         { ...projection, stageId: 'another-stage' },

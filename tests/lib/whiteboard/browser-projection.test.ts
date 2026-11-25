@@ -91,6 +91,19 @@ describe('Browser RuntimeStore whiteboard projection', () => {
     expect(useCanvasStore.getState().runtimeWhiteboardProjection).toBeNull();
   });
 
+  it('does not publish a late projection after the request was stopped', async () => {
+    const read = deferred<ReturnType<typeof runtimeState>>();
+    mocks.read.mockReturnValue(read.promise);
+    const controller = new AbortController();
+
+    const refresh = refreshWhiteboardRuntimeProjection('stage-1', 0, controller.signal);
+    controller.abort();
+    read.resolve(runtimeState(0, 'late drawing'));
+
+    await expect(refresh).resolves.toBe(false);
+    expect(useCanvasStore.getState().runtimeWhiteboardProjection).toBeNull();
+  });
+
   it('does not apply a projection below the sequence announced by the commit event', async () => {
     mocks.read.mockResolvedValue(runtimeState(2, 'replica lag'));
 
