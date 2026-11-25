@@ -278,7 +278,7 @@ describe('CourseIssuesButton', () => {
     await act(async () => fixCue?.click());
     expect(handOff).toHaveBeenLastCalledWith({
       courseId: 'course-1',
-      prefill: 'Fix edit.issues.kind.danglingCue on Page 2 · Title 2',
+      prefill: 'Fix edit.issues.kind.danglingCue on Page 2 · Title 2 (cue-b)',
     });
 
     await act(async () => testId('edit-course-issues')?.click());

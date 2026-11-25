@@ -63,10 +63,11 @@ export function CourseIssuesButton() {
   }, [scenes, issues, t]);
   const fixIssue = (issue: CourseIssue, page: string) => {
     if (!handOff || !courseId) return;
-    handOff({
-      courseId,
-      prefill: t('edit.issues.fixPrefillIssue', { page, issue: t(KIND_LABEL_KEY[issue.kind]) }),
-    });
+    const kindText = t(KIND_LABEL_KEY[issue.kind]);
+    let prefill = t('edit.issues.fixPrefillIssue', { page, issue: kindText });
+    const target = issue.actionId ?? issue.elementId;
+    if (target) prefill += ` (${target})`;
+    handOff({ courseId, prefill });
     setOpen(false);
   };
   const fixCourse = () => {
