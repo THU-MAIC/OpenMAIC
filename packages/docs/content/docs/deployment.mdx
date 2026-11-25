@@ -28,6 +28,21 @@ docker build -t openmaic .
 docker run --env-file .env.local -e DATABASE_URL=postgres://user:password@db-host:5432/openmaic -v openmaic-data:/app/data -p 3000:3000 openmaic
 ```
 
+Prebuilt images are published to GitHub Container Registry on pushes to `main`
+and `v*` tags. The canonical image from upstream is
+`ghcr.io/thu-maic/openmaic:latest`; the publishing workflow derives the name
+from `github.repository`, so a fork publishes to and is pulled from
+`ghcr.io/<owner>/<repo>:latest` instead. Pull instead of building with:
+
+```bash
+docker pull ghcr.io/thu-maic/openmaic:latest
+```
+
+Use your own namespace when pulling from a fork. Every build also gets a
+`sha-<commit>` tag. If the package is private, authenticate with
+`docker login ghcr.io -u <owner>` using a token that has `read:packages`. The
+image needs the same runtime configuration as a locally built one.
+
 We recommend the repository's Docker Compose configuration:
 
 ```bash

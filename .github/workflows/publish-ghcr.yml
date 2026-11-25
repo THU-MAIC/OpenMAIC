@@ -1,0 +1,111 @@
+name: Publish main image to GHCR
+
+# Builds the final `runner` stage of the existing multi-stage Dockerfile and
+# pushes it to GitHub Container Registry. The main CI job only builds through
+# `builder` (push: false) as a validation step; this workflow is what produces
+# a pullable image.
+#
+# The image name is derived from `github.repository`, so the canonical image
+# built from upstream is ghcr.io/thu-maic/openmaic:latest. A fork publishes to
+# (and is pulled from) ghcr.io/<owner>/<repo> with no workflow edits required.
+#
+# Triggers:
+#   - push to main  -> main, <sha>, latest
+#   - push of a v* tag -> <tag>, <sha>
+#   - manual run from the Actions tab -> tags for the selected ref
+#
+# Requires no new secret: GITHUB_TOKEN is enough with `packages: write` below.
+# All NEXT_PUBLIC_* flags are build-time values (see deployment.mdx), so they
+# are wired to repository Variables and must be set before running the build.
+# Set ALPINE_MIRROR / NPM_REGISTRY variables if the default registries are slow.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: publish-ghcr-${{ github.ref }}
+  # Do not cancel a running push: a cancelled build can leave only part of the
+  # generated tags updated in the registry.
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build & push runner image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # metadata-action lowercases the image name automatically, so
+          # THU-MAIC/OpenMAIC becomes ghcr.io/thu-maic/openmaic and a fork
+          # owned by alice becomes ghcr.io/alice/<repo>.
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # No type=gha layer cache, matching ci.yml: `COPY . .` invalidates the
+      # builder on almost every commit and the cache export is slower than the
+      # work it saves (and burns through the repository cache quota).
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runner
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Keep a plain image manifest; attestations are not needed to pull.
+          provenance: false
+          sbom: false
+          build-args: |
+            ALPINE_MIRROR=${{ vars.ALPINE_MIRROR }}
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY }}
+            ALLOWED_FRAME_ANCESTORS=${{ vars.ALLOWED_FRAME_ANCESTORS }}
+            INTERACTIVE_ASSET_BASE_URL=${{ vars.INTERACTIVE_ASSET_BASE_URL }}
+            NEXT_PUBLIC_MAIC_EDITOR_ENABLED=${{ vars.NEXT_PUBLIC_MAIC_EDITOR_ENABLED }}
+            NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED=${{ vars.NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED }}
+            NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=${{ vars.NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED }}
+            NEXT_PUBLIC_PI_CHAT_ENABLED=${{ vars.NEXT_PUBLIC_PI_CHAT_ENABLED }}
+            NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED=${{ vars.NEXT_PUBLIC_COURSEWARE_REFERENCE_ENABLED }}
+            NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI=${{ vars.NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI }}
+            NEXT_PUBLIC_ENABLE_VIDEO_EXPORT=${{ vars.NEXT_PUBLIC_ENABLE_VIDEO_EXPORT }}
+            NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION=${{ vars.NEXT_PUBLIC_VIDEO_EXPORT_CTA_DESTINATION }}
+            NEXT_PUBLIC_ENABLE_PPTX_IMPORT=${{ vars.NEXT_PUBLIC_ENABLE_PPTX_IMPORT }}
+            NEXT_PUBLIC_WORKBENCH_ENABLED=${{ vars.NEXT_PUBLIC_WORKBENCH_ENABLED }}
+            NEXT_PUBLIC_PRO_WORKBENCH_ENABLED=${{ vars.NEXT_PUBLIC_PRO_WORKBENCH_ENABLED }}
+
+      - name: Show pushed tags
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          echo "Pushed image tags:"
+          printf '%s\n' "$TAGS"
+          echo "Digest: $DIGEST"
