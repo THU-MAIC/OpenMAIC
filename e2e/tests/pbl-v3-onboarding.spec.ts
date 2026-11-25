@@ -235,6 +235,44 @@ async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number
   if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
 }
 
+test('keeps one draft across companion layouts and closes the last file from its tab', async ({
+  page,
+  learningEvents,
+}) => {
+  await project(page, learningEvents, { started: true, explanationBoard: true });
+  const draft = 'Compare the implementation with the plan.';
+  const bubble = page.getByTestId('pbl-companion-input');
+  await bubble.getByRole('textbox').fill(draft);
+  await page.getByTestId('pbl-companion-avatar').click();
+  const assistant = page.getByTestId('pbl-assistant');
+  await expect(assistant.getByRole('textbox')).toHaveValue(draft);
+  await page.getByTestId('pbl-assistant-dock').click();
+  await expect(assistant.getByRole('textbox')).toHaveValue(draft);
+  const toggle = page.getByRole('button', { name: 'Toggle code workspace', exact: true });
+  if ((await toggle.getAttribute('aria-pressed')) === 'false') await toggle.click();
+  const ide = page.getByTestId('pbl-ide');
+  const tabs = ide.getByRole('tablist', { name: 'Open files' });
+  await expect(tabs.getByRole('tab')).toHaveCount(1);
+  await expect
+    .poll(() =>
+      assistant
+        .locator('header')
+        .first()
+        .evaluate((el) => el.getBoundingClientRect().height),
+    )
+    .toBe(36);
+  await expect
+    .poll(() => tabs.evaluate((el) => el.parentElement!.getBoundingClientRect().height))
+    .toBe(36);
+  await tabs.getByRole('button', { name: 'Close PLAN.md', exact: true }).click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(assistant.getByRole('textbox')).toHaveValue(draft);
+  await toggle.click();
+  await expect(tabs.getByRole('tab', { name: 'PLAN.md', exact: true })).toBeVisible();
+  await page.getByTestId('pbl-assistant-close').click();
+  await expect(bubble.getByRole('textbox')).toHaveValue(draft);
+});
+
 for (const mode of assistantModes) {
   test(`decision controls in the ${mode} match the tutor's named action`, async ({
     page,
