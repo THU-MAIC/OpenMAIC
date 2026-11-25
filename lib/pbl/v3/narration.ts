@@ -80,6 +80,12 @@ function passagePoint(block: MarkdownBlock, points: readonly Point[]) {
   return cited ?? points.at(-1)!;
 }
 
+// A receipt with a source frame may be all that fits on a history page. It is
+// readable evidence of earlier speech, never a new utterance for the playhead.
+function isSpokenReceipt(part: Extract<Part, { kind: 'text' }>) {
+  return part.spokenAt !== undefined && part.id.startsWith('question-');
+}
+
 /** The stream parts of one reply as steps; thinking is never told. */
 export function narrationSteps(entry: LearningConversationEntry): NarrationStep[] {
   let pendingPoints: PointStep[] = [];
@@ -91,6 +97,7 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
   const steps = entry.parts.flatMap((part, index): NarrationStep[] => {
     const at = { id: part.id, part: index };
     if (part.kind === 'text') {
+      if (isSpokenReceipt(part)) return [];
       const text = spokenText(part.text, part.streaming);
       if (!text) return [];
       // A model can explain one batch of cues in several consecutive text parts.
@@ -189,10 +196,15 @@ export function pointerAt(steps: readonly NarrationStep[], index: number) {
 
 /** A successful tool-only retry rests on the original question without queuing speech again. */
 export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
-  if (entry?.status !== 'succeeded') return;
-  const card = entry.parts.findLast((part) => part.kind === 'tool' && part.restingReview);
-  if (card?.kind === 'tool' && card.restingReview)
-    return { id: card.id, text: spokenText(card.restingReview) };
+  if (!entry || (entry.status !== undefined && entry.status !== 'succeeded')) return;
+  const closing = entry.parts.findLast(
+    (part) =>
+      (part.kind === 'text' && part.text.trim()) || (part.kind === 'tool' && part.restingReview),
+  );
+  if (closing?.kind === 'text' && isSpokenReceipt(closing))
+    return { id: closing.id, text: spokenText(closing.text) };
+  if (closing?.kind === 'tool' && closing.restingReview)
+    return { id: closing.id, text: spokenText(closing.restingReview) };
 }
 
 /**

@@ -347,6 +347,7 @@ export function useNarration(
   useEffect(() => () => told.current.onTold?.(null), []);
 
   const say = segment?.say;
+  const restingReview = playing ? undefined : recoveredReviewSpeech(entry);
   const restingPart = !playing && say?.passage ? entry?.parts[say.part] : undefined;
   return {
     /** A live reply is being told; otherwise the bubble rests on the last thing said. */
@@ -364,11 +365,12 @@ export function useNarration(
      * reply has only called tools so far.
      */
     speech:
-      say && playing && steps[head]?.id === say.id
+      restingReview ??
+      (say && playing && steps[head]?.id === say.id
         ? { ...say, text: active.text, streaming: true }
         : say && restingPart?.kind === 'text'
           ? { ...say, text: spokenText(restingPart.text) }
-          : (say ?? (!playing ? recoveredReviewSpeech(entry) : undefined)),
+          : say),
     /** The calls that follow that text which the telling has reached, in order. */
     tools: !segment
       ? []

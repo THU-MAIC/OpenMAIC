@@ -6,6 +6,7 @@ import {
   narrationSegments,
   narrationSteps,
   pointerAt,
+  recoveredReviewSpeech,
   spokenText,
   toldConversation,
 } from '@/lib/pbl/v3/narration';
@@ -371,4 +372,21 @@ it('retains literal brackets on seal and never reopens a link inside a finished 
     }
     expect(revealed).toBe(spokenText(source));
   }
+});
+
+it('restores a previously spoken receipt without queuing it when the source page is absent', () => {
+  const words = 'Read [the plan](#pbl-file=PLAN.md). Which branch?';
+  const source = text('message-1', words, { spokenAt: 5 });
+  const receipt = text('question-2-review', words, { spokenAt: 5 });
+  const snapshot = entry([text('other', 'Earlier hint.'), receipt]);
+  expect(narrationSteps(snapshot).map((step) => step.id)).toEqual(['other']);
+  expect(recoveredReviewSpeech(snapshot)?.text).toBe('Read the plan. Which branch?');
+  expect(recoveredReviewSpeech({ ...snapshot, status: undefined })?.text).toBe(
+    'Read the plan. Which branch?',
+  );
+  expect(recoveredReviewSpeech(entry([receipt, source]))).toBeUndefined();
+  expect(narrationSteps(entry([source])).map((step) => step.kind)).toEqual(['say']);
+  expect(
+    narrationSteps(entry([text('question-tool-only', words)])).map((step) => step.kind),
+  ).toEqual(['say']);
 });
