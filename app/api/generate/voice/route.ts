@@ -196,6 +196,13 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'voiceId is required');
     }
     const deleting = body.action === 'delete';
+    if (
+      !deleting &&
+      body.referenceAudioBase64 !== undefined &&
+      typeof body.referenceAudioBase64 !== 'string'
+    ) {
+      return apiError('INVALID_REQUEST', 400, 'referenceAudioBase64 must be a string');
+    }
     if (!deleting && !design && !body.referenceAudioBase64) {
       return apiError(
         'MISSING_REQUIRED_FIELD',

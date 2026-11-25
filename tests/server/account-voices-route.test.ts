@@ -23,7 +23,11 @@ vi.mock('@/lib/audio/voice-registration', async (original) => {
     ...actual,
     getVoiceRegistrationAdapter: (id: string) =>
       id === 'minimax-tts'
-        ? { supportsRegistration: () => true, listVoices: mocks.list, deleteVoice: mocks.delete }
+        ? {
+            ...actual.getVoiceRegistrationAdapter(id),
+            listVoices: mocks.list,
+            deleteVoice: mocks.delete,
+          }
         : actual.getVoiceRegistrationAdapter(id),
   };
 });
@@ -135,6 +139,25 @@ describe('account voice management on the active workspace speech service', () =
       'designed',
     );
   });
+
+  it.each([
+    { referenceAudioBase64: [1, 2, 3] },
+    { referenceAudioBase64: 42 },
+    { referenceAudioBase64: null, descriptor: { identity: 'Narrator' } },
+  ])(
+    'rejects non-string reference audio before resolving the speech service (%j)',
+    async (input) => {
+      const response = await route.POST(
+        new NextRequest(url, {
+          method: 'POST',
+          body: JSON.stringify({ voiceId: 'Narrator', ...input }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ errorCode: 'INVALID_REQUEST' });
+      expect(mocks.workspaceId).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses a stale picker when its provider no longer matches the TTS slot', async () => {
     expect((await list('qwen-tts')).status).toBe(409);
