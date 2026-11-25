@@ -65,7 +65,9 @@ export async function generateWithMiniMaxImage(
     throw new Error(`MiniMax Image: no image URLs returned. Response: ${JSON.stringify(data)}`);
   }
 
-  const imageUrl = imageUrls[0];
+  // The international site returns result URLs over plain http, which the
+  // provider-result download refuses. The same object is served over https.
+  const imageUrl = imageUrls[0].replace(/^http:\/\//i, 'https://');
 
   // Determine dimensions from aspect ratio
   let width = options.width || 1024;
