@@ -53,7 +53,7 @@ export async function assertEnvironmentWritable(
 ) {
   const current = (
     await store.pool.query<Pick<Study, 'environment_id' | 'archive_discard' | 'idle_turn_cleanup'>>(
-      'SELECT environment_id,archive_discard,idle_turn_cleanup FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2',
+      'SELECT environment_id,archive_discard,idle_turn_cleanup FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 AND NOT is_reset',
       [id, ownerId],
     )
   ).rows[0];

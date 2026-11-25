@@ -379,6 +379,7 @@ import { pblArchiveFailureGraceMs, pblIdleTimeoutMs } from '@/lib/server/pbl-v3/
 import {
   commandStudy,
   openStudy,
+  resetStudy,
   learningView,
   digest,
   filesFingerprint,
@@ -12443,5 +12444,113 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       stop.mockRestore();
       await releasePreparationFixtures([row.id]);
     }
+  });
+  function enableStudyReset() {
+    const previous = process.env.OPENMAIC_PBL_V3_PROGRESS_RESET;
+    process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = 'true';
+    onTestFinished(() => {
+      if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_PROGRESS_RESET;
+      else process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = previous;
+    });
+  }
+
+  it('waits for an admitted preparation and releases its environment on reset', async () => {
+    enableStudyReset();
+    const study = await unpreparedStudy();
+    const startCreate = Promise.withResolvers<void>();
+    const allowCreate = Promise.withResolvers<void>();
+    const create = E2BCompatibleSandboxProvider.prototype.create;
+    const paused = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'create')
+      .mockImplementationOnce(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        startCreate.resolve();
+        await allowCreate.promise;
+        return create.apply(this, args);
+      });
+    onTestFinished(() => paused.mockRestore());
+    const prepare = study.send('prepare');
+    await startCreate.promise;
+    const admission = vi.spyOn(LearningStore.prototype, 'waitForExclusive');
+    onTestFinished(() => admission.mockRestore());
+    const reset = resetStudy(principal, study.id);
+    try {
+      await vi.waitFor(() =>
+        expect(admission).toHaveBeenCalledWith(study.id, expect.any(Function)),
+      );
+    } finally {
+      allowCreate.resolve();
+      await Promise.all([prepare, reset]);
+    }
+    const envs = await pool.query(
+      'SELECT state FROM sandbox_environments WHERE owner_id=$1 AND workspace_id=$2',
+      [principal.ownerId, learningWorkspaceId(study.id)],
+    );
+    expect(envs.rows).toEqual([{ state: 'destroyed' }]);
+    await expect(store.get(study.id, principal.ownerId)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('retires a reset study for every tab while preserving evidence and a fresh scene slot', async () => {
+    enableStudyReset();
+    const first = await freshStudy();
+    const row = await store.get(first.id, principal.ownerId);
+    const counts = async () =>
+      (await pool.query('SELECT count(*) FROM pbl_v3_events WHERE study_id=$1', [row.id])).rows[0]
+        .count;
+    const evidence = await counts();
+    await store.completeOnboarding(row.id, principal.ownerId);
+    process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = 'false';
+    await expect(resetStudy(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = 'true';
+    await expect(
+      resetStudy({ ...principal, ownerId: 'another-owner' }, row.id),
+    ).rejects.toMatchObject({ status: 404 });
+    // Simulate a provider error after retirement. Maintenance must still reclaim the resource.
+    vi.spyOn(SandboxService.prototype, 'destroy').mockRejectedValueOnce(
+      new Error('release deferred'),
+    );
+    try {
+      await expect(resetStudy(principal, row.id)).resolves.toEqual({ reset: true });
+    } finally {
+      vi.mocked(SandboxService.prototype.destroy).mockRestore();
+    }
+    const creates = mocked.creates.length;
+    for (const revision of [row.revision, row.revision + 1])
+      await expect(
+        commandStudy(principal, row.id, { type: 'prepare', id: randomUUID(), revision }),
+      ).rejects.toMatchObject({ status: 404 });
+    await expect(learningView(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    await expect(workbenchView(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    await expect(store.recordActivity(row.id, principal.ownerId)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(store.completeOnboarding(row.id, principal.ownerId)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(mocked.creates).toHaveLength(creates);
+    await maintainStudy(store, row.id, principal.ownerId, row.environment_id!);
+    expect(
+      (await (await SandboxStore.open()).get(principal.ownerId, row.environment_id!))?.state,
+    ).toBe('destroyed');
+    expect(await counts()).toBe(evidence);
+    expect(await store.hasSeenOnboarding(principal.ownerId)).toBe(true);
+    const next = await store.create(
+      {
+        ownerId: principal.ownerId,
+        stageId: row.stage_id,
+        sceneId: row.scene_id,
+        projectId: project.ref.id,
+        version: project.ref.version,
+      },
+      startOrchestration(project.definition),
+    );
+    expect(next.id).not.toBe(row.id);
+    await commandStudy(principal, next.id, {
+      type: 'prepare',
+      id: randomUUID(),
+      revision: next.revision,
+    });
+    await expect(resetStudy(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    expect((await store.get(next.id, principal.ownerId)).environment_id).toBeTruthy();
+    await releasePreparationFixtures([next.id]);
   });
 });

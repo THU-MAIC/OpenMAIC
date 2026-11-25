@@ -276,11 +276,8 @@ export async function resetStudy(principal: OwnerPrincipal, id: string) {
   if (!pblProgressResetEnabled())
     throw new SandboxError('PBL_NOT_FOUND', 404, 'Progress reset is unavailable.');
   const store = await LearningStore.open();
-  const row = await store.get(id, principal.ownerId);
-  const agents = await getAgentSessionStore();
-  for (const role of await store.roles(id)) await agents.requestCancel(role.session_id);
-  if (!(await store.detachFromScene(row)))
-    throw sandboxConflict('This learning session was already reset.');
+  await store.get(id, principal.ownerId);
+  const row = await store.waitForExclusive(id, () => store.retireStudy(id, principal.ownerId));
   const environments = [row.environment_id, row.environment_recovery?.requestId].filter(
     (value): value is string => typeof value === 'string' && !!value,
   );

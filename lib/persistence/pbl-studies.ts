@@ -133,6 +133,16 @@ UPDATE asset_entries e SET committed_at=COALESCE(e.committed_at,now()),expires_a
       transaction: true,
       up: 'ALTER TABLE pbl_v3_studies ADD COLUMN onboarding_completed_at TIMESTAMPTZ;',
     },
+    {
+      version: 12,
+      name: 'retire-reset-studies',
+      transaction: true,
+      up: `ALTER TABLE pbl_v3_studies ADD COLUMN is_reset BOOLEAN NOT NULL DEFAULT FALSE;
+        UPDATE pbl_v3_studies s SET is_reset=TRUE
+        WHERE s.scene_id ~ '#reset:[0-9]{20}$' AND NOT EXISTS (
+          SELECT 1 FROM document_scenes d WHERE d.stage_id=s.stage_id AND d.id=s.scene_id
+        );`,
+    },
   ],
 };
 

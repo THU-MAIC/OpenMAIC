@@ -70,6 +70,25 @@ describe('persisted project templates and classroom lifecycle', () => {
     await database?.close();
     if (root) await rm(root, { recursive: true, force: true });
   });
+  it('retires legacy reset aliases on upgrade without hiding actual classroom scenes', async () => {
+    const db = new PGlite();
+    try {
+      // Only the two columns consulted by this upgrade are relevant to these pre-upgrade rows.
+      await db.exec(`CREATE TABLE document_scenes (stage_id text, id text);
+        CREATE TABLE pbl_v3_studies (stage_id text, scene_id text);
+        INSERT INTO document_scenes VALUES ('live', 'lesson#reset:20261125170102000003');
+        INSERT INTO pbl_v3_studies VALUES
+          ('live', 'lesson#reset:20261125170102000003'),
+          ('retired', 'lesson#reset:20261125170102000003'),
+          ('ordinary', 'lesson#reset:notes');`);
+      const migration = PBL_MIGRATIONS.migrations.find((m) => m.name === 'retire-reset-studies')!;
+      await db.exec(migration.up);
+      const retired = await db.query('SELECT stage_id FROM pbl_v3_studies WHERE is_reset');
+      expect(retired.rows).toEqual([{ stage_id: 'retired' }]);
+    } finally {
+      await db.close();
+    }
+  });
   it('resolves and exports previously installed authoring errors without weakening new admission or ownership', async () => {
     vi.stubEnv('ASSET_S3_BUCKET', '');
     vi.stubEnv('PERSISTENCE_SHARED_OWNER_ID', '');
