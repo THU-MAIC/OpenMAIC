@@ -82,7 +82,8 @@ function passagePoint(block: MarkdownBlock, points: readonly Point[]) {
 
 /** The stream parts of one reply as steps; thinking is never told. */
 export function narrationSteps(entry: LearningConversationEntry): NarrationStep[] {
-  let codePoints: PointStep[] = [];
+  let pendingPoints: PointStep[] = [];
+  let explanationPoints: PointStep[] = [];
   // Later cues should not flash past the first location before its explanation starts.
   function holdForSpeech(points: PointStep[]) {
     for (const next of points.slice(1)) next.untilSpeech = points[0];
@@ -92,14 +93,21 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
     if (part.kind === 'text') {
       const text = spokenText(part.text, part.streaming);
       if (!text) return [];
-      const points = codePoints;
-      codePoints = [];
-      if (points.length < 2) return [{ ...at, kind: 'say', text, streaming: !!part.streaming }];
+      // A model can explain one batch of cues in several consecutive text parts.
+      // A new pointing sequence or a whiteboard change starts a new explanation.
+      if (pendingPoints.length) {
+        explanationPoints = pendingPoints;
+        holdForSpeech(explanationPoints);
+        pendingPoints = [];
+      }
+      if (explanationPoints.length < 2)
+        return [{ ...at, kind: 'say', text, streaming: !!part.streaming }];
 
       // Each paragraph gets its own voice segment. Its target changes at the same playhead
       // as the words, including when muted or paused. Keep the transcript in source coordinates.
-      holdForSpeech(points);
-      const blocks = fromMarkdown(part.text).children;
+      const blocks = fromMarkdown(part.text).children.flatMap<MarkdownBlock>((block) =>
+        block.type === 'list' ? block.children : [block],
+      );
       const steps: NarrationStep[] = [];
       for (const block of blocks) {
         const start = block.position!.start.offset!;
@@ -117,7 +125,7 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
           passage: {
             from: start / part.text.length,
             to: end / part.text.length,
-            point: passagePoint(block, points),
+            point: passagePoint(block, explanationPoints),
           },
         });
       }
@@ -129,8 +137,9 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
     ) as Partial<LearningBoardDisplay>;
     if (display.target && part.status === 'succeeded') {
       const point: PointStep = { ...at, kind: 'point', target: display.target, tool: part };
-      if ('path' in display.target) codePoints.push(point);
-      else codePoints = [];
+      explanationPoints = [];
+      if ('path' in display.target) pendingPoints.push(point);
+      else pendingPoints = [];
       return [point];
     }
     if (
@@ -138,8 +147,10 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
       part.status === 'succeeded' &&
       display.op !== 'read' &&
       display.op !== 'close'
-    )
-      codePoints = [];
+    ) {
+      pendingPoints = [];
+      explanationPoints = [];
+    }
     if (part.action === 'board' && display.op !== 'read' && display.op !== 'point')
       return [
         {
@@ -157,7 +168,7 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
   });
   // While the stream is open there may still be speech. A finished, tool-only sequence
   // retains its individual actions, including its final location.
-  if (entry.status === 'running') holdForSpeech(codePoints);
+  if (entry.status === 'running') holdForSpeech(pendingPoints);
   return steps;
 }
 

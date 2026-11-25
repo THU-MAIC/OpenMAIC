@@ -242,6 +242,73 @@ it('never navigates from a file link alone and avoids guessing between competing
   ).toBe('preview');
 });
 
+it('matches each text part or list item to its own issued location', () => {
+  const a = `Read ${firstLink}.`;
+  const b = `Check ${secondLink}.`;
+  for (const parts of [
+    [text('a', a), read('file'), text('b', b)],
+    [text('list', `1. ${a}\n2. ${b}`)],
+    [text('list', `- ${a}\n- ${b}`)],
+  ]) {
+    const steps = narrationSteps(entry([firstPoint, secondPoint, ...parts]));
+    expect(
+      steps.flatMap((s, i) => (s.kind === 'say' ? [[s.text, pointerAt(steps, i)?.id]] : [])),
+    ).toEqual([
+      [expect.stringContaining('Read setup.'), 'first'],
+      [expect.stringContaining('Check work.'), 'next'],
+    ]);
+  }
+});
+
+it('only queues complete list items and maps them back to the original transcript', () => {
+  const lead = `1. Read ${firstLink}.`;
+  const tail = `2. Check ${secondLink}.`;
+  const partial = narrationSteps(
+    entry([firstPoint, secondPoint, text('list', `${lead}\n2. Check [wo`, { streaming: true })]),
+  );
+  const reply = entry([firstPoint, secondPoint, text('list', `${lead}\n${tail}`)]);
+  const steps = narrationSteps(reply);
+  expect(partial.length).toBe(3);
+  expect(steps.length).toBe(4);
+  expect(partial[2]).toMatchObject({ id: steps[2].id, text: '1. Read setup.' });
+  for (const [index, prefix] of [
+    [2, lead],
+    [3, `${lead}\n${tail}`],
+  ] as const) {
+    const step = steps[index];
+    if (step.kind !== 'say' || !step.passage) throw Error('Expected a passage');
+    const [shown] = toldConversation([reply], {
+      id: reply.id,
+      part: step.part,
+      said: step.passage.to,
+    });
+    expect(shown.parts.at(-1)).toMatchObject({ text: prefix });
+  }
+});
+
+it('retires the previous explanation when a new point or board action takes over', () => {
+  const steps = (parts: Part[]) =>
+    narrationSteps(
+      entry([
+        firstPoint,
+        secondPoint,
+        text('first words', firstLink),
+        ...parts,
+        text('after', firstLink),
+      ]),
+    );
+  for (const [parts, id] of [
+    [[point('third', { path: 'c.ts', line: 1 })], 'third'],
+    [[board('draw', ['one'])], undefined],
+    [[point('app', { selector: '.app' })], 'app'],
+    [[close, text('unissued', '[missing](#pbl-file=c.ts&line=1)')], 'first'],
+  ] as const) {
+    const result = steps([...parts]);
+    expect(pointerAt(result, result.length - 1)?.id).toBe(id);
+    if (id === 'first') expect(pointerAt(result, result.length - 2)).toBeUndefined();
+  }
+});
+
 it('keeps the active code cue through board close and clears it for a real board action', () => {
   const steps = (parts: Part[]) => narrationSteps(entry(parts));
   const code = steps([
