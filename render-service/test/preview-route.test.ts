@@ -167,6 +167,19 @@ describe('POST /interactive-runtime-check', () => {
     expect(interactiveRuntimeCheck).toHaveBeenCalledOnce();
   });
 
+  it('rewrites compatible CDN references before validating runtime checks', async () => {
+    const html = '<script src="//unpkg.com/katex@0.16.9/dist/katex.min.js"></script>';
+    const interactiveRuntimeCheck = vi.fn<NonNullable<AppDeps['interactiveRuntimeCheck']>>(
+      async () => [],
+    );
+    const app = appWith({ render: vi.fn() }, undefined, { interactiveRuntimeCheck });
+
+    expect((await app.fetch(runtimeRequest(html))).status).toBe(200);
+    expect(interactiveRuntimeCheck.mock.calls[0]?.[0].scene.content.html).toBe(
+      '<script src="/vendor/interactive/katex@0.16.38/dist/katex.min.js"></script>',
+    );
+  });
+
   it('returns JSON and shares the PNG preview execution gate', async () => {
     const pending =
       deferred<Awaited<ReturnType<NonNullable<AppDeps['interactiveRuntimeCheck']>>>>();

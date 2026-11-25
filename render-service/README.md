@@ -117,9 +117,10 @@ CSS `@import`) may pass validation; self-contained scenes are the caller's
 responsibility, and end-to-end fidelity for persisted scenes arrives with
 caller-side preparation (tracked separately).
 
-`POST /interactive-runtime-check` runs the original interactive HTML in a
-sandboxed iframe. Chromium loads pinned hosted-library files from the render
-service through request interception. The default URL prefix is
+`POST /interactive-runtime-check` applies playback's HTML post-processing before
+validating resource references and running the scene in a sandboxed iframe.
+Chromium loads pinned hosted-library files from the render service through
+request interception. The default URL prefix is
 `/vendor/interactive/`. A deployment using a mirror must set
 `INTERACTIVE_ASSET_BASE_URL` to the same value in the app build and the render
 service. Both prefixes resolve to local files. Other network requests from the
@@ -423,7 +424,10 @@ Start this mode with `npm run start:resources -- /etc/openmaic/resource.json`;
 [`resource-config.example.json`](resource-config.example.json) documents the
 root-owned state directory, fixed tool paths and per-task budget. Provision the
 official alias from the lockfile with browser download disabled when a managed
-browser is already installed (for example, `PUPPETEER_SKIP_DOWNLOAD=true npm ci`).
+browser is already installed (for example, `PUPPETEER_SKIP_DOWNLOAD=true npm ci`
+in `render-service`). If only the service dependencies are installed, run
+`ln -s render-service/node_modules node_modules` from the repository root so the
+shared generation source can resolve them.
 The config file, state directory, browser, FFmpeg and installed service code are
 trusted deployment inputs and must not be writable by the HTTP worker. Each
 project directory must be exclusively owned by that worker for the duration of

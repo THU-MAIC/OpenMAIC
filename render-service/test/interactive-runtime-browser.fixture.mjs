@@ -4,9 +4,31 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { HostedInteractiveLibraries } from '../src/hosted-interactive-libraries.ts';
 import { ChromiumPreviewRenderer } from '../src/preview-renderer.ts';
+import { RenderCoordinator } from '../src/render-coordinator.ts';
+import { Semaphore } from '../src/semaphore.ts';
+import {
+  createMemoryArtifactStore,
+  createMemoryJobStore,
+  succeedingExecutor,
+} from './support/fakes.ts';
 
-const renderer = new ChromiumPreviewRenderer();
-const deadlineMs = 3_000;
+process.env.RENDER_SERVICE_NO_LISTEN = 'true';
+const { createApp } = await import('../src/main.ts');
+
+function runtimeApp(renderer) {
+  const jobs = createMemoryJobStore();
+  const { store: artifacts } = createMemoryArtifactStore();
+  return createApp({
+    jobs,
+    artifacts,
+    coordinator: new RenderCoordinator(succeedingExecutor, jobs, artifacts),
+    extractionGate: new Semaphore(1),
+    interactiveRuntimeCheck: renderer?.checkInteractiveRuntime.bind(renderer),
+    onEvent() {},
+  });
+}
+
+const app = runtimeApp();
 const actions = [
   { id: 'state', type: 'widget_setState', state: { ready: true } },
   { id: 'speech', type: 'speech', text: 'Look at the highlighted part.' },
@@ -15,11 +37,12 @@ const actions = [
 ];
 
 function check(script, replay = []) {
-  return checkHtml(renderer, `<!doctype html><script>${script}</script>`, replay);
+  return checkHtml(app, `<!doctype html><script>${script}</script>`, replay);
 }
 
-function checkHtml(renderer, html, replay = []) {
-  return renderer.checkInteractiveRuntime({
+async function checkHtml(app, html, replay = []) {
+  const payload = {
+    version: 1,
     scene: {
       id: 'test-scene',
       stageId: 'test-stage',
@@ -31,9 +54,15 @@ function checkHtml(renderer, html, replay = []) {
     },
     stage: { id: 'test-stage', name: 'Test stage' },
     viewport: { width: 640, height: 360, deviceScaleFactor: 1 },
-    signal: AbortSignal.timeout(deadlineMs),
-    deadlineMs,
+  };
+  const response = await app.request('/interactive-runtime-check', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
   });
+  const result = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(result));
+  return result.errors;
 }
 
 assert.deepEqual(
@@ -88,8 +117,8 @@ const directory = await mkdtemp(join(tmpdir(), 'runtime-library-browser-'));
 try {
   const classic = 'chart.js@4.4.8/dist';
   const modules = 'three@0.160.0/build';
-  const css = 'katex@0.16.38/dist';
-  for (const assetDir of [classic, modules, css]) {
+  const katex = 'katex@0.16.38/dist';
+  for (const assetDir of [classic, modules, `${katex}/contrib`]) {
     await mkdir(join(directory, assetDir), { recursive: true });
   }
   await writeFile(join(directory, classic, 'chart.umd.js'), 'globalThis.chartFixture = 17;');
@@ -98,18 +127,28 @@ try {
     'export { fixture } from "./dep.js";',
   );
   await writeFile(join(directory, modules, 'dep.js'), 'export const fixture = 23;');
-  await writeFile(join(directory, css, 'katex.min.css'), 'body { color: rgb(1, 2, 3); }');
+  await writeFile(join(directory, katex, 'katex.min.css'), 'body { color: rgb(1, 2, 3); }');
+  await writeFile(
+    join(directory, katex, 'katex.min.js'),
+    'window.katex = { render(tex, target) { target.textContent = tex; } };',
+  );
+  await writeFile(
+    join(directory, katex, 'contrib/auto-render.min.js'),
+    'window.renderMathInElement = () => {};',
+  );
 
   const mirrorBase = 'https://assets.example.test/interactive';
-  const withLibraries = new ChromiumPreviewRenderer({
-    interactiveLibraries: new HostedInteractiveLibraries(directory, mirrorBase),
-  });
+  const withLibraries = runtimeApp(
+    new ChromiumPreviewRenderer({
+      interactiveLibraries: new HostedInteractiveLibraries(directory, mirrorBase),
+    }),
+  );
   assert.deepEqual(
     await checkHtml(
       withLibraries,
       `
       <!doctype html>
-      <link rel="stylesheet" href="/vendor/interactive/${css}/katex.min.css">
+      <link rel="stylesheet" href="/vendor/interactive/${katex}/katex.min.css">
       <script src="/vendor/interactive/${classic}/chart.umd.js"></script>
       <script type="importmap">
         {"imports": {"three": "${mirrorBase}/${modules}/three.module.js"}}
@@ -132,10 +171,32 @@ try {
     ),
     [],
   );
+  assert.deepEqual(
+    await checkHtml(
+      withLibraries,
+      `<!doctype html><div id="math"></div><script>
+        const target = document.getElementById('math');
+        katex.render('x^2', target);
+        if (target.textContent !== 'x^2') throw new Error('Hosted KaTeX did not render');
+      </script>`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    await checkHtml(
+      withLibraries,
+      `<!doctype html><script src="//unpkg.com/katex@0.16.9/dist/katex.min.js"></script><script>
+        if (typeof window.katex?.render !== 'function') throw new Error('Hosted KaTeX did not load');
+      </script>`,
+    ),
+    [],
+  );
 
-  const missingDirectory = new ChromiumPreviewRenderer({
-    interactiveLibraries: new HostedInteractiveLibraries(join(directory, 'missing')),
-  });
+  const missingDirectory = runtimeApp(
+    new ChromiumPreviewRenderer({
+      interactiveLibraries: new HostedInteractiveLibraries(join(directory, 'missing')),
+    }),
+  );
   assert.deepEqual(
     await checkHtml(
       missingDirectory,

@@ -29,6 +29,7 @@ import { Readable } from 'node:stream';
 import { serve } from '@hono/node-server';
 import { validateScene } from '@openmaic/dsl';
 import { Hono, type Context } from 'hono';
+import { postProcessInteractiveHtml } from '../../packages/@openmaic/generation/src/interactive-post-processor.js';
 import { config } from './config.js';
 import { hostedInteractiveLibraries } from './hosted-interactive-libraries.js';
 import { InMemoryJobStore } from './job-store.js';
@@ -527,6 +528,15 @@ export function createApp(deps: AppDeps): Hono {
         runtimeCheck && payload.scene.type === 'interactive' ? payload.scene : undefined;
       if (runtimeCheck && !checkScene) {
         throw new BadRequestError('Runtime checks require an interactive scene');
+      }
+      if (checkScene?.content.html?.trim()) {
+        // Playback processes stored scene HTML. Validate the resulting hosted
+        // references under the same request admission and deadline.
+        signal.throwIfAborted();
+        checkScene.content.html = postProcessInteractiveHtml(checkScene.content.html);
+        if (performance.now() >= expiresAt) {
+          throw new PreviewTimeoutError('Preview exceeded the deadline');
+        }
       }
       const unpreviewable = previewabilityError(
         payload.scene,

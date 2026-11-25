@@ -320,7 +320,10 @@ jobs:
 
       - name: Install
         working-directory: render-service
-        run: npm ci
+        run: |
+          npm ci
+          # Shared generation source resolves dependencies from the repo root.
+          ln -s render-service/node_modules ../node_modules
 
       - name: TypeScript
         working-directory: render-service
@@ -351,7 +354,7 @@ jobs:
           fi
           inputs="$(git diff --name-only "$PR_BASE" "$GITHUB_SHA" | grep -E \
             -e '^render-service/' \
-            -e '^packages/@openmaic/generation/(package\.json|src/interactive-libraries\.ts)$' \
+            -e '^packages/@openmaic/generation/(package\.json|src/interactive-(libraries|library-mapper|post-processor)\.ts)$' \
             -e '^scripts/sync-interactive-assets\.mjs$' \
             -e '^\.github/workflows/ci\.yml$' || true)"
           if [ -n "$inputs" ]; then

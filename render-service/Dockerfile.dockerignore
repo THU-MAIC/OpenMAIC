@@ -12,5 +12,7 @@
 !packages/@openmaic/generation/package.json
 !packages/@openmaic/generation/src/
 !packages/@openmaic/generation/src/interactive-libraries.ts
+!packages/@openmaic/generation/src/interactive-library-mapper.ts
+!packages/@openmaic/generation/src/interactive-post-processor.ts
 !scripts/
 !scripts/sync-interactive-assets.mjs

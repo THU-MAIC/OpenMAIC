@@ -87,8 +87,13 @@ RUN groupadd --system --gid 1001 render \
 
 WORKDIR /app/render-service
 COPY --from=deps /app/node_modules ./node_modules
+# The shared source under /app/packages also resolves dependencies from here.
+RUN ln -s render-service/node_modules /app/node_modules
 COPY --from=interactive-assets /app/public/vendor/interactive /app/public/vendor/interactive
 COPY --from=interactive-assets /app/packages /app/packages
+COPY packages/@openmaic/generation/src/interactive-post-processor.ts \
+     packages/@openmaic/generation/src/interactive-library-mapper.ts \
+     /app/packages/@openmaic/generation/src/
 COPY --chown=render:render render-service/package.json render-service/tsconfig.json ./
 COPY --chown=render:render render-service/src ./src
 COPY render-service/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
