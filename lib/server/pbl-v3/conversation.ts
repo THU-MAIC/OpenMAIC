@@ -402,8 +402,10 @@ export function projectConversation(
                 for (const block of content) {
                   if (block?.type !== 'text') continue;
                   try {
-                    if (JSON.parse(block.text).projectCompleted === true)
-                      tool.projectCompleted = true;
+                    const result = JSON.parse(block.text);
+                    if (result.projectCompleted === true) tool.projectCompleted = true;
+                    if (result.readyForStudentConfirmation === true)
+                      tool.readyForStudentConfirmation = true;
                   } catch {
                     /* Ignore malformed display content. */
                   }

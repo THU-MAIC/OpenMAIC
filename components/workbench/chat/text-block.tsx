@@ -25,6 +25,8 @@
  *    is drawn.
  */
 import { Fragment, useMemo } from 'react';
+import type { fromMarkdown } from 'mdast-util-from-markdown';
+import { fileReferenceHref, parseFileReference } from '@/lib/pbl/v3/file-reference';
 import { Streamdown, defaultRemarkPlugins, parseMarkdownIntoBlocks } from 'streamdown';
 import remarkCjkFriendly from 'remark-cjk-friendly';
 import { createSafeMathPlugin } from '@/lib/markdown/safe-math-plugin';
@@ -109,6 +111,21 @@ const LESSON_COMPONENTS = {
   ),
 };
 
+// Normalize lesson references before Streamdown checks URLs. The host file list is
+// authoritative for both current messages and history. Code examples are not links.
+function lessonFileLinks(files: readonly string[]) {
+  type Tree = ReturnType<typeof fromMarkdown>;
+  function visit(node: Tree | Tree['children'][number]) {
+    if (node.type === 'link' || node.type === 'definition') {
+      const ref = parseFileReference(node.url);
+      if (ref && files.includes(ref.path))
+        node.url = fileReferenceHref(ref.path, ref.line, ref.end);
+      else if (files.includes(node.url)) node.url = fileReferenceHref(node.url);
+    } else if ('children' in node) node.children.forEach(visit);
+  }
+  return () => visit;
+}
+
 const NO_EXCLUSIONS: ReadonlySet<string> = new Set();
 
 export function TextBlock({
@@ -116,10 +133,12 @@ export function TextBlock({
   streaming = false,
   excludeCourseCards = NO_EXCLUSIONS,
   variant = 'default',
+  lessonFiles,
 }: {
   text: string;
   streaming?: boolean;
   variant?: 'default' | 'lesson';
+  lessonFiles?: readonly string[];
   /**
    * Courses that get no card under this text: carded earlier in the same
    * answer, or among the cards at its tail (`chat-timeline`).
@@ -127,6 +146,13 @@ export function TextBlock({
   excludeCourseCards?: ReadonlySet<string>;
 }) {
   const navigation = useWorkbenchCourseNavigation();
+  const plugins = useMemo(
+    () =>
+      variant === 'lesson' && lessonFiles
+        ? [...REMARK_PLUGINS, lessonFileLinks(lessonFiles)]
+        : REMARK_PLUGINS,
+    [variant, lessonFiles],
+  );
   const segments = useMemo(
     () =>
       navigation
@@ -144,7 +170,7 @@ export function TextBlock({
               heavy.) */}
           {segment.markdown ? (
             <Streamdown
-              remarkPlugins={REMARK_PLUGINS}
+              remarkPlugins={plugins}
               plugins={STREAMDOWN_PLUGINS}
               remend={REMEND}
               controls={CONTROLS}

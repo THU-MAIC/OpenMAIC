@@ -103,6 +103,13 @@ export function CompanionLayer({
       onBoard={onBoard}
       onPoint={onPoint}
       onTold={onTold}
+      nextInstruction={
+        'studentActions' in view.stage &&
+        view.stage.studentActions.includes('next') &&
+        !view.evaluation
+          ? t('pblV3.journey.ready', { action: continueActionLabel(view, t) })
+          : undefined
+      }
     >
       {(narration) => (
         <>

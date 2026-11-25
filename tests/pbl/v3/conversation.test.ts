@@ -548,6 +548,36 @@ describe('student conversation projection', () => {
     const retrying = projectConversation(history, 'discussion', true, 'queued');
     expect(retrying.at(-1)).toMatchObject({ status: 'running', parts: [] });
   });
+  it('exposes the next-action receipt only after a successful completion call', () => {
+    const result = {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ readyForStudentConfirmation: true, projectCompleted: false }),
+        },
+      ],
+    };
+    const [turn] = projectConversation(
+      [
+        event(1, 'session_start', {}),
+        event(2, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'failed',
+          result,
+          isError: true,
+        }),
+        event(3, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'committed',
+          result,
+        }),
+      ],
+      'planner',
+      false,
+    );
+    expect(turn.parts[0]).not.toHaveProperty('readyForStudentConfirmation');
+    expect(turn.parts[1]).toMatchObject({ readyForStudentConfirmation: true });
+  });
   it('distinguishes a recovered tool gate from a stalled model turn without leaking diagnostics', () => {
     const recovered = projectConversation(
       [

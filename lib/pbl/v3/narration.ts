@@ -67,13 +67,20 @@ function passagePoint(block: MarkdownBlock, points: readonly Point[]) {
   for (const href of links) {
     const ref = parseFileReference(href);
     if (!ref?.line) continue;
-    const point = points.findLast(
+    const line = ref.line;
+    const end = ref.end ?? line;
+    const containing = points.filter(
       ({ target }) =>
         'path' in target &&
         target.path === ref.path &&
-        target.line === ref.line &&
-        (target.end ?? target.line) === (ref.end ?? ref.line),
+        target.line <= line &&
+        (target.end ?? target.line) >= end,
     );
+    const exact = containing.findLast(
+      ({ target }) =>
+        'path' in target && target.line === line && (target.end ?? target.line) === end,
+    );
+    const point = exact ?? (containing.length === 1 ? containing[0] : undefined);
     if (!point || (cited && point !== cited)) return null;
     cited = point;
   }
@@ -87,7 +94,11 @@ function isSpokenReceipt(part: Extract<Part, { kind: 'text' }>) {
 }
 
 /** The stream parts of one reply as steps; thinking is never told. */
-export function narrationSteps(entry: LearningConversationEntry): NarrationStep[] {
+export function narrationSteps(
+  entry: LearningConversationEntry,
+  nextInstruction?: string,
+): NarrationStep[] {
+  let announcedCompletion = false;
   let pendingPoints: PointStep[] = [];
   let explanationPoints: PointStep[] = [];
   // Later cues should not flash past the first location before its explanation starts.
@@ -171,7 +182,24 @@ export function narrationSteps(entry: LearningConversationEntry): NarrationStep[
           tool: part,
         },
       ];
-    return [{ ...at, kind: 'tool', tool: part }];
+    const tool: NarrationStep = { ...at, kind: 'tool', tool: part };
+    // The same successful completion that enables the next button owns its instruction.
+    // A failed attempt, a review question and the final project recap have no such handoff.
+    if (
+      nextInstruction &&
+      !announcedCompletion &&
+      part.action === 'complete' &&
+      part.status === 'succeeded' &&
+      part.readyForStudentConfirmation &&
+      !part.projectCompleted
+    ) {
+      announcedCompletion = true;
+      return [
+        tool,
+        { ...at, kind: 'say', id: part.id + ':continue', text: nextInstruction, streaming: false },
+      ];
+    }
+    return [tool];
   });
   // While the stream is open there may still be speech. A finished, tool-only sequence
   // retains its individual actions, including its final location.

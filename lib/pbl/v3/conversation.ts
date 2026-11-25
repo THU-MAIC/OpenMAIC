@@ -122,6 +122,7 @@ export interface LearningConversationEntry {
         display?: unknown;
         progress?: { kind?: string; text?: string; percent?: number; data?: unknown };
         projectCompleted?: boolean;
+        readyForStudentConfirmation?: boolean;
         /** A later successful teaching-control call recovered this failure for the same input. */
         recovered?: boolean;
         /** At rest, a tool-only retry shows the question already spoken by the prior attempt. */

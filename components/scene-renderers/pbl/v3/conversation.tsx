@@ -48,11 +48,13 @@ function groupParts(parts: Part[]) {
 }
 function AgentTurn({
   entry,
+  files,
   onOpenReport,
   nextAction,
   persona = false,
 }: {
   entry: LearningConversationEntry;
+  files?: readonly string[];
   nextAction?: string;
   onOpenReport?: () => void;
   /** Show the role as a named character, with its face, instead of a role label. */
@@ -152,7 +154,12 @@ function AgentTurn({
             />
           ) : part.kind === 'text' ? (
             <div className="pbl-teaching-prose text-foreground" key={part.id}>
-              <TextBlock text={part.text} streaming={part.streaming} variant="lesson" />
+              <TextBlock
+                text={part.text}
+                streaming={part.streaming}
+                variant="lesson"
+                lessonFiles={files}
+              />
             </div>
           ) : null,
         )}
@@ -173,11 +180,13 @@ function AgentTurn({
 }
 function ConversationEntry({
   entry,
+  files,
   onOpenReport,
   nextAction,
   persona,
 }: {
   entry: LearningConversationEntry;
+  files?: readonly string[];
   nextAction?: string;
   onOpenReport?: () => void;
   persona?: boolean;
@@ -208,6 +217,7 @@ function ConversationEntry({
     <AgentTurn
       key={entry.id}
       entry={entry}
+      files={files}
       onOpenReport={onOpenReport}
       persona={persona}
       nextAction={nextAction}
@@ -300,6 +310,7 @@ export function LearningConversation({
           <div onClick={(event) => openReference(event, dismiss)}>
             <ConversationEntry
               entry={entry}
+              files={view.files}
               persona={persona}
               onOpenReport={
                 onOpenReport
@@ -325,6 +336,7 @@ export function LearningConversation({
         <ConversationEntry
           key={entry.id}
           entry={entry}
+          files={view.files}
           nextAction={
             entry.currentStage && view.actions.includes('next')
               ? continueActionLabel(view, t)

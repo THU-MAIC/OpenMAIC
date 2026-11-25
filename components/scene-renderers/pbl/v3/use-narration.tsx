@@ -68,7 +68,9 @@ export function useNarration(
     onPoint,
     onBoard,
     onTold,
+    nextInstruction,
   }: {
+    nextInstruction?: string;
     /** The role points at code or at the running application, or stops pointing. */
     onPoint?: (point: NarrationTarget | null) => void;
     /** The role brings the whiteboard into view, or puts it away. */
@@ -78,7 +80,10 @@ export function useNarration(
   },
 ) {
   const entry = conversation.findLast((item) => !item.boundary && item.speaker !== 'user');
-  const steps = useMemo(() => (entry ? narrationSteps(entry) : []), [entry]);
+  const steps = useMemo(
+    () => (entry ? narrationSteps(entry, nextInstruction) : []),
+    [entry, nextInstruction],
+  );
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);
   const complete = !!entry && entry.status !== 'running';
@@ -347,8 +352,27 @@ export function useNarration(
   useEffect(() => () => told.current.onTold?.(null), []);
 
   const say = segment?.say;
-  const restingReview = playing ? undefined : recoveredReviewSpeech(entry);
+  const handoff = say && entry?.parts[say.part]?.kind === 'tool';
+  const restingReview = playing || handoff ? undefined : recoveredReviewSpeech(entry);
   const restingPart = !playing && say?.passage ? entry?.parts[say.part] : undefined;
+  let displayedSpeech =
+    restingReview ??
+    (say && playing && steps[head]?.id === say.id
+      ? { ...say, text: active.text, streaming: true }
+      : say && restingPart?.kind === 'text'
+        ? { ...say, text: spokenText(restingPart.text) }
+        : say);
+  if (handoff && displayedSpeech) {
+    // The host adds a spoken button hint to the tutor's closing words. Keep those
+    // words readable while the hint is revealed, without queuing them for speech again.
+    const previous = steps.findLast((step) => step.kind === 'say' && step.part < say.part);
+    const closing = previous && entry.parts[previous.part];
+    if (closing?.kind === 'text')
+      displayedSpeech = {
+        ...displayedSpeech,
+        text: spokenText(closing.text) + '\n\n' + displayedSpeech.text,
+      };
+  }
   return {
     /** A live reply is being told; otherwise the bubble rests on the last thing said. */
     playing,
@@ -364,13 +388,7 @@ export function useNarration(
      * The piece of text in the bubble, as far as the playhead has revealed it; none while the
      * reply has only called tools so far.
      */
-    speech:
-      restingReview ??
-      (say && playing && steps[head]?.id === say.id
-        ? { ...say, text: active.text, streaming: true }
-        : say && restingPart?.kind === 'text'
-          ? { ...say, text: spokenText(restingPart.text) }
-          : say),
+    speech: displayedSpeech,
     /** The calls that follow that text which the telling has reached, in order. */
     tools: !segment
       ? []

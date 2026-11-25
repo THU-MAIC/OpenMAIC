@@ -228,6 +228,48 @@ it('voices each passage with its own previously issued cue, retaining the origin
   expect(pointerAt(prefix, 2)?.id).toBe('first');
 });
 
+it('matches a cited subrange only to an unambiguous issued code cue', () => {
+  const cue = (id: string, line: number, end: number) =>
+    point(id, { path: 'PLAN.md', line, end, pointer: 'spotlight' });
+  const first = cue('choice', 13, 19);
+  const second = cue('steps', 35, 41);
+  const paragraph = text(
+    'explain',
+    '[choice](PLAN.md#pbl-file=PLAN.md&line=13&end=18)\n\n[steps](PLAN.md#pbl-file=PLAN.md&line=35&end=41)',
+  );
+  const steps = narrationSteps(entry([first, second, paragraph]));
+  expect(pointerAt(steps, 2)?.id).toBe('choice');
+  expect(pointerAt(steps, 3)?.id).toBe('steps');
+  const ambiguous = narrationSteps(entry([first, cue('overlap', 12, 18), second, paragraph]));
+  expect(pointerAt(ambiguous, 3)).toBeUndefined();
+});
+
+it('adds one spoken next action after confirmed completion, never on failure, review or final recap', () => {
+  const instruction = 'Click Enter discussion.';
+  const complete = {
+    kind: 'tool',
+    id: 'done',
+    action: 'complete',
+    status: 'succeeded',
+    readyForStudentConfirmation: true,
+  } as const;
+  const reply = entry([
+    text('summary', 'Keep this explanation.'),
+    { ...complete, id: 'try', status: 'failed' },
+    complete,
+    { ...complete, id: 'retry' },
+  ]);
+  const spoken = (e: LearningConversationEntry, next?: string) =>
+    narrationSteps(e, next).flatMap((s) => (s.kind === 'say' ? [s.text] : []));
+  expect(spoken(reply, instruction)).toEqual(['Keep this explanation.', instruction]);
+  expect(
+    spoken(entry([{ ...complete, readyForStudentConfirmation: undefined }]), instruction),
+  ).toEqual([]);
+  expect(spoken(reply)).toEqual(['Keep this explanation.']);
+  expect(spoken(entry([{ ...complete, projectCompleted: true }]), instruction)).toEqual([]);
+  expect(spoken(entry([{ ...complete, action: 'read' }]), instruction)).toEqual([]);
+});
+
 it('never navigates from a file link alone and avoids guessing between competing ranges', () => {
   const during = (parts: Part[], words: string) => {
     const steps = narrationSteps(entry([...parts, text('speech', words)]));
