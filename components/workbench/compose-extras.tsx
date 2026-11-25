@@ -5,9 +5,11 @@
  * (durable upload through `POST /api/materials`) and the `/` skill menu. Used by
  * the homepage/workspace launch face and the ongoing conversation composer.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AlertCircle, AtSign, Loader2, Paperclip, RotateCw, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
+import { SpeechButton } from '@/components/audio/speech-button';
+import { useASRAvailable } from '@/lib/hooks/use-asr-available';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils/cn';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -840,6 +842,48 @@ export function SkillButton({
         {label}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * The composer's voice-dictation control: wraps the shared `SpeechButton` in
+ * the workbench glyph register (`size-8`, muted-foreground at rest) and hides
+ * it when ASR is unavailable. While a recording is already active it stays
+ * mounted via `hiddenWhenIdle` so the user can always stop it cleanly.
+ */
+export function VoiceButton({
+  onTranscription,
+  onActiveChange,
+  disabled,
+  testId = 'workbench-voice-button',
+}: {
+  onTranscription: (text: string) => void;
+  onActiveChange?: (active: boolean) => void;
+  disabled?: boolean;
+  testId?: string;
+}) {
+  const asrAvailable = useASRAvailable();
+  const [active, setActive] = useState(false);
+  const handleActiveChange = useCallback(
+    (next: boolean) => {
+      setActive(next);
+      onActiveChange?.(next);
+    },
+    [onActiveChange],
+  );
+  if (!asrAvailable && !active) return null;
+  return (
+    <span data-testid={testId} className="inline-flex">
+      <SpeechButton
+        size="md"
+        continuous
+        disabled={disabled}
+        hiddenWhenIdle={!asrAvailable}
+        onActiveChange={handleActiveChange}
+        onTranscription={onTranscription}
+        className="data-[state=idle]:text-muted-foreground data-[state=idle]:hover:bg-muted data-[state=idle]:hover:text-foreground"
+      />
+    </span>
   );
 }
 

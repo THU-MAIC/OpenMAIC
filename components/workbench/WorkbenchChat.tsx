@@ -77,6 +77,7 @@ import {
   MaterialChips,
   SkillButton,
   SkillSlashMenu,
+  VoiceButton,
   useComposerMaterials,
   useMaterialMentions,
   useMaterialSeed,
@@ -401,6 +402,10 @@ export function WorkbenchChat({
   const dismissedQuestionKey =
     waiting && dismissedQuestion === questionMark(waiting.key) ? waiting.key : null;
   const composerRef = useRef<ComposerInputHandle | null>(null);
+  const [speechActive, setSpeechActive] = useState(false);
+  const handleTranscription = useCallback((text: string) => {
+    composerRef.current?.insertTranscription(text);
+  }, []);
   // The mirror flag for stop: `POST /cancel` answers 202 ("asked"), and the run
   // only actually ends when the loop notices between steps — after the tool in
   // flight returns, which can be tens of seconds. Without this the button just
@@ -1188,6 +1193,7 @@ export function WorkbenchChat({
     if (
       (!hasWords && materials.materials.length === 0) ||
       busy ||
+      speechActive ||
       !canSend ||
       materials.busy ||
       awaitingMaterial ||
@@ -1556,6 +1562,15 @@ export function WorkbenchChat({
                   />
                 </div>
                 <div className={styles.composer.actionsRow}>
+                  {/* Reset the recorder across conversation switches and hand-overs
+                      so an in-flight dictation never lands in a different chat. */}
+                  <VoiceButton
+                    key={`${composerOwnerId ?? 'none'}:${newConversation}:${handOverKey ?? ''}`}
+                    testId="workbench-voice-button"
+                    disabled={busy || !canSend}
+                    onActiveChange={setSpeechActive}
+                    onTranscription={handleTranscription}
+                  />
                   {live ? (
                     // One button, two faces: pressing it swaps the square for a
                     // spinner in place, so the stop lands on the control the
@@ -1604,6 +1619,7 @@ export function WorkbenchChat({
                       onClick={() => void send()}
                       disabled={
                         busy ||
+                        speechActive ||
                         (!stripMentions(draft, inlineMentions.mentions) &&
                           materials.materials.length === 0) ||
                         !canSend ||
