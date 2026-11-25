@@ -1392,19 +1392,21 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
 
   /**
    * The course's current problems, derived by the same `collectCourseIssues`
-   * the editor's issues list and page markers use (RFC #1899), so the agent and
-   * the owner see one list, and a fixed cause is gone from both. Read-only.
+   * the editor's issues list and page markers use (RFC #1899), so a fixed cause
+   * is gone from both. Read-only.
    *
    * What the server cannot see is said, not guessed: narration a browser may
-   * still hold on the owner's device is marked "possibly local audio". An
-   * interactive page's runtime errors are not listed here: generate_scene and
+   * still hold on the owner's device is listed and marked "possibly local
+   * audio", where the editor's list checks that device and leaves out what
+   * still plays there. An interactive page's runtime errors are not listed
+   * here: where the deployment checks interactive pages, generate_scene and
    * patch_stage report them when they write the page.
    */
   const listIssues: AgentTool<typeof LIST_COURSE_ISSUES_SCHEMA, unknown> = {
     name: LIST_COURSE_ISSUES_TOOL_NAME,
     label: 'List course issues',
     description:
-      "List what is currently wrong in a stage, page by page, at most 50: speech-without-audio (narration text with no generated audio; generate_tts), media-not-generated (an image or video slot still holding a generation placeholder; generate_image or generate_video), dangling-cue (a spotlight, laser or play_video cue bound to an element that is gone, or play_video bound to a non-video; rebind or remove with patch_stage), empty-actions (a page with no playback actions; generate_actions), and empty-speech, unbound-cue, empty-discussion (an action missing its text, element or topic; patch_stage). Each issue carries its page's 1-based `page` (matching the editor's issues list) plus its `scenePath` (address it by that with patch_stage/grep_stage), and the actionId or elementId it is about. An issue marked 'possibly local audio' may still play from the owner's device. Interactive runtime errors are not listed: generate_scene and patch_stage report them when they write an interactive page. Call it again after fixing to confirm the issue is gone.",
+      "List what is currently wrong in a stage, page by page, at most 50: speech-without-audio (narration text with no generated audio; generate_tts), media-not-generated (an image or video slot still holding a generation placeholder; generate_image or generate_video), dangling-cue (a spotlight, laser or play_video cue bound to an element that is gone, or play_video bound to a non-video; rebind or remove with patch_stage), empty-actions (a page with no playback actions; generate_actions), and empty-speech, unbound-cue, empty-discussion (an action missing its text, element or topic; patch_stage). Each issue carries its page's 1-based `page` (matching the editor's issues list) plus its `scenePath` (pass it as read_stage's path or patch_stage's target), and the actionId or elementId it is about. An issue marked 'possibly local audio' may still play from the owner's device. Interactive runtime errors are not listed: where the deployment checks interactive pages, generate_scene and patch_stage report them when they write one. Call it again after fixing to confirm the issue is gone.",
     parameters: LIST_COURSE_ISSUES_SCHEMA,
     async execute(_id, params: ListIssuesParams) {
       const loaded = await loadCourse(deps, params.stageId);

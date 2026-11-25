@@ -18,6 +18,20 @@ import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+// Counts how often the list asks the device cache, passing every call through.
+const cacheQueries = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@/lib/device-storage/observe-legacy-speech-audio', async (importOriginal) => {
+  const real =
+    await importOriginal<typeof import('@/lib/device-storage/observe-legacy-speech-audio')>();
+  return {
+    ...real,
+    observeLegacyCourseAudio: (...args: Parameters<typeof real.observeLegacyCourseAudio>) => {
+      cacheQueries.count += 1;
+      return real.observeLegacyCourseAudio(...args);
+    },
+  };
+});
+
 vi.mock('@/lib/hooks/use-i18n', () => ({
   useI18n: () => ({
     t: (key: string, options?: Record<string, unknown>) => {
@@ -132,6 +146,18 @@ const listedKinds = () =>
   [...(container?.querySelectorAll<HTMLElement>('[data-testid="course-issue-item"]') ?? [])].map(
     (item) => item.dataset.kind,
   );
+/** Listed issues as `sceneId:kind`, the scene read from each row's "Go to". */
+const listed = () =>
+  [...(container?.querySelectorAll<HTMLElement>('[data-testid="course-issue-item"]') ?? [])].map(
+    (item) => {
+      const goTo = item.querySelector<HTMLElement>('[data-testid^="course-issue-goto-"]');
+      return `${goTo?.dataset.testid?.slice('course-issue-goto-'.length)}:${item.dataset.kind}`;
+    },
+  );
+const itemOn = (sceneId: string) =>
+  container
+    ?.querySelector(`[data-testid="course-issue-goto-${sceneId}"]`)
+    ?.closest<HTMLElement>('[data-testid="course-issue-item"]');
 
 /**
  * Narration issues wait on the device cache's first answer, which can take a
@@ -189,6 +215,35 @@ describe('useCourseIssues', () => {
       await new Promise((resolve) => setTimeout(resolve, 50));
     });
     expect(rows()).toEqual([]);
+  });
+
+  it('asks the device cache again only when the narration changes', async () => {
+    await render(createElement(Probe));
+    const queries = cacheQueries.count;
+
+    // A page title or a cue is not narration: the cache is not asked again.
+    await act(async () => {
+      useStageStore.setState({
+        scenes: [
+          { ...unvoiced, title: 'Renamed' },
+          { ...cue, actions: cue.actions!.slice(0, 1) },
+          clean,
+        ],
+      });
+    });
+    expect(cacheQueries.count).toBe(queries);
+
+    // Rewording a narration line is: its audio may no longer match.
+    await act(async () => {
+      useStageStore.setState({
+        scenes: [
+          { ...unvoiced, actions: [{ id: 'speech-a', type: 'speech', text: 'Hello again' }] },
+          cue,
+          clean,
+        ] as Scene[],
+      });
+    });
+    expect(cacheQueries.count).toBe(queries + 1);
   });
 });
 
@@ -336,20 +391,32 @@ describe('CourseIssuesButton', () => {
   });
 
   it.each(kinds)('lists $kind with its label and drops it once fixed', async (entry) => {
-    useStageStore.setState({ scenes: [entry.broken] });
+    // A page whose narration has no audio on the server or on this device is
+    // listed only once the device cache has answered for the course's current
+    // narration (until then every narration issue is held back). Waiting for it
+    // after each change means the list has settled, so an issue that is still
+    // there cannot pass for one that was fixed.
+    const sentinel = slide(
+      'sentinel',
+      2,
+      [{ id: 'speech-sentinel', type: 'speech', text: 'Still silent' }] as Scene['actions'],
+      'Sentinel',
+    );
+    const settled = 'sentinel:speech-without-audio';
+    useStageStore.setState({ scenes: [entry.broken, sentinel] });
     await render(owner(vi.fn()));
-    await settle(() => testId('edit-course-issues-count')?.textContent === '1');
     await act(async () => testId('edit-course-issues')?.click());
-    expect(listedKinds()).toEqual([entry.kind]);
-    expect(testId('course-issues-popover')?.textContent).toContain(entry.label);
+    await settle(() => listed().includes(settled) && listed().length === 2);
+    expect(listed()).toEqual([`k:${entry.kind}`, settled]);
+    expect(itemOn('k')?.textContent).toContain(entry.label);
+    expect(testId('edit-course-issues-count')?.textContent).toBe('2');
 
     await act(async () => {
-      useStageStore.setState({ scenes: [entry.fixed] });
+      useStageStore.setState({ scenes: [entry.fixed, sentinel] });
     });
-    await settle(() => listedKinds().length === 0);
-    expect(listedKinds()).toEqual([]);
-    expect(testId('edit-course-issues-count')).toBeNull();
-    expect(testId('course-issues-popover')?.textContent).toContain('edit.issues.empty');
+    await settle(() => listed().includes(settled));
+    expect(listed()).toEqual([settled]);
+    expect(testId('edit-course-issues-count')?.textContent).toBe('1');
   });
 
   it('offers no hand-off where a conversation could not change the course', async () => {
