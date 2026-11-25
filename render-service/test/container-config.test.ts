@@ -73,7 +73,7 @@ describe('render-service container contract', () => {
     const main = read('src/main.ts');
     expect(main.indexOf('await buildSlideClientBundle()')).toBeGreaterThan(0);
     expect(main.indexOf('await buildSlideClientBundle()')).toBeLessThan(
-      main.indexOf('serve({ fetch: app.fetch'),
+      main.indexOf('serve({ fetch:'),
     );
   });
 
