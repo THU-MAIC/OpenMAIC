@@ -13,6 +13,9 @@ async function project(
   learningEvents: (read: () => LearningSnapshot) => Promise<() => void>,
   {
     started = false,
+    completed = false,
+    failOpen,
+    failFirstPrepare = false,
     secondScene = false,
     guideCompleted = started,
     application = true,
@@ -27,6 +30,9 @@ async function project(
     explanationBoard = false,
   }: {
     started?: boolean;
+    completed?: boolean;
+    failOpen?: () => boolean;
+    failFirstPrepare?: boolean;
     secondScene?: boolean;
     guideCompleted?: boolean | null;
     application?: boolean;
@@ -78,15 +84,15 @@ async function project(
     revision: 0,
     activitySequence: 0,
     title: 'Workspace guide',
-    reportAvailable: false,
+    reportAvailable: completed,
     ...(guideCompleted === null ? {} : { onboardingCompleted: guideCompleted }),
-    completedFilesAvailable: false,
+    completedFilesAvailable: completed,
     environmentId: 'fixture-environment',
     ...(explanationBoard ? { explainBoard: { whiteboard: null, lastSeq: null, pages: [] } } : {}),
     environment: { state: environmentReady ? 'running' : 'creating', ready: environmentReady },
     recovery: null,
     state: {
-      status: 'running',
+      status: completed ? 'completed' : 'running',
       position: {
         milestoneIndex: 0,
         milestoneId: 'greeting',
@@ -176,6 +182,7 @@ async function project(
       return route.fulfill({
         json: {
           started,
+          companions: explanationBoard,
           hero: {
             title: view.title,
             description: 'A synthetic project for the workspace guide.',
@@ -187,6 +194,9 @@ async function project(
           },
         },
       });
+    if (body?.action === 'open' && failOpen?.()) {
+      return route.fulfill({ status: 503, json: { error: 'Study unavailable' } });
+    }
     if (url.pathname.endsWith('/onboarding')) {
       view.onboardingCompleted = true;
       return route.fulfill({ json: { onboardingCompleted: true } });
@@ -197,6 +207,9 @@ async function project(
     if (body?.command) {
       commands.push(body.command.type);
       if (body.command.type === 'prepare') {
+        if (failFirstPrepare && commands.filter((command) => command === 'prepare').length === 1) {
+          return route.fulfill({ status: 503, json: { error: 'Preparation failed' } });
+        }
         await prepareGate;
         view.environment = { state: 'running', ready: true };
         view.revision++;
@@ -225,6 +238,65 @@ async function project(
   await page.locator('[data-testid="pbl-v3-entry"] button').first().click();
   await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'true');
   return { view, workbench, commands, calls, applicationCalls, publish, publishRaw, stageId };
+}
+
+for (const scenario of ['cold start', 'restore', 'retry prepare', 'retry open'] as const) {
+  test(`application launch overlay allows ${scenario} to finish`, async ({
+    page,
+    learningEvents,
+  }) => {
+    let release!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const completed = scenario === 'restore';
+    let openBlocked = scenario === 'retry open';
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      completed,
+      explanationBoard: true,
+      environmentReady: false,
+      prepareGate,
+      failOpen: () => openBlocked,
+      failFirstPrepare: scenario === 'retry prepare',
+    });
+    const openCount = () => fixture.calls.filter((call) => call === 'POST /api/pbl/v3 open').length;
+    let beforeRetry = 0;
+    const overlay = page.getByTestId('pbl-application-launching');
+    try {
+      if (scenario === 'retry open') {
+        await expect(page.getByRole('alert').filter({ hasText: 'Request failed.' })).toBeVisible();
+        await expect(overlay).toBeHidden();
+        beforeRetry = openCount();
+        openBlocked = false;
+        await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+      } else if (completed || scenario === 'retry prepare') {
+        const setup = page.getByTestId('pbl-environment-setup');
+        const action = setup.getByRole('button');
+        if (scenario === 'retry prepare')
+          await expect(
+            page.getByRole('alert').filter({ hasText: 'Request failed.' }),
+          ).toBeVisible();
+        await expect(action).toBeEnabled();
+        await expect(overlay).toBeHidden();
+        expect(fixture.commands).toEqual(completed ? [] : ['prepare']);
+        await action.click();
+      }
+      await expect.poll(() => fixture.commands.length).toBe(scenario === 'retry prepare' ? 2 : 1);
+      await expect(overlay).toBeVisible();
+    } finally {
+      release();
+    }
+    await expect.poll(() => fixture.view.environment?.ready).toBe(true);
+    await fixture.publish();
+    await expect.poll(() => fixture.applicationCalls).toContain('open');
+    await expect(overlay).toBeHidden();
+    expect(fixture.applicationCalls.filter((action) => action === 'open')).toHaveLength(1);
+    expect(fixture.commands).toEqual(
+      scenario === 'retry prepare' ? ['prepare', 'prepare'] : ['prepare'],
+    );
+    if (scenario === 'retry open') expect(openCount()).toBe(beforeRetry + 1);
+  });
 }
 
 const assistantModes = ['bubble', 'window', 'docked'] as const;

@@ -686,13 +686,21 @@ function PBLV3WorkspaceContent({
   // come up once in this visit. Closing the preview later does not bring the hold back.
   const [launchedStudy, setLaunchedStudy] = useState<string | null>(null);
   if (view && applicationPreview.document && launchedStudy !== view.id) setLaunchedStudy(view.id);
-  const applicationComing = !view
-    ? companions
-    : boardMode &&
-      !!view.application &&
-      launchedStudy !== view.id &&
-      !applicationPreview.error &&
-      !applicationPreview.expired;
+  // Completed studies restore compute only on request. Leave that button and
+  // any failed open/prepare retry reachable until the learner starts it.
+  const awaitingRestore =
+    completedApplication && !view?.environment?.ready && pendingAction !== 'prepare';
+  const applicationComing =
+    !error &&
+    !preparationFailed &&
+    !awaitingRestore &&
+    (!view
+      ? companions
+      : boardMode &&
+        !!view.application &&
+        launchedStudy !== view.id &&
+        !applicationPreview.error &&
+        !applicationPreview.expired);
   const launchingApplication = useLaunchHold(applicationComing, 90_000);
   return (
     <section
