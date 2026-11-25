@@ -89,6 +89,15 @@ export function isBalanceOnly(quota: PlanQuota | undefined): boolean {
   return quota?.status === 'available' && quota.windows.length === 0 && quota.balances.length > 0;
 }
 
+/**
+ * A share left as shown, in percent: rounded, except that a share above 0
+ * never reads 0 (it reads "<1"). Only a share of 0 or less is exhausted.
+ */
+function shownPercent(remaining: number): string {
+  const rounded = Math.round(remaining);
+  return rounded <= 0 && remaining > 0 ? '<1' : String(rounded);
+}
+
 /** The lowest share left over a plan's windows, with the category it belongs to. */
 function lowestWindow(quota: Extract<PlanQuota, { status: 'available' }>) {
   let lowest: PlanQuotaWindow | undefined;
@@ -109,11 +118,11 @@ export function QuotaSummary({ entry }: { entry: QuotaEntry | undefined }) {
   }
   const lowest = lowestWindow(quota);
   if (lowest) {
-    const percent = Math.round(lowest.remainingPercent!);
+    const remaining = lowest.remainingPercent!;
     const key = lowest.category ? CATEGORY_LABEL_KEYS[lowest.category] : undefined;
-    const left = t(`${tp}.quotaRemaining`, { percent });
+    const left = t(`${tp}.quotaRemaining`, { percent: shownPercent(remaining) });
     return (
-      <span className={cn(percent === 0 && 'text-destructive')}>
+      <span className={cn(remaining <= 0 && 'text-destructive')}>
         {lowest.category ? `${key ? t(key) : lowest.category} ${left}` : left}
       </span>
     );
@@ -227,10 +236,8 @@ export function PlanQuotaCard({
           {quota.windows.length > 0 && (
             <div className="grid gap-3 sm:grid-cols-2">
               {quota.windows.map((window, index) => {
-                const percent =
-                  window.remainingPercent === undefined
-                    ? undefined
-                    : Math.round(window.remainingPercent);
+                const remaining = window.remainingPercent;
+                const exhausted = remaining !== undefined && remaining <= 0;
                 const resets = time(window.resetsAt);
                 return (
                   <div
@@ -242,13 +249,13 @@ export function PlanQuotaCard({
                       <span className="text-right">
                         {window.unlimited ? (
                           <span className="text-sm font-semibold">{t(`${tp}.quotaUnlimited`)}</span>
-                        ) : percent === 0 ? (
+                        ) : exhausted ? (
                           <span className="text-sm font-semibold text-destructive">
                             {t(`${tp}.quotaExhausted`)}
                           </span>
-                        ) : percent !== undefined ? (
+                        ) : remaining !== undefined ? (
                           <span className="text-xl font-semibold tabular-nums">
-                            {percent}%
+                            {shownPercent(remaining)}%
                             <span className="ml-1 text-xs font-normal text-muted-foreground">
                               {t(`${tp}.quotaLeft`)}
                             </span>
@@ -260,21 +267,21 @@ export function PlanQuotaCard({
                         )}
                       </span>
                     </div>
-                    {!window.unlimited && percent !== undefined && (
+                    {!window.unlimited && remaining !== undefined && (
                       <div
                         className="h-1.5 overflow-hidden rounded-full bg-muted"
                         role="meter"
                         aria-valuemin={0}
                         aria-valuemax={100}
-                        aria-valuenow={Math.min(100, percent)}
+                        aria-valuenow={Math.min(100, Math.max(0, Math.round(remaining)))}
                         aria-label={windowTitle(window)}
                       >
                         <div
                           className={cn(
                             'h-full rounded-full',
-                            percent === 0 ? 'bg-destructive' : 'bg-primary',
+                            exhausted ? 'bg-destructive' : 'bg-primary',
                           )}
-                          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+                          style={{ width: `${Math.min(100, Math.max(0, remaining))}%` }}
                         />
                       </div>
                     )}

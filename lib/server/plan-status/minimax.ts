@@ -12,6 +12,9 @@
  *   newer ones may report calls used. With a remaining percentage, the reading
  *   that agrees with it is taken; with none, the remaining one.
  * - `remains_time` / `weekly_remains_time`: milliseconds until the window ends.
+ * - `weekly_boost_permille`: a multiplier on the weekly window's share left
+ *   (1500 = 1.5x), so a boosted plan can have more than 100% of its base left.
+ *   Absent means no boost.
  */
 import type { SlotCapability } from '@/lib/config/model-slots';
 import type { PlanQuotaWindow, PlanStatus } from '@/lib/model-settings/plan-status';
@@ -34,6 +37,7 @@ interface Remain {
   current_weekly_usage_count?: unknown;
   current_weekly_status?: unknown;
   current_weekly_remaining_percent?: unknown;
+  weekly_boost_permille?: unknown;
   weekly_end_time?: unknown;
 }
 
@@ -93,6 +97,8 @@ function window(
     percent?: number;
     start?: number;
     end?: number;
+    /** The weekly boost, in permille; absent for no boost. */
+    boostPermille?: number;
   },
 ): PlanQuotaWindow {
   const base: PlanQuotaWindow = {
@@ -104,12 +110,18 @@ function window(
     ...(fields.end !== undefined ? { resetsAt: new Date(fields.end).toISOString() } : {}),
   };
   if (fields.status === STATUS_UNLIMITED) return { ...base, unlimited: true };
+  // Counts are matched against the base share; the boost applies after.
   const counted = counts(fields.reported, fields.total, fields.percent);
+  const baseShare =
+    fields.percent ??
+    (counted ? ((counted.total - counted.used) / counted.total) * 100 : undefined);
+  const boost = fields.boostPermille === undefined ? 1 : Math.max(0, fields.boostPermille) / 1000;
   const remainingPercent =
     fields.status === STATUS_EXHAUSTED
       ? 0
-      : (fields.percent ??
-        (counted ? ((counted.total - counted.used) / counted.total) * 100 : undefined));
+      : baseShare === undefined
+        ? undefined
+        : baseShare * boost;
   return {
     ...base,
     ...(remainingPercent !== undefined ? { remainingPercent } : {}),
@@ -153,6 +165,7 @@ export function parseMinimaxRemains(body: unknown): PlanStatus | undefined {
         reported: num(remain.current_weekly_usage_count),
         percent: num(remain.current_weekly_remaining_percent),
         end: num(remain.weekly_end_time),
+        boostPermille: num(remain.weekly_boost_permille),
       }),
     );
   }

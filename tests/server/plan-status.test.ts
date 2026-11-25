@@ -120,6 +120,33 @@ describe('MiniMax remains', () => {
     expect(first(legacy)).toMatchObject({ used: 60, total: 100, remainingPercent: 40 });
   });
 
+  it('applies the weekly boost to the weekly share left, as the CLI does', () => {
+    const windows = (fields: Record<string, number>) => {
+      const status = parseMinimaxRemains({
+        model_remains: [
+          counted('general', {
+            current_interval_remaining_percent: 60,
+            current_weekly_remaining_percent: 80,
+            ...fields,
+          }),
+        ],
+        base_resp: { status_code: 0 },
+      })!;
+      return status.quota.status === 'available' ? status.quota.windows : [];
+    };
+    // 80% of the base left with a 1.5x boost: 120% left. The short window is not boosted,
+    // and the counts are still read against the base share.
+    const [short, weekly] = windows({ weekly_boost_permille: 1500 });
+    expect(short).toMatchObject({ period: 'hours', remainingPercent: 60 });
+    expect(weekly).toMatchObject({ period: 'week', remainingPercent: 120, used: 100, total: 500 });
+    // No boost field: the base share as reported.
+    expect(windows({})[1]).toMatchObject({ remainingPercent: 80 });
+    // An exhausted window stays exhausted, whatever the boost.
+    expect(windows({ weekly_boost_permille: 1500, current_weekly_status: 2 })[1]).toMatchObject({
+      remainingPercent: 0,
+    });
+  });
+
   it('says nothing about video when the answer is not one it knows', () => {
     const answer = (model_remains: unknown[]) =>
       parseMinimaxRemains({ model_remains, base_resp: { status_code: 0 } });

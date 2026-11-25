@@ -548,6 +548,43 @@ describe('the plan page tells a tier without a capability from one switched off'
     expect(document.body.textContent).not.toContain('settings.tokenPlan.payAsYouGo');
   });
 
+  it('does not call a share above 0 exhausted, however small', async () => {
+    // As Kimi reads `used_ratio: 0.996`: 0.4% left.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              quota: {
+                status: 'available',
+                balances: [],
+                windows: [
+                  { period: 'hours', hours: 5, remainingPercent: 0.4 },
+                  { period: 'month', remainingPercent: 0 },
+                ],
+              },
+            }),
+          ),
+      ),
+    );
+    const config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'kimi-intl',
+      preset: 'kimi-intl',
+      apiKey: 'sk-kimi-0001',
+    });
+    mountView(viewOf(config));
+    await flush();
+    const meters = [...document.body.querySelectorAll('[role="meter"]')].map(
+      (meter) => meter.parentElement?.textContent,
+    );
+    expect(meters[0]).toContain('<1%');
+    expect(meters[0]).not.toContain('settings.tokenPlan.quotaExhausted');
+    // A window with nothing left still reads exhausted.
+    expect(document.body.textContent).toContain('settings.tokenPlan.quotaExhausted');
+  });
+
   it('tags an account the vendor reports only a balance for as pay-as-you-go', async () => {
     vi.stubGlobal(
       'fetch',
