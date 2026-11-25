@@ -400,7 +400,7 @@ export const wbStyles = {
     input:
       'box-border block max-h-[164px] min-h-[22px] w-full rounded-lg border-0 bg-transparent px-3 pb-1 pt-2.5 text-[length:var(--wb-text-sm)] leading-relaxed text-[var(--wb-text)] [--composer-placeholder:var(--wb-text-faint)]',
     actionsLeft: 'absolute bottom-2 left-2 z-10 flex items-center',
-    actionsRow: 'absolute bottom-2 right-2 z-10 flex items-center',
+    actionsRow: 'absolute bottom-2 right-2 z-10 flex items-center gap-1',
     sendAction:
       'inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full border-0 bg-primary p-0 text-primary-foreground transition-colors duration-150 disabled:cursor-default disabled:opacity-40',
     stopAction:

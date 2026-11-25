@@ -43,6 +43,7 @@ import {
   MaterialChips,
   SkillButton,
   SkillSlashMenu,
+  VoiceButton,
   useComposerMaterials,
   useMaterialMentions,
   useMaterialSeed,
@@ -145,6 +146,10 @@ export function ProLaunchPanel({
   /** The draft an Escape closed the `@` menu on — same rule as the chat composer. */
   const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
   const inputRef = useRef<ComposerInputHandle | null>(null);
+  const [speechActive, setSpeechActive] = useState(false);
+  const handleTranscription = useCallback((text: string) => {
+    inputRef.current?.insertTranscription(text);
+  }, []);
 
   const focusWhenShown = useCallback(() => focusComposerWhenShown(inputRef, PROMPT_TEST_ID), []);
 
@@ -425,14 +430,28 @@ export function ProLaunchPanel({
   // draft with each mention written out in full (the references go as before).
   const hasWords = !!stripMentions(prompt, inlineMentions.mentions);
   const canSend =
-    hasWords && !submitting && !materials.busy && !awaitingMaterial && openMenu === null;
+    hasWords &&
+    !submitting &&
+    !speechActive &&
+    !materials.busy &&
+    !awaitingMaterial &&
+    openMenu === null;
 
   async function submit(seededText?: string) {
     const text = seededText ?? expandMentions(prompt, inlineMentions.mentions);
     const ready = seededText ? !!seededText.trim() : hasWords;
     // `submitting` is render state: two calls before the next render would both
     // read false. The ref is what actually admits one create at a time.
-    if (!ready || sending.current || submitting || materials.busy || awaitingMaterial) return;
+    if (
+      !ready ||
+      sending.current ||
+      submitting ||
+      (!seededText && speechActive) ||
+      materials.busy ||
+      awaitingMaterial
+    ) {
+      return;
+    }
     sending.current = true;
     setMentionOpen(false);
     setSubmitting(true);
@@ -625,6 +644,13 @@ export function ProLaunchPanel({
             onClick={openSkillMenu}
           />
           <div className="flex-1" />
+          <VoiceButton
+            key={focusSignal}
+            testId="pro-launch-voice-button"
+            disabled={submitting}
+            onActiveChange={setSpeechActive}
+            onTranscription={handleTranscription}
+          />
           <ProLaunchSend canSend={canSend} onSubmit={() => void submit()} />
         </div>
       </div>

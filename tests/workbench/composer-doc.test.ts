@@ -10,6 +10,7 @@ import {
   composerSchema,
   composerTextRuns,
   docFromPlain,
+  insertComposerPhrase,
   normalizeComposerDoc,
   offsetOfPos,
   plainOfDoc,
@@ -193,5 +194,93 @@ describe('an edit from outside', () => {
     expect(
       replaceComposerDoc(stateOf('a /deep-interactive b'), 'a /deep-interactive b', source),
     ).toBeNull();
+  });
+});
+
+describe('inserting a dictated phrase', () => {
+  it('ignores empty or whitespace-only transcriptions', () => {
+    const state = stateOf('hello', 5);
+    expect(insertComposerPhrase(state, '')).toBeNull();
+    expect(insertComposerPhrase(state, '   \n\t ')).toBeNull();
+  });
+
+  it('inserts into an empty document and appends with a separating space', () => {
+    const first = stateOf('').apply(insertComposerPhrase(stateOf(''), '  make a quiz  ')!);
+    expect(plainOfDoc(first.doc)).toBe('make a quiz');
+    expect(offsetOfPos(first.doc, first.selection.from)).toBe('make a quiz'.length);
+
+    const second = first.apply(insertComposerPhrase(first, 'on fractions')!);
+    expect(plainOfDoc(second.doc)).toBe('make a quiz on fractions');
+    expect(offsetOfPos(second.doc, second.selection.from)).toBe('make a quiz on fractions'.length);
+  });
+
+  it('adds no separating space next to CJK text', () => {
+    const zh = stateOf('帮我出一套', '帮我出一套'.length);
+    const next = zh.apply(insertComposerPhrase(zh, '分数练习题')!);
+    expect(plainOfDoc(next.doc)).toBe('帮我出一套分数练习题');
+
+    const mid = stateOf('讲解。', 2);
+    const next2 = mid.apply(insertComposerPhrase(mid, '分数')!);
+    expect(plainOfDoc(next2.doc)).toBe('讲解分数。');
+
+    const mixed = stateOf('quiz', 4);
+    const next3 = mixed.apply(insertComposerPhrase(mixed, '分数')!);
+    expect(plainOfDoc(next3.doc)).toBe('quiz分数');
+  });
+
+  it('appends at the end when asked even if the selection is still at offset 0', () => {
+    const state = stateOf('review slides', 0);
+    const next = state.apply(insertComposerPhrase(state, 'and add examples', { atEnd: true })!);
+    expect(plainOfDoc(next.doc)).toBe('review slides and add examples');
+    expect(offsetOfPos(next.doc, next.selection.from)).toBe(
+      'review slides and add examples'.length,
+    );
+  });
+
+  it('inserts at a mid-sentence caret with separating spaces and leaves caret after the phrase', () => {
+    const beforeSpace = stateOf('hello world', 5);
+    const next1 = beforeSpace.apply(insertComposerPhrase(beforeSpace, 'brave')!);
+    expect(plainOfDoc(next1.doc)).toBe('hello brave world');
+    expect(offsetOfPos(next1.doc, next1.selection.from)).toBe('hello brave'.length);
+
+    const beforeWord = stateOf('hello world', 6);
+    const next2 = beforeWord.apply(insertComposerPhrase(beforeWord, 'brave')!);
+    expect(plainOfDoc(next2.doc)).toBe('hello brave world');
+    expect(offsetOfPos(next2.doc, next2.selection.from)).toBe('hello brave'.length);
+    // A second phrase dictated immediately continues cleanly without doubling spaces.
+    const next3 = next2.apply(insertComposerPhrase(next2, 'new')!);
+    expect(plainOfDoc(next3.doc)).toBe('hello brave new world');
+
+    const beforePunct = stateOf('explain fractions.', 'explain fractions'.length);
+    const next4 = beforePunct.apply(insertComposerPhrase(beforePunct, 'clearly')!);
+    expect(plainOfDoc(next4.doc)).toBe('explain fractions clearly.');
+  });
+
+  it('preserves inline mention and skill chips around the insertion point', () => {
+    const afterChipWithSpace = stateOf('@Fractions ', '@Fractions '.length);
+    const next1 = afterChipWithSpace.apply(insertComposerPhrase(afterChipWithSpace, 'add a quiz')!);
+    expect(plainOfDoc(next1.doc)).toBe('@Fractions add a quiz');
+    expect(chips(next1.doc)).toEqual(['course:Fractions, the whole unit']);
+
+    const againstChip = stateOf('@Fractions', '@Fractions'.length);
+    const next2 = againstChip.apply(insertComposerPhrase(againstChip, 'add a quiz')!);
+    expect(plainOfDoc(next2.doc)).toBe('@Fractions add a quiz');
+    expect(chips(next2.doc)).toEqual(['course:Fractions, the whole unit']);
+
+    const beforeChip = stateOf('compare @Fractions', 'compare '.length);
+    const next3 = beforeChip.apply(insertComposerPhrase(beforeChip, 'closely')!);
+    expect(plainOfDoc(next3.doc)).toBe('compare closely @Fractions');
+    expect(chips(next3.doc)).toEqual(['course:Fractions, the whole unit']);
+  });
+
+  it('replaces a non-empty selection cleanly', () => {
+    const base = stateOf('use old method');
+    const selected = base.apply(
+      base.tr.setSelection(
+        TextSelection.create(base.doc, posOfOffset(base.doc, 4), posOfOffset(base.doc, 7)),
+      ),
+    );
+    const next = selected.apply(insertComposerPhrase(selected, 'new')!);
+    expect(plainOfDoc(next.doc)).toBe('use new method');
   });
 });
