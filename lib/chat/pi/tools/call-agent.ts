@@ -1098,6 +1098,12 @@ export function buildCallAgentTool(opts: {
           actionCount,
           status: childStatus,
           stopReason: stopReason === 'length' ? 'output_token_limit' : undefined,
+          rejectedDrawingActions: actionWarnings
+            .filter(
+              (warning) =>
+                warning.reason === 'invalid_params' && warning.actionName?.startsWith('wb_draw_'),
+            )
+            .map((warning) => warning.message),
         });
 
         return {
