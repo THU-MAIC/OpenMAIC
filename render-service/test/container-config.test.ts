@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
@@ -76,6 +78,50 @@ describe('render-service container contract', () => {
       main.indexOf('serve({ fetch: app.fetch'),
     );
   });
+
+  it.each([
+    ['installed', {}, 'true'],
+    ['disabled', { RENDER_EGRESS_LOCKDOWN: 'false' }, ''],
+    [
+      'disabled, ignoring an inherited marker',
+      {
+        RENDER_EGRESS_LOCKDOWN: 'false',
+        RENDER_EGRESS_LOCKDOWN_ACTIVE: 'true',
+      },
+      '',
+    ],
+  ] as const)(
+    'tells the service whether the egress lockdown is %s',
+    (_case, env, expected) => {
+      const root = mkdtempSync(join(tmpdir(), 'entrypoint-'));
+      try {
+        const bin = join(root, 'bin');
+        const stub = (name: string, body: string) => {
+          writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
+          chmodSync(join(bin, name), 0o755);
+        };
+        execFileSync('mkdir', [bin]);
+        stub('id', 'echo 0');
+        stub('chown', 'exit 0');
+        stub('iptables', 'exit 0');
+        // Never let the test reach the host's IPv6 firewall either.
+        stub('ip6tables', 'exit 0');
+        // The entrypoint execs the service through setpriv; report what it would see.
+        stub('setpriv', 'printf "%s" "${RENDER_EGRESS_LOCKDOWN_ACTIVE:-}"');
+        const seen = execFileSync('sh', [resolve(process.cwd(), 'docker-entrypoint.sh')], {
+          cwd: root,
+          env: { PATH: `${bin}:/usr/bin:/bin`, RENDER_HOME: join(root, 'home'), ...env },
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        expect(seen.trim().split('\n').at(-1) ?? '').toBe(expected);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+      // Spawning freshly written stub executables is slow on some hosts.
+    },
+    20_000,
+  );
 
   it('documents the complete preview API and admission contract', () => {
     const readme = read('README.md');

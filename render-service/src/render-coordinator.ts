@@ -49,6 +49,10 @@ export class RenderRejectedError extends Error {
   }
 }
 
+// Family names come from uploaded HTML; keep the warning line bounded.
+const MAX_LOGGED_FONT_FAMILIES = 8;
+const MAX_LOGGED_FONT_FAMILY_LENGTH = 80;
+
 function planPathForProject(dir: string): string {
   return join(
     dirname(dir),
@@ -377,6 +381,15 @@ export class RenderCoordinator {
           options,
           signal: abort.signal,
           deadlineMs: this.jobDeadlineMs,
+          onFontFallback: ({ families }) =>
+            this.onEvent({
+              event: 'render_font_fallback',
+              jobId: id,
+              fontFallbackCount: families.length,
+              fontFallbackFamilies: families
+                .slice(0, MAX_LOGGED_FONT_FAMILIES)
+                .map((family) => family.slice(0, MAX_LOGGED_FONT_FAMILY_LENGTH)),
+            }),
           onProgress: async (progress) => {
             await this.jobs.update(id, {
               status: 'running',

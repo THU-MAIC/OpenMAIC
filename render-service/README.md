@@ -393,6 +393,19 @@ runtime versions, bounds chunk fan-out and nested producer workers, verifies
 chunk bytes and sidecar hashes before ordered assembly, and reuses only a valid
 result for an idempotent retry. The default remains the in-process executor.
 
+Chunk planning resolves fonts the same way for every chunk, so a font missing
+from the export ZIP never fails the render. Families with an `@font-face` in
+the ZIP use it, families that Producer bundles or aliases (Inter, Roboto,
+Calibri and the rest of its alias map) are embedded from the bundled faces,
+and any other family falls back through the authored font stack in Chromium.
+Producer looks families up on Google Fonts. Once the entrypoint has installed
+the egress lockdown, the service answers those lookups locally instead of
+waiting on dropped connections, and logs the families left without a face once
+per job as a `render_font_fallback` warning. The entrypoint signals the
+lockdown by exporting `RENDER_EGRESS_LOCKDOWN_ACTIVE`; it is internal, not an
+operator setting. With egress open, Producer downloads fonts as it does on the
+in-process render path.
+
 [`@hyperframes/producer`]: https://www.npmjs.com/package/@hyperframes/producer
 
 ### Experimental per-task resource budgets
