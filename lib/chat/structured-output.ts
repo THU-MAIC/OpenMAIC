@@ -129,7 +129,17 @@ function parseCompleteItem(raw: string): Record<string, unknown> | null {
       const repaired = JSON.parse(jsonrepair(raw)) as Record<string, unknown> | null;
       return repaired?.type === 'text' ? repaired : null;
     } catch {
-      return null;
+      try {
+        // A false boundary inside malformed speech can leave an unrepaired
+        // fragment. Preserve only its readable text prefix, never an action.
+        const partial = parsePartialJson(
+          raw,
+          Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
+        );
+        return partial?.type === 'text' ? partial : null;
+      } catch {
+        return null;
+      }
     }
   }
 }

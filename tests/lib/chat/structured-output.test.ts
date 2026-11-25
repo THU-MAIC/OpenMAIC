@@ -112,6 +112,25 @@ describe('structured output stream boundaries', () => {
     },
   );
 
+  it.each(['', '{"type":"text","content":"Before. "},', '{"type":"action","name":"wb_open"},'])(
+    'preserves the recoverable speech prefix after a false item boundary with preceding item %j',
+    (preceding) => {
+      const input =
+        '[' +
+        preceding +
+        '{"type":"text","content":"Use "}" to close the object."},' +
+        '{"type":"action","name":"wb_close","params":{}}]';
+      for (let size = 1; size <= input.length; size++) {
+        // Preserve the baseline's text prefix, without promising recovery of
+        // the malformed remainder or the following action.
+        expect(collect(input, size), `chunk size ${size}`).toEqual({
+          text: (preceding.includes('Before.') ? 'Before. ' : '') + 'Use ',
+          actions: preceding.includes('wb_open') ? ['wb_open'] : [],
+        });
+      }
+    },
+  );
+
   it('does not repair a truncated action after an unescaped quote', () => {
     const input =
       '[{"type":"action","name":"wb_open"},' +
