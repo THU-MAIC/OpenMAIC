@@ -1,5 +1,6 @@
 'use client';
 
+import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { renderLatexSource, type LatexEditorResult } from './latex-editor';
 import type { LatexEditorLabels } from '../types';
@@ -64,8 +65,10 @@ export function LatexEditorDialog({
     });
   };
 
-  return (
-    <div className="maic-editing-ui-latex-backdrop" onPointerDown={onClose}>
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div className="maic-editing-ui-root maic-editing-ui-latex-backdrop" onPointerDown={onClose}>
       <section
         className="maic-editing-ui-latex-dialog"
         role="dialog"
@@ -123,6 +126,7 @@ export function LatexEditorDialog({
           </button>
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

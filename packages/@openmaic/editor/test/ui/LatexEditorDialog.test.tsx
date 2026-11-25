@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { renderToString } from 'react-dom/server';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LatexEditorDialog } from '../../src/ui/latex/LatexEditorDialog';
@@ -38,5 +39,40 @@ describe('LatexEditorDialog', () => {
     expect((screen.getByRole('button', { name: 'Confirm' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
+  });
+
+  it('portals the dialog and backdrop to document.body', () => {
+    const { container } = render(
+      <LatexEditorDialog initialLatex="x" onConfirm={vi.fn()} onClose={vi.fn()} />,
+    );
+    const dialog = screen.getByRole('dialog');
+    const backdrop = dialog.parentElement as HTMLElement;
+
+    expect(container.contains(dialog)).toBe(false);
+    expect(backdrop.parentElement).toBe(document.body);
+    expect(backdrop.className).toContain('maic-editing-ui-latex-backdrop');
+    expect(backdrop.className).toContain('maic-editing-ui-root');
+  });
+
+  it('renders nothing during server rendering', () => {
+    const realDocument = globalThis.document;
+    // @ts-expect-error simulate a server environment without a DOM
+    delete globalThis.document;
+    try {
+      expect(renderToString(<LatexEditorDialog onConfirm={vi.fn()} onClose={vi.fn()} />)).toBe('');
+    } finally {
+      globalThis.document = realDocument;
+    }
+  });
+
+  it('calls onClose when the backdrop is pressed but not the dialog', () => {
+    const onClose = vi.fn();
+    render(<LatexEditorDialog initialLatex="x" onConfirm={vi.fn()} onClose={onClose} />);
+    const dialog = screen.getByRole('dialog');
+
+    fireEvent.pointerDown(dialog);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.pointerDown(dialog.parentElement as HTMLElement);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
