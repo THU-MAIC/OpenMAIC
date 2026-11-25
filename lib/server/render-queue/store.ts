@@ -623,7 +623,9 @@ export async function takeFinishedRenderInputs(
 
 /**
  * Take the jobs finished `retentionMs` ago: their rows are deleted in the
- * statement that returns their parts.
+ * statement that returns their parts. A cancelled job whose cancel the render
+ * service has not confirmed stays (it may still be rendering, and keeps its
+ * slot and its retries) until `finishRenderJobCancel` clears it.
  */
 export async function takeExpiredRenderJobs(
   tx: Queryable,
@@ -638,6 +640,7 @@ export async function takeExpiredRenderJobs(
     `WITH taken AS (
        SELECT id FROM render_jobs
         WHERE finished_at < now() - make_interval(secs => $1::double precision / 1000)
+          AND NOT ${CANCEL_PENDING}
         ORDER BY finished_at LIMIT $2 FOR UPDATE SKIP LOCKED)
      DELETE FROM render_jobs r USING taken WHERE r.id = taken.id
      RETURNING r.id, r.input_parts, r.output_parts`,

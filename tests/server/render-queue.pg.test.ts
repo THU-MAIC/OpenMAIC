@@ -507,6 +507,32 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     },
   );
 
+  it('keeps a job whose cancel is unconfirmed past its retention, still retrying', async () => {
+    render.deleteFailures = [503, 503];
+    const { jobId } = await submit();
+    runner = startRenderQueueRunner({ config: FAST });
+    await vi.waitFor(async () => expect((await row(jobId))?.status).toBe('running'), UNTIL);
+    const [renderJobId] = [...render.jobs.keys()];
+    await CANCEL(jobRequest(jobId, 'DELETE'), context(jobId));
+    await vi.waitFor(() => expect(render.deleteFailures).toEqual([503]), UNTIL);
+
+    // Past its retention, the unconfirmed cancel keeps the row...
+    const expire = () =>
+      sweepRenderJobs({ ...(FAST as RenderQueueConfig), retentionMs: 0, staleUploadMs: 3_600_000 });
+    await expire();
+    expect(await row(jobId)).toMatchObject({ status: 'cancelled', render_job_id: renderJobId });
+    // ...and the cancel is retried (this one fails too), then confirmed.
+    await vi.waitFor(() => expect(render.deleteFailures).toEqual([]), UNTIL);
+    await expire();
+    expect(await row(jobId)).toBeDefined();
+    await vi.waitFor(() => expect(render.deletes).toEqual([renderJobId]), UNTIL);
+    await vi.waitFor(async () => expect((await row(jobId))?.render_job_id).toBeNull(), UNTIL);
+
+    // Confirmed: the next sweep expires it as usual.
+    await expire();
+    expect(await row(jobId)).toBeUndefined();
+  });
+
   it('retries the cancel of a job cancelled while its archive was on its way', async () => {
     render.submitDelayMs = 500;
     render.deleteFailures = ['drop'];
