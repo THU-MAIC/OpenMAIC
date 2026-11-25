@@ -3518,6 +3518,26 @@
         "title": "Start when you are ready",
         "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
       },
+      "conversationPane": {
+        "title": "Ваш диалог",
+        "body": "Здесь можно прочитать объяснения, вопросы и отзывы наставника, а также предыдущие сообщения."
+      },
+      "learningPath": {
+        "title": "Ход обучения",
+        "body": "Здесь указаны текущая веха и шаг. Откройте маршрут обучения, чтобы увидеть этапы проекта."
+      },
+      "reply": {
+        "title": "Ответ наставнику",
+        "body": "Когда придёт ваша очередь, введите и отправьте ответ здесь."
+      },
+      "collapsePane": {
+        "title": "Вернуться к аватару",
+        "body": "Сверните панель, чтобы вернуться к аватару и облачку диалога. Рядом с аватаром можно изменить скорость чтения или выключить звук."
+      },
+      "replay": {
+        "title": "Посмотреть подсказки ещё раз",
+        "body": "Здесь можно снова открыть руководство и освежить в памяти эти шаги."
+      },
       "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
     },
     "cast": {

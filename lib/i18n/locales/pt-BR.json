@@ -3518,6 +3518,26 @@
         "title": "Start when you are ready",
         "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
       },
+      "conversationPane": {
+        "title": "Sua conversa",
+        "body": "Leia aqui as explicações, perguntas e orientações de quem acompanha você. Você também pode consultar as mensagens anteriores."
+      },
+      "learningPath": {
+        "title": "Seu percurso de aprendizagem",
+        "body": "Aqui você vê o marco e a etapa atuais. Abra o percurso para ver as etapas do projeto."
+      },
+      "reply": {
+        "title": "Envie sua resposta",
+        "body": "Quando for sua vez, digite e envie sua resposta aqui."
+      },
+      "collapsePane": {
+        "title": "Voltar ao avatar",
+        "body": "Recolha este painel para voltar ao avatar e ao balão de conversa. Ao lado do avatar, você pode ajustar a velocidade de leitura ou silenciar a voz."
+      },
+      "replay": {
+        "title": "Rever o guia",
+        "body": "Abra o guia aqui sempre que quiser rever estas etapas."
+      },
       "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
     },
     "cast": {

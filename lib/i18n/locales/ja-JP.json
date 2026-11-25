@@ -3518,6 +3518,26 @@
         "title": "Start when you are ready",
         "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
       },
+      "conversationPane": {
+        "title": "パートナーとの会話",
+        "body": "ここでパートナーの説明や質問、フィードバックを読めます。これまでのメッセージも確認できます。"
+      },
+      "learningPath": {
+        "title": "学習の進み具合",
+        "body": "現在のマイルストーンとステップが表示されます。開くとプロジェクトの学習の流れを確認できます。"
+      },
+      "reply": {
+        "title": "パートナーに返信する",
+        "body": "自分の番が来たら、ここに返信を入力して送信します。"
+      },
+      "collapsePane": {
+        "title": "アバター表示に戻す",
+        "body": "このパネルを閉じると、アバターと吹き出しに戻ります。アバターの横で読み上げ速度の変更やミュートができます。"
+      },
+      "replay": {
+        "title": "ガイドをもう一度見る",
+        "body": "操作を確認したいときは、ここからいつでもガイドを開けます。"
+      },
       "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
     },
     "cast": {

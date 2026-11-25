@@ -3518,6 +3518,26 @@
         "title": "Start when you are ready",
         "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
       },
+      "conversationPane": {
+        "title": "Dein Gespräch",
+        "body": "Hier findest du Erklärungen, Fragen und Rückmeldungen deiner Begleitung. Frühere Nachrichten bleiben im Gespräch erhalten."
+      },
+      "learningPath": {
+        "title": "Dein Lernpfad",
+        "body": "Hier siehst du deinen aktuellen Meilenstein und Schritt. Öffne den Lernpfad, um die Projektphasen anzusehen."
+      },
+      "reply": {
+        "title": "Antworte deiner Begleitung",
+        "body": "Wenn du an der Reihe bist, kannst du hier deine Antwort eingeben und senden."
+      },
+      "collapsePane": {
+        "title": "Zurück zum Avatar",
+        "body": "Klappe diesen Bereich ein, um zum Avatar mit der Sprechblase zurückzukehren. Neben dem Avatar kannst du das Vorlesetempo ändern oder den Ton ausschalten."
+      },
+      "replay": {
+        "title": "Anleitung erneut öffnen",
+        "body": "Hier kannst du die Anleitung jederzeit erneut öffnen."
+      },
       "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
     },
     "cast": {

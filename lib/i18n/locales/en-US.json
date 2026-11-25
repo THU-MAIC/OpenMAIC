@@ -3518,6 +3518,26 @@
         "title": "Start when you are ready",
         "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
       },
+      "conversationPane": {
+        "title": "Your conversation",
+        "body": "Read your companion’s explanations, questions, and feedback here. Scroll back to see earlier messages."
+      },
+      "learningPath": {
+        "title": "Your learning path",
+        "body": "This shows your current milestone and step. Open it to see the project’s learning path."
+      },
+      "reply": {
+        "title": "Reply to your companion",
+        "body": "When it is your turn, type and send your reply here."
+      },
+      "collapsePane": {
+        "title": "Switch back to the avatar",
+        "body": "Collapse this panel to return to the avatar and its bubble. The controls beside the avatar let you change the reading speed or mute the voice."
+      },
+      "replay": {
+        "title": "Revisit the guide",
+        "body": "Open the workspace guide here whenever you want to see these steps again."
+      },
       "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
     },
     "cast": {

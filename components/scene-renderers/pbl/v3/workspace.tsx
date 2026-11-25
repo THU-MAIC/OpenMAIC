@@ -59,7 +59,7 @@ import { ProductionContext } from './production-context';
 import { useWorkbenchOnboarding } from './use-workbench-onboarding';
 import { WorkbenchOnboarding } from './workbench-onboarding';
 import { WorkspaceTour } from '@/components/workbench/workspace/WorkspaceTour';
-import { PBL_TOUR_STEPS } from './tour-steps';
+import { projectTourSteps } from './tour-steps';
 import { WorkbenchLoading } from './workbench-loading';
 import { pblRequest } from './request';
 import { continueActionLabel, needsInitialStart } from '@/lib/pbl/v3/presentation';
@@ -375,6 +375,12 @@ function PBLV3WorkspaceContent({
       ['unknown', 'unavailable'].includes(view.evaluation.state));
   const initialStart = !!view && needsInitialStart(view);
   const waitingToStart = initialStart && pendingAction !== 'begin';
+  const paneOpen = assistantMode !== 'closed';
+  const showPaneComposer = !waitingToStart && !!view?.actions.includes('chat');
+  const tourSteps = useMemo(
+    () => projectTourSteps({ paneOpen, waitingToStart, showPaneComposer }),
+    [paneOpen, waitingToStart, showPaneComposer],
+  );
   // One playhead for both presentations: where the telling has got to in the live reply.
   const [told, setTold] = useState<NarrationProgress | null>(null);
   const toldView = useMemo(
@@ -638,6 +644,7 @@ function PBLV3WorkspaceContent({
       <div className="space-y-2" title={boardMode ? (startBlockedReason ?? undefined) : undefined}>
         <button
           ref={startButtonRef}
+          data-pbl-tour="start"
           type="button"
           className="flex min-h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 font-semibold text-primary-foreground transition-colors enabled:hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={startDisabled}
@@ -1441,7 +1448,7 @@ function PBLV3WorkspaceContent({
                       {quizForm()}
                     </TaskDock>
                   </div>
-                  {!waitingToStart && view.actions.includes('chat') && (
+                  {showPaneComposer && (
                     <form
                       data-pbl-tour="composer"
                       className="shrink-0 border-t bg-background p-3"
@@ -1532,9 +1539,9 @@ function PBLV3WorkspaceContent({
       {view && onboarding.active && boardMode && (
         <WorkspaceTour
           key={view.id}
-          steps={PBL_TOUR_STEPS}
+          steps={tourSteps}
           copy="pblV3.tour"
-          doneLabel="pblV3.tour.done"
+          doneLabel={waitingToStart ? 'pblV3.tour.done' : 'pblV3.onboarding.finish'}
           onNavigate={() => {}}
           onSendExample={() => {}}
           onEnd={finishOnboarding}

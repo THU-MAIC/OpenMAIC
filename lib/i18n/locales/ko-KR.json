@@ -3518,6 +3518,26 @@
         "title": "Start when you are ready",
         "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
       },
+      "conversationPane": {
+        "title": "파트너와의 대화",
+        "body": "여기에서 파트너의 설명과 질문, 피드백을 읽을 수 있어요. 이전 메시지도 확인할 수 있어요."
+      },
+      "learningPath": {
+        "title": "학습 경로",
+        "body": "현재 마일스톤과 단계가 표시돼요. 눌러서 프로젝트의 학습 경로를 확인하세요."
+      },
+      "reply": {
+        "title": "파트너에게 답하기",
+        "body": "내 차례가 되면 여기에 답을 입력하고 보내세요."
+      },
+      "collapsePane": {
+        "title": "아바타로 돌아가기",
+        "body": "이 패널을 접으면 아바타와 말풍선이 다시 나타나요. 아바타 옆에서 읽기 속도를 바꾸거나 음소거할 수 있어요."
+      },
+      "replay": {
+        "title": "가이드 다시 보기",
+        "body": "사용 방법이 궁금할 때 언제든 여기에서 가이드를 다시 열 수 있어요."
+      },
       "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
     },
     "cast": {

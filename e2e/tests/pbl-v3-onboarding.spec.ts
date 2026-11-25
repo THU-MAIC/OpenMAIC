@@ -307,6 +307,89 @@ async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number
   if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
 }
 
+async function expectGuideTarget(page: Page, step: string, selector: string) {
+  await expect(page.getByTestId('workspace-tour')).toHaveAttribute('data-step', step);
+  const target = page.locator(selector);
+  await expect(target).toBeInViewport();
+  await expect
+    .poll(() =>
+      target.evaluate((element) => {
+        const hole = document.querySelector('[data-testid="workspace-tour-hole"]');
+        if (!hole || hole.classList.contains('ws-tour-hole-none')) return false;
+        const r = element.getBoundingClientRect();
+        const light = hole.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        return light.left < x && x < light.right && light.top < y && y < light.bottom;
+      }),
+    )
+    .toBe(true);
+}
+
+for (const mode of assistantModes) {
+  for (const waitingToStart of [true, false]) {
+    test(`companion guide follows the ${mode} layout ${waitingToStart ? 'before start' : 'during study'}`, async ({
+      page,
+      learningEvents,
+    }) => {
+      const automatic = mode === 'bubble' && waitingToStart;
+      const { commands } = await project(page, learningEvents, {
+        started: !automatic,
+        guideCompleted: !automatic,
+        explanationBoard: true,
+        opening: waitingToStart,
+      });
+      await useAssistantMode(page, mode);
+      const paneOpen = mode !== 'bubble';
+      const surface = paneOpen ? '[data-pbl-tour="conversation"]' : '[data-testid="pbl-companion"]';
+      const draft = page.locator(surface).getByRole('textbox');
+      if (!waitingToStart) await draft.fill('Keep my draft.');
+      const replay = page.locator('[data-pbl-tour="replay"]');
+      if (!automatic) await replay.click();
+      const next = page.getByTestId('workspace-tour-next');
+      await expect(page.getByTestId('workspace-tour')).toHaveAttribute('data-step', 'welcome');
+      await next.click();
+      await expectGuideTarget(page, 'preview', '[data-testid="pbl-application-panel"]');
+      await next.click();
+      const avatar = '[data-testid="pbl-companion-avatar"]';
+      await expectGuideTarget(
+        page,
+        paneOpen ? 'conversationPane' : 'companion',
+        paneOpen ? surface + ' > header' : avatar,
+      );
+      await next.click();
+      await expectGuideTarget(
+        page,
+        paneOpen ? 'learningPath' : 'progress',
+        paneOpen ? '[data-pbl-tour="learning-path"]' : avatar,
+      );
+      await next.click();
+      if (paneOpen && waitingToStart) {
+        await expectGuideTarget(page, 'collapsePane', '[data-testid="pbl-assistant-close"]');
+      } else if (paneOpen) {
+        await expectGuideTarget(page, 'reply', '[data-pbl-tour="composer"]');
+      } else {
+        await expectGuideTarget(page, 'controls', '[data-testid="pbl-companion-mute"]');
+      }
+      await next.click();
+      await expectGuideTarget(page, 'layout', '[data-testid="pbl-board-toggle"]');
+      await next.click();
+      if (waitingToStart)
+        await expectGuideTarget(page, 'start', surface + ' [data-pbl-tour="start"]');
+      else await expectGuideTarget(page, 'replay', '[data-pbl-tour="replay"]');
+      await page.getByTestId('workspace-tour-done').click();
+      await expect(page.getByTestId('workspace-tour')).toHaveCount(0);
+      await expect(page.locator(surface)).toBeVisible();
+      if (mode === 'window') await expect(page.getByTestId('pbl-assistant-window')).toBeVisible();
+      if (mode === 'docked') await expect(page.getByTestId('pbl-companion-avatar')).toHaveCount(0);
+      if (waitingToStart)
+        await expect(page.locator(surface + ' [data-pbl-tour="start"]')).toBeEnabled();
+      else await expect(draft).toHaveValue('Keep my draft.');
+      expect(commands).toEqual([]);
+    });
+  }
+}
+
 test('keeps one draft across companion layouts and closes the last file from its tab', async ({
   page,
   learningEvents,
