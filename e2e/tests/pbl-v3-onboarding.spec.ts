@@ -273,6 +273,58 @@ test('keeps one draft across companion layouts and closes the last file from its
   await expect(bubble.getByRole('textbox')).toHaveValue(draft);
 });
 
+for (const closeWith of ['last file', 'workspace toggle'] as const) {
+  test(`preserves a returning learner's drafts after closing the ${closeWith} and reloading`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const { view } = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const key = `maic:pbl-draft:v1:${view.id}:ui`;
+    const draft = {
+      text: 'Compare the plan',
+      textRevision: 7,
+      quizAnswers: { key: 'greeting:5', values: [null, 1] },
+      decisionDrafts: {
+        'greeting:direction': { chosen: 'North', rationale: 'It matches the goal' },
+      },
+      showWorkspace: true,
+      showAssistant: false,
+    };
+    await page.evaluate(({ key, draft }) => sessionStorage.setItem(key, JSON.stringify(draft)), {
+      key,
+      draft,
+    });
+    const reopen = async () => {
+      await page.reload();
+      await page.locator('[data-testid="pbl-v3-entry"] button').first().click();
+    };
+    await reopen();
+    const composer = page.getByTestId('pbl-companion-input').getByRole('textbox');
+    const toggle = page.getByRole('button', { name: 'Toggle code workspace', exact: true });
+    await expect(composer).toHaveValue(draft.text);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    if (closeWith === 'last file') {
+      await page.getByRole('button', { name: 'Close PLAN.md', exact: true }).click();
+    } else {
+      await toggle.click();
+    }
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(composer).toHaveValue(draft.text);
+    await composer.press('End');
+    await composer.press('!');
+    await reopen();
+    await expect(composer).toHaveValue(draft.text + '!');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)!), key)).toEqual({
+      ...draft,
+      text: draft.text + '!',
+      textRevision: draft.textRevision + 1,
+      showWorkspace: false,
+      showAssistant: true,
+    });
+  });
+}
+
 for (const mode of assistantModes) {
   test(`decision controls in the ${mode} match the tutor's named action`, async ({
     page,

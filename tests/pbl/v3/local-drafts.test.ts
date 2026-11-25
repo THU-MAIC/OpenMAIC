@@ -164,6 +164,48 @@ it('does not clear an unresolved save failure when a read recovers', async () =>
 });
 
 describe('study-scoped local drafts', () => {
+  it('switches away from the only visible pane in a single storage write', async () => {
+    const id = `switch-panes-${sequence++}`;
+    await mount(createElement(Ui, { id }));
+    await act(async () => ui.setShowAssistant(false));
+    const writes = vi.spyOn(Object.getPrototypeOf(window.sessionStorage) as Storage, 'setItem');
+    await act(async () => ui.setShowWorkspace(false));
+    await act(async () => ui.setShowAssistant(false));
+    expect(
+      writes.mock.calls.map(([, value]) => {
+        const { showWorkspace, showAssistant } = JSON.parse(value);
+        return { showWorkspace, showAssistant };
+      }),
+    ).toEqual([
+      { showWorkspace: false, showAssistant: true },
+      { showWorkspace: true, showAssistant: false },
+    ]);
+  });
+
+  it('repairs a previously stored closed layout without discarding or replaying learner input', async () => {
+    const id = `closed-layout-${sequence++}`;
+    const key = `maic:pbl-draft:v1:${id}:ui`;
+    const draft = {
+      text: 'An unsent question',
+      textRevision: 4,
+      pendingMessage: { id: 'pending', text: 'Previous question' },
+      quizAnswers: { key: 'lesson:5', values: [null, 2] },
+      decisionDrafts: { 'lesson:direction': { chosen: 'a', rationale: 'A reason' } },
+      showWorkspace: false,
+      showAssistant: false,
+    };
+    window.sessionStorage.setItem(key, JSON.stringify(draft));
+    await mount(createElement(Ui, { id }));
+    expect(ui).toMatchObject({ ...draft, showAssistant: true });
+    await act(async () => ui.setText((text) => text + '?'));
+    expect(JSON.parse(window.sessionStorage.getItem(key)!)).toEqual({
+      ...draft,
+      showAssistant: true,
+      text: draft.text + '?',
+      textRevision: 5,
+    });
+  });
+
   it('acknowledges only the submitted decision version in its original study and milestone', async () => {
     const id = `decision-receipt-${sequence++}`;
     const response = { chosen: 'Submitted rule', rationale: 'Submitted reason' };

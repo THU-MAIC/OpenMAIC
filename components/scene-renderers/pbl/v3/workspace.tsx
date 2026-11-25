@@ -863,11 +863,7 @@ function PBLV3WorkspaceContent({
           className="rounded border p-1.5 aria-pressed:bg-primary aria-pressed:text-primary-foreground"
           aria-label={t('pblV3.ide.toggleWorkspace')}
           aria-pressed={showWorkspace}
-          onClick={() => {
-            // The companion stays over an empty work area; only the docked layout needs a pane.
-            if (showWorkspace && !boardMode) setShowAssistant(true);
-            setShowWorkspace(!showWorkspace);
-          }}
+          onClick={() => setShowWorkspace(!showWorkspace)}
         >
           <PanelLeft size={14} />
         </button>
@@ -881,7 +877,6 @@ function PBLV3WorkspaceContent({
               setAssistantMode(assistantMode === 'docked' ? 'closed' : 'docked');
               return;
             }
-            if (showAssistant) setShowWorkspace(true);
             setShowAssistant(!showAssistant);
           }}
         >
@@ -1036,15 +1031,14 @@ function PBLV3WorkspaceContent({
             }
             showApplication={applicationPreview.open}
             onCollapseApplication={applicationPreview.close}
-            onCollapseWorkspace={() => {
-              // Keep the persisted draft valid before hiding its other pane.
-              if (!boardMode) setShowAssistant(true);
-              setShowWorkspace(false);
-            }}
+            onCollapseWorkspace={() => setShowWorkspace(false)}
             onCollapseAssistant={() => {
-              setShowWorkspace(true);
-              if (boardMode) setAssistantMode('closed');
-              else setShowAssistant(false);
+              if (boardMode) {
+                setShowWorkspace(true);
+                setAssistantMode('closed');
+              } else {
+                setShowAssistant(false);
+              }
             }}
             showWorkspace={showWorkspace}
             showAssistant={boardMode ? assistantMode !== 'closed' : showAssistant}

@@ -47,18 +47,12 @@ function Harness({ id }: { id: string }) {
     createElement('button', {
       'aria-label': 'workspace',
       'aria-pressed': showWorkspace,
-      onClick: () => {
-        if (showWorkspace) setShowAssistant(true);
-        setShowWorkspace(!showWorkspace);
-      },
+      onClick: () => setShowWorkspace(!showWorkspace),
     }),
     createElement('button', {
       'aria-label': 'assistant',
       'aria-pressed': showAssistant,
-      onClick: () => {
-        if (showAssistant) setShowWorkspace(true);
-        setShowAssistant(!showAssistant);
-      },
+      onClick: () => setShowAssistant(!showAssistant),
     }),
     createElement('output', null, String(app)),
     createElement(WorkbenchSplit, {
@@ -69,14 +63,8 @@ function Harness({ id }: { id: string }) {
       onCollapseApplication: () => setApp(false),
       showWorkspace,
       showAssistant,
-      onCollapseWorkspace: () => {
-        setShowAssistant(true);
-        setShowWorkspace(false);
-      },
-      onCollapseAssistant: () => {
-        setShowWorkspace(true);
-        setShowAssistant(false);
-      },
+      onCollapseWorkspace: () => setShowWorkspace(false),
+      onCollapseAssistant: () => setShowAssistant(false),
     }),
   );
 }
