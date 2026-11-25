@@ -27,7 +27,7 @@ describe('polled video adapter compatibility', () => {
     vi.useRealTimers();
   });
 
-  it.each(['doubao-seedance-2-0-260128', 'doubao-seedance-1-0-lite-t2v-250428'])(
+  it.each(['doubao-seedance-2-0-260128', 'doubao-seedance-2-0-mini-260615'])(
     'keeps Seedance task routing and success extraction unchanged for %s',
     async (model) => {
       fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'seed-task' })).mockResolvedValueOnce(

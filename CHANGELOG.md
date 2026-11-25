@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Other Changes
+
+- Models: remove retired video models from the built-in catalogs (existing saved IDs remain user-managed).
+  - seedance: `doubao-seedance-1-0-pro-250528` and `doubao-seedance-1-0-pro-fast-251015` (shut down November 24, 2026, not migrated automatically), `doubao-seedance-1-0-lite-t2v-250428` (shut down May 11, 2026). Use `doubao-seedance-2-0-mini-260615`.
+  - openrouter-video: `kwaivgi/kling-v3.0-pro`, which no OpenRouter endpoint serves any more. Use `google/veo-3.1` or `bytedance/seedance-2.5`, or Kling through the built-in Kling provider.
+
 ## [1.5.0] - 2026-11-24
 
 1.5.0 is the general release of **a brand-new home, redesigned end to end** (see [1.5.0-rc.1](#150-rc1---2026-11-10) and the release candidates after it). With the workbench enabled (`NEXT_PUBLIC_WORKBENCH_ENABLED`, still off by default), the home page is the workbench: the course takes shape beside the conversation, and one full-screen classroom handles both learning and editing. This section collects what is new in 1.5.0 beyond [1.5.0-rc.3](#150-rc3---2026-11-17): the workspace home and the classroom adapt to phones, slide editing and playback move to the package canvases, long agent conversations are compacted instead of failing at the provider, Token Plan gains international plans, and the video export dialog shows the render queue.
