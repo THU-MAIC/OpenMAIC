@@ -63,7 +63,9 @@ function pushText(result: ParseResult, content: string) {
   result.ordered.push({ type: 'text', index: result.textChunks.length - 1 });
 }
 
-function findArrayStart(buffer: string): number {
+const STRUCTURED_ITEM_OPENINGS = ['[{"type":"text"', '[{"type":"action"'];
+
+function findArrayStart(buffer: string, allowIncompleteType = false): number {
   const leading = /^\s*(?:```(?:json)?\s*)?\[\s*(?=[{\]])/i.exec(buffer);
   if (leading) return leading[0].indexOf('[');
 
@@ -71,6 +73,14 @@ function findArrayStart(buffer: string): number {
   // and unrelated array examples stay on the plain-text path.
   const openings = /\[\s*(?=\{)/g;
   for (let opening = openings.exec(buffer); opening; opening = openings.exec(buffer)) {
+    if (allowIncompleteType) {
+      // At EOF only, a tail that stops before the type value is complete
+      // (`[{`, `[{"ty`, `[{"type":`) is an unfinished classroom item.
+      const tail = buffer.slice(opening.index).replace(/\s+/g, '');
+      if (STRUCTURED_ITEM_OPENINGS.some((itemOpening) => itemOpening.startsWith(tail))) {
+        return opening.index;
+      }
+    }
     try {
       const items = parsePartialJson(buffer.slice(opening.index), Allow.ARR | Allow.OBJ);
       if (
@@ -79,6 +89,24 @@ function findArrayStart(buffer: string): number {
         )
       ) {
         return opening.index;
+      }
+      if (allowIncompleteType) {
+        // At EOF only, recognize a type string that was omitted above because
+        // it is unfinished. Complete unrelated type values remain plain prose.
+        const partialItems = parsePartialJson(
+          buffer.slice(opening.index),
+          Allow.ARR | Allow.OBJ | Allow.STR,
+        );
+        if (
+          partialItems.some(
+            (item: { type?: string } | null, index: number) =>
+              typeof item?.type === 'string' &&
+              items[index]?.type === undefined &&
+              ('text'.startsWith(item.type) || 'action'.startsWith(item.type)),
+          )
+        ) {
+          return opening.index;
+        }
       }
     } catch {
       // The discriminator may still be arriving.
@@ -318,7 +346,7 @@ export function finalizeParser(state: ParserState): ParseResult {
     if (structured.matched) {
       // Bare `{type:'text'}` (or array of them) → show content; action/unknown → suppress.
       structured.texts.forEach(pushText);
-    } else if (!looksLikeStructuredFragment(content)) {
+    } else if (!looksLikeStructuredFragment(content) && findArrayStart(content, true) === -1) {
       // Genuine plain prose — display it.
       pushText(content);
     } else {

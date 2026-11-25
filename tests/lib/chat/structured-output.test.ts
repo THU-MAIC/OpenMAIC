@@ -19,9 +19,32 @@ function collect(input: string, chunkSize: number) {
 }
 
 describe('structured output stream boundaries', () => {
+  it.each(['t', 'te', 'tex', 'a', 'ac', 'act', 'acti', 'actio'])(
+    'suppresses a prefixed array ending inside the type value %j',
+    (type) => {
+      const input = `Here is the classroom response: [{"type":"${type}`;
+      for (let size = 1; size <= input.length; size++) {
+        expect(collect(input, size), `chunk size ${size}`).toEqual({ text: '', actions: [] });
+      }
+    },
+  );
+
+  it.each(['[{', '[{"', '[{"ty', '[{"type"', '[{"type":', '[{ "type" : '])(
+    'suppresses a prefixed array ending before the type value %j',
+    (opening) => {
+      const input = `Here is the classroom response: ${opening}`;
+      for (let size = 1; size <= input.length; size++) {
+        expect(collect(input, size), `chunk size ${size}`).toEqual({ text: '', actions: [] });
+      }
+    },
+  );
+
   it.each([
     'The lesson uses [H] and ATP.',
     '[H] is a label. Here is an array example: [{"name":"tree"}].',
+    'Here is an array example: [{"type":"tree"}].',
+    'Here is an array example: [{"type":"te"}]',
+    'See the list: [',
   ])('preserves brackets in plain speech: %s', (speech) => {
     for (let size = 1; size <= speech.length; size++) {
       expect(collect(speech, size)).toEqual({ text: speech, actions: [] });
