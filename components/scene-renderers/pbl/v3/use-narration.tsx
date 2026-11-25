@@ -2,7 +2,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
-import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   boardAt,
   boardWrites,
@@ -14,31 +13,11 @@ import {
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
-import { ROLE_PERSONAS } from '@/lib/pbl/v3/personas';
+import { PBL_NARRATORS } from '@/lib/pbl/v3/personas';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import { WB_DRAW_MS } from '@/lib/choreography/timing';
 import { useSettingsStore } from '@/lib/store/settings';
-
-const EPOCH = new Date(0);
-const AGENTS: AgentConfig[] = Object.entries(ROLE_PERSONAS).map(([role, persona], index) => ({
-  id: role,
-  name: role,
-  role: role === 'mentor' ? 'teacher' : 'student',
-  // Unassigned project roles read native speech in the language of each sentence.
-  // The mentor inherits the learner's narrator selection.
-  ...(role !== 'mentor'
-    ? { voiceConfig: { providerId: 'browser-native-tts' as const, voiceId: 'default' } }
-    : {}),
-  persona: '',
-  avatar: persona.avatar,
-  color: persona.color,
-  allowedActions: [],
-  priority: 10 - index,
-  createdAt: EPOCH,
-  updatedAt: EPOCH,
-  isDefault: true,
-}));
 
 /** Silent reading time for one piece of speech when no voice is available. */
 const readingTime = (text: string) => Math.max(1500, Array.from(text).length * 220);
@@ -91,7 +70,7 @@ export function useNarration(
   const [audio, setAudio] = useState<AudioIndicatorState>('idle');
   const tts = useDiscussionTTS({
     enabled: !ttsMuted,
-    agents: AGENTS,
+    agents: PBL_NARRATORS,
     onAudioStateChange: (_agent, state) => setAudio(state),
   });
   const ttsRef = useRef(tts);

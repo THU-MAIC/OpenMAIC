@@ -201,6 +201,7 @@ describe('selective task emphasis and readable plans', () => {
       expect(prompt).toContain('submit one complete reply');
       if (input.stage.kind === 'check') {
         expect(prompt).toContain('do not require any chat answer');
+        expect(prompt).not.toContain('task-bar button');
         expect(prompt).toContain(
           'Never read_next_skill, request_skill_review or complete_stage here',
         );

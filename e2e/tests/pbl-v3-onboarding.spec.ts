@@ -519,6 +519,7 @@ for (const mode of assistantModes) {
     const bubbleTask = page.getByTestId('pbl-companion-task');
     if (mode === 'bubble') {
       await expect(bubbleTask).toHaveCount(0);
+      await expect(page.getByTestId('pbl-companion-speech')).toContainText('Opening this step');
     } else {
       await page.getByRole('button', { name: 'Current task', exact: true }).click();
       await expect(page.getByTestId('pbl-decision-response')).toBeVisible();

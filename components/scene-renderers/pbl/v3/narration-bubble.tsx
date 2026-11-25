@@ -64,7 +64,7 @@ function Segment({
         text: speech?.text ?? '',
         // No words yet while the role is at work: the bubble says so instead of standing
         // empty. A reply that is over is never shown as waiting.
-        isLoading: !speech && working,
+        isLoading: !speech?.text && working,
         isTopicPending: false,
         follow: true,
       }}
@@ -128,6 +128,7 @@ export function NarrationBubble({
 }) {
   const holding = useHeld(learner, 1600);
   const mine = !!learner && holding;
+  if (!learner && !speech?.text && !tools.length && !playing && !waiting) return null;
   // The classroom's own bubble transition: one leaves, then the next comes in from the side
   // it speaks from. The role's bubble stays put from one piece of text to the next, so within
   // a reply only its words change.

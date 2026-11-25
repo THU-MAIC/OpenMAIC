@@ -8,7 +8,7 @@ import {
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
-import { continueActionLabel, learningStep } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { Companion } from './companion';
 import { ExplainBoard } from './explain-board';
@@ -95,6 +95,7 @@ export function CompanionLayer({
   const awaitingDecisionOpening =
     view.stage.kind === 'dialogue' && (view.needsOpening || pendingAction === 'begin');
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
+  const opening = pendingAction === 'begin' || (blockedReason === 'opening' && !view.roleRun);
   const role = view.role ?? 'mentor';
   return (
     <Narrated
@@ -155,10 +156,8 @@ export function CompanionLayer({
                     }
                     speech={
                       narration.speech ??
-                      (!conversation.length &&
-                      !narration.playing &&
-                      view.state.status !== 'completed'
-                        ? { id: stageKey, text: t(`pblV3.journey.steps.${learningStep(view)}`) }
+                      (opening && !narration.playing && view.state.status !== 'completed'
+                        ? { id: stageKey, text: t('pblV3.pendingActions.begin') }
                         : undefined)
                     }
                     learner={learnerTurn(conversation, pendingMessage)}
