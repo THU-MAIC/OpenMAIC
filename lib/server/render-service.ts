@@ -88,6 +88,7 @@ export interface RenderServiceCapability {
   /** Omitted when a compatible service does not report admission state. */
   accepting?: boolean;
   interactiveRuntimeCheck?: boolean;
+  interactiveRuntimeHostedLibraries?: boolean;
 }
 
 /**
@@ -107,11 +108,15 @@ export async function getRenderServiceCapability(): Promise<RenderServiceCapabil
     const body = (await res.json().catch(() => null)) as {
       accepting?: unknown;
       interactiveRuntimeCheck?: unknown;
+      interactiveRuntimeHostedLibraries?: unknown;
     } | null;
     return {
       enabled: true,
       ...(typeof body?.accepting === 'boolean' ? { accepting: body.accepting } : {}),
       ...(body?.interactiveRuntimeCheck === true ? { interactiveRuntimeCheck: true } : {}),
+      ...(body?.interactiveRuntimeHostedLibraries === true
+        ? { interactiveRuntimeHostedLibraries: true }
+        : {}),
     };
   } catch (error) {
     log.info('Render service health check failed:', error instanceof Error ? error.message : error);

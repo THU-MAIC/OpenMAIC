@@ -132,7 +132,7 @@ function appWith(
 describe('POST /interactive-runtime-check', () => {
   const path = '/interactive-runtime-check';
 
-  function runtimeRequest() {
+  function runtimeRequest(html = '<!doctype html><p>Widget</p>', endpoint = path) {
     const base = previewPayload();
     return previewRequest(
       {
@@ -140,14 +140,32 @@ describe('POST /interactive-runtime-check', () => {
         scene: {
           ...base.scene,
           type: 'interactive',
-          content: { type: 'interactive', html: '<!doctype html><p>Widget</p>' },
+          content: { type: 'interactive', html },
           actions: [{ id: 'reveal', type: 'widget_reveal', target: '#part' }],
         },
       },
       'check-user',
-      path,
+      endpoint,
     );
   }
+
+  it('accepts raw hosted library references only for runtime checks', async () => {
+    const html = '<script src="/vendor/interactive/chart.js@4.4.8/dist/chart.umd.js"></script>';
+    const interactiveRuntimeCheck = vi.fn<NonNullable<AppDeps['interactiveRuntimeCheck']>>(
+      async () => [],
+    );
+    const render = vi.fn<PreviewRenderer['render']>();
+    const app = appWith({ render }, undefined, { interactiveRuntimeCheck });
+
+    expect((await app.fetch(runtimeRequest(html))).status).toBe(200);
+    expect(interactiveRuntimeCheck.mock.calls[0]?.[0].scene.content.html).toBe(html);
+    expect((await app.fetch(runtimeRequest(html, '/preview'))).status).toBe(422);
+    expect(render).not.toHaveBeenCalled();
+
+    const external = '<script src="https://unrelated.example.test/lib.js"></script>';
+    expect((await app.fetch(runtimeRequest(external))).status).toBe(422);
+    expect(interactiveRuntimeCheck).toHaveBeenCalledOnce();
+  });
 
   it('returns JSON and shares the PNG preview execution gate', async () => {
     const pending =

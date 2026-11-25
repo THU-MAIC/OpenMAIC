@@ -3,7 +3,7 @@ import { cp, mkdir, readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { INTERACTIVE_LIBRARIES } from '../packages/@openmaic/generation/dist/interactive-libraries.js';
+import { INTERACTIVE_LIBRARIES } from '../packages/@openmaic/generation/src/interactive-libraries.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));

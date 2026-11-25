@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { HostedInteractiveLibraries } from '../src/hosted-interactive-libraries.ts';
 import { ChromiumPreviewRenderer } from '../src/preview-renderer.ts';
 
 const renderer = new ChromiumPreviewRenderer();
@@ -11,6 +15,10 @@ const actions = [
 ];
 
 function check(script, replay = []) {
+  return checkHtml(renderer, `<!doctype html><script>${script}</script>`, replay);
+}
+
+function checkHtml(renderer, html, replay = []) {
   return renderer.checkInteractiveRuntime({
     scene: {
       id: 'test-scene',
@@ -18,7 +26,7 @@ function check(script, replay = []) {
       order: 1,
       title: 'Test scene',
       type: 'interactive',
-      content: { type: 'interactive', html: `<!doctype html><script>${script}</script>` },
+      content: { type: 'interactive', html },
       actions: replay,
     },
     stage: { id: 'test-stage', name: 'Test stage' },
@@ -75,4 +83,69 @@ assert.deepEqual(
   ),
   [],
 );
+
+const directory = await mkdtemp(join(tmpdir(), 'runtime-library-browser-'));
+try {
+  const classic = 'chart.js@4.4.8/dist';
+  const modules = 'three@0.160.0/build';
+  const css = 'katex@0.16.38/dist';
+  for (const assetDir of [classic, modules, css]) {
+    await mkdir(join(directory, assetDir), { recursive: true });
+  }
+  await writeFile(join(directory, classic, 'chart.umd.js'), 'globalThis.chartFixture = 17;');
+  await writeFile(
+    join(directory, modules, 'three.module.js'),
+    'export { fixture } from "./dep.js";',
+  );
+  await writeFile(join(directory, modules, 'dep.js'), 'export const fixture = 23;');
+  await writeFile(join(directory, css, 'katex.min.css'), 'body { color: rgb(1, 2, 3); }');
+
+  const mirrorBase = 'https://assets.example.test/interactive';
+  const withLibraries = new ChromiumPreviewRenderer({
+    interactiveLibraries: new HostedInteractiveLibraries(directory, mirrorBase),
+  });
+  assert.deepEqual(
+    await checkHtml(
+      withLibraries,
+      `
+      <!doctype html>
+      <link rel="stylesheet" href="/vendor/interactive/${css}/katex.min.css">
+      <script src="/vendor/interactive/${classic}/chart.umd.js"></script>
+      <script type="importmap">
+        {"imports": {"three": "${mirrorBase}/${modules}/three.module.js"}}
+      </script>
+      <script type="module">
+        import { fixture } from 'three';
+        globalThis.moduleFixture = fixture;
+      </script>
+      <script>
+        addEventListener('load', () => {
+          if (globalThis.chartFixture !== 17) throw new Error('Classic script did not load');
+          if (globalThis.moduleFixture !== 23) throw new Error('Module graph did not load');
+          if (getComputedStyle(document.body).color !== 'rgb(1, 2, 3)') {
+            throw new Error('Stylesheet did not load');
+          }
+        });
+      </script>
+      <body>Widget</body>
+    `,
+    ),
+    [],
+  );
+
+  const missingDirectory = new ChromiumPreviewRenderer({
+    interactiveLibraries: new HostedInteractiveLibraries(join(directory, 'missing')),
+  });
+  assert.deepEqual(
+    await checkHtml(
+      missingDirectory,
+      `
+      <!doctype html><script src="/vendor/interactive/${classic}/chart.umd.js"></script>
+    `,
+    ),
+    [{ phase: 'load', message: `Failed to load interactive library: ${classic}/chart.umd.js` }],
+  );
+} finally {
+  await rm(directory, { recursive: true, force: true });
+}
 console.log('Interactive runtime checks verified');

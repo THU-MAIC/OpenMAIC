@@ -117,20 +117,30 @@ CSS `@import`) may pass validation; self-contained scenes are the caller's
 responsibility, and end-to-end fidelity for persisted scenes arrives with
 caller-side preparation (tracked separately).
 
-`POST /interactive-runtime-check` uses the same self-contained iframe,
-admission limits, and Chromium execution slots as the PNG preview. A check
-waits in FIFO order for a slot for up to `RENDER_INTERACTIVE_RUNTIME_WAIT_MS`
+`POST /interactive-runtime-check` runs the original interactive HTML in a
+sandboxed iframe. Chromium loads pinned hosted-library files from the render
+service through request interception. The default URL prefix is
+`/vendor/interactive/`. A deployment using a mirror must set
+`INTERACTIVE_ASSET_BASE_URL` to the same value in the app build and the render
+service. Both prefixes resolve to local files. Other network requests from the
+iframe remain blocked.
+
+The route shares the PNG preview's admission limits and Chromium execution
+slots. A check waits in FIFO order for a slot for up to `RENDER_INTERACTIVE_RUNTIME_WAIT_MS`
 (default 2000 ms). It returns `429` with `reason: capacity_busy` if the wait
 expires first, or `504` if the overall deadline expires first. The overall
 deadline covers parsing, waiting, and Chromium work and is the smaller of
 five seconds and `RENDER_PREVIEW_TIMEOUT_MS`, followed by bounded Chromium
 cleanup. A client disconnect cancels the wait.
-The response is `{ errors: [...] }`, with each uncaught exception or unhandled
-rejection labeled `phase: "load"` or `phase: "action"`. Action errors include
-the zero-based `actionIndex` in `scene.actions` and the posted `actionType`.
+The response is `{ errors: [...] }`, with uncaught exceptions, unhandled
+rejections, and failed hosted-library loads labeled `phase: "load"` or
+`phase: "action"`. Action errors include the zero-based `actionIndex` in
+`scene.actions` and the posted `actionType`.
 The check loads the page and replays widget messages in order with a short
 observation window after each. `/health` advertises `interactiveRuntimeCheck`
-when Chromium is configured and per-task resource mode is off. The
+when Chromium is configured and per-task resource mode is off, and
+`interactiveRuntimeHostedLibraries` indicates support for raw HTML with hosted
+libraries. The app requires both flags. The
 `preview_request` log includes `runtimeCheckResult` for this route. `checked`
 includes pages with reported runtime errors. The other codes are `busy_timeout`,
 `deadline`, `aborted`, and `error` (including admission or validation failures).
@@ -149,6 +159,8 @@ includes pages with reported runtime errors. The other codes are `busy_timeout`,
 | `RENDER_JOB_DEADLINE_MS`                 | `2700000`                                      | Hard per-job wall-clock deadline; overruns are aborted and marked **failed**.                                                                                                                                                                     |
 | `RENDER_PREVIEW_TIMEOUT_MS`              | `20000`                                        | Deadline for preview work, including body parsing; launch settlement and bounded browser cleanup complete before the slot is reused.                                                                                                                                                  |
 | `RENDER_INTERACTIVE_RUNTIME_WAIT_MS`     | `2000`                                         | Maximum runtime-check wait for a preview execution slot, in milliseconds. The overall deadline can end the wait sooner. |
+| `RENDER_INTERACTIVE_LIBRARY_DIR`        | Repository `public/vendor/interactive` (`/app/public/vendor/interactive` in the image) | Directory containing the pinned interactive library files. If missing, the service logs a startup warning and checks report failed library loads. |
+| `INTERACTIVE_ASSET_BASE_URL`            | `/vendor/interactive`                          | URL base for the app's hosted interactive libraries. Match the app's build-time value when using a mirror. |
 | `RENDER_PREVIEW_MAX_CONCURRENCY`         | `1`                                            | Maximum executing previews, independent of video exports. At most 2 in `standard`, 1 in `low-memory`; exceeding the profile limit fails startup. Each slot can launch one Chromium browser.                                                                         |
 | `RENDER_PREVIEW_MAX_IN_FLIGHT`           | `8`                                            | Maximum admitted previews across buffering and execution.                                                                                                                                                                                         |
 | `RENDER_PREVIEW_MAX_PER_USER`            | `2`                                            | Concurrent previews per owner identity; 0 disables the guard for deployments whose preview callers do not supply an owner identity (see note below).                                                                                              |
@@ -262,6 +274,14 @@ profile and points the app at it:
 ```bash
 docker compose --profile video-export up --build
 ```
+
+To build only the render image, run
+`docker build -f render-service/Dockerfile -t openmaic-render-service .` from
+the repository root. Its asset stage installs the versions in the app's
+interactive library manifest and runs `scripts/sync-interactive-assets.mjs`.
+For standalone development, run `pnpm install` at the repository root to
+populate the same files, or point `RENDER_INTERACTIVE_LIBRARY_DIR` at a copy
+with the same package/version layout.
 
 ### Standalone (development)
 

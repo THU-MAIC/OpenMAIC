@@ -5,7 +5,24 @@
 # glibc/Debian than on musl/Alpine. Producer's beginFrame capture requires the
 # old headless shell binary; regular Chromium exposes the resolver path but then
 # rejects HeadlessExperimental.beginFrame and silently falls back to screenshots.
-FROM node:22.22.2-bookworm-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383 AS base
+FROM node:22.22.2-bookworm-slim@sha256:f3a68cf41a855d227d1b0ab832bed9749469ef38cf4f58182fb8c893bc462383 AS node
+
+# Use the app's pinned library manifest and copy script without building the app.
+FROM node AS interactive-assets
+WORKDIR /app
+ARG NPM_REGISTRY
+COPY packages/@openmaic/generation/package.json ./packages/@openmaic/generation/
+COPY packages/@openmaic/generation/src/interactive-libraries.ts ./packages/@openmaic/generation/src/
+COPY scripts/sync-interactive-assets.mjs ./scripts/
+RUN node --input-type=module -e '\
+    import { writeFileSync } from "node:fs"; \
+    import { INTERACTIVE_LIBRARIES } from "./packages/@openmaic/generation/src/interactive-libraries.ts"; \
+    const dependencies = Object.fromEntries(INTERACTIVE_LIBRARIES.map((library) => [library.package, library.version])); \
+    writeFileSync("package.json", JSON.stringify({ private: true, dependencies }));' \
+  && npm_config_registry="${NPM_REGISTRY:-https://registry.npmjs.org/}" npm install --ignore-scripts --no-audit --no-fund \
+  && node scripts/sync-interactive-assets.mjs
+
+FROM node AS base
 
 ARG CHROMIUM_VERSION=151.0.7922.71-1~deb12u1
 ARG FFMPEG_VERSION=7:5.1.9-0+deb12u1
@@ -56,7 +73,7 @@ WORKDIR /app
 
 # ---- Dependencies (cached layer) ----
 FROM base AS deps
-COPY package.json package-lock.json ./
+COPY render-service/package.json render-service/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
 # ---- Runner ----
@@ -68,10 +85,13 @@ RUN groupadd --system --gid 1001 render \
   && mkdir -p /tmp/openmaic-renders /app/.cache \
   && chown -R render:render /app /tmp/openmaic-renders
 
+WORKDIR /app/render-service
 COPY --from=deps /app/node_modules ./node_modules
-COPY --chown=render:render package.json tsconfig.json ./
-COPY --chown=render:render src ./src
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --from=interactive-assets /app/public/vendor/interactive /app/public/vendor/interactive
+COPY --from=interactive-assets /app/packages /app/packages
+COPY --chown=render:render render-service/package.json render-service/tsconfig.json ./
+COPY --chown=render:render render-service/src ./src
+COPY render-service/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # Strip CR before chmod. .gitattributes keeps this file LF on fresh checkouts,
 # but clones made before that landed still hold a CRLF copy, and the resulting
 # `#!/bin/sh\r` shebang fails at container start with a message that blames the

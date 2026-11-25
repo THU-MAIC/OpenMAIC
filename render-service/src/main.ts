@@ -30,6 +30,7 @@ import { serve } from '@hono/node-server';
 import { validateScene } from '@openmaic/dsl';
 import { Hono, type Context } from 'hono';
 import { config } from './config.js';
+import { hostedInteractiveLibraries } from './hosted-interactive-libraries.js';
 import { InMemoryJobStore } from './job-store.js';
 import { LocalDiskArtifactStore } from './artifact-store.js';
 import {
@@ -327,6 +328,7 @@ export function createApp(deps: AppDeps): Hono {
       interactiveRuntimeCheck:
         !deps.resourceMode &&
         Boolean(process.env.PRODUCER_HEADLESS_SHELL_PATH || process.env.PUPPETEER_EXECUTABLE_PATH),
+      interactiveRuntimeHostedLibraries: true,
       resourceProfile: publicResourceProfile(config.resourceProfile),
       versions: deps.runtimeVersions ?? null,
     }),
@@ -526,7 +528,10 @@ export function createApp(deps: AppDeps): Hono {
       if (runtimeCheck && !checkScene) {
         throw new BadRequestError('Runtime checks require an interactive scene');
       }
-      const unpreviewable = previewabilityError(payload.scene);
+      const unpreviewable = previewabilityError(
+        payload.scene,
+        checkScene ? (url) => hostedInteractiveLibraries.match(url) !== undefined : undefined,
+      );
       if (unpreviewable) throw new UnprocessablePreviewError(unpreviewable);
       const remainingMs = Math.ceil(expiresAt - performance.now());
       if (remainingMs <= 0) throw new PreviewTimeoutError('Preview exceeded the deadline');
@@ -737,7 +742,13 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
 
   // Build the browser mount off the request path so the first preview does not
   // pay the cold esbuild cost while holding admission and execution permits.
-  if (!resourceExecutor) await buildSlideClientBundle();
+  if (!resourceExecutor) {
+    const libraryDirectory = await stat(config.interactiveLibraryDir).catch(() => null);
+    if (!libraryDirectory?.isDirectory()) {
+      console.warn('[render-service] Interactive library directory is unavailable.');
+    }
+    await buildSlideClientBundle();
+  }
 
   const app = createApp({
     jobs,

@@ -25,7 +25,7 @@ const executable =
   process.env.PRODUCER_HEADLESS_SHELL_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
 
 describe.skipIf(!executable)('real Chromium previews through tsx', () => {
-  it('checks load and ordered action errors while leaving a clean page clean', async () => {
+  it('checks load and action errors and serves hosted library assets', async () => {
     const { stdout } = await execute(
       process.execPath,
       ['--import', 'tsx', 'test/interactive-runtime-browser.fixture.mjs'],
