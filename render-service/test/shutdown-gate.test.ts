@@ -4,7 +4,8 @@
  * gate together, driven the way the app's durable export queue drives them
  * (poll the job until it succeeded, then download its output).
  */
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -37,7 +38,7 @@ const OWNER = { 'x-openmaic-render-owner': 'owner-a' };
 const MP4 = Buffer.from('finished-mp4-bytes');
 
 /** A render service on a real port whose renders wait until released. */
-async function service() {
+async function service(mp4: Buffer = MP4) {
   const dir = await mkdtemp(join(tmpdir(), 'render-shutdown-gate-'));
   cleanups.push(() => rm(dir, { recursive: true, force: true }));
   let release!: () => void;
@@ -45,7 +46,7 @@ async function service() {
   const executor: RenderExecutor = {
     async execute(request) {
       await released;
-      await writeFile(request.outputPath, MP4);
+      await writeFile(request.outputPath, mp4);
       return { status: 'succeeded' };
     },
   };
@@ -157,6 +158,72 @@ describe('exit after SIGTERM', () => {
     });
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'Job not found' });
+  });
+
+  it('does not count a download the client broke off', async () => {
+    // More than the socket buffers, so the server is still writing when the
+    // client goes away.
+    const large = Buffer.alloc(8 * 1024 * 1024, 7);
+    const render = await service(large);
+    const jobId = await render.submit();
+    render.release();
+    await waitUntil(
+      async () => ((await render.jobs.get(jobId))?.status === 'succeeded' ? true : null),
+      'the render to succeed',
+    );
+    render.sigterm();
+
+    const url = new URL(`${render.base}/owner-bound/render/${jobId}/download`);
+    await new Promise<void>((resolve, reject) => {
+      const download = httpRequest(url, { headers: OWNER }, (response) => {
+        response.once('data', () => {
+          download.destroy();
+          resolve();
+        });
+      });
+      download.on('error', () => undefined);
+      download.once('error', reject);
+      download.end();
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(render.exits()).toBe(0);
+
+    // The queue's retry gets the whole file, and only then the process goes.
+    const retry = await fetch(url, { headers: OWNER });
+    expect(Buffer.from(await retry.arrayBuffer()).equals(large)).toBe(true);
+    await waitUntil(async () => (render.exits() > 0 ? true : null), 'the exit after the download');
+  });
+
+  it('counts a download only when its response finished before the connection closed', async () => {
+    const jobs = createMemoryJobStore();
+    await jobs.create({ id: 'job-1', status: 'succeeded' } as never);
+    let exits = 0;
+    const gate = new ShutdownGate(jobs, () => {
+      exits += 1;
+    });
+    const handler = gate.wrap(() => new Response('mp4'));
+    const download = (outgoing: EventEmitter) =>
+      handler(new Request('http://render/owner-bound/render/job-1/download'), {
+        incoming: undefined as never,
+        outgoing: outgoing as never,
+      });
+    gate.idle();
+
+    // A client gone mid-download: the HTTP layer may still emit 'finish'
+    // after 'close', on a destroyed response.
+    const broken = Object.assign(new EventEmitter(), { statusCode: 200, destroyed: false });
+    await download(broken);
+    broken.destroyed = true;
+    broken.emit('close');
+    broken.emit('finish');
+    await settled();
+    expect(exits).toBe(0);
+
+    const whole = Object.assign(new EventEmitter(), { statusCode: 200, destroyed: false });
+    await download(whole);
+    whole.emit('finish');
+    whole.emit('close');
+    await waitUntil(async () => (exits > 0 ? true : null), 'the exit after the whole download');
   });
 
   it('exits without a download once the unfetched job is reaped', async () => {

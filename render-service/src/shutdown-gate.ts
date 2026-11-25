@@ -74,9 +74,16 @@ export class ShutdownGate {
       if (download) {
         // getPath already decodes the unreserved characters used by job UUIDs.
         const jobId = download[1]!;
-        // 'finish': the whole response was handed to the OS. A client that
-        // goes away mid-download never gets there, and may fetch again.
+        // Counted only when the whole response was handed to the OS while the
+        // connection was still open. A client that goes away mid-download
+        // closes it first; the HTTP layer can still emit 'finish' after that
+        // 'close', on a destroyed response, and that one does not count.
+        let closed = false;
+        env.outgoing.once('close', () => {
+          closed = true;
+        });
         env.outgoing.once('finish', () => {
+          if (closed || env.outgoing.destroyed) return;
           const status = env.outgoing.statusCode;
           if (status === 200 || status === 302) {
             this.fetched.add(jobId);

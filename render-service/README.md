@@ -104,14 +104,33 @@ IP address of everyone currently rendering.
 On `SIGTERM` the service stops admitting renders: `/health` reports
 `accepting: false` from then on and new submissions get `shutting_down`. The
 process exits once nothing is reserved, queued or running, no upload is still
-being answered, and every finished render's MP4 has been downloaded once to the
-end: right away when that is already so, else as soon as it is. Jobs and their
-MP4s live only in this process, so a caller that fetches the output after
-polling for it (the app's durable export queue) gets a render that finished
-during the grace period. An MP4 nobody fetches keeps the process up until the
-grace period ends. Nothing extends that period: a render still running when it
-ends is killed with the process, so a caller that resubmits lost renders sends
-it again elsewhere. The grace period does not need to cover a render.
+being answered, and every finished render's MP4 has been downloaded once in
+full (the whole response written while the connection stayed open; a client
+that disconnects mid-download does not count): right away when that is already
+so, else as soon as it is. Jobs and their MP4s live only in this process, so a
+caller that fetches the output after polling for it (the app's durable export
+queue) gets a render that finished during the grace period. An MP4 nobody
+fetches keeps the process up until the grace period ends, or until the job
+expires (`RENDER_JOB_TTL_MS`). Nothing extends that period: a render still
+running when it ends is killed with the process, so a caller that resubmits
+lost renders sends it again elsewhere.
+
+Give the platform's termination grace period (Kubernetes
+`terminationGracePeriodSeconds`, Compose `stop_grace_period`) room for the
+longest render (`RENDER_JOB_DEADLINE_MS`, 45 minutes by default), one poll
+interval of the durable queue (5 s) and the MP4 download: with the defaults,
+`terminationGracePeriodSeconds: 2760` (46 minutes). A shorter period is still
+correct, only wasteful: a render it cuts off is rendered again.
+
+Known limitations of the exit condition:
+
+- One complete download counts for the job. If two downloads of the same job
+  run at once, the process can exit when the first completes and cut the
+  other off.
+- A download counts once its response is written. If the caller then fails to
+  store the MP4 (for the durable queue, a failed database or object-store
+  write after a complete fetch), its retry finds the process gone and the job
+  is rendered again.
 
 Previews have their own execution budget, defaulting to one concurrent preview,
 independent of the video render queue. Once a preview has passed its body and
