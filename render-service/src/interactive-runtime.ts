@@ -1,6 +1,7 @@
 import { setTimeout } from 'node:timers/promises';
 import type { Action } from '@openmaic/dsl';
-import type { Frame, Page } from 'puppeteer-core';
+import type { Frame, HTTPRequest, Page } from 'puppeteer-core';
+import type { HostedInteractiveLibraries } from './hosted-interactive-libraries.js';
 
 export const INTERACTIVE_RUNTIME_DEADLINE_MS = 5_000;
 const OBSERVATION_MS = 75;
@@ -36,12 +37,15 @@ type RuntimeErrorSource =
 
 export type InteractiveRuntimeError = RuntimeErrorSource & { message: string };
 
-export function collectInteractiveRuntimeErrors(page: Page) {
+export function collectInteractiveRuntimeErrors(
+  page: Page,
+  libraries?: HostedInteractiveLibraries,
+) {
   const errors: InteractiveRuntimeError[] = [];
   const seen = new Set<string>();
   let source: RuntimeErrorSource = { phase: 'load' };
   // Chromium emits pageerror for uncaught exceptions and unhandled rejections,
-  // including primitive reasons. Console logging and resource errors are separate.
+  // including primitive reasons. Hosted resource failures arrive separately.
   const onError = (error: unknown) => {
     if (errors.length >= MAX_ERRORS) return;
     const description = error instanceof Error ? error.toString() : String(error);
@@ -61,14 +65,22 @@ export function collectInteractiveRuntimeErrors(page: Page) {
     seen.add(key);
     errors.push({ ...source, message });
   };
+  const onRequestFailed = (request: HTTPRequest) => {
+    const asset = libraries?.match(request.url());
+    if (asset) onError(`Failed to load interactive library: ${asset.library}/${asset.file}`);
+  };
   page.on('pageerror', onError);
+  if (libraries) page.on('requestfailed', onRequestFailed);
 
   return {
     errors,
     beginAction(actionIndex: number, actionType: WidgetMessage['type']) {
       source = { phase: 'action', actionIndex, actionType };
     },
-    dispose: () => page.off('pageerror', onError),
+    dispose() {
+      page.off('pageerror', onError);
+      if (libraries) page.off('requestfailed', onRequestFailed);
+    },
   };
 }
 

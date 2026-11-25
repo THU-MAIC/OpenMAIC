@@ -1837,37 +1837,48 @@
     },
     "tokenPlan": {
       "nav": "Plan de tokens",
-      "title": "Configuración del plan de tokens",
-      "desc": "Elige tu proveedor de plan de tokens e ingresa la clave — se autoconfigura cada modalidad adaptada (LLM/imagen/video/voz/búsqueda web/obtención de páginas web).",
       "selectPlan": "Seleccionar proveedor",
-      "region": "Región",
-      "regionHintDomestic": "Para cuentas del sitio de China continental",
-      "regionHintInternational": "Para cuentas del sitio internacional",
+      "region": "Sitio",
+      "regionHintDomestic": "Planes para cuentas del sitio de China continental.",
+      "regionHintInternational": "Planes para cuentas del sitio internacional.",
       "apiKey": "Clave API",
       "updateKey": "Actualizar clave",
       "modelsCount": "{{n}} modelos",
-      "capabilities": "Capacidades ofrecidas",
       "offeredNote": "Modelos que ofrece este plan. Elige los que quieras en la barra de generación — la disponibilidad depende del nivel de tu plan, y los modelos no compatibles darán error al momento de generar.",
+      "quotaTitle": "Cuota del plan",
+      "quotaRemaining": "{{percent}}% restante",
+      "quotaCalls": "{{used}} / {{total}} llamadas usadas",
+      "quotaUnlimited": "Ilimitado",
+      "quotaExhausted": "Agotado",
+      "quotaUnknown": "Restante desconocido",
+      "quotaResetsAt": "Se renueva {{time}}",
+      "quotaResetUnknown": "Hora de renovación no disponible",
+      "quotaNoReset": "Pago por uso: sin periodo de renovación.",
+      "deploymentUsage": "Uso de la implementación",
+      "deploymentUsageNote": "Llamadas del servidor en todos los espacios de trabajo",
       "statusConnected": "Conectado",
       "applyModelsNote": "Al conectar, se aplican a las etapas del curso los modelos recomendados de este plan; si eso reemplaza lo que una etapa usa ahora (un modelo que elegiste o el predeterminado del servidor), se te pregunta antes.",
-      "saveKey": "Guardar y activar",
+      "saveKey": "Conectar plan",
       "cancelKeyUpdate": "Cancelar actualización",
-      "manageAccount": "Gestionar cuenta",
       "disconnect": "Desconectar",
       "disconnectTitle": "¿Desconectar este plan?",
       "disconnectBody": "Al desconectar, este plan ya no se usará para nuevas solicitudes. No se cancela tu suscripción con el proveedor.",
       "statusNotConnected": "No conectado",
-      "balanceManagement": "Gestionar saldo",
-      "modelPlan": "Ver el plan de modelos",
       "planNoteEntitlement": "Las capacidades y precios del plan los define el proveedor.",
       "planUnavailable": "Modelo no revelado",
       "planNoteEditable": "Esta es la configuración predeterminada; el modelo de cada nodo se puede cambiar en la configuración de modelos del curso.",
       "capImage": "Generación de imágenes",
+      "capImageShort": "Imagen",
       "capLlm": "Generación de texto",
+      "capLlmShort": "Chat LLM",
       "capTts": "Síntesis de voz",
+      "capTtsShort": "Voz",
       "capVideo": "Generación de video",
+      "capVideoShort": "Video",
       "capWebSearch": "Búsqueda web",
+      "capWebSearchShort": "Búsqueda web",
       "capWebFetch": "Obtener páginas web",
+      "capWebFetchShort": "Lectura web",
       "capAsr": "Reconocimiento de voz",
       "capDocument": "Análisis de documentos",
       "saved": "Ajustes de conexión guardados",
@@ -1876,7 +1887,66 @@
       "applyTitle": "¿Usar la configuración recomendada de este plan?",
       "applyBody": "{{name}} recomienda sus propios modelos para estas etapas. Usarlos reemplaza lo que cada una usa ahora, incluidos los predeterminados del servidor:",
       "applyKeep": "Mantener mi configuración",
-      "applyRecommended": "Usar la configuración recomendada"
+      "applyRecommended": "Usar la configuración recomendada",
+      "subtitle": "Una clave de suscripción configura automáticamente todas las capacidades compatibles.",
+      "connectedCount": "Conectados ({{n}})",
+      "availableCount": "Disponibles ({{n}})",
+      "priorityOrder": "Orden de prioridad",
+      "priorityNote": "Los planes con mayor prioridad atienden primero las capacidades compartidas.",
+      "setUp": "Configurar",
+      "regionGlobal": "Global",
+      "payAsYouGo": "Pago por uso",
+      "keyLabel": "Clave",
+      "priority": "Prioridad #{{n}}",
+      "connectHint": "Pega la clave de {{name}} para configurar sus capacidades.",
+      "consoleLink": "Consola de {{name}}",
+      "portalLink": "Portal de {{name}}",
+      "platformLink": "Plataforma de {{name}}",
+      "more": "Más",
+      "subscribeOn": "Suscribirse ({{site}})",
+      "connectTitle": "Conectar {{name}}",
+      "missingCapability": "Fuera del nivel: {{name}}",
+      "missingCapabilityShort": "Sin {{name}}",
+      "listSeparator": ", ",
+      "deploymentConnection": "conexión de la implementación",
+      "workspaceConnection": "conexión del espacio de trabajo",
+      "quotaNa": "Cuota no disponible",
+      "quotaLeft": "restante",
+      "quotaUpdatedAt": "Actualizado {{time}}",
+      "windowHours": "Ventana de {{n}} h",
+      "windowWeek": "Ventana semanal",
+      "windowMonth": "Este mes",
+      "balanceTitle": "Saldo de la cuenta",
+      "balanceOf": "Saldo en {{currency}}",
+      "openPlatform": "Abrir plataforma",
+      "checkBalance": "Ver saldo",
+      "quotaUnavailableTitle": "La cuota de {{name}} no se puede consultar aquí",
+      "quotaUnavailableBody": "Consulta lo que queda en el sitio de {{name}}.",
+      "capsTitle": "Capacidades en OpenMAIC",
+      "capsTitlePreview": "Lo que habilita conectar este plan",
+      "capsCount": "{{serving}} activas · {{included}} de {{total}} incluidas",
+      "capsCountPreview": "{{included}} de {{total}} incluidas",
+      "capActive": "Activa",
+      "capIncluded": "Incluida",
+      "capNotInTier": "Fuera del nivel",
+      "capUnavailable": "No disponible",
+      "capNotOffered": "No ofrecida",
+      "capViaPlan": "A través de {{name}}",
+      "searchBy": "Búsqueda de {{name}}",
+      "notInTierReason": "No incluida en tu nivel actual de {{name}}",
+      "unavailableReason": "No disponible en esta conexión",
+      "notOfferedBy": "{{name}} no la ofrece",
+      "routeDefault": "Predeterminado · {{target}}",
+      "routeOther": "Incluida · Atendida por {{target}}",
+      "routeHandledBy": "No ofrecida · A cargo de {{target}}",
+      "routeOff": "Desactivada",
+      "routeUnset": "Sin predeterminado",
+      "routeInvalid": "Configuración predeterminada no válida",
+      "stageRoutes": "(+{{n}} etapas)",
+      "moreModels": "+{{n}} más",
+      "alsoProvides": "La misma clave también ofrece {{list}}.",
+      "modelsRouting": "Modelos y enrutamiento predeterminado",
+      "viewStats": "Ver estadísticas"
     },
     "skills": {
       "nav": "Skills",
@@ -3093,7 +3163,7 @@
       "currentMilestone": "Etapa actual",
       "milestoneGoal": "Objetivo:",
       "milestoneResult": "Resultado:",
-      "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
+      "completionHandoff": "This step is complete.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -3454,6 +3524,111 @@
         }
       },
       "close": "Cerrar guía"
+    },
+    "resetProgress": "Reset progress",
+    "resetProgressConfirm": "Resetting takes this project back to before you started: the conversation, step progress, whiteboard and your code changes all start over. Reset now?",
+    "personas": {
+      "mentor": "Mo",
+      "discussion": "Quinn",
+      "planner": "Ray",
+      "coder": "Cody"
+    },
+    "board": {
+      "previous": "Previous board",
+      "next": "Next board",
+      "current": "Now",
+      "ops": {
+        "text": "Text",
+        "table": "Table",
+        "code": "Code",
+        "shape": "Shape",
+        "line": "Line",
+        "latex": "Formula",
+        "chart": "Chart",
+        "edit": "Code edit",
+        "delete": "Erase",
+        "clear": "Clear",
+        "read": "Read",
+        "point": "señaló código",
+        "open": "open",
+        "close": "close"
+      },
+      "speed": "Velocidad {{speed}}x, clic para cambiar",
+      "collapse": "Minimise",
+      "dock": "Open full conversation",
+      "float": "Shrink to companion"
+    },
+    "tour": {
+      "done": "Let's go",
+      "welcome": {
+        "title": "Welcome to your project workbench",
+        "body": "In this lesson you build something real with your own hands. Take half a minute to meet what is here, then it is you and your companion."
+      },
+      "preview": {
+        "title": "This is your work, and it runs",
+        "body": "Not a screenshot: the program is live. Click around or send it a line whenever you like, to see what it can do now and what is still missing."
+      },
+      "companion": {
+        "title": "The companion who works with you",
+        "body": "A companion is with you at every step. What it says appears here one sentence at a time, and is read aloud. Click the bubble to pause while it speaks; click its avatar to see the whole conversation."
+      },
+      "progress": {
+        "title": "The ring is your progress",
+        "body": "The ring around the face has one segment per stage. Hover a segment to see what that step is; click it to open the current task."
+      },
+      "controls": {
+        "title": "The buttons beside it",
+        "body": "Move the pointer over the avatar and two buttons open beside it: change the reading speed, or turn the voice off. When it is your turn, an input appears under the bubble where you can type, or tap the mic to speak."
+      },
+      "layout": {
+        "title": "The whiteboard and code show up by themselves",
+        "body": "When something needs drawing the whiteboard appears; when it is about your code the file opens. These three buttons open and close them yourself, or dock the conversation on the right."
+      },
+      "start": {
+        "title": "Start when you are ready",
+        "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
+      },
+      "conversationPane": {
+        "title": "Tu conversación",
+        "body": "Aquí puedes leer las explicaciones, preguntas y comentarios de tu acompañante, así como los mensajes anteriores."
+      },
+      "learningPath": {
+        "title": "Tu ruta de aprendizaje",
+        "body": "Aquí se muestran el hito y el paso actuales. Abre la ruta para ver las etapas del proyecto."
+      },
+      "reply": {
+        "title": "Responde a tu acompañante",
+        "body": "Cuando te toque, escribe y envía tu respuesta aquí."
+      },
+      "collapsePane": {
+        "title": "Volver al avatar",
+        "body": "Contrae este panel para volver al avatar y su burbuja. Junto al avatar puedes cambiar la velocidad de lectura o silenciar la voz."
+      },
+      "replay": {
+        "title": "Volver a la guía",
+        "body": "Puedes abrir la guía aquí cuando quieras repasar estos pasos."
+      },
+      "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
+    },
+    "cast": {
+      "title": "The companions on this project",
+      "hint": "All four are waiting for you at the workbench.",
+      "discussion": {
+        "part": "Explaining and deciding",
+        "line": "I start with you: we look at the problem until it is clear, then decide what to do."
+      },
+      "planner": {
+        "part": "Planning",
+        "line": "Once the direction is set, I turn it into a step-by-step plan for you to look over."
+      },
+      "coder": {
+        "part": "Coding",
+        "line": "When you approve the plan I write the code, and tell you about every change."
+      },
+      "mentor": {
+        "part": "Testing and looking back",
+        "line": "At the end we test it together and look back at what you really learned."
+      }
     }
   },
   "mobileClassroom": {

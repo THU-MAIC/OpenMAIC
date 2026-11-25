@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Group, Panel, Separator, usePanelRef } from 'react-resizable-panels';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { FloatingWindow } from '@/components/ui/floating-window';
+import { CONVERSATION_MIN_HEIGHT, initialConversationWindow } from './companion-placement';
 
 export function WorkbenchSplit({
   workspace,
@@ -13,6 +15,8 @@ export function WorkbenchSplit({
   onCollapseAssistant,
   showWorkspace = true,
   showAssistant = true,
+  assistantWindow = false,
+  overlay,
 }: {
   workspace: ReactNode;
   assistant: ReactNode;
@@ -23,7 +27,14 @@ export function WorkbenchSplit({
   onCollapseAssistant?: () => void;
   showWorkspace?: boolean;
   showAssistant?: boolean;
+  /** Show the assistant as a movable window over the work area instead of a docked panel. */
+  assistantWindow?: boolean;
+  /** Floating layers over the whole workbench: the explanation board, the companion. */
+  overlay?: ReactNode;
 }) {
+  const assistantInPanel = showAssistant && !assistantWindow;
+  const assistantInWindow = showAssistant && assistantWindow;
+  showAssistant = assistantInPanel;
   const hasApplication = !!application;
   const appVisible = hasApplication && showApplication;
   const workAreaVisible = showWorkspace || appVisible;
@@ -71,7 +82,11 @@ export function WorkbenchSplit({
   }, [appVisible]);
   const separator = compact ? 'h-1 bg-border hover:bg-primary' : 'w-1 bg-border hover:bg-primary';
   return (
-    <div ref={ref} className="min-h-0 flex-1 overflow-auto" data-testid="pbl-workbench-split">
+    <div
+      ref={ref}
+      className="relative min-h-0 flex-1 overflow-auto"
+      data-testid="pbl-workbench-split"
+    >
       <Group
         orientation={compact ? 'vertical' : 'horizontal'}
         style={{ height: stacked ? stackHeight : '100%', minHeight: stacked ? stackHeight : 0 }}
@@ -150,9 +165,24 @@ export function WorkbenchSplit({
           minSize={stacked ? '400px' : compact ? 0 : '20%'}
           className="h-full min-w-0"
         >
-          {assistant}
+          {!assistantInWindow && assistant}
         </Panel>
       </Group>
+      <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+        {overlay}
+        {assistantInWindow && (
+          <FloatingWindow
+            testId="pbl-assistant-window"
+            minWidth={340}
+            minHeight={CONVERSATION_MIN_HEIGHT}
+            initial={initialConversationWindow}
+            followBoundsUntilMoved
+            className="z-[35] overflow-hidden rounded-2xl border bg-background shadow-2xl"
+          >
+            {assistant}
+          </FloatingWindow>
+        )}
+      </div>
     </div>
   );
 }

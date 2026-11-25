@@ -2,10 +2,9 @@ import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { resolveRenderServiceUrl } from '@/lib/server/render-service';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { abortable } from './abortable';
-import { prepareInteractiveScenePreview } from './scene-preview-content';
 
 // The render service allows 5 seconds for parsing, slot wait, and Chromium work.
-// Leave time for scene preparation, the HTTP round trip, and browser cleanup.
+// Leave time for the HTTP round trip and browser cleanup.
 const CHECK_TIMEOUT_MS = 6_000;
 const MAX_REPORTED_ERRORS = 4;
 const MAX_REPORTED_CHARS = 180;
@@ -30,14 +29,13 @@ export function createInteractiveRuntimeClient(
   if ('error' in service) return undefined;
 
   return async (scene, stage, signal) => {
-    const prepared = await prepareInteractiveScenePreview(scene, { signal });
-    if (!prepared.ok) throw new Error(prepared.reason);
+    signal.throwIfAborted();
     const response = await proxyFetch(`${service.url}/interactive-runtime-check`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-openmaic-client': ownerId },
       body: JSON.stringify({
         version: 1,
-        scene: prepared.scene,
+        scene,
         stage: { id: stage.id, name: stage.name },
         viewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
       }),

@@ -1,35 +1,32 @@
 'use client';
 
-// The "Token Plan" section: a two-column panel with a service tablist on the
-// left (logo, display-name mapping, status row, keyboard navigation) and a
-// one-line header on the right (status / update key / manage-account link / ⋯
-// menu disconnect). A plan is a provider of the workspace's model settings on
-// the server: saving its key adds that provider (or replaces its key) and
-// applies the plan's recommended configuration to the slots. When that would
-// replace models the workspace picked, the user is asked first: the plan's
-// setup, or keep theirs and fill only the empty slots. Disconnecting removes
-// the provider. A plan the server configures is shown as connected, read-only.
+// The "Token Plan" section. On the left, the region's plans: the connected
+// ones in priority order, each with what is left of its quota (or its
+// balance) and a warning when its tier lacks a capability, then the ones not
+// connected. On the right, the selected plan: its account (key, priority,
+// vendor console), its quota as meters with reset times, what it gives the
+// workspace as one card per capability, and its models and default routing
+// folded away. A plan is a provider of the workspace's model settings on the
+// server: saving its key adds that provider (or replaces its key) and applies
+// the plan's recommended configuration to the slots. When that would replace
+// models the workspace picked, the user is asked first: the plan's setup, or
+// keep theirs and fill only the empty slots. Disconnecting removes the
+// provider. A plan the server configures is shown as connected, read-only.
 
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Eye,
-  EyeOff,
-  Check,
   ChevronDown,
   ExternalLink,
+  Eye,
+  EyeOff,
+  Globe,
+  KeyRound,
+  Layers,
   MoreHorizontal,
   Unlink,
-  MessageSquare,
-  Image as ImageIcon,
-  Video,
-  Volume2,
-  Mic,
-  FileText,
-  Search,
-  Globe,
-  type LucideIcon,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -59,7 +56,12 @@ import {
   type TokenPlanRegion,
 } from '@/lib/config/token-plan-presets';
 import { tokenPlanPresetId } from '@/lib/config/preset-ids';
-import type { ApplyChange, ModelSettingsView, PresetView } from '@/lib/model-settings/client';
+import type {
+  ApplyChange,
+  ModelSettingsView,
+  PresetView,
+  ProviderView,
+} from '@/lib/model-settings/client';
 import { modelName, providerLabel, splitRef } from '@/lib/model-settings/edit';
 import { planProvider } from '@/lib/model-settings/services';
 import { tokenPlanListed } from '@/lib/model-settings/shape';
@@ -76,28 +78,8 @@ import {
   ServerOnlyNotice,
 } from './server-settings';
 import { MS, slotName } from './models/slot-meta';
-
-const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
-  llm: 'settings.providers',
-  image: 'settings.imageSettings',
-  video: 'settings.videoSettings',
-  tts: 'settings.ttsSettings',
-  asr: 'settings.asrSettings',
-  document: 'settings.pdfSettings',
-  webSearch: 'settings.webSearchSettings',
-  webFetch: 'settings.webFetchSettings',
-};
-
-const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
-  llm: MessageSquare,
-  image: ImageIcon,
-  video: Video,
-  tts: Volume2,
-  asr: Mic,
-  document: FileText,
-  webSearch: Search,
-  webFetch: Globe,
-};
+import { CARD_CAPABILITIES, PlanCapabilities, planModels } from './plan-capabilities';
+import { isBalanceOnly, PlanQuotaCard, QuotaSummary, usePlanQuotas } from './plan-quota';
 
 const REGIONS: readonly TokenPlanRegion[] = ['domestic', 'international'];
 
@@ -119,7 +101,7 @@ function portalCreditsUrl(base: string): string {
   }
 }
 
-/** 「查看模型方案」行：能力（· 环节）→ 套餐默认模型；无模型概念的模态不披露。 */
+/** Models & default routing rows: capability (· stage) → the plan's default model. */
 interface ModelPlanItem {
   capability: TokenPlanModality;
   stageId?: string;
@@ -142,9 +124,24 @@ const MODEL_PLAN_CAPABILITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webFetch: 'settings.tokenPlan.capWebFetch',
 };
 
-function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
+/** The slot capability a modality's provider serves. */
+const MODALITY_CAPABILITY = {
+  llm: 'chat',
+  image: 'image',
+  video: 'video',
+  tts: 'tts',
+  asr: 'asr',
+  document: 'document',
+  webSearch: 'webSearch',
+  webFetch: 'webFetch',
+} as const satisfies Record<TokenPlanModality, string>;
+
+function modelPlanItems(
+  preset: TokenPlanPreset,
+  offered: (m: TokenPlanModality) => boolean,
+): ModelPlanItem[] {
   const items: ModelPlanItem[] = [];
-  const llm = preset.modalities.llm;
+  const llm = offered('llm') ? preset.modalities.llm : undefined;
   if (llm) {
     items.push({ capability: 'llm', model: llm.defaultModelId ?? llm.defaultModels?.[0] });
     for (const [stageId, model] of Object.entries(llm.stageRoutes ?? {})) {
@@ -152,7 +149,7 @@ function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
     }
   }
   for (const capability of ['image', 'video', 'tts'] as const) {
-    const target = preset.modalities[capability];
+    const target = offered(capability) ? preset.modalities[capability] : undefined;
     if (target) {
       items.push({
         capability,
@@ -162,19 +159,21 @@ function modelPlanItems(preset: TokenPlanPreset): ModelPlanItem[] {
   }
   // Modalities with no model concept (e.g. web search) do not disclose a model.
   for (const capability of ['asr', 'document', 'webSearch', 'webFetch'] as const) {
-    if (preset.modalities[capability]) items.push({ capability });
+    if (preset.modalities[capability] && offered(capability)) items.push({ capability });
   }
   return items;
 }
 
 /** Service logo container: TokenDance uses a filled black background, others white with size-6. */
-function PresetLogo({ preset }: { preset: TokenPlanPreset }) {
-  if (!preset.icon) return <span className="size-8 shrink-0 rounded-lg bg-muted" />;
+function PresetLogo({ preset, size = 'md' }: { preset: TokenPlanPreset; size?: 'md' | 'lg' }) {
+  const box = size === 'lg' ? 'size-10' : 'size-8';
+  if (!preset.icon) return <span className={cn(box, 'shrink-0 rounded-lg bg-muted')} />;
   return (
     <span
       className={cn(
-        'flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg',
-        preset.id === 'tokendance' ? 'bg-black' : 'bg-background',
+        box,
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-lg border',
+        preset.id === 'tokendance' ? 'border-transparent bg-black' : 'bg-background',
       )}
     >
       {}
@@ -187,23 +186,20 @@ function PresetLogo({ preset }: { preset: TokenPlanPreset }) {
   );
 }
 
-/** The models a preset declares for one modality (display-only, no probing). */
-function modalityModels(preset: TokenPlanPreset, m: TokenPlanModality): string[] {
-  const target = preset.modalities[m];
-  if (!target) return [];
-  if (target.defaultModels?.length) return target.defaultModels;
-  if (target.defaultModelId) return [target.defaultModelId];
-  return [target.providerId];
-}
+const pill = 'inline-flex items-center rounded-full border px-1.5 py-0.5 text-[11px] font-medium';
 
 export function TokenPlanSettings({
   view,
   apply,
+  regionSlot,
 }: {
   view: ModelSettingsView;
   apply: ApplyChange;
+  /** Where the dialog's header hosts the region switch; without one the panel shows it. */
+  regionSlot?: HTMLElement | null;
 }) {
   const { t, locale } = useI18n();
+  const tp = 'settings.tokenPlan';
 
   // The page opens on the side matching the interface language; mainland
   // plans are for the Simplified Chinese interface.
@@ -211,15 +207,26 @@ export function TokenPlanSettings({
     locale === 'zh-CN' ? 'domestic' : 'international',
   );
 
+  /** The plan's preset as the server offers it to the workspace (absent: the workspace cannot add it). */
+  const presetOf = (preset: TokenPlanPreset) =>
+    view.presets.find((entry) => entry.id === tokenPlanPresetId(preset.id));
+  /** The plan's provider in the settings: connected when there is one. */
+  const providerOf = (preset: TokenPlanPreset) => planProvider(view, tokenPlanPresetId(preset.id));
+
   // A region's plans connecting can still change something with, and the
   // ones already connected (to manage or disconnect); see tokenPlanListed.
-  const plansIn = (side: TokenPlanRegion) =>
-    TOKEN_PLAN_PRESETS.filter((plan) => {
+  // Connected plans come first, in priority order (the preset order).
+  const plansIn = (side: TokenPlanRegion) => {
+    const listed = TOKEN_PLAN_PRESETS.filter((plan) => {
       if (!tokenPlanInRegion(plan, side)) return false;
-      const preset = view.presets.find((entry) => entry.id === tokenPlanPresetId(plan.id));
+      const preset = presetOf(plan);
       return !!preset && tokenPlanListed(view, preset);
     });
-  const plans = plansIn(region);
+    const connected = listed.filter((plan) => !!providerOf(plan));
+    return { connected, available: listed.filter((plan) => !providerOf(plan)) };
+  };
+  const { connected, available } = plansIn(region);
+  const plans = [...connected, ...available];
   const [selectedId, setSelectedId] = useState<string>(plans[0]?.id ?? '');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -232,25 +239,48 @@ export function TokenPlanSettings({
     key: string;
     conflicts: PlanConflict[];
   } | null>(null);
-  const [activeTab, setActiveTab] = useState<TokenPlanModality>('llm');
   const tabRefs = useRef(new Map<string, HTMLButtonElement>());
 
   const selected = plans.find((p) => p.id === selectedId) ?? plans[0] ?? null;
 
-  /** The plan's preset as the server offers it to the workspace (absent: the workspace cannot add it). */
-  const presetOf = (preset: TokenPlanPreset) =>
-    view.presets.find((entry) => entry.id === tokenPlanPresetId(preset.id));
-  /** The plan's provider in the workspace's settings: connected when there is one. */
-  const providerOf = (preset: TokenPlanPreset) => planProvider(view, tokenPlanPresetId(preset.id));
-  const isPresetEnabled = (preset: TokenPlanPreset): boolean => !!providerOf(preset);
+  // The quota of each connected plan with a key of the workspace's own (the
+  // deployment's are not the workspace's to ask about).
+  const quotaIds = connected
+    .map(providerOf)
+    .filter(
+      (provider): provider is ProviderView =>
+        provider?.source === 'workspace' && !!provider.key?.set,
+    )
+    .map((provider) => provider.id);
+  const quotas = usePlanQuotas(quotaIds);
 
-  // The modalities a preset declares, in display order — drives the tab bar.
-  const presetModalities = (preset: TokenPlanPreset): TokenPlanModality[] =>
-    MODALITY_ORDER.filter((m) => preset.modalities[m]);
+  /** A connected plan's priority among the region's connected plans. */
+  const rankOf = (plan: TokenPlanPreset) => connected.indexOf(plan) + 1;
+
+  /** How a card names a service: a connected plan (with its rank, unless not wanted), else its provider. */
+  const serviceName = (providerId: string, withRank = true): string => {
+    const provider = view.providers.find((entry) => entry.id === providerId);
+    const plan = provider
+      ? TOKEN_PLAN_PRESETS.find((entry) => tokenPlanPresetId(entry.id) === provider.preset)
+      : undefined;
+    if (!plan) return providerLabel(view, providerId, t);
+    const rank = withRank && connected.includes(plan) ? ` (#${rankOf(plan)})` : '';
+    // Another connection of the plan shown: say whose it is.
+    const whose =
+      selected && plan.id === selected.id && provider
+        ? ` · ${t(provider.source === 'deployment' ? `${tp}.deploymentConnection` : `${tp}.workspaceConnection`)}`
+        : '';
+    return `${presetDisplayName(plan)}${rank}${whose}`;
+  };
+
+  /** The capabilities a connected plan's account lacks. */
+  const missingCards = (provider: ProviderView | undefined) =>
+    CARD_CAPABILITIES.filter(({ capability }) =>
+      provider?.unsupportedCapabilities?.includes(capability),
+    );
 
   const selectPreset = (preset: TokenPlanPreset) => {
     setSelectedId(preset.id);
-    setActiveTab(presetModalities(preset)[0] ?? 'llm');
     setApiKey('');
     setEditingKey(false);
     setDisconnectOpen(false);
@@ -260,8 +290,9 @@ export function TokenPlanSettings({
   const selectRegion = (side: TokenPlanRegion) => {
     if (side === region) return;
     setRegion(side);
-    const first = plansIn(side)[0];
-    if (first) selectPreset(first);
+    const { connected: first, available: rest } = plansIn(side);
+    const next = first[0] ?? rest[0];
+    if (next) selectPreset(next);
   };
 
   // Disconnect = remove the plan's provider; the stages that used it follow
@@ -292,6 +323,8 @@ export function TokenPlanSettings({
       if (result.status === 'partial' && result.message) {
         toast.warning(applyErrorText({ reason: result.reason ?? '', message: result.message }, t));
       }
+      // The key was saved: the quota shown must be the new key's.
+      if (quotaIds.includes(result.providerId)) quotas.refresh(result.providerId, true);
       setApiKey('');
       setEditingKey(false);
       toast.success(t('settings.tokenPlan.saved'));
@@ -340,391 +373,464 @@ export function TokenPlanSettings({
     return `${model} · ${provider}`;
   };
 
-  const tp = 'settings.tokenPlan';
+  const planRow = (preset: TokenPlanPreset, index: number) => {
+    const provider = providerOf(preset);
+    const active = selected?.id === preset.id;
+    const missing = missingCards(provider);
+    const join = (labels: string[]) => labels.join(t(`${tp}.listSeparator`));
+    return (
+      <button
+        type="button"
+        role="tab"
+        key={preset.id}
+        aria-selected={active}
+        tabIndex={active ? 0 : -1}
+        ref={(node) => {
+          if (node) tabRefs.current.set(preset.id, node);
+          else tabRefs.current.delete(preset.id);
+        }}
+        onClick={() => selectPreset(preset)}
+        onKeyDown={(event) => {
+          const delta =
+            event.key === 'ArrowRight' || event.key === 'ArrowDown'
+              ? 1
+              : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                ? -1
+                : 0;
+          if (!delta && event.key !== 'Home' && event.key !== 'End') return;
+          event.preventDefault();
+          const next =
+            plans[
+              event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? plans.length - 1
+                  : (index + delta + plans.length) % plans.length
+            ];
+          selectPreset(next);
+          tabRefs.current.get(next.id)?.focus();
+        }}
+        className={cn(
+          'flex w-full min-w-0 items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring',
+          active ? 'border-border bg-background shadow-sm' : 'border-transparent hover:bg-muted/60',
+        )}
+      >
+        <PresetLogo preset={preset} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium leading-5">
+            {presetDisplayName(preset)}
+          </span>
+          {/* The tier lacking a capability is said in the status line, by its short name. */}
+          <span
+            className="flex min-w-0 items-center gap-1.5 text-[11px] leading-5 text-muted-foreground"
+            title={
+              missing.length > 0
+                ? t(`${tp}.missingCapability`, { name: join(missing.map(({ label }) => t(label))) })
+                : undefined
+            }
+          >
+            <span
+              className={cn(
+                'size-1.5 shrink-0 rounded-full',
+                !provider
+                  ? 'bg-muted-foreground/40'
+                  : missing.length > 0
+                    ? 'bg-amber-600'
+                    : 'bg-green-600',
+              )}
+              aria-hidden="true"
+            />
+            <span className="truncate">
+              {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
+              {missing.length > 0 &&
+                ` · ${t(`${tp}.missingCapabilityShort`, { name: join(missing.map(({ short }) => t(short))) })}`}
+            </span>
+          </span>
+        </span>
+        <span className="flex shrink-0 flex-col items-end text-xs leading-5">
+          {provider ? (
+            <>
+              <span className="rounded bg-muted px-1.5 text-[11px] leading-4 text-muted-foreground">
+                #{rankOf(preset)}
+              </span>
+              <span className="font-medium">
+                {provider.source === 'workspace' && provider.key?.set ? (
+                  <QuotaSummary entry={quotas.entries[provider.id]} />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </span>
+            </>
+          ) : (
+            <span className="text-muted-foreground">{t(`${tp}.setUp`)}</span>
+          )}
+        </span>
+      </button>
+    );
+  };
 
-  return (
-    <div className="flex max-w-4xl flex-col gap-6">
-      <div>
-        <h3 className="text-sm font-semibold mb-1">{t(`${tp}.title`)}</h3>
-        <p className="text-xs text-muted-foreground">{t(`${tp}.desc`)}</p>
+  const keyForm = (plan: TokenPlanPreset, updating: boolean) => (
+    <form
+      className="space-y-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void handleApply(apiKey);
+      }}
+    >
+      {/* Field and its commit share one row; the button never owns a line. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 basis-40">
+          <Input
+            type={showKey ? 'text' : 'password'}
+            autoComplete="new-password"
+            spellCheck={false}
+            aria-label={t(`${tp}.apiKey`)}
+            placeholder={plan.apiKeyPlaceholder ?? 'sk-...'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            className="h-9 bg-background pr-8"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey(!showKey)}
+            aria-label={t(`${tp}.apiKey`)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        <Button type="submit" size="sm" className="shrink-0" disabled={!apiKey.trim() || saving}>
+          {t(updating ? `${tp}.updateKey` : `${tp}.saveKey`)}
+        </Button>
       </div>
+      <p className="text-xs leading-5 text-muted-foreground">{t(`${tp}.applyModelsNote`)}</p>
+    </form>
+  );
 
-      {/* 1:2 比例分割：服务商列表不需要太宽，右侧密钥/能力详情是主体 */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-        <div className="flex min-w-0 flex-col gap-3">
-          {/* Region: filters the plan list below to the plans that region's accounts can use. */}
-          <div className="space-y-1.5">
-            <div
-              id="token-plan-region-label"
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-            >
-              <Globe className="size-3.5" aria-hidden="true" />
-              {t(`${tp}.region`)}
-            </div>
-            <div
-              className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
-              role="group"
-              aria-labelledby="token-plan-region-label"
-            >
-              {REGIONS.map((side) => (
-                <button
-                  key={side}
-                  type="button"
-                  aria-pressed={region === side}
-                  onClick={() => selectRegion(side)}
+  const linkButton =
+    'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border bg-background px-3 text-xs font-medium outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring';
+
+  const detail = (plan: TokenPlanPreset) => {
+    const provider = providerOf(plan);
+    // Only the workspace's own plan can have its key updated or be disconnected.
+    const own = provider?.source === 'workspace';
+    const canConnect = !provider && !!presetOf(plan);
+    const name = presetDisplayName(plan);
+    const offered = (m: TokenPlanModality) =>
+      !provider || !!provider.capabilities[MODALITY_CAPABILITY[m]];
+    const modalities = MODALITY_ORDER.filter((m) => plan.modalities[m] && offered(m));
+    const modelCount = modalities.reduce((sum, m) => sum + planModels(plan, m).length, 0);
+    const quota = provider ? quotas.entries[provider.id]?.quota : undefined;
+    const regionLabel = [
+      plan.region ? t(`settings.providerLinks.${plan.region}`) : t(`${tp}.regionGlobal`),
+      // The vendor reports a balance and no quota windows: billed as used.
+      ...(isBalanceOnly(quota) ? [t(`${tp}.payAsYouGo`)] : []),
+    ].join(' · ');
+    const accountUrl =
+      plan.id === 'tokendance' && plan.websiteUrl
+        ? portalCreditsUrl(plan.websiteUrl)
+        : plan.websiteUrl;
+    const hasMenu = own || !!plan.subscribeUrls;
+    return (
+      <>
+        {/* Account: identity, status and region; key, priority; vendor console and actions. */}
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4 @xl:flex-nowrap">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <PresetLogo preset={plan} size="lg" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1">
+                <h4 className="break-words text-base font-semibold leading-6">{name}</h4>
+                {plan.name !== name && (
+                  <span className="text-xs text-muted-foreground">{plan.name}</span>
+                )}
+                <span
                   className={cn(
-                    'flex-1 rounded-md py-1.5 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
-                    region === side
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground/80',
+                    pill,
+                    provider
+                      ? 'gap-1 border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-300'
+                      : 'border-transparent bg-muted text-muted-foreground',
                   )}
                 >
-                  {t(`settings.providerLinks.${side}`)}
-                </button>
-              ))}
+                  {provider && (
+                    <span className="size-1.5 rounded-full bg-green-600" aria-hidden="true" />
+                  )}
+                  {t(provider ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
+                </span>
+                <span className={cn(pill, 'border-transparent bg-muted text-muted-foreground')}>
+                  {regionLabel}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
+                {provider?.source === 'deployment' && (
+                  <span>{t('settings.serverConfig.planServer')}</span>
+                )}
+                {own && provider?.key?.mask && (
+                  <span>
+                    {t(`${tp}.keyLabel`)}{' '}
+                    <span className="rounded bg-muted px-1 font-mono">{provider.key.mask}</span>
+                  </span>
+                )}
+                {own && provider?.key?.mask && <span aria-hidden="true">·</span>}
+                {provider && <span>{t(`${tp}.priority`, { n: rankOf(plan) })}</span>}
+                {!provider && <span>{t(`${tp}.connectHint`, { name })}</span>}
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
+          </div>
+          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-1.5">
+            {own && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => {
+                  setEditingKey(!editingKey);
+                  setApiKey('');
+                }}
+              >
+                <KeyRound className="size-3.5" />
+                {t(editingKey ? `${tp}.cancelKeyUpdate` : `${tp}.updateKey`)}
+              </Button>
+            )}
+            {plan.websiteUrl && (
+              <a
+                href={plan.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={linkButton}
+              >
+                {t(
+                  plan.consoleKind === 'portal'
+                    ? `${tp}.portalLink`
+                    : plan.consoleKind === 'platform'
+                      ? `${tp}.platformLink`
+                      : `${tp}.consoleLink`,
+                  { name },
+                )}
+                <ExternalLink className="size-3" aria-hidden="true" />
+              </a>
+            )}
+            {hasMenu && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={t(`${tp}.more`)}
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {/* A plan with subscription pages per site (Kimi): both stay reachable. */}
+                  {plan.subscribeUrls &&
+                    (
+                      [
+                        ['domestic', plan.subscribeUrls.domestic],
+                        ['international', plan.subscribeUrls.international],
+                      ] as const
+                    ).map(([side, url]) => (
+                      <DropdownMenuItem key={side} asChild>
+                        <a href={url} target="_blank" rel="noopener noreferrer">
+                          <ExternalLink className="size-4" />
+                          {t(`${tp}.subscribeOn`, { site: t(`settings.providerLinks.${side}`) })}
+                        </a>
+                      </DropdownMenuItem>
+                    ))}
+                  {own && (
+                    <DropdownMenuItem onSelect={() => setDisconnectOpen(true)}>
+                      <Unlink className="size-4" />
+                      {t(`${tp}.disconnect`)}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </div>
+
+        {own && editingKey && (
+          <div className="rounded-xl border bg-muted/20 p-4">{keyForm(plan, true)}</div>
+        )}
+
+        {!provider && !canConnect && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
+        {canConnect && (
+          <section className="space-y-3 rounded-xl border bg-muted/20 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h5 className="text-sm font-medium">{t(`${tp}.connectTitle`, { name })}</h5>
+              <CredentialStorageHint />
+            </div>
+            {keyForm(plan, false)}
+          </section>
+        )}
+
+        {provider && own && provider.key?.set && (
+          <PlanQuotaCard
+            name={name}
+            entry={quotas.entries[provider.id]}
+            onRefresh={() => void quotas.refresh(provider.id)}
+            accountUrl={accountUrl}
+          />
+        )}
+
+        <PlanCapabilities
+          view={view}
+          plan={plan}
+          provider={provider}
+          name={name}
+          serviceName={serviceName}
+        />
+
+        {/* Models & default routing: the plan's default per capability and
+            stage, and the models it offers; changed on the generation bar and
+            in Course Model Config. */}
+        <details className="group rounded-xl border bg-muted/40">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="flex items-center gap-2">
+              <Layers className="size-4 text-muted-foreground" aria-hidden="true" />
+              {t(`${tp}.modelsRouting`)}
+              <span className="text-xs font-normal text-muted-foreground">
+                · {t(`${tp}.modelsCount`, { n: modelCount })}
+              </span>
+            </span>
+            <ChevronDown className="size-4 shrink-0 transition-transform motion-reduce:transition-none group-open:rotate-180" />
+          </summary>
+          <div className="space-y-4 border-t px-4 py-3">
+            <dl className="space-y-1.5 text-xs leading-5">
+              {modelPlanItems(plan, offered).map((item) => (
+                <div
+                  key={`${item.capability}:${item.stageId ?? ''}`}
+                  className="flex justify-between gap-4"
+                >
+                  <dt className="text-muted-foreground">
+                    {t(MODEL_PLAN_CAPABILITY_LABEL_KEYS[item.capability])}
+                    {item.stageId
+                      ? ` · ${
+                          MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId]
+                            ? t(MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId])
+                            : item.stageId
+                        }`
+                      : ''}
+                  </dt>
+                  <dd className="break-all text-right font-mono">
+                    {item.model ?? t(`${tp}.planUnavailable`)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {modalities
+                .filter((m) => planModels(plan, m).length > 0)
+                .map((m) => (
+                  <div key={m} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-medium">{t(MODEL_PLAN_CAPABILITY_LABEL_KEYS[m])}</span>
+                      <span className="text-muted-foreground">
+                        {t(`${tp}.modelsCount`, { n: planModels(plan, m).length })}
+                      </span>
+                    </div>
+                    <ul className="space-y-0.5">
+                      {planModels(plan, m).map((id) => (
+                        <li key={id} className="truncate font-mono text-xs text-muted-foreground">
+                          {id}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+            </div>
+            <div className="space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+              <p>{t(`${tp}.offeredNote`)}</p>
+              <p>{t(`${tp}.planNoteEntitlement`)}</p>
+              <p>{t(`${tp}.planNoteEditable`)}</p>
+            </div>
+          </div>
+        </details>
+      </>
+    );
+  };
+
+  // Each side lists the plans its accounts can use.
+  const regionSwitch = (
+    <div className="flex items-center justify-end gap-2">
+      <span
+        id="token-plan-region-label"
+        className="flex items-center gap-1 text-xs text-muted-foreground"
+      >
+        <Globe className="size-3.5" aria-hidden="true" />
+        <span className="max-lg:sr-only">{t(`${tp}.region`)}</span>
+      </span>
+      <div
+        className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5"
+        role="group"
+        aria-labelledby="token-plan-region-label"
+      >
+        {REGIONS.map((side) => (
+          <button
+            key={side}
+            type="button"
+            aria-pressed={region === side}
+            onClick={() => selectRegion(side)}
+            className={cn(
+              'rounded-md px-3 py-1 text-xs font-medium outline-none transition-all focus-visible:ring-2 focus-visible:ring-ring',
+              region === side
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground/80',
+            )}
+          >
+            {t(`settings.providerLinks.${side}`)}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* The region switch sits in the dialog's header when it hosts one. */}
+      {regionSlot ? createPortal(regionSwitch, regionSlot) : regionSwitch}
+
+      <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+        {/* Plans: connected in priority order, then the ones to set up. */}
+        <div
+          className="flex min-w-0 flex-col gap-4 rounded-xl bg-muted/30 p-1"
+          role="tablist"
+          aria-label={t(`${tp}.selectPlan`)}
+          aria-orientation="vertical"
+        >
+          {connected.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <span>{t(`${tp}.connectedCount`, { n: connected.length })}</span>
+                <span className="normal-case tracking-normal">{t(`${tp}.priorityOrder`)}</span>
+              </div>
+              {connected.map((plan) => planRow(plan, plans.indexOf(plan)))}
+            </div>
+          )}
+          {available.length > 0 && (
+            <div className="space-y-1">
+              <div className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t(`${tp}.availableCount`, { n: available.length })}
+              </div>
+              {available.map((plan) => planRow(plan, plans.indexOf(plan)))}
+            </div>
+          )}
+          <div className="mt-auto border-t px-2 pt-3 text-xs leading-snug text-muted-foreground">
+            <p>
               {t(
                 region === 'domestic'
                   ? `${tp}.regionHintDomestic`
                   : `${tp}.regionHintInternational`,
-              )}
+              )}{' '}
+              {t(`${tp}.priorityNote`)}
             </p>
-          </div>
-
-          {/* Service tablist (collapses to a 3-column grid on small screens) */}
-          <div
-            className="grid grid-cols-3 content-start gap-1 rounded-xl bg-muted/40 p-1 sm:grid-cols-1 sm:gap-1 sm:bg-transparent sm:p-0"
-            role="tablist"
-            aria-label={t(`${tp}.selectPlan`)}
-          >
-            {plans.map((preset, index) => {
-              const enabled = isPresetEnabled(preset);
-              const active = selected?.id === preset.id;
-              return (
-                <button
-                  type="button"
-                  role="tab"
-                  key={preset.id}
-                  aria-selected={active}
-                  tabIndex={active ? 0 : -1}
-                  ref={(node) => {
-                    if (node) tabRefs.current.set(preset.id, node);
-                    else tabRefs.current.delete(preset.id);
-                  }}
-                  onClick={() => selectPreset(preset)}
-                  onKeyDown={(event) => {
-                    const delta =
-                      event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                        ? 1
-                        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                          ? -1
-                          : 0;
-                    if (!delta && event.key !== 'Home' && event.key !== 'End') return;
-                    event.preventDefault();
-                    const next =
-                      plans[
-                        event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? plans.length - 1
-                            : (index + delta + plans.length) % plans.length
-                      ];
-                    selectPreset(next);
-                    tabRefs.current.get(next.id)?.focus();
-                  }}
-                  className={cn(
-                    'flex min-w-0 flex-col items-center gap-2 rounded-lg px-2 py-3 text-center outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:flex-row sm:gap-3 sm:px-3 sm:py-2 sm:text-left',
-                    active
-                      ? 'bg-background text-foreground shadow-sm sm:bg-accent/70 sm:shadow-none'
-                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
-                  )}
-                >
-                  <PresetLogo preset={preset} />
-                  <span className="min-w-0">
-                    <span className="block break-words text-sm font-medium leading-5">
-                      {presetDisplayName(preset)}
-                    </span>
-                    <span className="flex items-center justify-center gap-1 text-xs leading-5 text-muted-foreground sm:justify-start">
-                      {enabled && <Check className="size-3 shrink-0" />}
-                      {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
           </div>
         </div>
 
-        {/* 右列：服务详情（头部一行制 + 密钥表单 + 能力区块） */}
         {selected && (
-          <div
-            className="min-w-0 space-y-5 sm:border-l sm:border-border/60 sm:pl-6"
-            role="tabpanel"
-          >
-            {(() => {
-              const enabled = isPresetEnabled(selected);
-              const provider = providerOf(selected);
-              // Only the workspace's own plan can have its key updated or be disconnected.
-              const own = provider?.source === 'workspace';
-              const canConnect = !provider && !!presetOf(selected);
-              return (
-                <>
-                  {/* 头部一行：身份 + 状态 + 服务级动作（更新密钥 / 管理账号 / 更多） */}
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h4 className="break-words text-sm font-semibold leading-5">
-                        {presetDisplayName(selected)}
-                      </h4>
-                      <div className="flex flex-wrap items-center gap-x-2 text-xs leading-5 text-muted-foreground">
-                        <span>
-                          {t(enabled ? `${tp}.statusConnected` : `${tp}.statusNotConnected`)}
-                        </span>
-                        {provider?.source === 'deployment' && (
-                          <span>{t('settings.serverConfig.planServer')}</span>
-                        )}
-                        {own && provider?.key?.mask && (
-                          <span className="font-mono">{provider.key.mask}</span>
-                        )}
-                        {own && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingKey(!editingKey);
-                              setApiKey('');
-                            }}
-                            className="rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {t(editingKey ? `${tp}.cancelKeyUpdate` : `${tp}.updateKey`)}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
-                      {/* Balance management lives on the TokenDance portal
-                          (/credits); shown only when connected, styled like
-                          "Manage account". */}
-                      {selected.id === 'tokendance' && enabled && selected.websiteUrl && (
-                        <a
-                          href={portalCreditsUrl(selected.websiteUrl)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          {t(`${tp}.balanceManagement`)}
-                          <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-                        </a>
-                      )}
-                      {/* 有订阅入口（如 Kimi）的套餐：「管理账号」只是分组标签
-                          （纯文本），跳转交给后面的国内/海外链接；无订阅入口
-                          的套餐维持「管理账号」外链。 */}
-                      {selected.subscribeUrls ? (
-                        <span className="text-xs leading-5 text-muted-foreground">
-                          {t(`${tp}.manageAccount`)}
-                        </span>
-                      ) : (
-                        selected.websiteUrl && (
-                          <a
-                            href={selected.websiteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {t(`${tp}.manageAccount`)}
-                            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />{' '}
-                          </a>
-                        )
-                      )}
-                      {/* 订阅入口（如 Kimi Coding Plan）：紧跟「管理账号」，
-                          国内/海外双链接（aff 跟随 preset 数据）。 */}
-                      {selected.subscribeUrls &&
-                        (
-                          [
-                            ['domestic', selected.subscribeUrls.domestic],
-                            ['international', selected.subscribeUrls.international],
-                          ] as const
-                        ).map(([region, url]) => (
-                          <a
-                            key={region}
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            {t(`settings.providerLinks.${region}`)}
-                            <ExternalLink className="size-3 shrink-0" aria-hidden="true" />
-                          </a>
-                        ))}
-                      {own && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="size-8"
-                              aria-label={t(`${tp}.disconnect`)}
-                            >
-                              <MoreHorizontal className="size-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => setDisconnectOpen(true)}>
-                              <Unlink className="size-4" />
-                              {t(`${tp}.disconnect`)}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 密钥表单：未连接或更新密钥时显示；保存即连接 */}
-                  {!enabled && !canConnect && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
-                  {(canConnect || (own && editingKey)) && (
-                    <form
-                      className="space-y-2"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleApply(apiKey);
-                      }}
-                    >
-                      {/* Field and its commit share one row; the button never owns a line. */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="relative min-w-0 flex-1 basis-40">
-                          <Input
-                            type={showKey ? 'text' : 'password'}
-                            autoComplete="new-password"
-                            spellCheck={false}
-                            aria-label={t(`${tp}.apiKey`)}
-                            placeholder={selected.apiKeyPlaceholder ?? 'sk-...'}
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            className="h-8 pr-8"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowKey(!showKey)}
-                            aria-label={t(`${tp}.apiKey`)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                          >
-                            {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
-                        <Button
-                          type="submit"
-                          size="sm"
-                          className="ml-auto shrink-0"
-                          disabled={!apiKey.trim() || saving}
-                        >
-                          {t(editingKey ? `${tp}.updateKey` : `${tp}.saveKey`)}
-                        </Button>
-                      </div>
-                      <CredentialStorageHint />
-                      <p className="text-xs leading-5 text-muted-foreground">
-                        {t(`${tp}.applyModelsNote`)}
-                      </p>
-                    </form>
-                  )}
-
-                  {/* View model plan: a capability · stage → plan default model
-                      table; modalities with no model concept show "not disclosed". */}
-                  <details className="group border-t border-border/60 pt-4">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {t(`${tp}.modelPlan`)}
-                      <ChevronDown className="size-4 shrink-0 transition-transform motion-reduce:transition-none group-open:rotate-180" />
-                    </summary>
-                    <div className="mt-2 space-y-2 text-xs leading-5 text-muted-foreground">
-                      <p>{t(`${tp}.planNoteEntitlement`)}</p>
-                      <p>{t(`${tp}.planNoteEditable`)}</p>
-                    </div>
-                    <dl className="mt-2 space-y-2 text-xs leading-5">
-                      {modelPlanItems(selected).map((item) => (
-                        <div
-                          key={`${item.capability}:${item.stageId ?? ''}`}
-                          className="flex justify-between gap-4"
-                        >
-                          <dt className="text-muted-foreground">
-                            {t(MODEL_PLAN_CAPABILITY_LABEL_KEYS[item.capability])}
-                            {item.stageId
-                              ? ` · ${
-                                  MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId]
-                                    ? t(MODEL_PLAN_STAGE_LABEL_KEYS[item.stageId])
-                                    : item.stageId
-                                }`
-                              : ''}
-                          </dt>
-                          <dd className="break-all text-right font-mono">
-                            {item.model ?? t(`${tp}.planUnavailable`)}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </details>
-
-                  {/* Capabilities: a display-only tab list of the models the plan
-                      offers per modality. No status, no probing — selection and
-                      enable/disable happen on the generation bar. */}
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium">{t(`${tp}.capabilities`)}</div>
-
-                    {/* Tab bar (segmented control) */}
-                    <div className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5">
-                      {presetModalities(selected).map((m) => {
-                        const Icon = MODALITY_ICONS[m];
-                        const isActive = activeTab === m;
-                        return (
-                          <button
-                            key={m}
-                            onClick={() => setActiveTab(m)}
-                            className={cn(
-                              'relative flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all',
-                              isActive
-                                ? 'bg-background text-foreground shadow-sm'
-                                : 'text-muted-foreground hover:text-foreground/80',
-                            )}
-                          >
-                            <Icon className="size-3.5" />
-                            <span className="hidden truncate sm:inline">
-                              {t(MODALITY_LABEL_KEYS[m])}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Tab content: static model list for the active modality */}
-                    {(() => {
-                      const models = modalityModels(selected, activeTab);
-                      return (
-                        <div className="space-y-2 rounded-md border p-3">
-                          <div className="flex items-center justify-between gap-3 text-xs">
-                            <span className="font-medium">{t(MODALITY_LABEL_KEYS[activeTab])}</span>
-                            <span className="text-muted-foreground">
-                              {t(`${tp}.modelsCount`, { n: models.length })}
-                            </span>
-                          </div>
-                          <ul className="space-y-1">
-                            {models.map((id) => (
-                              <li
-                                key={id}
-                                className="flex items-center gap-2 text-xs text-muted-foreground"
-                              >
-                                <span className="size-1 shrink-0 rounded-full bg-muted-foreground/40" />
-                                <span className="truncate font-mono">{id}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      );
-                    })()}
-
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
-                      {t(`${tp}.offeredNote`)}
-                    </p>
-                  </div>
-                </>
-              );
-            })()}
+          <div className="@container min-w-0 space-y-4" role="tabpanel">
+            {detail(selected)}
           </div>
         )}
       </div>

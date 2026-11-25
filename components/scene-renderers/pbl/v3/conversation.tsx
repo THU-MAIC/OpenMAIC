@@ -1,7 +1,7 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
-import { hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
-import type { MouseEvent, ReactNode } from 'react';
+import { continueActionLabel, hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
 import { Route, Code2, GraduationCap, ListChecks, MessageSquareText } from 'lucide-react';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
@@ -14,6 +14,8 @@ import { UserBubble } from '@/components/workbench/chat/user-bubble';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
+import { ROLE_PERSONAS } from '@/lib/pbl/v3/personas';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
 
 const accents = {
   mentor: 'border-violet-400/40 text-violet-700 dark:text-violet-300',
@@ -46,10 +48,17 @@ function groupParts(parts: Part[]) {
 }
 function AgentTurn({
   entry,
+  files,
   onOpenReport,
+  nextAction,
+  persona = false,
 }: {
   entry: LearningConversationEntry;
+  files?: readonly string[];
+  nextAction?: string;
   onOpenReport?: () => void;
+  /** Show the role as a named character, with its face, instead of a role label. */
+  persona?: boolean;
 }) {
   const { t } = useI18n();
   const role = entry.speaker === 'user' ? 'mentor' : entry.speaker;
@@ -74,25 +83,48 @@ function AgentTurn({
       data-status={entry.status}
       data-turn-id={entry.id}
     >
-      <div className={`flex items-center gap-2 text-[13px] font-medium ${accents[role]}`}>
-        <span className="inline-flex size-[22px] items-center justify-center rounded-full bg-current/10">
-          <Icon size={14} />
-        </span>
-        {t(`pblV3.roles.${role}`)}
-      </div>
+      {persona ? (
+        <div className="flex items-center gap-2.5" data-testid="pbl-agent-persona">
+          <span
+            className="size-9 shrink-0 overflow-hidden rounded-full bg-muted ring-2"
+            style={{ '--tw-ring-color': ROLE_PERSONAS[role].color } as CSSProperties}
+          >
+            <AvatarDisplay src={ROLE_PERSONAS[role].avatar} alt="" />
+          </span>
+          <span className="min-w-0 leading-tight">
+            <span className="block text-sm font-semibold text-foreground">
+              {t(`pblV3.personas.${role}`)}
+            </span>
+            <span className={`block text-[11px] font-medium ${accents[role]}`}>
+              {t(`pblV3.roles.${role}`)}
+            </span>
+          </span>
+        </div>
+      ) : (
+        <div className={`flex items-center gap-2 text-[13px] font-medium ${accents[role]}`}>
+          <span className="inline-flex size-[22px] items-center justify-center rounded-full bg-current/10">
+            <Icon size={14} />
+          </span>
+          {t(`pblV3.roles.${role}`)}
+        </div>
+      )}
       <div
         className={`pbl-assistant-bubble flex min-w-0 flex-col gap-[5px] rounded-xl rounded-tl-md border-l-2 px-3 py-2.5 ${accents[role]}`}
       >
         {groupParts(parts).map((part) =>
           Array.isArray(part) ? (
             <div key={part[0].id} className="flex flex-col gap-3">
+              {/* Whiteboard and pointer calls are tool calls like any other in the stream. */}
               <ToolActivity tools={part} t={t} />
               {part.some((tool) => tool.action === 'complete' && tool.status === 'succeeded') && (
                 <p className="text-foreground" data-testid="pbl-completion-handoff">
                   {t(
                     part.some((tool) => tool.projectCompleted)
                       ? 'pblV3.reportCopy.completed'
-                      : 'pblV3.journey.completionHandoff',
+                      : nextAction
+                        ? 'pblV3.journey.ready'
+                        : 'pblV3.journey.completionHandoff',
+                    { action: nextAction },
                   )}
                 </p>
               )}
@@ -122,7 +154,12 @@ function AgentTurn({
             />
           ) : part.kind === 'text' ? (
             <div className="pbl-teaching-prose text-foreground" key={part.id}>
-              <TextBlock text={part.text} streaming={part.streaming} variant="lesson" />
+              <TextBlock
+                text={part.text}
+                streaming={part.streaming}
+                variant="lesson"
+                lessonFiles={files}
+              />
             </div>
           ) : null,
         )}
@@ -143,10 +180,16 @@ function AgentTurn({
 }
 function ConversationEntry({
   entry,
+  files,
   onOpenReport,
+  nextAction,
+  persona,
 }: {
   entry: LearningConversationEntry;
+  files?: readonly string[];
+  nextAction?: string;
   onOpenReport?: () => void;
+  persona?: boolean;
 }) {
   const { t } = useI18n();
   return entry.boundary ? (
@@ -171,7 +214,14 @@ function ConversationEntry({
       text={entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n')}
     />
   ) : (
-    <AgentTurn key={entry.id} entry={entry} onOpenReport={onOpenReport} />
+    <AgentTurn
+      key={entry.id}
+      entry={entry}
+      files={files}
+      onOpenReport={onOpenReport}
+      persona={persona}
+      nextAction={nextAction}
+    />
   );
 }
 export function LearningConversation({
@@ -228,6 +278,8 @@ export function LearningConversation({
       onOpenFile(reference);
     }
   };
+  // Where the role is a companion it is shown as one here too: the same face and name.
+  const persona = !!view.explainBoard;
   const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
   if (waitingToStart) {
     // An ordinary reading pane: no tail observer runs before the learner starts.
@@ -258,6 +310,8 @@ export function LearningConversation({
           <div onClick={(event) => openReference(event, dismiss)}>
             <ConversationEntry
               entry={entry}
+              files={view.files}
+              persona={persona}
               onOpenReport={
                 onOpenReport
                   ? () => {
@@ -279,11 +333,23 @@ export function LearningConversation({
         <p className="text-sm text-muted-foreground">{t('pblV3.journey.startConversation')}</p>
       )}
       {entries.map((entry) => (
-        <ConversationEntry key={entry.id} entry={entry} onOpenReport={onOpenReport} />
+        <ConversationEntry
+          key={entry.id}
+          entry={entry}
+          files={view.files}
+          nextAction={
+            entry.currentStage && view.actions.includes('next')
+              ? continueActionLabel(view, t)
+              : undefined
+          }
+          onOpenReport={onOpenReport}
+          persona={persona}
+        />
       ))}
       {pendingMessage && <ConversationEntry entry={pendingMessage} />}
       {placeholder && (
         <AgentTurn
+          persona={persona}
           entry={{ id: 'queued', speaker: view.role ?? 'mentor', status: 'running', parts: [] }}
         />
       )}

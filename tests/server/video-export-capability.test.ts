@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { proxyFetch } = vi.hoisted(() => ({ proxyFetch: vi.fn() }));
 vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch }));
 import { GET } from '@/app/api/export-video/capability/route';
+import { getRenderServiceCapability } from '@/lib/server/render-service';
 
 beforeEach(() => {
   vi.stubEnv('RENDER_SERVICE_URL', 'http://render-service:9000/');
@@ -16,6 +17,22 @@ function ownerBound(response: Response): Response {
 }
 
 describe('video export capability', () => {
+  it.each([undefined, 'true', true])(
+    'requires explicit hosted library support from health (%s)',
+    async (interactiveRuntimeHostedLibraries) => {
+      proxyFetch.mockResolvedValue(
+        ownerBound(
+          Response.json({ interactiveRuntimeCheck: true, interactiveRuntimeHostedLibraries }),
+        ),
+      );
+      const capability = await getRenderServiceCapability();
+      expect(capability.interactiveRuntimeCheck).toBe(true);
+      expect(capability.interactiveRuntimeHostedLibraries).toBe(
+        interactiveRuntimeHostedLibraries === true ? true : undefined,
+      );
+    },
+  );
+
   it.each([true, false])(
     'forwards accepting=%s without leaking service details',
     async (accepting) => {

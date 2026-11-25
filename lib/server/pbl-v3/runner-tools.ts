@@ -1,3 +1,6 @@
+import { studyWhiteboard } from './whiteboard';
+import { pblWhiteboardEnabled, pblWhiteboardTeachingRole } from './whiteboard-config';
+import { normalizeCueUserOptions } from '@/lib/chat/cue-user-options';
 import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { changedLineRanges } from './file-changes';
@@ -64,7 +67,14 @@ import {
 } from './stage-progress';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
-import { LEARNER_HANDOFF_EVENT, reviewResponse, supportTurnSequences } from './review-question';
+import {
+  LEARNER_HANDOFF_EVENT,
+  reviewResponse,
+  spokenReviewClosing,
+  supportTurnSequences,
+} from './review-question';
+
+const spokenReviewParameters = Type.Object({ approval: Type.Optional(Type.Boolean()) });
 
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
@@ -79,6 +89,9 @@ export async function teachingRunnerConfig(input: {
   const binding = foundBinding;
   if (!binding) throw sandboxConflict('Teaching session binding is missing.');
   const bound = binding;
+  // With the whiteboard on, the reply is what the role says beside it; the lesson is on the board.
+  const boardTeaching = pblWhiteboardEnabled() && pblWhiteboardTeachingRole(bound.role);
+  const spokenReview = boardTeaching ? spokenReviewClosing() : undefined;
   const row = await store.get(bound.study_id, input.ownerId),
     project = projectFor(row),
     stage = stageFor(row);
@@ -295,7 +308,7 @@ export async function teachingRunnerConfig(input: {
                     if (
                       name === 'request_learner_help' ||
                       name === 'respond_to_learner' ||
-                      (name === 'request_skill_review' && review.state.pending?.displayText)
+                      (name === 'request_skill_review' && review.state.pending)
                     ) {
                       // Publish the learner-facing handoff atomically with its turn receipt.
                       const sequence = await store
@@ -308,8 +321,11 @@ export async function teachingRunnerConfig(input: {
                             ...(name === 'request_skill_review'
                               ? {
                                   runId: review.state.pending!.runId,
-                                  question: review.state.pending!.displayText,
-                                  canonical: true,
+                                  question:
+                                    review.state.pending!.displayText ??
+                                    review.state.pending!.question,
+                                  canonical: !boardTeaching,
+                                  spokenAt: review.state.pending!.spokenAt,
                                 }
                               : {
                                   ...review.state.handoff!,
@@ -619,7 +635,17 @@ export async function teachingRunnerConfig(input: {
       tool(
         'respond_to_learner',
         'Answer an assistance-only product, background or project-knowledge question, or ask the necessary clarification. Preserve the pending teaching/review question and end this turn without advancing, crediting understanding or approving an artifact. Use before opening/advancing a Skill; do not repeat the response in prose. For a mixed review answer plus help request, use normal review tools for the actual review evidence instead.',
-        Type.Object({ response: Type.String({ minLength: 1 }) }),
+        Type.Object({
+          response: Type.String({
+            minLength: 1,
+            ...(boardTeaching
+              ? {
+                  description:
+                    'What you say aloud to close the turn: at most three plain sentences. Anything the learner needs to look at goes on the whiteboard first, explained in the ordinary spoken text around those wb calls; no headings, lists, tables or code here.',
+                }
+              : {}),
+          }),
+        }),
         async (_current, p) => {
           if (!latest || latest.pblOpening)
             throw sandboxConflict('Automatic entry must deliver the project/stage opening.');
@@ -736,32 +762,50 @@ export async function teachingRunnerConfig(input: {
       ),
       tool(
         'request_skill_review',
-        'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
-        Type.Object({
-          response: Type.String({
-            minLength: 1,
-            description:
-              'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
-          }),
-          approval: Type.Optional(Type.Boolean()),
-        }),
-        async (current, p, _callId, signal) => {
-          if (typeof p.response !== 'string')
+        boardTeaching
+          ? 'Register the question or invitation in the last paragraph you spoke and wait for the learner. Speak it once in ordinary text. If your last stop or cue_user already delivered it, call this tool alone. Set approval only for an explicit request to approve the current artifact.'
+          : 'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
+        boardTeaching
+          ? spokenReviewParameters
+          : Type.Object({
+              response: Type.String({
+                minLength: 1,
+                description:
+                  'The entire learner-visible reply: complete welcome/lesson/file guidance followed by ONE closing question or invitation in its own final paragraph. Write that question only once, even in different words. The host displays this response verbatim and records its last paragraph for feedback; it never appends a separate question. If prose was already delivered before recovery, copy that complete reply verbatim here. Do not also emit it in ordinary prose.',
+              }),
+              approval: Type.Optional(Type.Boolean()),
+            }),
+        async (current, p, callId, signal) => {
+          const spoken = spokenReview?.forCall(callId);
+          const delivery = spokenReview
+            ? spoken?.question
+            : 'response' in p
+              ? p.response
+              : undefined;
+          if (typeof delivery !== 'string')
             throw sandboxInvalid(
-              'Use response for the complete reply including its one closing question; do not send separate explanation/question fields.',
+              boardTeaching
+                ? 'No spoken closing is available for this call. Ask the learner the intended question in the final paragraph of the message calling request_skill_review.'
+                : 'Use response for the complete reply including its one closing question; do not send separate explanation/question fields.',
             );
-          const { response, question } = reviewResponse(p.response);
+          const { response, question } = reviewResponse(delivery);
           const hash = await fingerprint(current, signal);
           await assertBuilt(store, current, hash);
           const approval =
             artifactApprovalRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          review.checkpoint(question, hash, approval, response);
+          const spokenAt = spoken && 'spokenAt' in spoken ? spoken.spokenAt : undefined;
+          review.checkpoint(
+            question,
+            hash,
+            approval,
+            boardTeaching ? undefined : response,
+            spokenAt,
+          );
           return {
             value: {
               question,
-              response,
-              canonical: true,
+              ...(boardTeaching ? { spokenAt } : { response, canonical: true }),
               waitForStudent: true,
             },
           };
@@ -897,6 +941,122 @@ export async function teachingRunnerConfig(input: {
       ),
     );
   }
+  // The whiteboard comes into view when the role calls for it and goes when the role puts it
+  // away, as in the classroom.
+  if (boardTeaching)
+    tools.push(
+      tool(
+        'wb_open',
+        'Bring the whiteboard into view for the learner. It starts out of view; drawing on it also brings it into view, so call this only to show a board that is already written.',
+        Type.Object({}),
+        async () => ({ value: { open: true } }),
+      ),
+      tool(
+        'wb_close',
+        "Put the whiteboard away, leaving the learner's code and running application in full view. Call it once you have finished explaining what is on the board and the turn moves on to their work.",
+        Type.Object({}),
+        async () => ({ value: { open: false } }),
+      ),
+    );
+  // Replies the learner can pick instead of typing, offered the way the classroom offers them.
+  if (boardTeaching)
+    tools.push(
+      tool(
+        'cue_user',
+        "Offer the learner replies they could give to your closing question, as the classroom does. Call it just before you record the closing, and only when that question can be answered by one of two to four clear, mutually exclusive short replies in the learner's own voice; leave it out for a question that needs their own reasoning. The learner may pick one or write their own.",
+        Type.Object({
+          options: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
+            minItems: 2,
+            maxItems: 4,
+          }),
+        }),
+        async (_current, p) => ({ value: { options: normalizeCueUserOptions(p.options) ?? [] } }),
+      ),
+    );
+  // Pointing needs what only reading gives: current line numbers and the page's own names.
+  if (boardTeaching && row.environment_id && canReadFiles)
+    tools.push(
+      tool(
+        'point_at_code',
+        'Point at lines of a project file while you speak, the way a teacher points at a line on screen. The workbench opens the file, brings the lines into view and keeps a spotlight or a laser dot on them while you say what follows. Call it immediately before the sentence about those lines. Explain that location before pointing at another. For a multi-location review, cite the exact file range in each corresponding paragraph. Use the whiteboard for anything that needs explaining beside the code. Read the file first so the line numbers are current.',
+        Type.Object({
+          path,
+          startLine: Type.Integer({ minimum: 1 }),
+          endLine: Type.Optional(Type.Integer({ minimum: 1 })),
+          pointer: Type.Union([Type.Literal('spotlight'), Type.Literal('laser')], {
+            description:
+              'spotlight dims everything but a block of lines; laser marks one line with a dot.',
+          }),
+        }),
+        async (_current, p) => {
+          assertProjectSource(project, p.path);
+          if (p.endLine !== undefined && p.endLine < p.startLine)
+            throw sandboxInvalid('endLine must not precede startLine.');
+          return { value: { pointed: true } };
+        },
+      ),
+      ...(project.application
+        ? [
+            tool(
+              'point_at_preview',
+              "Point at one element of the learner's running application while you speak. The workbench opens the application preview, scrolls the element into view and keeps a spotlight or a laser dot on it while you say what follows. Call it immediately before the sentence about that element, to show where on the page something happens or where the learner should click. Take the selector from the page source file, read with read_file in this turn (an id, a class, or a short attribute selector); it must match an element that exists on the page as it is first shown.",
+              Type.Object({
+                selector: Type.String({ minLength: 1, maxLength: 200 }),
+                pointer: Type.Union([Type.Literal('spotlight'), Type.Literal('laser')], {
+                  description:
+                    'spotlight dims everything but the element; laser marks it with a dot.',
+                }),
+              }),
+              async (_current, p) => {
+                // The page is the learner's own source. Every name the selector relies on must
+                // be in a file read this turn, or the pointer lands on nothing while it speaks.
+                const read = [...observedText.values()];
+                const missing = [
+                  ...p.selector.matchAll(/[#.]([\w-]+)|\[[\w-]+[~|^$*]?=["']?([^"'\]]+)/g),
+                ]
+                  .map((match) => match[1] ?? match[2])
+                  .find((name) => !read.some((text) => text.includes(name)));
+                if (missing)
+                  throw sandboxInvalid(
+                    `"${missing}" is not in any file read this turn. Read the page source with read_file (${
+                      Object.keys(project.files)
+                        .filter((file) => /\.(html?|jsx?|tsx?|vue)$/.test(file))
+                        .slice(0, 5)
+                        .join(', ') || 'the frontend files'
+                    }) and take the selector from it.`,
+                  );
+                return { value: { pointed: true } };
+              },
+            ),
+          ]
+        : []),
+    );
+  const board = boardTeaching ? studyWhiteboard(row) : undefined;
+  if (board) {
+    tools.push(
+      ...(await board.tools(`${input.sessionId}:${input.attempt}`, (work, toolSignal) => {
+        const signal = toolSignal ? AbortSignal.any([input.signal, toolSignal]) : input.signal;
+        return store.waitForExclusive(
+          row.id,
+          async () => {
+            assertActive(signal);
+            const current = await store.get(row.id, input.ownerId);
+            if (stageKey(current) !== bound.stage_key || current.state.status === 'completed')
+              throw sandboxConflict('The teaching stage changed.');
+            await agents.assertActiveLease(
+              input.sessionId,
+              input.workerId,
+              input.attempt,
+              store.pool,
+            );
+            assertActive(signal);
+            return work();
+          },
+          signal,
+        );
+      })),
+    );
+  }
   let planText: string | undefined;
   if (row.environment_id && 'reads' in stage && stage.reads.includes('plan')) {
     planText = await (await service(input.signal)).readText(row.environment_id, 'PLAN.md');
@@ -970,6 +1130,7 @@ export async function teachingRunnerConfig(input: {
   const historyWindow: TeachingHistoryWindow = {
     stageKey: bound.stage_key,
     initialContext,
+    spokenReview: boardTeaching,
     studentTurns: bound.feedback_seq,
     automaticEntry: latest?.pblOpening === true,
     ...(stage.kind === 'produce' && stage.writes === 'plan' && planText !== undefined
@@ -993,6 +1154,7 @@ export async function teachingRunnerConfig(input: {
       review.state.welcome === 'pending'
         ? { mode: 'disabled' }
         : { mode: 'enabled', effort: 'low', level: 'low' },
+    observeReviewSpeech: spokenReview?.observe,
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
     needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
@@ -1036,7 +1198,13 @@ export async function teachingRunnerConfig(input: {
             (await store.binding(input.sessionId)) ?? undefined,
           );
           assertActive(input.signal);
-          return teachingLiveContext(currentPromptInput(), initialPrompt.welcome === 'pending');
+          const live = teachingLiveContext(
+            currentPromptInput(),
+            initialPrompt.welcome === 'pending',
+          );
+          return board
+            ? JSON.stringify({ ...JSON.parse(live), pblWhiteboardTail: await board.tail() })
+            : live;
         })(),
         input.signal,
       ),
@@ -1056,6 +1224,54 @@ export async function teachingRunnerConfig(input: {
         model,
       ),
   };
+}
+
+/** Only this recovery request settles already delivered speech. Wait for its choice of tool
+ * before publishing a reply, so bookkeeping cannot voice a speculative second question. */
+async function settleSpokenReply(streamFn: StreamFn, ...request: Parameters<StreamFn>) {
+  const [model, context, options] = request;
+  const tools = context.tools?.map((tool) =>
+    tool.name === 'request_skill_review'
+      ? {
+          ...tool,
+          parameters: Type.Object({
+            ...spokenReviewParameters.properties,
+            askNewQuestion: Type.Optional(
+              Type.Boolean({
+                description:
+                  'True only when the delivered reply was an introduction and has no review question yet. Speak the missing question in ordinary text. Otherwise register the delivered closing without speaking again.',
+              }),
+            ),
+          }),
+        }
+      : tool,
+  );
+  const response = await streamFn(model, { ...context, tools }, options);
+  for await (const event of response) {
+    if (event.type === 'done' || event.type === 'error') break;
+    options?.signal?.throwIfAborted();
+  }
+  const reply = await response.result();
+  const stream = createAssistantMessageEventStream();
+  if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
+    stream.push({
+      type: 'error',
+      reason: reply.stopReason,
+      error: { ...reply, content: reply.content.filter((part) => part.type !== 'text') },
+    });
+  } else {
+    const calls = reply.content.filter((part) => part.type === 'toolCall');
+    const review = calls.find((call) => call.name === 'request_skill_review');
+    const registerExisting = !calls.length || (review && review.arguments.askNewQuestion !== true);
+    stream.push({
+      type: 'done',
+      reason: reply.stopReason,
+      message: registerExisting
+        ? { ...reply, content: reply.content.filter((part) => part.type !== 'text') }
+        : reply,
+    });
+  }
+  return stream;
 }
 
 /** Pi 0.80's Agent wrapper does not expose the loop's shouldStopAfterTurn hook.
@@ -1123,7 +1339,11 @@ export function withTeachingTurnBoundary(
         }
       }
       options?.signal?.throwIfAborted();
-      if (!isComplete()) return streamFn(model, projected, options);
+      if (!isComplete()) {
+        if (!historyWindow?.settlingSpokenReply) return streamFn(model, projected, options);
+        historyWindow.settlingSpokenReply = false;
+        return settleSpokenReply(streamFn, model, projected, options);
+      }
     }
     const stream = createAssistantMessageEventStream();
     stream.push({
@@ -1181,9 +1401,14 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   const reply = delivered.join('\n\n');
   if (!reply.trim()) return false;
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
+  window.settlingSpokenReply = window.spokenReview;
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question. Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. ' +
+    (window.spokenReview
+      ? 'For a delivered teaching question, call request_skill_review without text to register the existing closing question. Only if the delivered reply has no question yet, speak the missing question and set askNewQuestion on this recovery call.'
+      : 'For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question.') +
+    ' Use request_learner_help for a blocked required build. When recording words already delivered, output only the appropriate tool call, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
   window.continuationInstruction = instruction;
   return true;
 }

@@ -1,6 +1,7 @@
 import { HOST_STATE_START, HOST_STATE_END } from '@/lib/ai/request-state-tail';
 import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
+import { recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
@@ -63,6 +64,7 @@ const mocked = vi.hoisted(() => ({
 vi.mock('@/lib/persistence/server-provider', () => ({
   getServerPersistenceProvider: async () => ({
     pool: mocked.pool,
+    runtimeStore: { listSessions: async () => [], getSession: async () => undefined },
     assetStore: new PgAssetStore(mocked.pool as Pool, {
       withTransaction: async (fn) => {
         const db = await (mocked.pool as Pool).connect();
@@ -377,6 +379,7 @@ import { pblArchiveFailureGraceMs, pblIdleTimeoutMs } from '@/lib/server/pbl-v3/
 import {
   commandStudy,
   openStudy,
+  resetStudy,
   learningView,
   digest,
   filesFingerprint,
@@ -2147,6 +2150,49 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expectedAttempt: meta!.attempt,
     });
   });
+  it('keeps earlier replies in history while marking only the active step for the companion', async () => {
+    const study = await freshStudy();
+    onTestFinished(() => releasePreparationFixtures([study.id]));
+    const previous: string[] = [];
+    const currentWords = async () => {
+      const entries =
+        (await learningView(principal, study.id, { passive: true })).conversation ?? [];
+      const words = (entry: (typeof entries)[number]) =>
+        entry.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : []));
+      expect(entries.flatMap(words)).toEqual(expect.arrayContaining(previous));
+      return entries.filter((entry) => entry.currentStage).flatMap(words);
+    };
+    // The implementation is by the coder; both the quiz and recap belong to the mentor.
+    for (const index of [3, 5, 6]) {
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.position.stageIndex = index;
+      row.state.milestones[0]!.stageIndex = index;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      expect(await currentWords()).toEqual([]);
+      const { sessionId } = (await study.send('begin')) as { sessionId: string };
+      expect(await currentWords()).toEqual([]);
+      const worker = 'companion-worker';
+      const claim = await agents.claimNextSession(worker, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const text = 'Instructions for step ' + index;
+      await agents.appendRunEvent(sessionId, worker, {
+        ts: Date.now(),
+        attempt: claim!.attempt,
+        type: 'message_end',
+        data: { message: { role: 'assistant', content: [{ type: 'text', text }] } },
+      });
+      await agents.finishSession(sessionId, worker, {
+        status: 'succeeded',
+        expectedAttempt: claim!.attempt,
+      });
+      expect(await currentWords()).toEqual([text]);
+      previous.push(text);
+    }
+  });
+
   it('opens each stage once without fabricating student feedback', async () => {
     const study = await freshStudy();
     const original = await store.get(study.id, principal.ownerId);
@@ -5155,6 +5201,170 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     });
   });
 
+  it.each([
+    'spoken',
+    'tool-only',
+    'continuation',
+    'restated',
+    'new question',
+    'takeover',
+    'missing closing',
+  ] as const)('registers one board review from %s delivery', async (mode) => {
+    const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+    process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+    try {
+      const study = await freshStudy();
+      const { sessionId } = (await study.send('begin')) as { sessionId: string };
+      const worker = startAgentRunner();
+      await worker.stop();
+      let claim = await agents.claimNextSession(worker.workerId, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const question = '请说说你会先核对哪一步。';
+      const speech = 'The project connects a question to a reply.\n\n' + question;
+      const summary = 'Look at the highlighted return value.';
+      const receipt = {
+        type: 'tool-call',
+        toolName: 'request_skill_review',
+        toolCallId: 'record-review',
+        input: mode === 'tool-only' ? { question } : { question: '你准备先检查哪个步骤？' },
+      };
+      const register = { ...receipt, toolCallId: 'register-spoken', input: {} };
+      const callOnly = (call: typeof register) => [call, modelFinish('tool-calls')];
+      const speakAndCall = (text: string, call: typeof register) => [
+        { type: 'text-delta', text },
+        ...callOnly(call),
+      ];
+      const starting = (await store.get(study.id, principal.ownerId)).state.position;
+      const inputs = await agents.listUserMessages(sessionId);
+      if (mode === 'takeover') {
+        // The original worker delivered the question and died before registering it.
+        const input = inputs.at(-1)!;
+        const session = new Session(
+          await AgentSessionEntryStorage.open({
+            sessionId,
+            workerId: worker.workerId,
+            attempt: claim!.attempt,
+          }),
+        );
+        await session.appendMessage(
+          tagDurableUserMessage(
+            {
+              role: 'user',
+              content: input.text,
+              timestamp: Date.now(),
+            },
+            input.seq,
+          ),
+        );
+        const delivered: import('@earendil-works/pi-ai').AssistantMessage = {
+          role: 'assistant',
+          content: [{ type: 'text', text: speech }],
+          stopReason: 'stop',
+          api: 'openai-completions',
+          provider: 'openai',
+          model: 'test-model',
+          timestamp: Date.now(),
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        await session.appendMessage(delivered);
+        await agents.appendRunEvent(sessionId, worker.workerId, {
+          ts: delivered.timestamp,
+          type: 'message_end',
+          attempt: claim!.attempt,
+          data: { message: delivered },
+        });
+        await agents.markUserMessageDelivered(
+          sessionId,
+          worker.workerId,
+          claim!.attempt,
+          input.seq,
+        );
+        await agents.appendRunEvent(sessionId, worker.workerId, {
+          ts: Date.now(),
+          attempt: claim!.attempt,
+          type: 'session_interrupted',
+          data: { reason: 'runner shutdown' },
+        });
+        await agents.releaseLease(sessionId, worker.workerId);
+        claim = await agents.claimNextSession('board-review-takeover', process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+      }
+      switch (mode) {
+        case 'takeover':
+          mocked.responses = [speakAndCall('你准备先检查哪个步骤？', register)];
+          break;
+        case 'missing closing':
+          mocked.responses = [
+            textResponse(summary),
+            speakAndCall(question, { ...register, input: { askNewQuestion: true } }),
+          ];
+          break;
+        case 'tool-only':
+          mocked.responses = [callOnly(receipt)];
+          break;
+        case 'continuation':
+          mocked.responses = [textResponse(speech), callOnly(receipt)];
+          break;
+        case 'restated':
+          mocked.responses = [speakAndCall(speech, receipt), callOnly(register)];
+          break;
+        case 'new question':
+          mocked.responses = [speakAndCall(summary, receipt), speakAndCall(question, register)];
+          break;
+        case 'spoken':
+          mocked.responses = [speakAndCall(speech, register)];
+          break;
+      }
+      await runSession(
+        { running: new Map(), shuttingDown: false },
+        {
+          ...claim!,
+          ...(await agents.getSession(sessionId))!,
+        },
+      );
+      const session = await agents.getSession(sessionId);
+      expect(session?.status, session?.error ?? undefined).toBe('succeeded');
+      expect((await store.binding(sessionId))?.guided?.pending?.question).toBe(question);
+      const committed = (await store.binding(sessionId))!.guided!;
+      if (mode !== 'tool-only') expect(committed.pending?.spokenAt).toEqual(expect.any(Number));
+      expect(committed.approval).toBeUndefined();
+      expect(await agents.listUserMessages(sessionId)).toEqual(inputs);
+      expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(starting);
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.actions).not.toContain('next');
+      const refreshed = await learningView(principal, study.id, { passive: true });
+      expect(refreshed.conversation).toEqual(view.conversation);
+      if (mode === 'takeover')
+        expect(recoveredReviewSpeech(refreshed.conversation!.at(-1))?.text).toBe(question);
+      const parts = view.conversation!.flatMap((entry) => entry.parts);
+      expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
+        mode === 'new question' || mode === 'missing closing'
+          ? [summary, question]
+          : [mode === 'tool-only' ? question : speech],
+      );
+      expect(
+        parts.filter(
+          (p) => p.kind === 'tool' && p.name === 'request_skill_review' && p.status === 'succeeded',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+      else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
+    }
+  });
   it('rejects feedback for an unopened section instead of silently reopening the first lesson', async () => {
     const study = await freshStudy(),
       opening = (await study.send('begin')) as { sessionId: string };
@@ -12234,5 +12444,113 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       stop.mockRestore();
       await releasePreparationFixtures([row.id]);
     }
+  });
+  function enableStudyReset() {
+    const previous = process.env.OPENMAIC_PBL_V3_PROGRESS_RESET;
+    process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = 'true';
+    onTestFinished(() => {
+      if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_PROGRESS_RESET;
+      else process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = previous;
+    });
+  }
+
+  it('waits for an admitted preparation and releases its environment on reset', async () => {
+    enableStudyReset();
+    const study = await unpreparedStudy();
+    const startCreate = Promise.withResolvers<void>();
+    const allowCreate = Promise.withResolvers<void>();
+    const create = E2BCompatibleSandboxProvider.prototype.create;
+    const paused = vi
+      .spyOn(E2BCompatibleSandboxProvider.prototype, 'create')
+      .mockImplementationOnce(async function (this: E2BCompatibleSandboxProvider, ...args) {
+        startCreate.resolve();
+        await allowCreate.promise;
+        return create.apply(this, args);
+      });
+    onTestFinished(() => paused.mockRestore());
+    const prepare = study.send('prepare');
+    await startCreate.promise;
+    const admission = vi.spyOn(LearningStore.prototype, 'waitForExclusive');
+    onTestFinished(() => admission.mockRestore());
+    const reset = resetStudy(principal, study.id);
+    try {
+      await vi.waitFor(() =>
+        expect(admission).toHaveBeenCalledWith(study.id, expect.any(Function)),
+      );
+    } finally {
+      allowCreate.resolve();
+      await Promise.all([prepare, reset]);
+    }
+    const envs = await pool.query(
+      'SELECT state FROM sandbox_environments WHERE owner_id=$1 AND workspace_id=$2',
+      [principal.ownerId, learningWorkspaceId(study.id)],
+    );
+    expect(envs.rows).toEqual([{ state: 'destroyed' }]);
+    await expect(store.get(study.id, principal.ownerId)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('retires a reset study for every tab while preserving evidence and a fresh scene slot', async () => {
+    enableStudyReset();
+    const first = await freshStudy();
+    const row = await store.get(first.id, principal.ownerId);
+    const counts = async () =>
+      (await pool.query('SELECT count(*) FROM pbl_v3_events WHERE study_id=$1', [row.id])).rows[0]
+        .count;
+    const evidence = await counts();
+    await store.completeOnboarding(row.id, principal.ownerId);
+    process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = 'false';
+    await expect(resetStudy(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    process.env.OPENMAIC_PBL_V3_PROGRESS_RESET = 'true';
+    await expect(
+      resetStudy({ ...principal, ownerId: 'another-owner' }, row.id),
+    ).rejects.toMatchObject({ status: 404 });
+    // Simulate a provider error after retirement. Maintenance must still reclaim the resource.
+    vi.spyOn(SandboxService.prototype, 'destroy').mockRejectedValueOnce(
+      new Error('release deferred'),
+    );
+    try {
+      await expect(resetStudy(principal, row.id)).resolves.toEqual({ reset: true });
+    } finally {
+      vi.mocked(SandboxService.prototype.destroy).mockRestore();
+    }
+    const creates = mocked.creates.length;
+    for (const revision of [row.revision, row.revision + 1])
+      await expect(
+        commandStudy(principal, row.id, { type: 'prepare', id: randomUUID(), revision }),
+      ).rejects.toMatchObject({ status: 404 });
+    await expect(learningView(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    await expect(workbenchView(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    await expect(store.recordActivity(row.id, principal.ownerId)).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(store.completeOnboarding(row.id, principal.ownerId)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(mocked.creates).toHaveLength(creates);
+    await maintainStudy(store, row.id, principal.ownerId, row.environment_id!);
+    expect(
+      (await (await SandboxStore.open()).get(principal.ownerId, row.environment_id!))?.state,
+    ).toBe('destroyed');
+    expect(await counts()).toBe(evidence);
+    expect(await store.hasSeenOnboarding(principal.ownerId)).toBe(true);
+    const next = await store.create(
+      {
+        ownerId: principal.ownerId,
+        stageId: row.stage_id,
+        sceneId: row.scene_id,
+        projectId: project.ref.id,
+        version: project.ref.version,
+      },
+      startOrchestration(project.definition),
+    );
+    expect(next.id).not.toBe(row.id);
+    await commandStudy(principal, next.id, {
+      type: 'prepare',
+      id: randomUUID(),
+      revision: next.revision,
+    });
+    await expect(resetStudy(principal, row.id)).rejects.toMatchObject({ status: 404 });
+    expect((await store.get(next.id, principal.ownerId)).environment_id).toBeTruthy();
+    await releasePreparationFixtures([next.id]);
   });
 });

@@ -3,6 +3,7 @@
  * once at import. Defaults suit an OSS single-host deployment; the demo layer
  * only tunes values (and, later, points the store factories at Redis/S3).
  */
+import { fileURLToPath } from 'node:url';
 import { resolveResourceProfile } from './resource-profile.js';
 
 function intEnv(name: string, fallback: number): number {
@@ -90,6 +91,10 @@ export const config = {
   previewDeadlineMs: intEnv('RENDER_PREVIEW_TIMEOUT_MS', 20 * 1000),
   /** Maximum wait for a shared preview execution slot during a runtime check. */
   interactiveRuntimeWaitMs: intEnv('RENDER_INTERACTIVE_RUNTIME_WAIT_MS', 2_000),
+  /** Files produced by scripts/sync-interactive-assets.mjs. Relative overrides use the working directory. */
+  interactiveLibraryDir:
+    process.env.RENDER_INTERACTIVE_LIBRARY_DIR?.trim() ||
+    fileURLToPath(new URL('../../public/vendor/interactive', import.meta.url)),
   /** Chromium previews that execute simultaneously, independently of video renders. */
   previewMaxConcurrency: boundedIntEnv(
     'RENDER_PREVIEW_MAX_CONCURRENCY',

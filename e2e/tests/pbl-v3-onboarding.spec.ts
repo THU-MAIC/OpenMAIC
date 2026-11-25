@@ -13,6 +13,9 @@ async function project(
   learningEvents: (read: () => LearningSnapshot) => Promise<() => void>,
   {
     started = false,
+    completed = false,
+    failOpen,
+    failFirstPrepare = false,
     secondScene = false,
     guideCompleted = started,
     application = true,
@@ -24,8 +27,12 @@ async function project(
     opening = false,
     openingText = '',
     finishedWork,
+    explanationBoard = false,
   }: {
     started?: boolean;
+    completed?: boolean;
+    failOpen?: () => boolean;
+    failFirstPrepare?: boolean;
     secondScene?: boolean;
     guideCompleted?: boolean | null;
     application?: boolean;
@@ -37,6 +44,7 @@ async function project(
     opening?: boolean;
     openingText?: string;
     finishedWork?: string;
+    explanationBoard?: boolean;
   } = {},
 ) {
   await page.addInitScript((language) => localStorage.setItem('locale', language), locale);
@@ -76,14 +84,15 @@ async function project(
     revision: 0,
     activitySequence: 0,
     title: 'Workspace guide',
-    reportAvailable: false,
+    reportAvailable: completed,
     ...(guideCompleted === null ? {} : { onboardingCompleted: guideCompleted }),
-    completedFilesAvailable: false,
+    completedFilesAvailable: completed,
     environmentId: 'fixture-environment',
+    ...(explanationBoard ? { explainBoard: { whiteboard: null, lastSeq: null, pages: [] } } : {}),
     environment: { state: environmentReady ? 'running' : 'creating', ready: environmentReady },
     recovery: null,
     state: {
-      status: 'running',
+      status: completed ? 'completed' : 'running',
       position: {
         milestoneIndex: 0,
         milestoneId: 'greeting',
@@ -139,7 +148,8 @@ async function project(
   await page.route('https://onboarding-preview.test/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: '<!doctype html><label>Preview task<input aria-label="Preview task"></label>',
+      body: `<!doctype html><label>Preview task<input aria-label="Preview task"></label>
+        <button style="position:fixed;bottom:16px;right:16px;padding:8px 16px">Send message</button>`,
     }),
   );
   await page.route('**/api/pbl/v3**', async (route) => {
@@ -172,6 +182,7 @@ async function project(
       return route.fulfill({
         json: {
           started,
+          companions: explanationBoard,
           hero: {
             title: view.title,
             description: 'A synthetic project for the workspace guide.',
@@ -183,6 +194,9 @@ async function project(
           },
         },
       });
+    if (body?.action === 'open' && failOpen?.()) {
+      return route.fulfill({ status: 503, json: { error: 'Study unavailable' } });
+    }
     if (url.pathname.endsWith('/onboarding')) {
       view.onboardingCompleted = true;
       return route.fulfill({ json: { onboardingCompleted: true } });
@@ -193,6 +207,9 @@ async function project(
     if (body?.command) {
       commands.push(body.command.type);
       if (body.command.type === 'prepare') {
+        if (failFirstPrepare && commands.filter((command) => command === 'prepare').length === 1) {
+          return route.fulfill({ status: 503, json: { error: 'Preparation failed' } });
+        }
         await prepareGate;
         view.environment = { state: 'running', ready: true };
         view.revision++;
@@ -222,6 +239,606 @@ async function project(
   await expect(page.getByTestId('pbl-workspace-frame')).toHaveAttribute('data-expanded', 'true');
   return { view, workbench, commands, calls, applicationCalls, publish, publishRaw, stageId };
 }
+
+for (const scenario of ['cold start', 'restore', 'retry prepare', 'retry open'] as const) {
+  test(`application launch overlay allows ${scenario} to finish`, async ({
+    page,
+    learningEvents,
+  }) => {
+    let release!: () => void;
+    const prepareGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const completed = scenario === 'restore';
+    let openBlocked = scenario === 'retry open';
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      completed,
+      explanationBoard: true,
+      environmentReady: false,
+      prepareGate,
+      failOpen: () => openBlocked,
+      failFirstPrepare: scenario === 'retry prepare',
+    });
+    const openCount = () => fixture.calls.filter((call) => call === 'POST /api/pbl/v3 open').length;
+    let beforeRetry = 0;
+    const overlay = page.getByTestId('pbl-application-launching');
+    try {
+      if (scenario === 'retry open') {
+        await expect(page.getByRole('alert').filter({ hasText: 'Request failed.' })).toBeVisible();
+        await expect(overlay).toBeHidden();
+        beforeRetry = openCount();
+        openBlocked = false;
+        await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+      } else if (completed || scenario === 'retry prepare') {
+        const setup = page.getByTestId('pbl-environment-setup');
+        const action = setup.getByRole('button');
+        if (scenario === 'retry prepare')
+          await expect(
+            page.getByRole('alert').filter({ hasText: 'Request failed.' }),
+          ).toBeVisible();
+        await expect(action).toBeEnabled();
+        await expect(overlay).toBeHidden();
+        expect(fixture.commands).toEqual(completed ? [] : ['prepare']);
+        await action.click();
+      }
+      await expect.poll(() => fixture.commands.length).toBe(scenario === 'retry prepare' ? 2 : 1);
+      await expect(overlay).toBeVisible();
+    } finally {
+      release();
+    }
+    await expect.poll(() => fixture.view.environment?.ready).toBe(true);
+    await fixture.publish();
+    await expect.poll(() => fixture.applicationCalls).toContain('open');
+    await expect(overlay).toBeHidden();
+    expect(fixture.applicationCalls.filter((action) => action === 'open')).toHaveLength(1);
+    expect(fixture.commands).toEqual(
+      scenario === 'retry prepare' ? ['prepare', 'prepare'] : ['prepare'],
+    );
+    if (scenario === 'retry open') expect(openCount()).toBe(beforeRetry + 1);
+  });
+}
+
+const assistantModes = ['bubble', 'window', 'docked'] as const;
+
+async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number]) {
+  if (mode === 'bubble') return;
+  await page.getByTestId('pbl-companion-avatar').click();
+  if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
+}
+
+async function expectGuideTarget(page: Page, step: string, selector: string) {
+  await expect(page.getByTestId('workspace-tour')).toHaveAttribute('data-step', step);
+  const target = page.locator(selector);
+  await expect(target).toBeInViewport();
+  await expect
+    .poll(() =>
+      target.evaluate((element) => {
+        const hole = document.querySelector('[data-testid="workspace-tour-hole"]');
+        if (!hole || hole.classList.contains('ws-tour-hole-none')) return false;
+        const r = element.getBoundingClientRect();
+        const light = hole.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        return light.left < x && x < light.right && light.top < y && y < light.bottom;
+      }),
+    )
+    .toBe(true);
+}
+
+for (const mode of assistantModes) {
+  for (const waitingToStart of [true, false]) {
+    test(`companion guide follows the ${mode} layout ${waitingToStart ? 'before start' : 'during study'}`, async ({
+      page,
+      learningEvents,
+    }) => {
+      const automatic = mode === 'bubble' && waitingToStart;
+      const { commands } = await project(page, learningEvents, {
+        started: !automatic,
+        guideCompleted: !automatic,
+        explanationBoard: true,
+        opening: waitingToStart,
+      });
+      await useAssistantMode(page, mode);
+      const paneOpen = mode !== 'bubble';
+      const surface = paneOpen ? '[data-pbl-tour="conversation"]' : '[data-testid="pbl-companion"]';
+      const draft = page.locator(surface).getByRole('textbox');
+      if (!waitingToStart) await draft.fill('Keep my draft.');
+      const replay = page.locator('[data-pbl-tour="replay"]');
+      if (!automatic) await replay.click();
+      const next = page.getByTestId('workspace-tour-next');
+      await expect(page.getByTestId('workspace-tour')).toHaveAttribute('data-step', 'welcome');
+      await next.click();
+      await expectGuideTarget(page, 'preview', '[data-testid="pbl-application-panel"]');
+      await next.click();
+      const avatar = '[data-testid="pbl-companion-avatar"]';
+      await expectGuideTarget(
+        page,
+        paneOpen ? 'conversationPane' : 'companion',
+        paneOpen ? surface + ' > header' : avatar,
+      );
+      await next.click();
+      await expectGuideTarget(
+        page,
+        paneOpen ? 'learningPath' : 'progress',
+        paneOpen ? '[data-pbl-tour="learning-path"]' : avatar,
+      );
+      await next.click();
+      if (paneOpen && waitingToStart) {
+        await expectGuideTarget(page, 'collapsePane', '[data-testid="pbl-assistant-close"]');
+      } else if (paneOpen) {
+        await expectGuideTarget(page, 'reply', '[data-pbl-tour="composer"]');
+      } else {
+        await expectGuideTarget(page, 'controls', '[data-testid="pbl-companion-mute"]');
+      }
+      await next.click();
+      await expectGuideTarget(page, 'layout', '[data-testid="pbl-board-toggle"]');
+      await next.click();
+      if (waitingToStart)
+        await expectGuideTarget(page, 'start', surface + ' [data-pbl-tour="start"]');
+      else await expectGuideTarget(page, 'replay', '[data-pbl-tour="replay"]');
+      await page.getByTestId('workspace-tour-done').click();
+      await expect(page.getByTestId('workspace-tour')).toHaveCount(0);
+      await expect(page.locator(surface)).toBeVisible();
+      if (mode === 'window') await expect(page.getByTestId('pbl-assistant-window')).toBeVisible();
+      if (mode === 'docked') await expect(page.getByTestId('pbl-companion-avatar')).toHaveCount(0);
+      if (waitingToStart)
+        await expect(page.locator(surface + ' [data-pbl-tour="start"]')).toBeEnabled();
+      else await expect(draft).toHaveValue('Keep my draft.');
+      expect(commands).toEqual([]);
+    });
+  }
+}
+
+test('keeps one draft across companion layouts and closes the last file from its tab', async ({
+  page,
+  learningEvents,
+}) => {
+  await project(page, learningEvents, { started: true, explanationBoard: true });
+  const draft = 'Compare the implementation with the plan.';
+  const bubble = page.getByTestId('pbl-companion-input');
+  await bubble.getByRole('textbox').fill(draft);
+  await page.getByTestId('pbl-companion-avatar').click();
+  const assistant = page.getByTestId('pbl-assistant');
+  await expect(assistant.getByRole('textbox')).toHaveValue(draft);
+  await page.getByTestId('pbl-assistant-dock').click();
+  await expect(assistant.getByRole('textbox')).toHaveValue(draft);
+  const toggle = page.getByRole('button', { name: 'Toggle code workspace', exact: true });
+  if ((await toggle.getAttribute('aria-pressed')) === 'false') await toggle.click();
+  const ide = page.getByTestId('pbl-ide');
+  const tabs = ide.getByRole('tablist', { name: 'Open files' });
+  await expect(tabs.getByRole('tab')).toHaveCount(1);
+  await expect
+    .poll(() =>
+      assistant
+        .locator('header')
+        .first()
+        .evaluate((el) => el.getBoundingClientRect().height),
+    )
+    .toBe(36);
+  await expect
+    .poll(() => tabs.evaluate((el) => el.parentElement!.getBoundingClientRect().height))
+    .toBe(36);
+  await tabs.getByRole('button', { name: 'Close PLAN.md', exact: true }).click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(assistant.getByRole('textbox')).toHaveValue(draft);
+  await toggle.click();
+  await expect(tabs.getByRole('tab', { name: 'PLAN.md', exact: true })).toBeVisible();
+  await page.getByTestId('pbl-assistant-close').click();
+  await expect(bubble.getByRole('textbox')).toHaveValue(draft);
+});
+
+for (const closeWith of ['last file', 'workspace toggle'] as const) {
+  test(`preserves a returning learner's drafts after closing the ${closeWith} and reloading`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const { view } = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const key = `maic:pbl-draft:v1:${view.id}:ui`;
+    const draft = {
+      text: 'Compare the plan',
+      textRevision: 7,
+      quizAnswers: { key: 'greeting:5', values: [null, 1] },
+      decisionDrafts: {
+        'greeting:direction': { chosen: 'North', rationale: 'It matches the goal' },
+      },
+      showWorkspace: true,
+      showAssistant: false,
+    };
+    await page.evaluate(({ key, draft }) => sessionStorage.setItem(key, JSON.stringify(draft)), {
+      key,
+      draft,
+    });
+    const reopen = async () => {
+      await page.reload();
+      await page.locator('[data-testid="pbl-v3-entry"] button').first().click();
+    };
+    await reopen();
+    const composer = page.getByTestId('pbl-companion-input').getByRole('textbox');
+    const toggle = page.getByRole('button', { name: 'Toggle code workspace', exact: true });
+    await expect(composer).toHaveValue(draft.text);
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    if (closeWith === 'last file') {
+      await page.getByRole('button', { name: 'Close PLAN.md', exact: true }).click();
+    } else {
+      await toggle.click();
+    }
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(composer).toHaveValue(draft.text);
+    await composer.press('End');
+    await composer.press('!');
+    await reopen();
+    await expect(composer).toHaveValue(draft.text + '!');
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(await page.evaluate((key) => JSON.parse(sessionStorage.getItem(key)!), key)).toEqual({
+      ...draft,
+      text: draft.text + '!',
+      textRevision: draft.textRevision + 1,
+      showWorkspace: false,
+      showAssistant: true,
+    });
+  });
+}
+
+for (const mode of assistantModes) {
+  test(`decision controls in the ${mode} match the tutor's named action`, async ({
+    page,
+    learningEvents,
+  }) => {
+    let begin!: () => void;
+    const fixture = await project(page, learningEvents, {
+      started: true,
+      explanationBoard: true,
+      beginGate: new Promise<void>((resolve) => {
+        begin = resolve;
+      }),
+    });
+    const { view } = fixture;
+    await useAssistantMode(page, mode);
+    view.needsOpening = true;
+    view.state.position.stageIndex = 1;
+    view.stage = {
+      kind: 'dialogue',
+      agent: 'discussion',
+      reads: [],
+      collects: 'decisions',
+      studentActions: ['chat', 'decide'],
+    };
+    view.actions = ['chat', 'decide'];
+    view.decisions = [
+      {
+        id: 'direction',
+        prompt: 'Choose a direction',
+        requiresRationale: true,
+        options: [{ id: 'a', label: 'North' }],
+      },
+    ];
+    view.revision++;
+    await fixture.publish();
+    await expect.poll(() => fixture.commands.includes('begin')).toBe(true);
+    const bubbleTask = page.getByTestId('pbl-companion-task');
+    if (mode === 'bubble') {
+      await expect(bubbleTask).toHaveCount(0);
+      await expect(page.getByTestId('pbl-companion-speech')).toContainText('Opening this step');
+    } else {
+      await page.getByRole('button', { name: 'Current task', exact: true }).click();
+      await expect(page.getByTestId('pbl-decision-response')).toBeVisible();
+    }
+    begin();
+    await expect.poll(() => view.busy).toBe(true);
+    const introduction = 'Choose a direction and explain your choice.';
+    view.conversation = [
+      {
+        id: 'decision-opening',
+        currentStage: true,
+        speaker: 'discussion',
+        status: 'running',
+        parts: [{ id: 'opening-text', kind: 'text', text: introduction }],
+      },
+    ];
+    view.revision++;
+    await fixture.publish();
+    if (mode === 'bubble') {
+      await expect(page.getByTestId('pbl-companion-speech')).toContainText('Choose');
+      await expect(bubbleTask).toHaveCount(0);
+    }
+    view.busy = false;
+    view.roleRun = { status: 'succeeded', failure: null, canRetry: false };
+    view.conversation[0].status = 'succeeded';
+    view.revision++;
+    await fixture.publish();
+    const form = page.getByTestId('pbl-decision-response').filter({ visible: true });
+    await form.getByRole('button', { name: 'North' }).click();
+    await form.getByRole('textbox').fill('It matches the goal.');
+    await form.getByRole('button', { name: 'Submit decision', exact: true }).click();
+    await expect.poll(() => fixture.commands.filter((c) => c === 'decide').length).toBe(1);
+  });
+}
+
+for (const mode of assistantModes) {
+  test(`quiz in the ${mode} marks only the last submitted option`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const { view } = fixture;
+    const publish = async () => {
+      view.revision++;
+      await fixture.publish();
+    };
+    view.state.position.stageIndex = 5;
+    view.stage = { kind: 'check', checker: 'quiz' };
+    view.role = 'mentor';
+    view.actions = ['quiz'];
+    const question: LearningView['questions'][number] = {
+      q: 'Which direction?',
+      options: ['East', 'West'],
+    };
+    view.questions = [question];
+    await publish();
+    await useAssistantMode(page, mode);
+    if (mode !== 'bubble')
+      await page.getByRole('button', { name: 'Current task', exact: true }).click();
+    const form =
+      mode === 'bubble'
+        ? page.getByTestId('pbl-companion-quiz')
+        : page.getByRole('region', { name: 'Current task details' });
+    const east = form.getByRole('radio', { name: /East/ });
+    const west = form.getByRole('radio', { name: /West/ });
+    const correct = form.getByRole('radio', { name: /Last submission: correct/ });
+    const incorrect = form.getByRole('radio', { name: /Last submission: review this answer/ });
+    await east.check();
+    await expect(correct).toHaveCount(0);
+    await expect(incorrect).toHaveCount(0);
+    await form.getByRole('button', { name: 'Submit answers', exact: true }).click();
+    await expect.poll(() => fixture.commands.filter((c) => c === 'quiz').length).toBe(1);
+    const collected = view.state.collected.greeting!;
+    collected.quiz = {
+      id: 'first',
+      attempt: 1,
+      answers: [0],
+      passed: false,
+      score: 0,
+      total: 1,
+      wrong: [0],
+    };
+    question.feedback = { selectedAnswer: 0, passed: false };
+    await publish();
+    await expect(incorrect).toBeChecked();
+    await west.check();
+    await expect(west).toBeChecked();
+    await expect(incorrect).not.toBeChecked();
+    await expect(east).toHaveAccessibleName(/Last submission: review this answer/);
+    await expect(correct).toHaveCount(0);
+    await expect(
+      form.getByText('Selection changed. Submit again to update feedback.'),
+    ).toBeVisible();
+    await form.getByRole('button', { name: 'Submit changes', exact: true }).click();
+    await expect.poll(() => fixture.commands.filter((c) => c === 'quiz').length).toBe(2);
+    collected.quiz = {
+      id: 'second',
+      attempt: 2,
+      answers: [1],
+      passed: true,
+      score: 1,
+      total: 1,
+      wrong: [],
+    };
+    question.feedback = { selectedAnswer: 1, passed: true };
+    await publish();
+    await expect(west).toHaveAccessibleName(/Last submission: correct/);
+    await expect(correct).toBeChecked();
+    await expect(incorrect).toHaveCount(0);
+
+    // Older attempts can have a question verdict without a recorded option index.
+    delete collected.quiz.answers;
+    delete question.feedback.selectedAnswer;
+    await publish();
+    await expect(form.getByTestId('pbl-quiz-feedback')).toContainText('Last submission: correct');
+    await expect(correct).toHaveCount(0);
+  });
+}
+
+for (const previous of ['tests', 'quiz'] as const) {
+  test(`retires companion instructions when leaving ${previous} without removing history`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    const view = fixture.view;
+    const publish = async () => {
+      view.revision++;
+      view.activitySequence = (view.activitySequence ?? 0) + 1;
+      await fixture.publish();
+    };
+    const oldText = previous === 'tests' ? 'Run the checks again.' : 'Submit the answers.';
+    const old: NonNullable<LearningView['conversation']>[number] = {
+      id: 'previous-turn',
+      currentStage: true,
+      speaker: previous === 'tests' ? 'coder' : 'mentor',
+      status: 'succeeded',
+      parts: [
+        { kind: 'text', id: 'old-text', text: oldText },
+        {
+          kind: 'tool',
+          id: 'old-cue',
+          name: 'cue_user',
+          action: 'tool',
+          status: 'succeeded',
+          args: { options: ['Show me how', 'I am ready'] },
+        },
+      ],
+    };
+    const questions = [1, 2, 3].map((i) => ({ q: `Question ${i}?`, options: ['Yes', 'No'] }));
+    view.conversation = [old];
+    view.questions = previous === 'quiz' ? questions : [];
+    view.actions = previous === 'quiz' ? ['quiz', 'next'] : ['chat', 'next'];
+    view.state.position.stageIndex = previous === 'tests' ? 4 : 5;
+    view.stage = { kind: 'check', checker: previous };
+    view.role = previous === 'tests' ? 'coder' : 'mentor';
+    await publish();
+    const bubble = page.getByTestId('pbl-companion-speech');
+    const suggestions = page.getByTestId('pbl-companion-suggestions');
+    await expect(bubble).toContainText(oldText);
+    if (previous === 'tests') await expect(suggestions).toContainText('Show me how');
+
+    delete old.currentStage;
+    view.state.position.stageIndex++;
+    view.stage =
+      previous === 'tests'
+        ? { kind: 'check', checker: 'quiz' }
+        : {
+            kind: 'mentor_say',
+            agent: 'mentor',
+            say: 'Recap',
+            reads: [],
+            studentActions: ['chat'],
+          };
+    view.role = 'mentor';
+    view.questions = previous === 'tests' ? questions : [];
+    view.actions = previous === 'tests' ? ['quiz'] : ['chat'];
+    await publish();
+    const quiz = page.getByTestId('pbl-companion-quiz');
+    if (previous === 'tests') await expect(quiz).toContainText('Question 3?');
+    else await expect(quiz).toBeHidden();
+    await expect(bubble).not.toContainText(oldText);
+    await expect(suggestions).toBeHidden();
+    const newText = previous === 'tests' ? 'Choose an answer.' : 'Explain your result.';
+    view.conversation.push({
+      id: 'next-turn',
+      currentStage: true,
+      speaker: 'mentor',
+      status: 'succeeded',
+      parts: [{ kind: 'text', id: 'next-text', text: newText }],
+    });
+    await publish();
+    await expect(bubble).toContainText(newText);
+    await page.getByTestId('pbl-companion-avatar').click();
+    await expect(
+      page.getByTestId('pbl-assistant').getByText(oldText, { exact: true }),
+    ).toBeVisible();
+  });
+}
+
+test('the tutor companion opens a board and moves its conversation between window and dock', async ({
+  page,
+  learningEvents,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await project(page, learningEvents, {
+    started: true,
+    explanationBoard: true,
+    openingText: 'We will design a greeting before writing it.',
+  });
+  const avatar = page.getByTestId('pbl-companion-avatar');
+  await expect(avatar).toBeVisible();
+  const boardToggle = page.getByTestId('pbl-board-toggle');
+  await boardToggle.click();
+  await expect(page.getByTestId('pbl-explain-board')).toBeVisible();
+  await testInfo.attach('tutor-and-board', {
+    body: await page.screenshot(),
+    contentType: 'image/png',
+  });
+  await boardToggle.click();
+  await expect(page.getByTestId('pbl-explain-board')).toBeHidden();
+  await avatar.click();
+  const conversation = page.getByTestId('pbl-assistant');
+  await expect(conversation).toBeVisible();
+  await expect(conversation.locator('[data-window-drag]')).toHaveCount(1);
+  await page.getByTestId('pbl-assistant-dock').click();
+  await expect(conversation).toBeVisible();
+  await expect(conversation.locator('[data-window-drag]')).toHaveCount(0);
+  await page.getByTestId('pbl-assistant-close').click();
+  await expect(avatar).toBeVisible();
+});
+
+test('keeps the preview footer reachable while the companion conversation follows the workbench', async ({
+  page,
+  learningEvents,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await project(page, learningEvents, { started: true, explanationBoard: true });
+  const avatar = page.getByTestId('pbl-companion-avatar');
+  await expect(avatar).toBeVisible();
+  const preview = page.getByTestId('pbl-application-open');
+  if ((await preview.getAttribute('aria-expanded')) !== 'true') await preview.click();
+  await expect(preview).toHaveAttribute('aria-expanded', 'true');
+  const send = page
+    .frameLocator('[data-testid="pbl-application-panel"] iframe')
+    .getByRole('button', { name: 'Send message' });
+  await send.click({ trial: true });
+  await avatar.click();
+  const workspace = page.locator('[data-pbl-tour-legacy="workspace-toggle"]');
+  if ((await workspace.getAttribute('aria-pressed')) !== 'true') await workspace.click();
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 1180, height: 730 },
+    { width: 1280, height: 560 },
+  ]) {
+    await page.setViewportSize(size);
+    await send.click({ trial: true });
+    await avatar.click({ trial: true });
+  }
+
+  const win = page.getByTestId('pbl-assistant-window');
+  const original = (await win.boundingBox())!;
+  const header = (await win.locator('[data-window-drag]').boundingBox())!;
+  await page.mouse.move(header.x + header.width / 2, header.y + header.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(header.x + header.width / 2 - 160, header.y + header.height / 2 + 20, {
+    steps: 5,
+  });
+  await page.mouse.up();
+  const moved = (await win.boundingBox())!;
+  expect(moved.x).toBeLessThan(original.x - 100);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(async () => (await win.boundingBox())?.x).toBe(moved.x);
+  await expect.poll(async () => (await win.boundingBox())?.height).toBe(moved.height);
+});
+
+test('folds adjacent failed tools after the final call settles and keeps the errors inspectable', async ({
+  page,
+  learningEvents,
+}) => {
+  const fixture = await project(page, learningEvents, { started: true, application: false });
+  const read = (id: string, status: 'failed' | 'running') => ({
+    kind: 'tool' as const,
+    id,
+    action: 'read' as const,
+    status,
+    args: { path: id },
+    result: 'Could not read ' + id,
+  });
+  const first = read('a.txt', 'failed'),
+    second = read('b.txt', 'running');
+  fixture.view.conversation = [
+    { id: 'inspection', speaker: 'coder', status: 'running', parts: [first, second] },
+  ];
+  const publish = async () => {
+    fixture.view.activitySequence++;
+    await fixture.publish();
+  };
+  await publish();
+  const group = page.getByTestId('workbench-tool-group');
+  await expect(group).toHaveAttribute('data-open', 'true');
+  second.status = 'failed';
+  await publish();
+  await expect(group).toHaveAttribute('data-open', 'false');
+  const header = group.getByRole('button', { name: '2 tool calls · 2 failed' });
+  await header.click();
+  await group.getByRole('button', { name: /a.txt/ }).click();
+  await expect(group.getByText('Could not read a.txt')).toBeVisible();
+  await publish();
+  await expect(group).toHaveAttribute('data-open', 'true');
+  fixture.view.conversation[0]!.parts = [
+    first,
+    { id: 'note', kind: 'text', text: 'Inspect the second path.' },
+    second,
+  ];
+  await publish();
+  await expect(group).toHaveCount(0);
+  await expect(page.getByTestId('workbench-tool-card')).toHaveCount(2);
+});
 
 const tour = (page: Page) => page.locator('[data-pbl-onboarding="card"]');
 const next = (page: Page) => tour(page).locator('footer button').last();
@@ -712,16 +1329,14 @@ test('five essential regions preserve focus and perform no learning actions', as
   await page.getByRole('button', { name: 'Start Project', exact: true }).click();
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
   await expect(tour(page)).toHaveCount(0);
-  await page.locator('[data-pbl-tour="workspace-toggle"]').click();
-  await expect(page.locator('[data-pbl-tour="workspace-toggle"]')).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
+  const workspaceToggle = 'button[aria-label="Toggle code workspace"]';
+  await page.locator(workspaceToggle).click();
+  await expect(page.locator(workspaceToggle)).toHaveAttribute('aria-pressed', 'false');
   await page.locator('[data-pbl-tour="replay"]').click();
   await next(page).click();
   await next(page).click();
   await expect(tour(page)).toHaveAttribute('data-step', 'code');
-  await correctSpotlight(page, '[data-pbl-tour="workspace-toggle"]');
+  await correctSpotlight(page, workspaceToggle);
   await page.keyboard.press('Escape');
   await expect(tour(page)).toHaveCount(0);
   await expect(page.locator('[data-pbl-tour="replay"]')).toBeFocused();

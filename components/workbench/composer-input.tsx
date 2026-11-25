@@ -47,6 +47,7 @@ import {
   composerClipboardSerializer,
   composerSchema,
   docFromPlain,
+  insertComposerPhrase,
   normalizeComposerDoc,
   offsetOfPos,
   plainOfDoc,
@@ -68,6 +69,11 @@ export interface ComposerInputHandle {
   focus(): void;
   /** Type at the selection, as a keystroke would. For tests and programmatic input. */
   insertText(text: string): void;
+  /**
+   * Insert transcribed speech at the caret (or at the end when the box has no
+   * caret yet), keeping surrounding words and inline chips separated by spaces.
+   */
+  insertTranscription(text: string): void;
 }
 
 /** The element's handle: how a test, which has no keyboard, drives the real editor. */
@@ -268,6 +274,10 @@ export function ComposerInput({
     const mount = mountRef.current;
     if (!mount) return;
     let view: EditorView | null = null;
+    // Whether the user (or a caller) has placed a caret in the current draft.
+    // Until then, speech transcription appends at the end rather than prepending
+    // at ProseMirror's initial offset-0 selection.
+    let hasCaret = false;
 
     const reportCaret = (state: EditorState) => {
       const { $from } = state.selection;
@@ -322,6 +332,7 @@ export function ComposerInput({
       const before = current.state;
       const { state } = before.applyTransaction(tr);
       current.updateState(state);
+      if (!tr.getMeta(EXTERNAL) && (tr.docChanged || tr.selectionSet)) hasCaret = true;
       if (!state.doc.eq(before.doc)) {
         // A chip back from the undo stack brings its reference back with it, in
         // the same batch as the text that names it.
@@ -388,6 +399,7 @@ export function ComposerInput({
             return false;
           },
           focus: (_view) => {
+            hasCaret = true;
             reportCaret(_view.state);
             return false;
           },
@@ -421,12 +433,19 @@ export function ComposerInput({
       insertText(text) {
         created.dispatch(created.state.tr.insertText(text));
       },
+      insertTranscription(text) {
+        const tr = insertComposerPhrase(created.state, text, { atEnd: !hasCaret });
+        if (!tr) return;
+        // Its own undo step so Cmd/Ctrl+Z removes just the dictated phrase.
+        created.dispatch(closeHistory(tr));
+      },
     };
     (created.dom as Element & { [HANDLE]?: ComposerInputHandle })[HANDLE] = handle;
     if (inputRef) inputRef.current = handle;
 
     // Applied here rather than in the effect below, which needs `createState`.
     resetRef.current = (text) => {
+      hasCaret = false;
       created.updateState(createState(text));
     };
 

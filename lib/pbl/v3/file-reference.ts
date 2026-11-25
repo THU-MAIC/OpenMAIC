@@ -13,11 +13,16 @@ export function fileReferenceHref(path: string, line?: number, end?: number) {
 }
 
 export function parseFileReference(href: string): FileReference | null {
-  if (!href.startsWith('#pbl-file=')) return null;
-  const params = new URLSearchParams(href.slice(1));
+  // Tutors sometimes repeat the project path before the tool's fragment.
+  const hash = href.indexOf('#pbl-file=');
+  if (hash < 0) return null;
+  const prefix = href.slice(0, hash);
+  const params = new URLSearchParams(href.slice(hash + 1));
   const path = params.get('pbl-file');
   if (
     !path ||
+    (prefix !== '' && prefix !== path) ||
+    /^[a-z][a-z0-9+.-]*:/i.test(path) ||
     path.startsWith('/') ||
     path.includes('\\') ||
     path.split('/').some((p) => !p || p === '.' || p === '..')

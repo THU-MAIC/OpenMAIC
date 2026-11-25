@@ -30,6 +30,8 @@ import {
   ModelSettingsError,
   type ModelSettingsChange,
 } from '@/lib/server/model-config/settings';
+import { fetchPlanStatus, reportsPlanCapabilities } from '@/lib/server/plan-status';
+import type { SlotCapability } from '@/lib/config/model-slots';
 
 export const runtime = 'nodejs';
 
@@ -111,7 +113,23 @@ export async function PUT(req: NextRequest) {
       if ((current?.revision ?? null) !== revision) {
         return jsonError(409, 'CONFLICT', 'The settings changed; reload them', headers);
       }
-      const next = await applyModelSettingsChange(current?.config ?? null, change);
+      // A token plan's new key: ask its vendor what the account's plan lacks,
+      // so the provider never offers a capability every call would fail. Only
+      // on the plan's own endpoint: a key for a custom one (kept when the
+      // change leaves the endpoint out) is never sent to the vendor.
+      let unsupportedCapabilities: SlotCapability[] | undefined;
+      if (change.kind === 'provider' && change.apiKey && reportsPlanCapabilities(change.preset)) {
+        const stored = current?.config.providers ?? {};
+        const kept = Object.hasOwn(stored, change.id) ? stored[change.id]?.baseUrl : undefined;
+        const endpoint = change.baseUrl === undefined ? kept : change.baseUrl;
+        if (!endpoint) {
+          unsupportedCapabilities = (await fetchPlanStatus(change.preset, change.apiKey))
+            .unsupported;
+        }
+      }
+      const next = await applyModelSettingsChange(current?.config ?? null, change, {
+        unsupportedCapabilities,
+      });
       await saveWorkspaceModelConfig(queryable, ownerId, next, revision, {
         clearKeys: keysClearedBy(change),
       });

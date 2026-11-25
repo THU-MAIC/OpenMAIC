@@ -411,6 +411,13 @@ const SHIPPED: readonly (readonly [
     'c71e6f11af3f4185aeb490b762d9a2b6ccb88e7cbd5c5251254500aac46e08c9',
   ],
   [
+    'pbl-v3',
+    12,
+    'retire-reset-studies',
+    true,
+    '7474a8e5b2a047c8bbfd29af4c92ac04f3814cd910a57b1d6c9b4cdbb082fe0d',
+  ],
+  [
     'render-jobs',
     1,
     'baseline',

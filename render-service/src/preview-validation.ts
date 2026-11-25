@@ -129,14 +129,17 @@ function cssUrls(css: string): string[] {
   return Array.from(css.matchAll(CSS_URL_PATTERN), (match) => (match[2] ?? '').trim());
 }
 
-/** Find interactive resource references that are neither inline nor data URLs. */
-export function findNonSelfContainedInteractiveReferences(html: string): string[] {
+/** Find interactive resource references that are neither self-contained nor explicitly allowed. */
+export function findNonSelfContainedInteractiveReferences(
+  html: string,
+  isAllowed: (url: string) => boolean = () => false,
+): string[] {
   const rejected: string[] = [];
   const rejectUnlessData = (value: string) => {
-    if (!isDataUrl(value)) rejected.push(value.trim());
+    if (!isDataUrl(value) && !isAllowed(value)) rejected.push(value.trim());
   };
   const rejectUnlessSelfContainedCssUrl = (value: string) => {
-    if (!isSelfContainedCssUrl(value)) rejected.push(value.trim());
+    if (!isSelfContainedCssUrl(value) && !isAllowed(value)) rejected.push(value.trim());
   };
 
   const visit = (node: HtmlNode): void => {
@@ -208,7 +211,10 @@ export function findNonSelfContainedInteractiveReferences(html: string): string[
 }
 
 /** Return an actionable 422 message when a valid scene cannot be faithfully previewed. */
-export function previewabilityError(scene: PreviewScene): string | undefined {
+export function previewabilityError(
+  scene: PreviewScene,
+  allowInteractiveResource?: (url: string) => boolean,
+): string | undefined {
   if (scene.type === 'slide') {
     const invalidElement = invalidSlideCanvasElementError(scene);
     if (invalidElement) return invalidElement;
@@ -231,12 +237,15 @@ export function previewabilityError(scene: PreviewScene): string | undefined {
     }
     let rejected: string[];
     try {
-      rejected = findNonSelfContainedInteractiveReferences(html);
+      rejected = findNonSelfContainedInteractiveReferences(html, allowInteractiveResource);
     } catch (error) {
       if (error instanceof InteractiveHtmlLimitError) return error.message;
       throw error;
     }
     if (rejected.length > 0) {
+      if (allowInteractiveResource) {
+        return `Interactive HTML has ${rejected.length} resource reference(s) outside the hosted libraries and data: URLs`;
+      }
       return `Interactive HTML is not self-contained: ${rejected.length} resource reference(s) must be inline or use data: URLs`;
     }
   }

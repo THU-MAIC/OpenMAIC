@@ -7,6 +7,7 @@ import { SandboxService } from '@/lib/server/sandbox/service';
 import { sandboxInvalid, SandboxError } from '@/lib/sandbox/errors';
 import {
   openStudy,
+  resetStudy,
   commandStudy,
   learningView,
   digest,
@@ -21,6 +22,7 @@ import { touchEnvironment, assertEnvironmentReady } from '@/lib/server/pbl-v3/en
 import { assertProjectSource } from '@/lib/server/pbl-v3/workspace-files';
 import { resolveProject } from '@/lib/server/pbl-v3/project-resolver';
 import { projectHeroDetails } from '@/lib/server/pbl-v3/project-hero';
+import { pblWhiteboardEnabled } from '@/lib/server/pbl-v3/whiteboard-config';
 import { installedProject, publicProjects } from '@/lib/server/pbl-v3/catalog';
 
 export const runtime = 'nodejs';
@@ -58,6 +60,7 @@ export async function GET(request: Request) {
       }
       return Response.json({
         hero: projectHeroDetails(project.definition),
+        companions: pblWhiteboardEnabled(),
         started: !!existing,
         studyId: existing?.id ?? null,
         reportAvailable: existing ? canViewProjectReport(existing.state) : false,
@@ -144,6 +147,7 @@ export async function POST(request: Request) {
         return Response.json(await learningView(principal, study.id));
       }
       if (typeof body.studyId !== 'string') throw sandboxInvalid('A learning session is required.');
+      if (body.action === 'reset') return Response.json(await resetStudy(principal, body.studyId));
       const result = await commandStudy(principal, body.studyId, body.command as LearningCommand);
       return Response.json({ result, view: await learningView(principal, body.studyId) });
     } catch (error) {

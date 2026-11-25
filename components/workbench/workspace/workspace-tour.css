@@ -1,0 +1,398 @@
+/* ── First-run tour ──────────────────────────────────────────────────────
+   One lit box over a dimmed workspace, and a card beside it (`WorkspaceTour`).
+   The box's own shadow is the mask, so moving the light between areas is a
+   transition of one element's box. The card is the product's card: the
+   raised surface, the violet step badge, the ink ramp. */
+.ws-tour {
+  --ws-tour-mask: rgba(15, 23, 42, 0.5);
+  --ws-tour-ring: rgba(167, 139, 250, 0.95);
+  --ws-tour-glow: rgba(124, 58, 237, 0.38);
+  --ws-tour-spring: cubic-bezier(0.32, 1.18, 0.56, 1);
+  --ws-tour-glide: cubic-bezier(0.32, 0.72, 0, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  /* The layer itself takes no pointer: its blocks and its card do, so a lit
+     element that takes its own click (\`passThrough\`) gets it. */
+  pointer-events: none;
+  animation: ws-tour-in 280ms var(--ws-ease) both;
+}
+
+.dark .ws-tour {
+  --ws-tour-mask: rgba(2, 6, 23, 0.68);
+  --ws-tour-glow: rgba(167, 139, 250, 0.32);
+}
+
+.ws-tour-leaving {
+  opacity: 0;
+  transition: opacity 200ms var(--ws-ease);
+}
+
+/* Another modal dialog is open (the tour sits above the app's dialogs): the
+   tour steps aside, unseen and taking no pointer, until it closes. */
+.ws-tour-yielded,
+.ws-tour-yielded * {
+  visibility: hidden;
+  pointer-events: none !important;
+}
+
+.ws-tour-block {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+.ws-tour-hole {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px var(--ws-tour-ring),
+    0 0 26px 6px var(--ws-tour-glow),
+    0 0 0 200vmax var(--ws-tour-mask);
+  transition:
+    transform 380ms var(--ws-tour-glide),
+    width 380ms var(--ws-tour-glide),
+    height 380ms var(--ws-tour-glide),
+    border-radius 380ms var(--ws-tour-glide),
+    box-shadow 240ms var(--ws-ease);
+}
+
+/* A centred step: the light is a point, its ring and glow gone. */
+.ws-tour-hole-none {
+  box-shadow:
+    0 0 0 0 transparent,
+    0 0 0 0 transparent,
+    0 0 0 200vmax var(--ws-tour-mask);
+}
+
+/* Waiting for the next area to settle on screen: the light holds and
+   breathes, the card steps back until there is somewhere true to point. */
+.ws-tour-hole-wait {
+  animation: ws-tour-wait 1100ms var(--ws-ease) infinite;
+}
+
+/* A lit element that takes its own click: a slow ring invites it. */
+.ws-tour-hole-live {
+  animation: ws-tour-live 1600ms var(--ws-ease) infinite;
+}
+
+.ws-tour-card.ws-tour-card-wait {
+  opacity: 0;
+  pointer-events: none;
+  translate: 0 4px;
+}
+
+.ws-tour-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 340px;
+  /* Clipped to the radius; scrolls only when the window is shorter than the
+     card (its max-height comes from the placement). */
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  border-radius: 18px;
+  border: 1px solid var(--ws-line-soft);
+  background: var(--ws-raised);
+  box-shadow:
+    0 24px 60px -18px rgba(15, 23, 42, 0.45),
+    0 2px 6px rgba(15, 23, 42, 0.08);
+  color: var(--ws-ink-soft);
+  pointer-events: auto;
+  transition:
+    transform 400ms var(--ws-tour-spring),
+    opacity 200ms var(--ws-ease),
+    translate 200ms var(--ws-ease);
+  animation: ws-tour-card-in 320ms var(--ws-tour-spring) both;
+}
+
+.dark .ws-tour-card {
+  box-shadow:
+    0 24px 60px -18px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(167, 139, 250, 0.12);
+}
+
+.ws-tour-progress {
+  height: 3px;
+  background: var(--ws-tint);
+}
+
+.ws-tour-progress > span {
+  display: block;
+  height: 100%;
+  transform-origin: left;
+  background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+  transition: transform 380ms var(--ws-tour-glide);
+}
+
+[dir='rtl'] .ws-tour-progress > span {
+  transform-origin: right;
+}
+
+.ws-tour-content {
+  padding: 14px 16px 2px;
+  animation: ws-tour-content-in 260ms var(--ws-ease) both;
+}
+
+.ws-tour-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.ws-tour-badge {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--ws-accent-wash);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ws-accent);
+  box-shadow: inset 0 0 0 1px var(--ws-accent-thread);
+}
+
+.ws-tour-title {
+  min-width: 0;
+  flex: 1;
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--ws-ink);
+}
+
+.ws-tour-close {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin-right: -6px;
+  border-radius: 8px;
+  color: var(--ws-ink-mute);
+}
+
+.ws-tour-close:hover {
+  background: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-tour-body {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ws-tour-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 9px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ws-ink-mute);
+}
+
+.ws-tour-lines li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.ws-tour-lines svg {
+  margin-top: 3px;
+  flex-shrink: 0;
+  color: var(--ws-accent);
+}
+
+.ws-tour-examples {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.ws-tour-example {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 11px;
+  border: 1px solid var(--ws-line);
+  background: var(--ws-surface);
+  font-size: 13px;
+  color: var(--ws-ink);
+  text-align: left;
+  transition:
+    border-color 160ms var(--ws-ease),
+    background-color 160ms var(--ws-ease);
+  animation: ws-tour-chip-in 300ms var(--ws-tour-spring) both;
+}
+
+.ws-tour-example svg {
+  color: var(--ws-accent);
+  transition: transform 160ms var(--ws-ease);
+}
+
+.ws-tour-example:hover {
+  border-color: var(--ws-accent-thread);
+  background: var(--ws-accent-wash);
+}
+
+.ws-tour-example:hover svg {
+  transform: translateX(2px);
+}
+
+.ws-tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px 14px;
+}
+
+.ws-tour-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-ink-mute);
+}
+
+.ws-tour-btn {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ws-ink-soft);
+}
+
+.ws-tour-btn:hover {
+  background: var(--ws-tint);
+  color: var(--ws-ink);
+}
+
+.ws-tour-btn-primary,
+.ws-tour-btn-primary:hover {
+  background: #7c3aed;
+  color: #fff;
+  box-shadow: 0 4px 12px -4px rgba(124, 58, 237, 0.55);
+}
+
+.ws-tour-btn-primary:hover {
+  opacity: 0.92;
+}
+
+.ws-tour-btn:focus-visible,
+.ws-tour-close:focus-visible,
+.ws-tour-example:focus-visible {
+  outline: 2px solid var(--ws-accent-thread);
+  outline-offset: 2px;
+}
+
+@keyframes ws-tour-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes ws-tour-card-in {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes ws-tour-content-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes ws-tour-chip-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+}
+
+@keyframes ws-tour-wait {
+  50% {
+    box-shadow:
+      0 0 0 1.5px transparent,
+      0 0 18px 2px var(--ws-tour-glow),
+      0 0 0 200vmax var(--ws-tour-mask);
+  }
+}
+
+@keyframes ws-tour-live {
+  50% {
+    box-shadow:
+      0 0 0 3px var(--ws-tour-ring),
+      0 0 34px 10px var(--ws-tour-glow),
+      0 0 0 200vmax var(--ws-tour-mask);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-tour,
+  .ws-tour-card,
+  .ws-tour-content,
+  .ws-tour-example,
+  .ws-tour-hole-wait,
+  .ws-tour-hole-live {
+    animation: none;
+  }
+
+  .ws-tour-hole,
+  .ws-tour-card,
+  .ws-tour-progress > span {
+    transition: none;
+  }
+}
+
+/* Outside the workbench shell (the project workbench plays this tour too) the shell's
+   tokens are not in scope: the tour carries the ones it uses. Kept equal to `.ws-root`. */
+.ws-tour-standalone {
+  --ws-accent: #7c3aed;
+  --ws-accent-thread: rgba(124, 58, 237, 0.32);
+  --ws-accent-wash: rgba(124, 58, 237, 0.08);
+  --ws-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ws-ink: #0f172a;
+  --ws-ink-mute: #64748b;
+  --ws-ink-soft: #334155;
+  --ws-line: rgba(15, 23, 42, 0.11);
+  --ws-line-soft: rgba(15, 23, 42, 0.065);
+  --ws-raised: #ffffff;
+  --ws-surface: rgba(255, 255, 255, 0.82);
+  --ws-tint: rgba(15, 23, 42, 0.055);
+}
+
+/* The project workbench is itself a full-screen layer; the tour plays above it. */
+.ws-tour-standalone .ws-tour {
+  z-index: 1000;
+}
+
+.dark .ws-tour-standalone {
+  --ws-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ws-accent: #a78bfa;
+  --ws-accent-thread: rgba(167, 139, 250, 0.36);
+  --ws-accent-wash: rgba(167, 139, 250, 0.1);
+  --ws-ink: #f8fafc;
+  --ws-ink-mute: #94a3b8;
+  --ws-ink-soft: #cbd5e1;
+  --ws-line: rgba(255, 255, 255, 0.12);
+  --ws-line-soft: rgba(255, 255, 255, 0.07);
+  --ws-raised: #1e293b;
+  --ws-surface: rgba(15, 23, 42, 0.78);
+  --ws-tint: rgba(255, 255, 255, 0.06);
+}

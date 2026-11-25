@@ -40,6 +40,7 @@ export function LearningPanels({
       <div ref={wrap} className="relative flex min-w-0 items-center text-xs">
         <button
           ref={trigger}
+          data-pbl-tour="learning-path"
           type="button"
           aria-expanded={open}
           aria-label={t('pblV3.learningPath')}

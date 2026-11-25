@@ -1,3 +1,4 @@
+import { studyExplainBoard } from './whiteboard';
 import { applicationChoices } from '@/lib/pbl/v3/application-choices';
 import { completedProjectFiles } from './completed-files';
 import { recordLearningEvidence } from './evidence';
@@ -19,7 +20,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { canonicalReview, reviewQuestions } from './review-question';
+import { reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
 import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
@@ -262,6 +263,51 @@ export function invalidateWorkspace(row: Study, changedPath?: string): EngineTra
     collected.recapCompleted = false;
   }
   return { state, events: [] };
+}
+/** Off unless the deployment asks for it: starting a project over is a testing aid for now. */
+function pblProgressResetEnabled() {
+  return ['true', '1'].includes(process.env.OPENMAIC_PBL_V3_PROGRESS_RESET ?? '');
+}
+/**
+ * Starts the learner over on this scene: the running turn is asked to stop, the study leaves
+ * the scene (its records are kept), and its environment is released so it holds no quota.
+ */
+export async function resetStudy(principal: OwnerPrincipal, id: string) {
+  if (!pblProgressResetEnabled())
+    throw new SandboxError('PBL_NOT_FOUND', 404, 'Progress reset is unavailable.');
+  const store = await LearningStore.open();
+  await store.get(id, principal.ownerId);
+  const row = await store.waitForExclusive(id, () => store.retireStudy(id, principal.ownerId));
+  const environments = [row.environment_id, row.environment_recovery?.requestId].filter(
+    (value): value is string => typeof value === 'string' && !!value,
+  );
+  if (environments.length) {
+    // Best effort: an environment that outlives this call is still released by idle upkeep.
+    try {
+      for (const environmentId of new Set(environments)) {
+        const service = await SandboxService.forLearningMaintenance(
+          id,
+          principal.ownerId,
+          environmentId,
+        );
+        await withLearningWorkspaceAccess(
+          {
+            ownerId: principal.ownerId,
+            workspaceId: learningWorkspaceId(id),
+            environmentIds: () => [environmentId],
+            operations: ['destroy'],
+          },
+          () => service.destroy(environmentId),
+        );
+      }
+    } catch (error) {
+      console.warn('[pbl] Reset left an environment to idle release', {
+        studyId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return { reset: true };
 }
 export async function openStudy(principal: OwnerPrincipal, stageId: string, sceneId: string) {
   const studies = await LearningStore.open();
@@ -1050,6 +1096,7 @@ export async function learningView(
       scope: string;
       inputId?: number;
       messageId?: number;
+      spokenAt?: number;
       handoff: boolean;
       canonical?: boolean;
     }
@@ -1071,13 +1118,24 @@ export async function learningView(
   if (binding) {
     const agents = await getAgentSessionStore();
     const meta = await agents.getSession(binding.session_id);
-    latestUserSeq =
-      (
-        await store.pool.query<{ seq: number | null }>(
-          "SELECT max(seq) AS seq FROM agent_session_events WHERE session_id=$1 AND type='user_message'",
-          [binding.session_id],
-        )
-      ).rows[0]?.seq ?? undefined;
+    // The delimiter may be older than the bounded transcript. Resolve it in this
+    // role session before combining the transcript with other roles' history.
+    const {
+      rows: [anchors],
+    } = await store.pool.query<{ input: number | null; start: number | null }>(
+      `SELECT
+         (SELECT max(seq) FROM agent_session_events WHERE session_id=$1 AND type='user_message') AS input,
+         (SELECT CASE WHEN data->>'milestoneId'=$3 AND data->>'stageIndex'=$4 THEN seq END
+          FROM agent_session_events WHERE session_id=$1 AND type='pbl_stage_entered' AND seq<=$2
+          ORDER BY seq DESC LIMIT 1) AS start`,
+      [
+        binding.session_id,
+        historyThrough.get(binding.session_id) ?? 0,
+        row.state.position.milestoneId,
+        String(row.state.position.stageIndex),
+      ],
+    );
+    latestUserSeq = anchors.input ?? undefined;
     const unclosed = succeededWithoutTeachingReceipt(
       row,
       stage,
@@ -1105,6 +1163,10 @@ export async function learningView(
       binding.role,
       meta?.status === 'running' || meta?.status === 'queued',
       roleRun.status,
+    ).map((entry) =>
+      anchors.start != null && entry.inputId != null && entry.inputId > anchors.start
+        ? { ...entry, currentStage: true as const }
+        : entry,
     );
     const questions = reviewQuestions(events);
     for (const event of events) {
@@ -1113,19 +1175,21 @@ export async function learningView(
         toolName?: string;
         isError?: boolean;
         result?: { content?: { type: string; text?: string }[] };
-        message?: { role?: string; content?: unknown };
+        message?: { role?: string; timestamp?: number; content?: unknown };
         pblInputId?: number;
         pblMessageId?: number;
       };
-      const question = questions.get(event.id);
-      if (question !== undefined) {
+      const receipt = questions.get(event.id);
+      if (receipt) {
+        const question = receipt.text;
         messages.push({
           role: 'assistant',
           text: question,
           scope: binding.session_id,
           inputId: data.pblInputId,
           handoff: true,
-          canonical: canonicalReview(event),
+          canonical: receipt.canonical,
+          spokenAt: receipt.spokenAt,
         });
         if (
           event.id > (latestUserSeq ?? 0) &&
@@ -1162,6 +1226,7 @@ export async function learningView(
             scope: binding.session_id,
             inputId: data.pblInputId,
             messageId: data.pblMessageId ?? event.id,
+            spokenAt: data.message.timestamp,
             handoff: false,
           });
       }
@@ -1212,17 +1277,22 @@ export async function learningView(
       scope: binding!.session_id,
       inputId: latestUserSeq,
       canonical: canonicalPending,
+      spokenAt: 'spokenAt' in pendingReview ? pendingReview.spokenAt : undefined,
       handoff: true,
     });
     conversation.push({
       id: `${binding!.session_id}:pending-${pendingReview.runId}`,
       speaker: binding!.role,
+      currentStage: true,
       inputId: latestUserSeq,
       parts: [
         {
           kind: 'text',
           id: `question-pending-${pendingReview.runId}`,
           text: pendingDisplay!,
+          ...('spokenAt' in pendingReview && pendingReview.spokenAt !== undefined
+            ? { spokenAt: pendingReview.spokenAt }
+            : {}),
           ...(canonicalPending ? { canonical: true as const } : {}),
         },
       ],
@@ -1387,6 +1457,8 @@ export async function learningView(
     conversation,
     conversationHistory,
     activitySequence,
+    ...(await studyExplainBoard(row)),
+    ...(pblProgressResetEnabled() ? { canReset: true } : {}),
     task: { title: milestone.title, goal: milestone.goal ?? milestone.title },
     roleRun,
     needsOpening: !!role && !binding && row.state.status !== 'completed',

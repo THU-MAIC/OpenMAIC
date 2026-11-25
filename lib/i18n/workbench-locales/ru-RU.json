@@ -235,7 +235,12 @@
       "createMaterialFolder": "Создать папку в базе знаний",
       "renameMaterialFolder": "Переименовать папку базы знаний",
       "moveMaterials": "Переместить материалы",
-      "renameMaterial": "Переименовать материал"
+      "renameMaterial": "Переименовать материал",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}} с",

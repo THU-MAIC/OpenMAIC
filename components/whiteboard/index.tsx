@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eraser, History, Minimize2, Minus, PencilLine, Plus, RotateCcw, X } from 'lucide-react';
+import { Eraser, History, Minus, PencilLine, Plus, RotateCcw, X } from 'lucide-react';
 import type { PPTElement } from '@openmaic/dsl';
 import type { WhiteboardElementReference } from '@/lib/types/chat';
 import { ElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
@@ -10,8 +10,8 @@ import {
   getDisplayedWhiteboard,
   isWhiteboardReferenceAvailable,
 } from '@/lib/whiteboard/element-reference';
-import { WhiteboardCanvas } from './whiteboard-canvas';
-import type { WhiteboardCanvasHandle } from './whiteboard-canvas';
+import { WhiteboardCanvas, type WhiteboardCanvasHandle } from './whiteboard-canvas';
+import { WhiteboardWindow } from './whiteboard-window';
 import { WhiteboardHistory } from './whiteboard-history';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -60,8 +60,8 @@ export function Whiteboard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [viewModified, setViewModified] = useState(false);
   const [zoom, setZoom] = useState(1);
-  const contentRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<WhiteboardCanvasHandle>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const snapshotCount = useWhiteboardHistoryStore((s) => s.snapshots.length);
   const runtimeProjection = useCanvasStore.use.runtimeWhiteboardProjection();
 
@@ -266,102 +266,70 @@ export function Whiteboard({
               y: 16,
               transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] },
             }}
-            className="absolute inset-4 pointer-events-auto bg-white/95 dark:bg-gray-800/95 backdrop-blur-2xl rounded-3xl shadow-[0_32px_80px_-20px_rgba(0,0,0,0.25)] border-2 border-purple-200/60 dark:border-purple-700/60 flex flex-col overflow-hidden z-[120] ring-4 ring-purple-100/40 dark:ring-purple-800/40"
+            className="pointer-events-none absolute inset-0 z-[120]"
           >
-            {/* Header */}
-            <div className="h-14 px-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between shrink-0 bg-white/50 dark:bg-gray-800/50">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
-                  <PencilLine className="w-4 h-4" />
-                </div>
-                <span className="font-bold text-gray-800 dark:text-gray-200 tracking-tight">
-                  {t('whiteboard.title')}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <AnimatePresence>
-                  {viewModified && (
-                    <motion.button
-                      type="button"
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.15 }}
-                      onClick={() => canvasRef.current?.resetView()}
-                      whileTap={{ scale: 0.9 }}
-                      className="p-2 text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
-                      title={t('whiteboard.resetView')}
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                    </motion.button>
-                  )}
-                </AnimatePresence>
-                {!runtimeAuthoritative && (
-                  <>
-                    <motion.button
-                      type="button"
-                      onClick={handleClear}
-                      disabled={isClearing || elementCount === 0}
-                      whileTap={{ scale: 0.9 }}
-                      className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                      title={t('whiteboard.clear')}
-                    >
-                      <motion.div
-                        animate={isClearing ? { rotate: [0, -15, 15, -10, 10, 0] } : { rotate: 0 }}
-                        transition={
-                          isClearing ? { duration: 0.5, ease: 'easeInOut' } : { duration: 0.2 }
-                        }
-                      >
-                        <Eraser className="w-4 h-4" />
-                      </motion.div>
-                    </motion.button>
-                    <div className="relative">
+            <WhiteboardWindow
+              // The classroom opens the sheet over the whole stage; the learner may then move it.
+              initial={({ width, height }) => ({
+                x: 16,
+                y: 16,
+                width: width - 32,
+                height: height - 32,
+              })}
+              title={t('whiteboard.title')}
+              whiteboard={whiteboard}
+              contentRef={contentRef}
+              onClose={onClose}
+              actions={
+                <>
+                  {!runtimeAuthoritative && (
+                    <>
                       <motion.button
                         type="button"
-                        onClick={() => setHistoryOpen(!historyOpen)}
+                        onClick={handleClear}
+                        disabled={isClearing || elementCount === 0}
                         whileTap={{ scale: 0.9 }}
-                        className="relative p-2 text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
-                        title={t('whiteboard.history')}
+                        className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                        title={t('whiteboard.clear')}
                       >
-                        <History className="w-4 h-4" />
-                        {snapshotCount > 0 && (
-                          <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
-                            {snapshotCount}
-                          </span>
-                        )}
+                        <motion.div
+                          animate={
+                            isClearing ? { rotate: [0, -15, 15, -10, 10, 0] } : { rotate: 0 }
+                          }
+                          transition={
+                            isClearing ? { duration: 0.5, ease: 'easeInOut' } : { duration: 0.2 }
+                          }
+                        >
+                          <Eraser className="w-4 h-4" />
+                        </motion.div>
                       </motion.button>
-                      <WhiteboardHistory
-                        isOpen={historyOpen}
-                        onClose={() => setHistoryOpen(false)}
-                      />
-                    </div>
-                  </>
-                )}
-                <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title={t('whiteboard.minimize')}
-                >
-                  <Minimize2 className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Whiteboard Content Area */}
-            <div
-              ref={contentRef}
-              className="flex-1 relative bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:24px_24px] overflow-hidden"
+                      <div className="relative">
+                        <motion.button
+                          type="button"
+                          onClick={() => setHistoryOpen(!historyOpen)}
+                          whileTap={{ scale: 0.9 }}
+                          className="relative p-2 text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                          title={t('whiteboard.history')}
+                        >
+                          <History className="w-4 h-4" />
+                          {snapshotCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
+                              {snapshotCount}
+                            </span>
+                          )}
+                        </motion.button>
+                        <WhiteboardHistory
+                          isOpen={historyOpen}
+                          onClose={() => setHistoryOpen(false)}
+                        />
+                      </div>
+                    </>
+                  )}
+                </>
+              }
             >
-              <WhiteboardCanvas
-                ref={canvasRef}
-                whiteboard={whiteboard}
-                onViewModifiedChange={setViewModified}
-              />
               {elementPickOverlay}
-            </div>
+            </WhiteboardWindow>
           </motion.div>
         )}
       </AnimatePresence>

@@ -233,7 +233,7 @@
   /* This flex area excludes the actual toolbar, notices and composer height. */
   container-type: size;
 }
-.pbl-workbench :is(.pbl-project-overview, .pbl-advance-bar) {
+.pbl-workbench :is(.pbl-project-overview, .pbl-advance-bar, .pbl-start-bar) {
   --primary: var(--pbl-guidance);
   --primary-foreground: var(--pbl-guidance-foreground);
   --ring: var(--pbl-guidance);

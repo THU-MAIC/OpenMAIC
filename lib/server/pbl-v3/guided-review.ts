@@ -11,6 +11,7 @@ const receiptSchema = z.object({
   runId: z.string(),
   question: z.string().min(1),
   displayText: z.string().min(1).optional(),
+  spokenAt: z.number().optional(),
   approval: z.boolean().optional(),
 });
 export const guidedSkillStateSchema = z
@@ -275,6 +276,7 @@ export class GuidedSkillReview {
     digest: string,
     approval = false,
     displayText?: string,
+    spokenAt?: number,
   ): GuidedSkillState {
     if (!question.trim()) throw new Error('请给出当前段的具体检查任务');
     // The welcome is already supplied by the host prompt. Recording readiness
@@ -289,6 +291,7 @@ export class GuidedSkillReview {
       runId: this.runId,
       question,
       ...(displayText ? { displayText } : {}),
+      ...(spokenAt !== undefined ? { spokenAt } : {}),
       ...(approval ? { approval: true } : {}),
     };
     this.ended = true;

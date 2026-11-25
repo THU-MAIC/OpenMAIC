@@ -1837,37 +1837,48 @@
     },
     "tokenPlan": {
       "nav": "Token Plan",
-      "title": "Token Plan Setup",
-      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search/web fetch).",
       "selectPlan": "Select Provider",
-      "region": "المنطقة",
-      "regionHintDomestic": "لحسابات موقع البر الرئيسي الصيني",
-      "regionHintInternational": "لحسابات الموقع الدولي",
+      "region": "الموقع",
+      "regionHintDomestic": "خطط لحسابات موقع البر الرئيسي الصيني.",
+      "regionHintInternational": "خطط لحسابات الموقع الدولي.",
       "apiKey": "API Key",
       "updateKey": "Update key",
       "modelsCount": "{{n}} models",
-      "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time.",
+      "quotaTitle": "حصة الخطة",
+      "quotaRemaining": "المتبقي {{percent}}%",
+      "quotaCalls": "المستخدم {{used}} / {{total}} استدعاء",
+      "quotaUnlimited": "غير محدود",
+      "quotaExhausted": "نفدت",
+      "quotaUnknown": "المتبقي غير معروف",
+      "quotaResetsAt": "تُعاد التهيئة {{time}}",
+      "quotaResetUnknown": "وقت إعادة التهيئة غير متاح",
+      "quotaNoReset": "الدفع حسب الاستخدام: لا توجد فترة إعادة تهيئة.",
+      "deploymentUsage": "استخدام النشر",
+      "deploymentUsageNote": "استدعاءات الخادم عبر كل مساحات العمل",
       "statusConnected": "متصل",
       "applyModelsNote": "عند الاتصال تُطبَّق النماذج الموصى بها في هذه الخطة على مراحل الدورة؛ وإذا كان ذلك سيستبدل ما تستخدمه مرحلة الآن (نموذجًا اخترته أو قيمة الخادم الافتراضية)، فسيُطلب منك التأكيد أولًا.",
-      "saveKey": "حفظ وتشغيل",
+      "saveKey": "ربط الخطة",
       "cancelKeyUpdate": "إلغاء التحديث",
-      "manageAccount": "إدارة الحساب",
       "disconnect": "إلغاء الربط",
       "disconnectTitle": "إلغاء ربط هذه الباقة؟",
       "disconnectBody": "بعد إلغاء الربط لن تُستخدم هذه الباقة في طلبات جديدة، ولن يُلغى اشتراكك لدى مزوّد الخدمة.",
       "statusNotConnected": "غير متصل",
-      "balanceManagement": "إدارة الرصيد",
-      "modelPlan": "عرض خطة الطرز",
       "planNoteEntitlement": "قدرات الباقة وأسعارها يحددها المزوّد.",
       "planUnavailable": "الطراز غير مُفصح عنه",
       "planNoteEditable": "هذا هو الإعداد الافتراضي؛ يمكن تغيير نموذج كل عقدة في «إعداد نماذج المقرر».",
       "capImage": "توليد الصور",
+      "capImageShort": "الصور",
       "capLlm": "توليد النصوص",
+      "capLlmShort": "دردشة LLM",
       "capTts": "تحويل النص إلى كلام",
+      "capTtsShort": "الكلام",
       "capVideo": "توليد الفيديو",
+      "capVideoShort": "الفيديو",
       "capWebSearch": "البحث في الويب",
+      "capWebSearchShort": "البحث في الويب",
       "capWebFetch": "جلب صفحات الويب",
+      "capWebFetchShort": "جلب الويب",
       "capAsr": "التعرف على الكلام",
       "capDocument": "تحليل المستندات",
       "saved": "تم حفظ إعدادات الربط",
@@ -1876,7 +1887,66 @@
       "applyTitle": "هل تريد استخدام الإعداد الموصى به لهذه الخطة؟",
       "applyBody": "توصي {{name}} بنماذجها الخاصة لهذه المراحل. استخدامها يستبدل ما تستخدمه كل مرحلة الآن، بما في ذلك قيم الخادم الافتراضية:",
       "applyKeep": "الإبقاء على إعدادي الحالي",
-      "applyRecommended": "استخدام الإعداد الموصى به للخطة"
+      "applyRecommended": "استخدام الإعداد الموصى به للخطة",
+      "subtitle": "مفتاح اشتراك واحد يضبط كل القدرات المدعومة تلقائيًا.",
+      "connectedCount": "متصلة ({{n}})",
+      "availableCount": "متاحة ({{n}})",
+      "priorityOrder": "ترتيب الأولوية",
+      "priorityNote": "الخطط ذات الأولوية الأعلى تخدم القدرات المشتركة أولًا.",
+      "setUp": "إعداد",
+      "regionGlobal": "عالمي",
+      "payAsYouGo": "الدفع حسب الاستخدام",
+      "keyLabel": "المفتاح",
+      "priority": "الأولوية #{{n}}",
+      "connectHint": "الصق مفتاح {{name}} لإعداد قدراته.",
+      "consoleLink": "وحدة تحكم {{name}}",
+      "portalLink": "بوابة {{name}}",
+      "platformLink": "منصة {{name}}",
+      "more": "المزيد",
+      "subscribeOn": "اشتراك ({{site}})",
+      "connectTitle": "اتصال بـ {{name}}",
+      "missingCapability": "خارج الفئة: {{name}}",
+      "missingCapabilityShort": "بدون {{name}}",
+      "listSeparator": "، ",
+      "deploymentConnection": "اتصال النشر",
+      "workspaceConnection": "اتصال مساحة العمل",
+      "quotaNa": "الحصة غير متاحة",
+      "quotaLeft": "متبقٍ",
+      "quotaUpdatedAt": "حُدِّث {{time}}",
+      "windowHours": "نافذة {{n}} ساعة",
+      "windowWeek": "النافذة الأسبوعية",
+      "windowMonth": "هذا الشهر",
+      "balanceTitle": "رصيد الحساب",
+      "balanceOf": "الرصيد بـ {{currency}}",
+      "openPlatform": "فتح المنصة",
+      "checkBalance": "عرض الرصيد",
+      "quotaUnavailableTitle": "لا يمكن الاستعلام عن حصة {{name}} هنا",
+      "quotaUnavailableBody": "تحقق من المتبقي على موقع {{name}}.",
+      "capsTitle": "القدرات في OpenMAIC",
+      "capsTitlePreview": "ما يتيحه ربط هذه الخطة",
+      "capsCount": "نشطة {{serving}} · مضمّنة {{included}} من {{total}}",
+      "capsCountPreview": "مضمّنة {{included}} من {{total}}",
+      "capActive": "نشطة",
+      "capIncluded": "مضمّنة",
+      "capNotInTier": "خارج الفئة",
+      "capUnavailable": "غير متاحة",
+      "capNotOffered": "غير مقدَّمة",
+      "capViaPlan": "عبر {{name}}",
+      "searchBy": "بحث {{name}}",
+      "notInTierReason": "غير مضمّنة في فئة {{name}} الحالية",
+      "unavailableReason": "غير متاحة على هذا الاتصال",
+      "notOfferedBy": "لا يقدّمها {{name}}",
+      "routeDefault": "افتراضي · {{target}}",
+      "routeOther": "مضمّنة · يخدمها {{target}}",
+      "routeHandledBy": "غير مقدَّمة · يتولاها {{target}}",
+      "routeOff": "متوقفة",
+      "routeUnset": "لا يوجد افتراضي",
+      "routeInvalid": "الإعداد الافتراضي غير صالح",
+      "stageRoutes": "(+{{n}} مراحل)",
+      "moreModels": "+{{n}} أخرى",
+      "alsoProvides": "يوفّر المفتاح نفسه أيضًا {{list}}.",
+      "modelsRouting": "النماذج والتوجيه الافتراضي",
+      "viewStats": "عرض الإحصاءات"
     },
     "skills": {
       "nav": "المهارات",
@@ -3093,7 +3163,7 @@
       "currentMilestone": "المرحلة الحالية",
       "milestoneGoal": "الهدف:",
       "milestoneResult": "النتيجة:",
-      "completionHandoff": "This step is complete. See the task bar at the bottom of the Learning Assistant pane for the next action.",
+      "completionHandoff": "This step is complete.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -3454,6 +3524,111 @@
         }
       },
       "close": "إغلاق الدليل"
+    },
+    "resetProgress": "Reset progress",
+    "resetProgressConfirm": "Resetting takes this project back to before you started: the conversation, step progress, whiteboard and your code changes all start over. Reset now?",
+    "personas": {
+      "mentor": "Mo",
+      "discussion": "Quinn",
+      "planner": "Ray",
+      "coder": "Cody"
+    },
+    "board": {
+      "previous": "Previous board",
+      "next": "Next board",
+      "current": "Now",
+      "ops": {
+        "text": "Text",
+        "table": "Table",
+        "code": "Code",
+        "shape": "Shape",
+        "line": "Line",
+        "latex": "Formula",
+        "chart": "Chart",
+        "edit": "Code edit",
+        "delete": "Erase",
+        "clear": "Clear",
+        "read": "Read",
+        "point": "أشار إلى الكود",
+        "open": "open",
+        "close": "close"
+      },
+      "speed": "السرعة {{speed}}x، انقر للتغيير",
+      "collapse": "Minimise",
+      "dock": "Open full conversation",
+      "float": "Shrink to companion"
+    },
+    "tour": {
+      "done": "Let's go",
+      "welcome": {
+        "title": "Welcome to your project workbench",
+        "body": "In this lesson you build something real with your own hands. Take half a minute to meet what is here, then it is you and your companion."
+      },
+      "preview": {
+        "title": "This is your work, and it runs",
+        "body": "Not a screenshot: the program is live. Click around or send it a line whenever you like, to see what it can do now and what is still missing."
+      },
+      "companion": {
+        "title": "The companion who works with you",
+        "body": "A companion is with you at every step. What it says appears here one sentence at a time, and is read aloud. Click the bubble to pause while it speaks; click its avatar to see the whole conversation."
+      },
+      "progress": {
+        "title": "The ring is your progress",
+        "body": "The ring around the face has one segment per stage. Hover a segment to see what that step is; click it to open the current task."
+      },
+      "controls": {
+        "title": "The buttons beside it",
+        "body": "Move the pointer over the avatar and two buttons open beside it: change the reading speed, or turn the voice off. When it is your turn, an input appears under the bubble where you can type, or tap the mic to speak."
+      },
+      "layout": {
+        "title": "The whiteboard and code show up by themselves",
+        "body": "When something needs drawing the whiteboard appears; when it is about your code the file opens. These three buttons open and close them yourself, or dock the conversation on the right."
+      },
+      "start": {
+        "title": "Start when you are ready",
+        "body": "Press Start learning and your companion will first show you what this lesson builds. Ask anything; it is in no hurry."
+      },
+      "conversationPane": {
+        "title": "محادثتك",
+        "body": "اقرأ هنا شروحات رفيقك وأسئلته وملاحظاته. يمكنك أيضًا الرجوع إلى الرسائل السابقة."
+      },
+      "learningPath": {
+        "title": "مسار التعلم",
+        "body": "تظهر هنا المرحلة والخطوة الحاليتان. افتح المسار للاطلاع على مراحل المشروع."
+      },
+      "reply": {
+        "title": "الرد على رفيقك",
+        "body": "عندما يحين دورك، اكتب ردك هنا وأرسله."
+      },
+      "collapsePane": {
+        "title": "العودة إلى الصورة الرمزية",
+        "body": "اطوِ هذه اللوحة للعودة إلى الصورة الرمزية وفقاعة الحوار. يمكنك ضبط سرعة القراءة أو كتم الصوت من الأزرار بجوار الصورة."
+      },
+      "replay": {
+        "title": "مراجعة الدليل",
+        "body": "يمكنك فتح الدليل من هنا متى أردت مراجعة هذه الخطوات."
+      },
+      "greeting": "Hi, I am {{name}}, and I will work through this lesson with you. Press start below when you are ready, and I will first show you what we are building."
+    },
+    "cast": {
+      "title": "The companions on this project",
+      "hint": "All four are waiting for you at the workbench.",
+      "discussion": {
+        "part": "Explaining and deciding",
+        "line": "I start with you: we look at the problem until it is clear, then decide what to do."
+      },
+      "planner": {
+        "part": "Planning",
+        "line": "Once the direction is set, I turn it into a step-by-step plan for you to look over."
+      },
+      "coder": {
+        "part": "Coding",
+        "line": "When you approve the plan I write the code, and tell you about every change."
+      },
+      "mentor": {
+        "part": "Testing and looking back",
+        "line": "At the end we test it together and look back at what you really learned."
+      }
     }
   },
   "mobileClassroom": {

@@ -1,9 +1,13 @@
 import 'server-only';
 import type { PersistedAgentSessionEvent } from '@openmaic/storage';
 import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
-import type { LearningConversationEntry, LearningRunFailure } from '@/lib/pbl/v3/conversation';
+import type {
+  LearningConversationEntry,
+  LearningRunFailure,
+  LearningBoardDisplay,
+} from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { LEARNER_HANDOFF_EVENT, reviewQuestions, canonicalReview } from './review-question';
+import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   executionFailureCode,
@@ -44,6 +48,81 @@ const visibleTools = {
   manage_file: 'manage',
   read_next_skill: 'skill',
 } as const;
+const boardOps: Record<string, LearningBoardDisplay['op']> = {
+  wb_draw_text: 'text',
+  wb_draw_table: 'table',
+  wb_draw_code: 'code',
+  wb_draw_shape: 'shape',
+  wb_draw_line: 'line',
+  wb_draw_latex: 'latex',
+  wb_draw_chart: 'chart',
+  wb_edit_code: 'edit',
+  wb_delete: 'delete',
+  wb_clear: 'clear',
+  wb_read: 'read',
+  wb_open: 'open',
+  wb_close: 'close',
+  point_at_code: 'point',
+  point_at_preview: 'point',
+};
+function boardDisplay(
+  name: string,
+  args: unknown,
+  result?: unknown,
+  failed = false,
+): LearningBoardDisplay {
+  const input = record(args);
+  const details = record(record(result).details);
+  const text = (value: unknown) => (typeof value === 'string' ? value : '');
+  const label =
+    name === 'wb_draw_text'
+      ? text(input.content)
+      : name === 'wb_draw_table' && Array.isArray(input.data) && Array.isArray(input.data[0])
+        ? input.data[0].map(text).join(' / ')
+        : name === 'wb_draw_code'
+          ? text(input.fileName) || text(input.code).split('\n')[0]
+          : name === 'point_at_code'
+            ? `${text(input.path)}:${input.startLine}`
+            : name === 'point_at_preview'
+              ? text(input.selector)
+              : '';
+  const ids = Array.isArray(details.elements)
+    ? details.elements.flatMap((element) => {
+        const id = record(element).id;
+        return typeof id === 'string' ? [id] : [];
+      })
+    : [];
+  return {
+    ...(name.startsWith('wb_draw_') && ids.length ? { ids } : {}),
+    ...(name === 'wb_delete' && !failed && text(input.elementId)
+      ? { removes: [text(input.elementId)] }
+      : {}),
+    ...(name === 'point_at_code' && typeof input.startLine === 'number' && text(input.path)
+      ? {
+          target: {
+            path: text(input.path),
+            line: input.startLine,
+            ...(typeof input.endLine === 'number' ? { end: input.endLine } : {}),
+            pointer: input.pointer === 'laser' ? ('laser' as const) : ('spotlight' as const),
+          },
+        }
+      : {}),
+    ...(name === 'point_at_preview' && text(input.selector)
+      ? {
+          target: {
+            selector: text(input.selector),
+            pointer: input.pointer === 'laser' ? ('laser' as const) : ('spotlight' as const),
+          },
+        }
+      : {}),
+    op: boardOps[name],
+    label: name === 'wb_draw_text' ? Array.from(label).slice(0, 24).join('') : label,
+    seq:
+      !failed && details.ok !== false && typeof details.lastSeq === 'number'
+        ? details.lastSeq
+        : null,
+  };
+}
 const runEvents = new Set([
   'session_start',
   'session_resumed',
@@ -114,13 +193,15 @@ export function projectConversation(
     return assistant;
   };
   const appendQuestion = (event: PersistedAgentSessionEvent) => {
-    const question = questions.get(event.id);
+    const receipt = questions.get(event.id);
+    if (!receipt) return;
+    const question = receipt.text;
     if (
-      question &&
-      (canonicalReview(event) ||
-        !getAssistant(event).parts.some(
-          (part) => part.kind === 'text' && part.text.includes(question),
-        ))
+      receipt.spokenAt !== undefined ||
+      receipt.canonical ||
+      !getAssistant(event).parts.some(
+        (part) => part.kind === 'text' && part.text.includes(question),
+      )
     )
       getAssistant(event).parts.push({
         kind: 'text',
@@ -129,7 +210,8 @@ export function projectConversation(
             ? `question-${event.attempt}-${record(event.data).toolCallId}`
             : `question-${event.id}`,
         text: question,
-        ...(canonicalReview(event) ? { canonical: true } : {}),
+        ...(receipt.canonical ? { canonical: true } : {}),
+        ...(receipt.spokenAt !== undefined ? { spokenAt: receipt.spokenAt } : {}),
       });
   };
   for (const event of events) {
@@ -164,6 +246,7 @@ export function projectConversation(
       if (!data.pblOpening && typeof data.text === 'string')
         entries.push({
           id: `user-${event.id}`,
+          inputId: event.id,
           commandId: typeof data.pblCommandId === 'string' ? data.pblCommandId : undefined,
           at: event.ts,
           speaker: 'user',
@@ -223,6 +306,16 @@ export function projectConversation(
       }
       messageId ??= event.id;
       const content = Array.isArray(message.content) ? message.content : [];
+      const reviewCall = content.find(
+        (block) => block?.type === 'toolCall' && block.name === 'request_skill_review',
+      );
+      const closingIndex = content.findLastIndex(
+        (block) => block?.type === 'text' && typeof block.text === 'string' && block.text.trim(),
+      );
+      const reviewStop =
+        event.type === 'message_end' &&
+        message.stopReason === 'stop' &&
+        !content.some((block) => block?.type === 'toolCall');
       for (const [index, raw] of content.entries()) {
         const block = record(raw);
         if (block.type !== 'text' && block.type !== 'thinking') continue;
@@ -249,6 +342,11 @@ export function projectConversation(
           if (typeof timing.startedAt === 'number') part.startedAt = timing.startedAt;
           if (typeof timing.endedAt === 'number') part.endedAt = timing.endedAt;
         }
+        if (part.kind === 'text' && typeof message.timestamp === 'number')
+          part.spokenAt = message.timestamp;
+        if (part.kind === 'text' && index === closingIndex && reviewStop) part.reviewStop = true;
+        if (part.kind === 'text' && index === closingIndex && typeof reviewCall?.id === 'string')
+          part.reviewReceiptId = `question-${event.attempt}-${reviewCall.id}`;
         part.text = text;
         part.streaming =
           event.type !== 'message_end' && (part.kind !== 'thinking' || part.endedAt === undefined);
@@ -265,7 +363,9 @@ export function projectConversation(
     ) {
       settleThinking(event.ts);
       const name = String(data.toolName ?? '');
-      const action = visibleTools[name as keyof typeof visibleTools] ?? 'tool';
+      const action = boardOps[name]
+        ? 'board'
+        : (visibleTools[name as keyof typeof visibleTools] ?? 'tool');
       if (name && typeof data.toolCallId === 'string') {
         let tool = tools.get(data.toolCallId);
         if (!tool) {
@@ -282,6 +382,7 @@ export function projectConversation(
         }
         if (data.pblContentOmitted) tool.omitted = true;
         if (data.args !== undefined) tool.args = data.args;
+        if (boardOps[name]) tool.display = boardDisplay(name, tool.args);
         if (event.type === 'tool_execution_update') {
           tool.progress =
             data.progress !== undefined
@@ -289,7 +390,9 @@ export function projectConversation(
               : { kind: 'custom', data: data.partialResult };
         } else if (event.type === 'tool_execution_end') {
           tool.result = data.result;
-          tool.display = data.display ?? record(data.result).details;
+          tool.display = boardOps[name]
+            ? boardDisplay(name, tool.args, data.result, !!data.isError)
+            : (data.display ?? record(data.result).details);
           tool.status = data.isError ? 'failed' : 'succeeded';
           tool.endedAt = event.ts;
           if (!data.isError) {
@@ -299,8 +402,10 @@ export function projectConversation(
                 for (const block of content) {
                   if (block?.type !== 'text') continue;
                   try {
-                    if (JSON.parse(block.text).projectCompleted === true)
-                      tool.projectCompleted = true;
+                    const result = JSON.parse(block.text);
+                    if (result.projectCompleted === true) tool.projectCompleted = true;
+                    if (result.readyForStudentConfirmation === true)
+                      tool.readyForStudentConfirmation = true;
                   } catch {
                     /* Ignore malformed display content. */
                   }

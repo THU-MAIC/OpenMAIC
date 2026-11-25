@@ -394,6 +394,55 @@ export function normalizeComposerDoc(
   return tr.docChanged ? tr : null;
 }
 
+/** CJK ideographs, kana, hangul and full-width punctuation. */
+const CJK = /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uff00-\uffef]/u;
+
+/**
+ * Insert a dictated phrase at the selection — or at the end of the document
+ * when the editor has no caret yet — adding a separating space on either side
+ * that touches non-whitespace text or an inline chip. Returns null for empty
+ * or whitespace-only input.
+ */
+export function insertComposerPhrase(
+  state: EditorState,
+  rawText: string,
+  options: { readonly atEnd?: boolean } = {},
+): Transaction | null {
+  const text = rawText.trim();
+  if (!text) return null;
+  const from = options.atEnd ? TextSelection.atEnd(state.doc).from : state.selection.from;
+  const to = options.atEnd ? from : state.selection.to;
+  const $from = state.doc.resolve(from);
+  const $to = state.doc.resolve(to);
+
+  // Chinese and Japanese run words together, so no space is added on a side
+  // where either neighbour is a CJK character or full-width punctuation.
+  const before = $from.nodeBefore;
+  const lastBefore = before?.isText ? before.text!.at(-1)! : null;
+  const needBefore =
+    before !== null &&
+    (lastBefore === null ||
+      (!/\s/.test(lastBefore) && !CJK.test(lastBefore) && !CJK.test(text[0]!)));
+
+  const after = $to.nodeAfter;
+  const firstAfter = after?.isText ? after.text![0]! : null;
+  const needAfter =
+    after !== null &&
+    (firstAfter === null ||
+      (!/[\s,.;:!?)\]}]/.test(firstAfter) && !CJK.test(firstAfter) && !CJK.test(text.at(-1)!)));
+
+  const slice = sliceOfPlainText(`${needBefore ? ' ' : ''}${text}${needAfter ? ' ' : ''}`);
+  if (slice.size === 0) return null;
+
+  const tr = state.tr;
+  if (options.atEnd) tr.setSelection(TextSelection.atEnd(state.doc));
+  tr.replaceSelection(slice);
+  // Keep the caret right after the inserted phrase (before an auto-inserted
+  // trailing space) so follow-up dictation or punctuation lands naturally.
+  if (needAfter) tr.setSelection(TextSelection.create(tr.doc, tr.selection.from - 1));
+  return tr.scrollIntoView();
+}
+
 /**
  * Make the document say `text`, touching only what differs, so that a pick from a
  * menu is one small undoable step and the rest of the draft keeps its nodes.

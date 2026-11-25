@@ -84,9 +84,7 @@ describe('learner-facing actions', () => {
       expect(i18n.t('pblV3.testResult.hints.passed', { action })).toContain(`“${action}”`);
     }
     // Historical completion messages must not claim a button for a different/current stage.
-    expect(i18n.t('pblV3.journey.completionHandoff')).toBe(
-      '本环节已完成。下一步操作请看学习助手底部的任务栏。',
-    );
+    expect(i18n.t('pblV3.journey.completionHandoff')).toBe('本环节已完成。');
     expect(teachingProductContext(fixture(0)).current.continueAvailableAfterReply).toBe(false);
     const completed = fixture(0);
     completed.collected.teachingCompleted = true;
@@ -199,10 +197,11 @@ describe('selective task emphasis and readable plans', () => {
       const input = fixture(index);
       const prompt = renderTeachingPrompt(input).systemPrompt;
       expect(prompt).toContain(learnerExpressionRules);
-      expect(prompt).toContain('不强制添加行动段');
-      expect(prompt).toContain('只提交一份完整回复');
+      expect(prompt).toContain('need no action paragraph');
+      expect(prompt).toContain('submit one complete reply');
       if (input.stage.kind === 'check') {
         expect(prompt).toContain('do not require any chat answer');
+        expect(prompt).not.toContain('task-bar button');
         expect(prompt).toContain(
           'Never read_next_skill, request_skill_review or complete_stage here',
         );

@@ -14,6 +14,7 @@ import {
   markRecoveredTeachingTools,
   type LearningConversationEntry,
 } from '@/lib/pbl/v3/conversation';
+import { recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import {
@@ -546,6 +547,36 @@ describe('student conversation projection', () => {
     expect(failed[0].boundary).toBeDefined();
     const retrying = projectConversation(history, 'discussion', true, 'queued');
     expect(retrying.at(-1)).toMatchObject({ status: 'running', parts: [] });
+  });
+  it('exposes the next-action receipt only after a successful completion call', () => {
+    const result = {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ readyForStudentConfirmation: true, projectCompleted: false }),
+        },
+      ],
+    };
+    const [turn] = projectConversation(
+      [
+        event(1, 'session_start', {}),
+        event(2, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'failed',
+          result,
+          isError: true,
+        }),
+        event(3, 'tool_execution_end', {
+          toolName: 'complete_stage',
+          toolCallId: 'committed',
+          result,
+        }),
+      ],
+      'planner',
+      false,
+    );
+    expect(turn.parts[0]).not.toHaveProperty('readyForStudentConfirmation');
+    expect(turn.parts[1]).toMatchObject({ readyForStudentConfirmation: true });
   });
   it('distinguishes a recovered tool gate from a stalled model turn without leaking diagnostics', () => {
     const recovered = projectConversation(
@@ -1083,7 +1114,7 @@ describe('general teaching protocols', () => {
       ),
     ).toBe(false);
     expect(prompt(0, 6)).toContain(
-      'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar at the bottom of the Learning Assistant pane to enter the next step.',
+      'After the current completion gates succeed and productContext allows Continue, the learner chooses the named next-step button to enter the next step.',
     );
     expect(
       isFinalProjectRecap(
@@ -1096,7 +1127,7 @@ describe('general teaching protocols', () => {
       'Only a successful final recap complete_stage receipt completes the project and reveals the report',
     );
     expect(prompt(lastIndex, 6)).not.toContain(
-      'After the current completion gates succeed and productContext allows Continue, the learner uses the task bar at the bottom of the Learning Assistant pane to enter the next step.',
+      'After the current completion gates succeed and productContext allows Continue, the learner chooses the named next-step button to enter the next step.',
     );
   });
   it('does not mistake a named pre-decision skill for mentor reflection', () => {
@@ -1347,3 +1378,234 @@ it.each([
     expect(pages).toEqual(saved);
   },
 );
+
+it.each([
+  [
+    'wb_draw_text',
+    { content: 'Compare the two routes through the application' },
+    'text',
+    'Compare the two routes through the application'.slice(0, 24),
+  ],
+  [
+    'wb_draw_table',
+    {
+      data: [
+        ['Choice', 'Result'],
+        ['a', 'b'],
+      ],
+    },
+    'table',
+    'Choice / Result',
+  ],
+  ['wb_draw_code', { code: 'print(1)\nprint(2)', fileName: 'main.py' }, 'code', 'main.py'],
+  ['wb_draw_code', { code: 'print(1)\nprint(2)' }, 'code', 'print(1)'],
+  ['wb_draw_shape', {}, 'shape', ''],
+  ['wb_draw_line', {}, 'line', ''],
+  ['wb_draw_latex', {}, 'latex', ''],
+  ['wb_draw_chart', {}, 'chart', ''],
+  ['wb_edit_code', {}, 'edit', ''],
+  ['wb_delete', {}, 'delete', ''],
+  ['wb_clear', {}, 'clear', ''],
+  ['wb_read', {}, 'read', ''],
+])(
+  'projects %s as a board part with learner display and committed sequence',
+  (toolName, args, op, label) => {
+    const start = event(1, 'tool_execution_start', { toolCallId: 'call', toolName, args });
+    const end = event(2, 'tool_execution_end', {
+      toolCallId: 'call',
+      toolName,
+      result: { details: { ok: true, lastSeq: 0 } },
+    });
+    const entries = projectConversation([start, end], 'discussion', false);
+    expect(entries[0].parts[0]).toMatchObject({
+      kind: 'tool',
+      action: 'board',
+      status: 'succeeded',
+      display: { op, label, seq: 0 },
+    });
+    expect(projectConversation([start], 'discussion', true)[0].parts[0]).toMatchObject({
+      action: 'board',
+      display: { op, label, seq: null },
+    });
+    expect(
+      projectConversation(
+        [start, { ...end, data: { ...(end.data as object), isError: true } }],
+        'discussion',
+        false,
+      )[0].parts[0],
+    ).toMatchObject({ status: 'failed', display: { seq: null } });
+  },
+);
+
+it.each([
+  ['Which boundary will you check?', 'Where would you check the handoff?', true],
+  ['Look closely at the boundary.', 'Which boundary will you check?', false],
+])(
+  'reconciles a legacy board review with its own speaking slot: %s',
+  (spoken, registered, replace) => {
+    const review = {
+      type: 'toolCall',
+      name: 'request_skill_review',
+      id: 'review',
+      arguments: { response: registered },
+    };
+    const events = [
+      event(1, 'user_message', { pblOpening: true }),
+      event(2, 'message_end', message('Follow the two arrows.')),
+      event(3, 'tool_execution_end', { toolCallId: 'board', toolName: 'wb_draw_text' }),
+      event(4, 'message_end', {
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'text', text: 'The second arrow carries the result.\n\n' + spoken },
+            review,
+          ],
+        },
+      }),
+      event(5, 'tool_execution_start', {
+        toolCallId: 'review',
+        toolName: review.name,
+        args: review.arguments,
+      }),
+      event(6, 'pbl_learner_handoff', {
+        question: registered,
+        toolCallId: 'review',
+        canonical: true,
+      }),
+    ];
+    const parts = projectConversation(events, 'planner', false).flatMap((e) => e.parts);
+    expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual([
+      'Follow the two arrows.',
+      'The second arrow carries the result.\n\n' + (replace ? registered : spoken),
+      ...(replace ? [] : [registered]),
+    ]);
+    expect(parts.filter((p) => p.kind === 'tool')).toHaveLength(2);
+  },
+);
+
+it('keeps instructions unique to either delivery of an old board review in live and paginated playback', () => {
+  const id = 'review';
+  const original = 'Read PLAN.md first. Which branch would you choose?';
+  const registered = 'Check handlers.ts before choosing.\n\nWhich branch handles an empty list?';
+  const events = [
+    event(1, 'user_message', { pblOpening: true }),
+    event(2, 'tool_execution_end', { toolCallId: 'board', toolName: 'wb_open' }),
+    event(3, 'message_end', {
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: original },
+          {
+            type: 'toolCall',
+            id,
+            name: 'request_skill_review',
+            arguments: { response: registered },
+          },
+        ],
+      },
+    }),
+    event(4, 'pbl_learner_handoff', {
+      toolCallId: id,
+      question: registered,
+      canonical: true,
+      pblInputId: 1,
+    }),
+  ];
+  const live = projectConversation(events, 'planner', false);
+  const pages = [events.slice(0, 3), events.slice(3)].map((page) =>
+    projectConversation(page, 'planner', false, undefined, true),
+  );
+  for (const view of [live, mergeConversationHistory(pages)]) {
+    expect(
+      view.flatMap((e) => e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : []))),
+    ).toEqual(['Read PLAN.md first. ' + registered]);
+  }
+});
+
+it('uses the registered source across retry, refresh and page boundaries, even with an identical earlier quote', () => {
+  const question = '请说说你会先核对哪一步。';
+  const start = [
+    event(1, 'user_message', { pblOpening: true }),
+    event(2, 'message_end', {
+      message: { ...message('An example: ' + question).message, timestamp: 12 },
+    }),
+  ];
+  const source = event(3, 'message_end', {
+    message: { ...message('先读 PLAN.md。\n\n' + question).message, timestamp: 18 },
+    pblInputId: 1,
+  });
+  const recovery = [
+    event(4, 'session_interrupted', { pblInputId: 1 }),
+    event(5, 'session_resumed', { pblInputId: 1 }, 2),
+    event(
+      6,
+      'pbl_learner_handoff',
+      { toolCallId: 'recovered', question, spokenAt: 18, pblInputId: 1 },
+      2,
+    ),
+    event(
+      7,
+      'tool_execution_end',
+      {
+        toolCallId: 'recovered',
+        toolName: 'request_skill_review',
+        pblInputId: 1,
+        result: { content: [{ type: 'text', text: JSON.stringify({ question, spokenAt: 18 }) }] },
+      },
+      2,
+    ),
+    event(8, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+  ];
+  const texts = (view: LearningConversationEntry[]) =>
+    view.flatMap((e) => e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])));
+  const project = (page: typeof start) =>
+    projectConversation(page, 'planner', false, undefined, true);
+  expect(texts(mergeConversationHistory([project(start), project(recovery)]))).toEqual([
+    'An example: ' + question,
+    question,
+  ]);
+  for (const view of [
+    projectConversation([...start, source, ...recovery], 'planner', false),
+    mergeConversationHistory([project(start), project([source]), project(recovery)]),
+  ]) {
+    expect(texts(view)).toEqual(['An example: ' + question, '先读 PLAN.md。\n\n' + question]);
+    expect(recoveredReviewSpeech(view.at(-1))?.text).toBe(question);
+  }
+});
+
+it('pairs an old tool-only recovery with its completed stop across pages, but never across a file operation', () => {
+  const speech = 'Open the plan. Which branch will you check?';
+  const question = 'Which branch handles empty input?';
+  const receipt = {
+    toolCallId: 'register',
+    toolName: 'request_skill_review',
+    result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+    pblInputId: 1,
+  };
+  const prior = [
+    event(1, 'user_message', { pblOpening: true }),
+    event(2, 'message_end', { message: { ...message(speech).message, stopReason: 'stop' } }),
+  ];
+  const after = [
+    event(5, 'tool_execution_end', receipt, 2),
+    event(6, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+  ];
+  for (const interveningRead of [false, true]) {
+    const middle = interveningRead
+      ? [
+          event(3, 'tool_execution_end', {
+            toolCallId: 'file',
+            toolName: 'read_file',
+            pblInputId: 1,
+          }),
+        ]
+      : [];
+    const pages = [prior, middle, after].map((page) =>
+      projectConversation(page, 'planner', false, undefined, true),
+    );
+    const result = mergeConversationHistory(pages).flatMap((e) =>
+      e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])),
+    );
+    expect(result).toEqual(interveningRead ? [speech, question] : ['Open the plan. ' + question]);
+  }
+});

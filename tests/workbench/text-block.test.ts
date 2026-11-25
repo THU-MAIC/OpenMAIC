@@ -54,6 +54,31 @@ describe('Workbench assistant Markdown', () => {
     expect(original.querySelector('[data-pbl-lead]')).toBeNull();
     expect(lesson.body.textContent).toBe(original.body.textContent);
   });
+  it('renders only references to known lesson files as local navigation, before URL filtering', () => {
+    const text =
+      '[range](PLAN.md#pbl-file=PLAN.md&line=35&end=41) [plan](PLAN.md) [other](notes.md) [mismatch](notes.md#pbl-file=PLAN.md) [external](https://example.com/#pbl-file=PLAN.md) `[literal](PLAN.md)`';
+    const doc = parseHTML(
+      renderToStaticMarkup(
+        createElement(TextBlock, {
+          text,
+          variant: 'lesson',
+          lessonFiles: ['PLAN.md'],
+        }),
+      ),
+    ).document;
+    const links = Array.from(doc.querySelectorAll('a')).map((a) => [
+      a.textContent,
+      a.getAttribute('href'),
+    ]);
+    expect(links).toContainEqual(['range', '#pbl-file=PLAN.md&line=35&end=41']);
+    expect(links).toContainEqual(['plan', '#pbl-file=PLAN.md']);
+    expect(links).toContainEqual(['external', 'https://example.com/#pbl-file=PLAN.md']);
+    expect(links.map(([name]) => name)).not.toEqual(expect.arrayContaining(['other']));
+    expect(links.map(([name]) => name)).not.toContain('mismatch');
+    expect(doc.querySelector('code')?.textContent).toBe('[literal](PLAN.md)');
+    expect(renderText('[plan](PLAN.md)')).not.toContain('#pbl-file=');
+  });
+
   it.each([
     ['settled', false],
     ['streaming', true],

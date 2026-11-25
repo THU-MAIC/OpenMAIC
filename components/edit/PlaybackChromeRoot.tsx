@@ -2130,7 +2130,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               {courseEnd && !isPendingScene ? (
                 <CourseEndLayer
                   key="course-end"
-                  overInteractive={currentScene?.type === 'interactive'}
+                  overPortaledScene={
+                    currentScene?.type === 'interactive' || currentScene?.type === 'pbl'
+                  }
                   mobileStage={mobile ? stageRef.current?.closest('[data-classroom-stage]') : null}
                 >
                   <CourseEnd

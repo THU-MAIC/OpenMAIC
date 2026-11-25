@@ -1,5 +1,6 @@
 'use client';
 import { readPblJson } from '@/lib/pbl/v3/response';
+import type { CodePointer } from '@/lib/pbl/v3/conversation';
 import type { FileReference, FileChangeRange } from '@/lib/pbl/v3/file-reference';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -52,6 +53,8 @@ export function LearningWorkbenchPanel({
   view,
   workbench,
   fileTarget,
+  pointer,
+  onCloseLastFile,
   onFileTargetConsumed,
   pending,
   pendingAction,
@@ -61,6 +64,10 @@ export function LearningWorkbenchPanel({
 }: {
   view: LearningView;
   fileTarget?: (FileReference & { requestId: number }) | null;
+  /** Lines the role points at while speaking. */
+  pointer?: CodePointer | null;
+  /** Closing the only open file puts the code area away. */
+  onCloseLastFile?: () => void;
   onFileTargetConsumed: (requestId: number) => void;
   workbench: LearningWorkbench | null;
   pending: boolean;
@@ -145,6 +152,11 @@ export function LearningWorkbenchPanel({
   const selectedTarget = useRef<number | null>(null);
   const selectFile = useRef(editor.select);
   selectFile.current = editor.select;
+  // A teaching cue brings the file into view without selecting text or taking keyboard focus.
+  // Once the learner browses elsewhere, only a new cue should open the pointed file again.
+  useEffect(() => {
+    if (pointer) selectFile.current(pointer.path);
+  }, [pointer]);
   useEffect(() => {
     if (
       fileTarget &&
@@ -445,10 +457,12 @@ export function LearningWorkbenchPanel({
                         aria-label={t('pblV3.ide.closeFile', { path: p })}
                         onClick={() => {
                           if (
-                            !editor.dirty(p) ||
-                            window.confirm(t('pblV3.ide.discard', { path: p }))
+                            editor.dirty(p) &&
+                            !window.confirm(t('pblV3.ide.discard', { path: p }))
                           )
-                            editor.close(p);
+                            return;
+                          editor.close(p);
+                          if (editor.tabs.length === 1) onCloseLastFile?.();
                         }}
                       >
                         <X size={12} />
@@ -557,6 +571,7 @@ export function LearningWorkbenchPanel({
                   target={
                     !editor.loading && !stale && fileTarget?.path === path ? fileTarget : null
                   }
+                  pointer={pointer?.path === path ? pointer : null}
                   changes={!stale && buffer.text === buffer.saved ? buffer.changes : undefined}
                   readOnly={!canSave}
                   readOnlyReason={editMessage}

@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils/cn';
 import { setTourActive } from '@/lib/workbench/onboarding';
 import { TOUR_EXAMPLES, type TourStep, type TourTarget, type TourView } from './tour-steps';
 import { placeTourCard } from './tour-placement';
+import './workspace-tour.css';
 
 type Rect = { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
@@ -133,6 +134,7 @@ export function WorkspaceTour({
   onSendExample,
   doneLabel = 'workspace.tour.done',
   onStart,
+  copy = 'workspace.tour',
 }: {
   readonly steps: readonly TourStep[];
   /** Put the workspace where a step needs it. */
@@ -144,6 +146,8 @@ export function WorkspaceTour({
   readonly doneLabel?: string;
   /** The tour is on screen (the host keeps it up while it moves the workspace). */
   readonly onStart?: () => void;
+  /** Where each step's `<id>.title` and `<id>.body` live, for a tour of another surface. */
+  readonly copy?: string;
 }) {
   const { t } = useI18n();
   const titleId = useId();
@@ -487,7 +491,7 @@ export function WorkspaceTour({
           <div className="ws-tour-head">
             <span className="ws-tour-badge">{index + 1}</span>
             <h2 id={titleId} className="ws-tour-title">
-              {t(`workspace.tour.${step.id}.title`)}
+              {t(`${copy}.${step.id}.title`)}
             </h2>
             <button
               type="button"
@@ -501,7 +505,7 @@ export function WorkspaceTour({
             </button>
           </div>
           <p id={bodyId} className="ws-tour-body">
-            {t(`workspace.tour.${step.id}.body`)}
+            {t(`${copy}.${step.id}.body`)}
           </p>
           {step.lines ? (
             <ul className="ws-tour-lines">
@@ -601,5 +605,9 @@ export function WorkspaceTour({
   // Rendered at the shell's root: its tokens live there, and no pane's
   // entrance transform can become the fixed layer's containing block.
   const host = typeof document === 'undefined' ? null : document.querySelector('.ws-root');
-  return host ? createPortal(tour, host) : tour;
+  if (host) return createPortal(tour, host);
+  // Another surface plays the tour: it sits on the page itself with its own tokens.
+  return typeof document === 'undefined'
+    ? null
+    : createPortal(<div className="ws-tour-standalone">{tour}</div>, document.body);
 }
