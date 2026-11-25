@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { renderLatexSource, type LatexEditorResult } from './latex-editor';
 import type { LatexEditorLabels } from '../types';
@@ -22,6 +22,8 @@ const DEFAULT_LABELS: LatexEditorLabels = {
   invalidSource: 'The LaTeX source is invalid.',
 };
 
+const subscribeToNothing = () => () => {};
+
 export interface LatexEditorDialogProps {
   readonly initialLatex?: string;
   readonly labels?: Partial<LatexEditorLabels>;
@@ -41,10 +43,16 @@ export function LatexEditorDialog({
   const previewRef = useRef<HTMLDivElement>(null);
   const rendered = useMemo(() => renderLatexSource(latex), [latex]);
   const canConfirm = latex.trim().length > 0 && !('error' in rendered);
+  // False while rendering on the server and during hydration, so the portal mounts in the render after.
+  const isClient = useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  );
 
   useEffect(() => {
     sourceRef.current?.focus();
-  }, []);
+  }, [isClient]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -65,7 +73,7 @@ export function LatexEditorDialog({
     });
   };
 
-  if (typeof document === 'undefined') return null;
+  if (!isClient) return null;
 
   return createPortal(
     <div className="maic-editing-ui-latex-backdrop" onPointerDown={onClose}>
