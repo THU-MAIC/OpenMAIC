@@ -117,7 +117,9 @@ export async function resolveRunnerCapabilities({
     voice_registration: hasConfiguredVoiceRegistrationCapability(ttsConnection),
     render_service: renderService.enabled,
     interactive_runtime_check:
-      renderService.enabled && renderService.interactiveRuntimeCheck === true,
+      renderService.enabled &&
+      renderService.interactiveRuntimeCheck === true &&
+      renderService.interactiveRuntimeHostedLibraries === true,
   };
 
   return {

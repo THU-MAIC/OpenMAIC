@@ -640,20 +640,26 @@ describe('capability-dependent tool registration (#2102)', () => {
       expect(runtime.tools.map((t) => t.name)).toEqual(['read_stage', 'patch_stage', 'ask_user']);
     });
 
-    it.each([undefined, true])(
-      'registers preview and gates runtime checks on the advertised support (%s)',
-      async (interactiveRuntimeCheck) => {
+    it.each([
+      { interactiveRuntimeCheck: undefined, interactiveRuntimeHostedLibraries: undefined },
+      { interactiveRuntimeCheck: true, interactiveRuntimeHostedLibraries: undefined },
+      { interactiveRuntimeCheck: false, interactiveRuntimeHostedLibraries: true },
+      { interactiveRuntimeCheck: true, interactiveRuntimeHostedLibraries: true },
+    ])(
+      'registers preview with runtime check=$interactiveRuntimeCheck and hosted libraries=$interactiveRuntimeHostedLibraries',
+      async ({ interactiveRuntimeCheck, interactiveRuntimeHostedLibraries }) => {
         vi.stubEnv('RENDER_SERVICE_URL', 'https://example.com');
         vi.spyOn(renderServiceModule, 'getRenderServiceCapability').mockResolvedValue({
           enabled: true,
           accepting: false,
           interactiveRuntimeCheck,
+          interactiveRuntimeHostedLibraries,
         });
 
         const capabilities = await resolveRunnerCapabilities({ workspaceId: null });
         expect(capabilities.isAvailable('render_service')).toBe(true);
         expect(capabilities.isAvailable('interactive_runtime_check')).toBe(
-          interactiveRuntimeCheck === true,
+          interactiveRuntimeCheck === true && interactiveRuntimeHostedLibraries === true,
         );
 
         const runtime = assembleCapabilityRuntime({

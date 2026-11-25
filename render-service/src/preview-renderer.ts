@@ -15,6 +15,11 @@ import type {
 } from '@openmaic/dsl';
 import puppeteer from 'puppeteer-core';
 import type { Browser, Frame, HTTPRequest, Page } from 'puppeteer-core';
+import {
+  hostedInteractiveLibraries,
+  INTERACTIVE_PREVIEW_ORIGIN,
+  type HostedInteractiveLibraries,
+} from './hosted-interactive-libraries.js';
 import { katexPreviewStylesheet } from './preview-katex.js';
 import { UNTRUSTED_HTML_CSP, injectUntrustedHtmlCsp } from './untrusted-html-csp.js';
 import {
@@ -69,9 +74,14 @@ function escapeAttribute(value: string): string {
 }
 
 /** The stylesheet text is trusted (read from the installed KaTeX package). */
-function htmlDocument(body: string, scene: PreviewScene, headStyles = ''): string {
+function htmlDocument(
+  body: string,
+  scene: PreviewScene,
+  headStyles = '',
+  baseUrl?: string,
+): string {
   return `<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}</style>${headStyles ? `<style data-preview-katex>${headStyles}</style>` : ''}</head>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${baseUrl ? `<base href="${escapeAttribute(baseUrl)}">` : ''}<style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}</style>${headStyles ? `<style data-preview-katex>${headStyles}</style>` : ''}</head>
 <body data-scene-id="${escapeAttribute(scene.id)}">${body}</body></html>`;
 }
 
@@ -152,8 +162,18 @@ export function injectInteractiveStorageShim(html: string): string {
  * shim. The policy must be processed before any authored script, including one
  * placed before `<head>` or before `<html>`.
  */
-export function buildInteractiveSrcDoc(html: string): string {
-  return injectInteractiveStorageShim(injectUntrustedHtmlCsp(html, UNTRUSTED_HTML_CSP));
+export function buildInteractiveSrcDoc(html: string, policy = UNTRUSTED_HTML_CSP): string {
+  return injectInteractiveStorageShim(injectUntrustedHtmlCsp(html, policy));
+}
+
+function interactiveRuntimePolicy(libraries: HostedInteractiveLibraries): string {
+  return UNTRUSTED_HTML_CSP.split('; ')
+    .map((directive) =>
+      /^(script|style|font|img|media)-src /.test(directive)
+        ? `${directive} ${libraries.bases.join(' ')}`
+        : directive,
+    )
+    .join('; ');
 }
 
 function slidePreviewMarkup(
@@ -171,12 +191,16 @@ function slidePreviewMarkup(
 function interactivePreviewMarkup(
   scene: Extract<PreviewScene, { type: 'interactive' }>,
   viewport: PreviewViewport,
+  libraries?: HostedInteractiveLibraries,
 ): string {
   if (!scene.content.html) throw new Error('Interactive page has no embedded HTML to preview');
   return renderToStaticMarkup(
     createElement('iframe', {
       title: scene.title,
-      srcDoc: buildInteractiveSrcDoc(scene.content.html),
+      srcDoc: buildInteractiveSrcDoc(
+        scene.content.html,
+        libraries && interactiveRuntimePolicy(libraries),
+      ),
       sandbox: 'allow-scripts allow-forms allow-modals',
       style: { width: `${viewport.width}px`, height: `${viewport.height}px`, border: 0 },
     }),
@@ -246,15 +270,23 @@ export function buildPreviewHtml(
   scene: PreviewScene,
   stage: PreviewStageContext,
   viewport: PreviewViewport,
+  libraries?: HostedInteractiveLibraries,
 ): string {
   const markup =
     scene.type === 'slide'
       ? slidePreviewMarkup(scene, viewport)
       : scene.type === 'interactive'
-        ? interactivePreviewMarkup(scene, viewport)
+        ? interactivePreviewMarkup(scene, viewport, libraries)
         : coverPreviewMarkup(scene, stage, viewport);
   // Slides typeset formulas as KaTeX HTML, which needs KaTeX's CSS and fonts.
-  return htmlDocument(markup, scene, scene.type === 'slide' ? katexPreviewStylesheet() : '');
+  // The srcdoc inherits this base, so root-relative and module URLs resolve
+  // without granting authored <base> elements permission in the CSP.
+  return htmlDocument(
+    markup,
+    scene,
+    scene.type === 'slide' ? katexPreviewStylesheet() : '',
+    libraries && INTERACTIVE_PREVIEW_ORIGIN,
+  );
 }
 
 let slideClientBundle: Promise<string> | undefined;
@@ -423,22 +455,46 @@ function settleRequest(request: HTTPRequest, allow: boolean): void {
  * Puppeteer-level counterpart to the injected CSP. The main frame keeps loading
  * its own preview resources (slide images and the client bundle are
  * deliberately untouched), while every request from the untrusted interactive
- * frame and anything nested inside it is aborted unless it is a local scheme.
+ * frame and anything nested inside it is aborted unless it is a local scheme
+ * or can be answered from the runtime check's hosted library directory.
  * Main-frame navigation away from the `setContent` document is blocked too.
  *
  * Returns a disposer to detach the handler.
  */
-export async function installPreviewRequestGuard(page: Page): Promise<() => void> {
+export async function installPreviewRequestGuard(
+  page: Page,
+  libraries?: HostedInteractiveLibraries,
+  signal?: AbortSignal,
+): Promise<() => void> {
   const mainFrame = page.mainFrame();
-  const handler = (request: HTTPRequest): void => {
+  const handler = async (request: HTTPRequest): Promise<void> => {
     let allow = false;
     try {
-      if (request.frame() === mainFrame) {
+      const frame = request.frame();
+      const url = request.url();
+      if (frame === mainFrame) {
         allow =
           !request.isNavigationRequest() ||
-          MAIN_FRAME_NAVIGATION_PROTOCOLS.has(requestProtocol(request.url()));
+          MAIN_FRAME_NAVIGATION_PROTOCOLS.has(requestProtocol(url));
       } else {
-        allow = SUBFRAME_ALLOWED_PROTOCOLS.has(requestProtocol(request.url()));
+        allow = SUBFRAME_ALLOWED_PROTOCOLS.has(requestProtocol(url));
+        if (
+          !allow &&
+          libraries &&
+          frame &&
+          !request.isNavigationRequest() &&
+          request.method() === 'GET'
+        ) {
+          const asset = await libraries.read(url, signal);
+          if (asset && !signal?.aborted && !request.isInterceptResolutionHandled()) {
+            await request.respond({
+              status: 200,
+              headers: { 'access-control-allow-origin': '*' },
+              ...asset,
+            });
+            return;
+          }
+        }
       }
     } catch {
       allow = false;
@@ -533,13 +589,16 @@ export async function mountSlideClient(page: Page, bundle: string): Promise<void
 
 export interface ChromiumPreviewRendererOptions {
   browserLauncher?: Pick<typeof puppeteer, 'launch'>;
+  interactiveLibraries?: HostedInteractiveLibraries;
 }
 
 export class ChromiumPreviewRenderer implements PreviewRenderer {
   private readonly browserLauncher: Pick<typeof puppeteer, 'launch'>;
+  private readonly interactiveLibraries: HostedInteractiveLibraries;
 
   constructor(options: ChromiumPreviewRendererOptions = {}) {
     this.browserLauncher = options.browserLauncher ?? puppeteer;
+    this.interactiveLibraries = options.interactiveLibraries ?? hostedInteractiveLibraries;
   }
 
   async render(request: PreviewRequest): Promise<Uint8Array> {
@@ -580,24 +639,31 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
   async checkInteractiveRuntime(
     request: InteractiveRuntimeRequest,
   ): Promise<InteractiveRuntimeError[]> {
-    return this.withPreviewPage(request, async (page) => {
-      const collector = collectInteractiveRuntimeErrors(page);
-      try {
-        await page.setContent(buildPreviewHtml(request.scene, request.stage, request.viewport), {
-          waitUntil: 'domcontentloaded',
-        });
-        const frame = await loadedInteractiveFrame(page);
-        await replayInteractiveActions(page, frame, request.scene.actions ?? [], collector);
-        return collector.errors;
-      } finally {
-        collector.dispose();
-      }
-    });
+    const libraries = this.interactiveLibraries;
+    return this.withPreviewPage(
+      request,
+      async (page) => {
+        const collector = collectInteractiveRuntimeErrors(page, libraries);
+        try {
+          await page.setContent(
+            buildPreviewHtml(request.scene, request.stage, request.viewport, libraries),
+            { waitUntil: 'domcontentloaded' },
+          );
+          const frame = await loadedInteractiveFrame(page);
+          await replayInteractiveActions(page, frame, request.scene.actions ?? [], collector);
+          return collector.errors;
+        } finally {
+          collector.dispose();
+        }
+      },
+      libraries,
+    );
   }
 
   private async withPreviewPage<T>(
     request: PreviewRequest,
     run: (page: Page) => Promise<T>,
+    libraries?: HostedInteractiveLibraries,
   ): Promise<T> {
     if (request.signal.aborted) throw abortError(request.signal);
 
@@ -626,7 +692,11 @@ export class ChromiumPreviewRenderer implements PreviewRenderer {
         (async () => {
           const page = await browser.newPage();
           await page.setViewport(request.viewport);
-          const removeRequestGuard = await installPreviewRequestGuard(page);
+          const removeRequestGuard = await installPreviewRequestGuard(
+            page,
+            libraries,
+            request.signal,
+          );
           try {
             return await run(page);
           } finally {

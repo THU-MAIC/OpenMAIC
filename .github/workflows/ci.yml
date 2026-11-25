@@ -320,7 +320,10 @@ jobs:
 
       - name: Install
         working-directory: render-service
-        run: npm ci
+        run: |
+          npm ci
+          # Shared generation source resolves dependencies from the repo root.
+          ln -s render-service/node_modules ../node_modules
 
       - name: TypeScript
         working-directory: render-service
@@ -330,10 +333,9 @@ jobs:
         working-directory: render-service
         run: npm test
 
-      # The image is built only from render-service/, and its packages come from
-      # snapshot.debian.org, so an outage there would fail pull requests that
-      # cannot affect the image. Pull requests and merge queue entries build only
-      # when an input changes; every push still builds.
+      # Limit pull request and merge queue builds to changes that affect the
+      # image so snapshot.debian.org outages only affect those builds.
+      # Every push still builds.
       - name: Detect render image changes
         id: changes
         shell: bash
@@ -352,6 +354,8 @@ jobs:
           fi
           inputs="$(git diff --name-only "$PR_BASE" "$GITHUB_SHA" | grep -E \
             -e '^render-service/' \
+            -e '^packages/@openmaic/generation/(package\.json|src/interactive-(libraries|library-mapper|post-processor)\.ts)$' \
+            -e '^scripts/sync-interactive-assets\.mjs$' \
             -e '^\.github/workflows/ci\.yml$' || true)"
           if [ -n "$inputs" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -364,7 +368,7 @@ jobs:
 
       - name: Build container image
         if: steps.changes.outputs.changed == 'true'
-        run: docker build --tag openmaic-render-service:ci render-service
+        run: docker build --file render-service/Dockerfile --tag openmaic-render-service:ci .
 
   # The Playwright suite scales with its worker count, and a 4-core runner that
   # also hosts the app server fits two workers, so more speed means more

@@ -5,6 +5,7 @@ services:
       args:
         - ALPINE_MIRROR=${ALPINE_MIRROR:-}
         - NPM_REGISTRY=${NPM_REGISTRY:-}
+        - INTERACTIVE_ASSET_BASE_URL=${INTERACTIVE_ASSET_BASE_URL:-}
         # NEXT_PUBLIC_* values are compiled into the browser bundle. Empty values
         # follow each feature's documented default; explicit build-time overrides
         # can be supplied on the command line.
@@ -103,7 +104,11 @@ services:
   # replies on app-initiated connections. The export ZIP is self-contained, so
   # the render needs no outbound at all.
   render-service:
-    build: ./render-service
+    build:
+      context: .
+      dockerfile: render-service/Dockerfile
+      args:
+        - NPM_REGISTRY=${NPM_REGISTRY:-}
     profiles:
       - video-export
     expose:
@@ -143,6 +148,7 @@ services:
       - RENDER_MAX_JOBS_PER_USER=0
       - RENDER_PREVIEW_TIMEOUT_MS=${RENDER_PREVIEW_TIMEOUT_MS:-20000}
       - RENDER_INTERACTIVE_RUNTIME_WAIT_MS=${RENDER_INTERACTIVE_RUNTIME_WAIT_MS:-2000}
+      - INTERACTIVE_ASSET_BASE_URL=${INTERACTIVE_ASSET_BASE_URL:-}
       # Separate Chromium capacity: previews can run alongside a video export.
       - RENDER_PREVIEW_MAX_CONCURRENCY=${RENDER_PREVIEW_MAX_CONCURRENCY:-1}
       - RENDER_PREVIEW_MAX_IN_FLIGHT=${RENDER_PREVIEW_MAX_IN_FLIGHT:-8}
