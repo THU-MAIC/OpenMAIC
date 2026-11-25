@@ -44,6 +44,7 @@ import {
   hasQueuedRenderJob,
   heartbeatRenderJob,
   markRenderJobDispatched,
+  recordCancelledRenderJob,
   readRenderJobOutputParts,
   recordRenderOutputPart,
   releaseRenderJob,
@@ -95,6 +96,7 @@ type Outcome =
   | 'failed'
   | 'requeued'
   | 'cancelled'
+  | 'cancel_pending'
   | 'lease_lost'
   | 'interrupted';
 
@@ -119,18 +121,35 @@ async function acceptingTarget(): Promise<string | null> {
   return capability.enabled && capability.accepting !== false ? target : null;
 }
 
-async function cancelAtRender(target: string, renderJobId: string, ownerId: string) {
+/**
+ * Cancel a job at the render service. True once it is no longer there to
+ * cancel: the service cancelled it, or answers 404 (it finished, expired or
+ * was lost). False for anything else (a 5xx, a dropped connection), which the
+ * caller retries.
+ */
+async function cancelAtRender(
+  target: string,
+  renderJobId: string,
+  ownerId: string,
+): Promise<boolean> {
   try {
-    await proxyFetch(`${target}/owner-bound/render/${encodeURIComponent(renderJobId)}`, {
-      method: 'DELETE',
-      headers: renderServiceOwnerHeaders(ownerId),
-      signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
-    });
+    const response = await proxyFetch(
+      `${target}/owner-bound/render/${encodeURIComponent(renderJobId)}`,
+      {
+        method: 'DELETE',
+        headers: renderServiceOwnerHeaders(ownerId),
+        signal: AbortSignal.timeout(STATUS_TIMEOUT_MS),
+      },
+    );
+    void response.body?.cancel().catch(() => undefined);
+    if (isRenderOwnerBoundResponse(response) && (response.ok || response.status === 404)) {
+      return true;
+    }
+    log.warn(`job ${renderJobId}: cancel at render service answered ${response.status}`);
   } catch (error) {
-    // Best effort: a render service that cannot be reached has lost the job,
-    // or will finish it and reap it on its own expiry.
     log.warn(`job ${renderJobId}: cancel at render service failed`, error);
   }
+  return false;
 }
 
 /**
@@ -209,9 +228,14 @@ async function dispatch(
     if (await markRenderJobDispatched(lease, target, data.jobId)) {
       return { outcome: 'dispatched', renderJobId: data.jobId, attempt };
     }
-    // Cancelled (or taken over) while the archive was on its way.
+    // Cancelled while the archive was on its way: record what to cancel, so
+    // a failed cancel is retried; the caller cancels it.
+    if (await recordCancelledRenderJob(lease, target, data.jobId)) {
+      return { outcome: 'cancelled', renderJobId: data.jobId };
+    }
+    // Taken over meanwhile: this accepted job duplicates one the new holder sends.
     await cancelAtRender(target, data.jobId, job.ownerId);
-    return { outcome: 'cancelled' };
+    return { outcome: 'lease_lost' };
   }
   if (response.status === 429 || response.status === 503) {
     await undoRenderJobDispatch(lease);
@@ -363,7 +387,11 @@ export async function runClaimedRenderJob(
   heartbeat.unref?.();
 
   const endCancelled = async (target: string | null, renderJobId: string | null) => {
-    if (target && renderJobId) await cancelAtRender(target, renderJobId, job.ownerId);
+    if (target && renderJobId && !(await cancelAtRender(target, renderJobId, job.ownerId))) {
+      // Kept with its render_job_id and this lease: another claim retries
+      // the cancel once the lease goes stale.
+      return 'cancel_pending' as const;
+    }
     await finishRenderJobCancel(lease);
     return 'cancelled' as const;
   };
@@ -386,6 +414,9 @@ export async function runClaimedRenderJob(
       } finally {
         dispatching = false;
         options.onDispatchSettled?.(sent.outcome === 'dispatched');
+      }
+      if (sent.outcome === 'cancelled' && sent.renderJobId) {
+        return await endCancelled(options.target, sent.renderJobId);
       }
       if (sent.outcome !== 'dispatched') return sent.outcome;
       target = options.target;

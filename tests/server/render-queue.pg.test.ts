@@ -118,6 +118,8 @@ const render = {
   posts: 0,
   /** Statuses the next downloads answer with, before the file. */
   downloadAnswers: [] as number[],
+  /** How the next cancels fail before one succeeds: a status, or 'drop' for a broken connection. */
+  deleteFailures: [] as Array<number | 'drop'>,
   jobs: new Map<string, FakeJob>(),
   received: [] as Array<{ bytes: Uint8Array; contentType: string; client: string }>,
   deletes: [] as string[],
@@ -131,6 +133,7 @@ const render = {
     this.submitDelayMs = 0;
     this.posts = 0;
     this.downloadAnswers = [];
+    this.deleteFailures = [];
     this.jobs.clear();
     this.received = [];
     this.deletes = [];
@@ -193,6 +196,9 @@ async function fakeRenderFetch(url: string, init: RequestInit = {}): Promise<Res
     return ownerBound(Response.json({ error: 'Job not found' }, { status: 404 }));
   }
   if (method === 'DELETE') {
+    const failure = render.deleteFailures.shift();
+    if (failure === 'drop') throw new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } });
+    if (failure) return ownerBound(Response.json({ error: 'busy' }, { status: failure }));
     job.status = 'cancelled';
     render.deletes.push(match[1]!);
     return ownerBound(Response.json({ cancelled: true }));
@@ -447,6 +453,72 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     await vi.waitFor(() => expect(render.deletes).toHaveLength(1), UNTIL);
     expect([...render.jobs.values()].map((job) => job.status)).toEqual(['cancelled']);
     expect((await row(jobId))?.status).toBe('cancelled');
+  });
+
+  it('retries a cancel the render service failed, holding the slot until it succeeds', async () => {
+    vi.stubEnv('RENDER_QUEUE_MAX_JOBS_PER_OWNER', '1');
+    render.deleteFailures = [503];
+    const { jobId } = await submit();
+    runner = startRenderQueueRunner({ config: FAST });
+    await vi.waitFor(async () => expect((await row(jobId))?.status).toBe('running'), UNTIL);
+    const [renderJobId] = [...render.jobs.keys()];
+
+    await CANCEL(jobRequest(jobId, 'DELETE'), context(jobId));
+    await vi.waitFor(() => expect(render.deleteFailures).toEqual([]), UNTIL);
+    // The 503 left the job cancelled here and still rendering there: it keeps
+    // the id to cancel and the owner's slot.
+    expect(await row(jobId)).toMatchObject({ status: 'cancelled', render_job_id: renderJobId });
+    expect(render.jobs.get(renderJobId!)?.status).toBe('running');
+    expect((await POST((await upload(10)).request())).status).toBe(429);
+
+    // Retried once the lease goes stale.
+    await vi.waitFor(() => expect(render.deletes).toEqual([renderJobId]), UNTIL);
+    await vi.waitFor(async () => expect((await row(jobId))?.render_job_id).toBeNull(), UNTIL);
+    expect(render.jobs.get(renderJobId!)?.status).toBe('cancelled');
+    expect((await POST((await upload(10)).request())).status).toBe(202);
+  });
+
+  it.each(['RENDER_QUEUE_MAX_JOBS_PER_OWNER', 'RENDER_QUEUE_MAX_JOBS'])(
+    'holds %s while a cancelled dispatch is waiting for its render-service id',
+    async (limit) => {
+      vi.stubEnv(limit, '1');
+      let release!: () => void;
+      const reply = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      mocks.proxyFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+        const response = await fakeRenderFetch(url, init);
+        if (response.status === 202) await reply;
+        return response;
+      });
+      const { jobId } = await submit();
+      runner = startRenderQueueRunner({ config: FAST });
+      try {
+        await vi.waitFor(() => expect(render.jobs.size).toBe(1), UNTIL);
+        await CANCEL(jobRequest(jobId, 'DELETE'), context(jobId));
+        expect(await row(jobId)).toMatchObject({ status: 'cancelled', render_job_id: null });
+        expect((await POST((await upload(10)).request())).status).toBe(429);
+      } finally {
+        release();
+      }
+      await vi.waitFor(() => expect(render.deletes).toHaveLength(1), UNTIL);
+      await vi.waitFor(async () => expect((await row(jobId))?.lease_worker_id).toBeNull(), UNTIL);
+      expect((await POST((await upload(10)).request())).status).toBe(202);
+    },
+  );
+
+  it('retries the cancel of a job cancelled while its archive was on its way', async () => {
+    render.submitDelayMs = 500;
+    render.deleteFailures = ['drop'];
+    const { jobId } = await submit();
+    runner = startRenderQueueRunner({ config: FAST });
+    await vi.waitFor(() => expect(render.posts).toBe(1), UNTIL);
+    await CANCEL(jobRequest(jobId, 'DELETE'), context(jobId));
+    await vi.waitFor(() => expect(render.deleteFailures).toEqual([]), UNTIL);
+    const [renderJobId] = [...render.jobs.keys()];
+    expect((await row(jobId))?.render_job_id).toBe(renderJobId);
+    await vi.waitFor(() => expect(render.deletes).toEqual([renderJobId]), UNTIL);
+    await vi.waitFor(async () => expect((await row(jobId))?.render_job_id).toBeNull(), UNTIL);
   });
 
   it('sends again, as a counted attempt, a job accepted just before its worker died', async () => {

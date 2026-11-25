@@ -23,6 +23,15 @@ export type RenderJobStatus =
   | 'cancelled';
 
 const UNFINISHED: readonly RenderJobStatus[] = ['uploading', 'queued', 'dispatched', 'running'];
+/**
+ * Jobs that hold a slot: unfinished ones, and cancelled ones the render
+ * service has not confirmed cancelling yet (it may still be rendering them).
+ * `$1` is {@link UNFINISHED}.
+ */
+// A leased worker may still be waiting for the id of an accepted dispatch.
+const CANCEL_PENDING =
+  "(status = 'cancelled' AND (render_job_id IS NOT NULL OR lease_worker_id IS NOT NULL))";
+const HOLDS_SLOT = `(status = ANY($1::text[]) OR ${CANCEL_PENDING})`;
 const AT_RENDER: readonly RenderJobStatus[] = ['dispatched', 'running'];
 
 /** One stored part of an archive or MP4: its content hash and size. */
@@ -160,7 +169,7 @@ export async function createRenderJob(input: {
     const counts = await tx.query<{ total: string; owned: string }>(
       `SELECT count(*)::text AS total,
               count(*) FILTER (WHERE owner_id = $2)::text AS owned
-         FROM render_jobs WHERE status = ANY($1::text[])`,
+         FROM render_jobs WHERE ${HOLDS_SLOT}`,
       [UNFINISHED, input.ownerId],
     );
     const { total, owned } = counts.rows[0]!;
@@ -250,11 +259,11 @@ export async function renderJobQueuePosition(job: RenderJob): Promise<number> {
   return Number(result.rows[0]!.ahead);
 }
 
-/** Unfinished jobs across the deployment, for the capability answer. */
+/** Jobs holding a slot across the deployment, for the capability answer. */
 export async function countUnfinishedRenderJobs(): Promise<number> {
   const { pool } = await renderQueuePersistence();
   const result = await pool.query<{ total: string }>(
-    'SELECT count(*)::text AS total FROM render_jobs WHERE status = ANY($1::text[])',
+    `SELECT count(*)::text AS total FROM render_jobs WHERE ${HOLDS_SLOT}`,
     [UNFINISHED],
   );
   return Number(result.rows[0]!.total);
@@ -308,7 +317,7 @@ export async function claimRenderJob(
   const stale = '(lease_worker_id IS NULL OR lease_heartbeat_at < $1)';
   const claimable = `(
       (status = ANY($2::text[]) AND ${stale})
-      OR (status = 'cancelled' AND render_job_id IS NOT NULL AND ${stale})
+      OR (${CANCEL_PENDING} AND ${stale})
       OR ($3::boolean AND status = 'queued' AND ${stale}))`;
   return withTransaction(async (tx) => {
     const locked = await tx.query<{ id: string }>(
@@ -495,7 +504,30 @@ export async function resetRenderJobOutput(
   return result.rows.length > 0;
 }
 
-/** The cancelled job is cancelled at the render service too: nothing is left to do. */
+/**
+ * The job was cancelled while its archive was on its way, and the render
+ * service took it under `renderJobId`: recorded, so the cancel there is
+ * retried like any other. False once the lease is gone.
+ */
+export async function recordCancelledRenderJob(
+  lease: RenderJobLease,
+  target: string,
+  renderJobId: string,
+): Promise<boolean> {
+  const { pool } = await renderQueuePersistence();
+  const result = await pool.query(
+    `UPDATE render_jobs SET render_target = $4, render_job_id = $5
+      WHERE ${HELD} AND status = 'cancelled' RETURNING id`,
+    [...leaseParams(lease), target, renderJobId],
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * The render service confirmed the cancel: nothing is left to do. Until then
+ * the job keeps its `render_job_id`, so a worker claims it again once this
+ * lease goes stale and retries the cancel.
+ */
 export async function finishRenderJobCancel(lease: RenderJobLease): Promise<void> {
   const { pool } = await renderQueuePersistence();
   await pool.query(
