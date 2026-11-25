@@ -13,13 +13,6 @@ const config: ImageGenerationConfig = {
   model: 'image-01',
 };
 
-/** The opening bytes of a JPEG (`FF D8 FF`), base64-encoded. */
-const JPEG_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]).toString(
-  'base64',
-);
-/** The opening bytes of a PNG, base64-encoded. */
-const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64');
-
 const options = { prompt: 'a solar panel diagram', aspectRatio: '16:9' as const };
 
 function respondWith(payload: unknown) {
@@ -31,43 +24,31 @@ describe('minimax-image-adapter', () => {
     mockFetch.mockReset();
   });
 
-  it('asks for inline bytes rather than a result URL', async () => {
-    respondWith({ data: { image_base64: [JPEG_B64] }, base_resp: { status_code: 0 } });
-
-    await generateWithMiniMaxImage(config, options);
-
-    expect(String(mockFetch.mock.calls[0][0])).toBe('https://api.minimax.io/v1/image_generation');
-    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
-      model: 'image-01',
-      response_format: 'base64',
-      aspect_ratio: '16:9',
-      n: 1,
+  it('upgrades a plain-http result URL to https', async () => {
+    // The international site answers with http result URLs, which the
+    // provider-result download refuses.
+    respondWith({
+      data: { image_urls: ['http://cdn.example.com/image_1.jpeg?Expires=1&Signature=s'] },
+      base_resp: { status_code: 0 },
     });
-  });
-
-  it('returns the inline bytes with their media type and no URL', async () => {
-    respondWith({ data: { image_base64: [JPEG_B64] }, base_resp: { status_code: 0 } });
 
     const result = await generateWithMiniMaxImage(config, options);
 
-    expect(result).toMatchObject({ base64: JPEG_B64, mimeType: 'image/jpeg' });
-    expect(result.url).toBeUndefined();
+    expect(result.url).toBe('https://cdn.example.com/image_1.jpeg?Expires=1&Signature=s');
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
+      response_format: 'url',
+    });
   });
 
-  it('labels bytes without the JPEG signature as PNG', async () => {
-    respondWith({ data: { image_base64: [PNG_B64] }, base_resp: { status_code: 0 } });
+  it('keeps an https result URL unchanged', async () => {
+    respondWith({
+      data: { image_urls: ['https://cdn.example.com/image_2.jpeg'] },
+      base_resp: { status_code: 0 },
+    });
 
-    const result = await generateWithMiniMaxImage(config, { prompt: 'a square' });
+    const result = await generateWithMiniMaxImage(config, options);
 
-    expect(result).toMatchObject({ base64: PNG_B64, mimeType: 'image/png' });
-  });
-
-  it('fails when no image data comes back', async () => {
-    respondWith({ data: { image_base64: [] }, base_resp: { status_code: 0 } });
-
-    await expect(generateWithMiniMaxImage(config, options)).rejects.toThrow(
-      'MiniMax Image: no image data returned',
-    );
+    expect(result.url).toBe('https://cdn.example.com/image_2.jpeg');
   });
 
   it('keeps reporting MiniMax business errors', async () => {
