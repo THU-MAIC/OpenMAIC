@@ -29,6 +29,17 @@ describe('LatexEditorDialog', () => {
     expect(screen.queryByRole('button', { name: 'Insert integral' })).toBeNull();
   });
 
+  it('portals the modal to the document body so editor chrome cannot paint over it', () => {
+    const { container } = render(
+      <LatexEditorDialog initialLatex="x^2" onConfirm={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    const backdrop = screen.getByRole('dialog').parentElement;
+
+    expect(backdrop?.parentElement).toBe(document.body);
+    expect(container.contains(backdrop)).toBe(false);
+  });
+
   it('disables confirm and announces an error for invalid Latex', () => {
     render(<LatexEditorDialog onConfirm={vi.fn()} onClose={vi.fn()} />);
 
