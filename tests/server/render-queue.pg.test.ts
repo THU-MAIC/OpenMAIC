@@ -611,6 +611,21 @@ describe.skipIf(!contractUrl)('durable video export queue on PostgreSQL', () => 
     expect((await poll('not-a-job-id')).status).toBe(404);
   });
 
+  it('uses the default deployment limit of 20 when both limits are set to zero', async () => {
+    vi.stubEnv('RENDER_QUEUE_MAX_JOBS', '0');
+    vi.stubEnv('RENDER_QUEUE_MAX_JOBS_PER_OWNER', '0');
+    expect(await (await CAPABILITY()).json()).toMatchObject({ accepting: true });
+
+    const archive = await upload(10);
+    for (let i = 0; i < 20; i++) {
+      expect((await POST(archive.request())).status).toBe(202);
+    }
+    expect(await (await CAPABILITY()).json()).toMatchObject({ accepting: false });
+    const full = await POST(archive.request());
+    expect(full.status).toBe(429);
+    expect(await full.json()).toMatchObject({ reason: 'queue_full' });
+  });
+
   it('refuses beyond the per-owner and deployment limits with their reasons', async () => {
     vi.stubEnv('RENDER_QUEUE_MAX_JOBS_PER_OWNER', '1');
     await submit();

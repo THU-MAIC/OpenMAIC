@@ -10,6 +10,8 @@
  */
 import { getRenderServiceUrl } from '@/lib/server/render-service';
 
+const DEFAULT_MAX_JOBS = 20;
+
 function nonNegativeIntegerFromEnv(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -50,7 +52,8 @@ export interface RenderQueueConfig {
 /** Read on every call, so a test (or an operator restart) sees the environment as it is. */
 export function renderQueueConfig(): RenderQueueConfig {
   return {
-    maxJobs: nonNegativeIntegerFromEnv('RENDER_QUEUE_MAX_JOBS', 20),
+    maxJobs:
+      nonNegativeIntegerFromEnv('RENDER_QUEUE_MAX_JOBS', DEFAULT_MAX_JOBS) || DEFAULT_MAX_JOBS,
     maxJobsPerOwner: nonNegativeIntegerFromEnv('RENDER_QUEUE_MAX_JOBS_PER_OWNER', 1),
     scanIntervalMs: 2000,
     pollIntervalMs: 5000,
