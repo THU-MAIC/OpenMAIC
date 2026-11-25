@@ -33,6 +33,7 @@ export interface Study extends Record<string, unknown> {
   /** Hydrated from durable template bytes on every read, never persisted with learner state. */
   project?: InstalledProject;
   revision: number;
+  is_reset: boolean;
   onboarding_completed_at?: Date | null;
   state: PblSessionState;
   environment_id: string | null;
@@ -101,7 +102,7 @@ export class LearningStore {
   }
   async get(id: string, ownerId: string, db: Pool | PoolClient = this.pool): Promise<Study> {
     const result = await db.query<Study>(
-      'SELECT * FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2',
+      'SELECT * FROM pbl_v3_studies WHERE id=$1 AND owner_id=$2 AND NOT is_reset',
       [id, ownerId],
     );
     if (!result.rows[0])
@@ -114,7 +115,7 @@ export class LearningStore {
   async findForScene(ownerId: string, stageId: string, sceneId: string): Promise<Study | null> {
     const result = await this.pool.query<{ id: string }>(
       `SELECT s.id FROM pbl_v3_studies s JOIN stage_meta m ON m.stage_id=s.stage_id
-       WHERE s.owner_id=$1 AND s.stage_id=$2 AND s.scene_id=$3
+       WHERE s.owner_id=$1 AND s.stage_id=$2 AND s.scene_id=$3 AND NOT s.is_reset
          AND m.owner_id=$1 AND m.deleted_at IS NULL`,
       [ownerId, stageId, sceneId],
     );
@@ -164,7 +165,7 @@ export class LearningStore {
       const result = await db.query(
         `UPDATE pbl_v3_studies
          SET onboarding_completed_at=COALESCE(onboarding_completed_at,clock_timestamp())
-         WHERE id=$1 AND owner_id=$2 RETURNING id`,
+         WHERE id=$1 AND owner_id=$2 AND NOT is_reset RETURNING id`,
         [id, ownerId],
       );
       if (!result.rows.length)
@@ -176,14 +177,16 @@ export class LearningStore {
   async recordActivity(id: string, ownerId: string) {
     return this.transaction(async (db) => {
       await fenceOwnerWrite(db, ownerId);
-      return (
+      const row = (
         await db.query<Study>(
           `UPDATE pbl_v3_studies SET last_used_at=clock_timestamp(),checkpoint_failure=NULL,
            idle_turn_cleanup=CASE WHEN idle_turn_cleanup->>'releasing'='true' THEN idle_turn_cleanup ELSE NULL END
-           WHERE id=$1 AND owner_id=$2 RETURNING *`,
+           WHERE id=$1 AND owner_id=$2 AND NOT is_reset RETURNING *`,
           [id, ownerId],
         )
       ).rows[0];
+      if (!row) throw new SandboxError('PBL_NOT_FOUND', 404, 'Learning session is unavailable.');
+      return row;
     });
   }
 
@@ -407,6 +410,28 @@ export class LearningStore {
     });
   }
 
+  /** Called under the command lock. Preserve evidence, free the scene for a fresh study,
+   * and withdraw the old id from learner access in the same write. */
+  async retireStudy(id: string, ownerId: string) {
+    return this.transaction(async (db) => {
+      await fenceOwnerWrite(db, ownerId);
+      // Use the same lock order as idle cleanup: role leases first, then the study row.
+      const agents = this.agentStore(db);
+      const roles = await db.query<{ session_id: string }>(
+        'SELECT session_id FROM pbl_v3_roles WHERE study_id=$1 ORDER BY session_id',
+        [id],
+      );
+      for (const role of roles.rows) await agents.requestCancel(role.session_id, { settle: true });
+      const result = await db.query<Study>(
+        `UPDATE pbl_v3_studies SET is_reset=TRUE, scene_id=scene_id||'#reset:'||id,
+           revision=revision+1 WHERE id=$1 AND owner_id=$2 AND NOT is_reset RETURNING *`,
+        [id, ownerId],
+      );
+      if (!result.rows[0])
+        throw new SandboxError('PBL_NOT_FOUND', 404, 'Learning session is unavailable.');
+      return result.rows[0];
+    });
+  }
   async create(
     input: {
       ownerId: string;
@@ -630,7 +655,7 @@ export class LearningStore {
        lifecycle_error=CASE WHEN ${collectionSettled} THEN NULL ELSE $8 END,
        checkpoint_failure=CASE WHEN ${collectionSettled} THEN NULL ELSE checkpoint_failure END,
        idle_turn_cleanup=CASE WHEN environment_id IS DISTINCT FROM $4::text THEN NULL ELSE idle_turn_cleanup END
-      FROM previous WHERE id=$1 AND revision=$2
+      FROM previous WHERE id=$1 AND revision=$2 AND NOT is_reset
         AND archive_discard IS NOT DISTINCT FROM $9::jsonb
         AND (idle_turn_cleanup->>'releasing' IS DISTINCT FROM 'true' OR idle_turn_cleanup IS NOT DISTINCT FROM $10::jsonb)
        RETURNING pbl_v3_studies.*,old_state=$3::jsonb AND old_state->>'status'='completed' AS report_unchanged`,

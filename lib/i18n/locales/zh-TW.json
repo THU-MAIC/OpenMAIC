@@ -3163,7 +3163,7 @@
       "currentMilestone": "目前階段",
       "milestoneGoal": "目標：",
       "milestoneResult": "成果：",
-      "completionHandoff": "本環節已完成。下一步操作請看學習助手底部的任務列。",
+      "completionHandoff": "本環節已完成。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",
       "expand": "Expand project workspace",
@@ -3524,6 +3524,111 @@
         }
       },
       "close": "關閉指引"
+    },
+    "resetProgress": "重置進度",
+    "resetProgressConfirm": "重置後這個專案會回到開始之前：對話、環節進度、白板和你改過的程式碼都從頭再來。確定重置嗎？",
+    "personas": {
+      "mentor": "Mo",
+      "discussion": "Quinn",
+      "planner": "Ray",
+      "coder": "Cody"
+    },
+    "board": {
+      "previous": "Previous board",
+      "next": "Next board",
+      "current": "Now",
+      "ops": {
+        "text": "Text",
+        "table": "Table",
+        "code": "Code",
+        "shape": "Shape",
+        "line": "Line",
+        "latex": "Formula",
+        "chart": "Chart",
+        "edit": "Code edit",
+        "delete": "Erase",
+        "clear": "Clear",
+        "read": "Read",
+        "point": "指程式碼",
+        "open": "開啟",
+        "close": "收起"
+      },
+      "speed": "播放速度 {{speed}}x，點擊切換",
+      "collapse": "Minimise",
+      "dock": "Open full conversation",
+      "float": "Shrink to companion"
+    },
+    "tour": {
+      "done": "開始吧",
+      "welcome": {
+        "title": "歡迎來到你的專案工作臺",
+        "body": "這一課你要親手把一個作品做出來。花半分鐘認一下這裡的幾樣東西，之後就交給你和你的夥伴了。"
+      },
+      "preview": {
+        "title": "這是你的作品，真的能用",
+        "body": "它不是截圖，是正在執行的程式。隨時可以點一點、發句話試試，看它現在能做什麼、還差什麼。"
+      },
+      "companion": {
+        "title": "帶你做專案的夥伴",
+        "body": "每個環節都有一位夥伴陪你。它的話會在這裡一句一句冒出來，還會讀給你聽。講話時點一下氣泡可以暫停；點它的頭像，可以看完整的對話記錄。"
+      },
+      "progress": {
+        "title": "外圈就是進度",
+        "body": "頭像外面這一圈分成幾段，一段是一個環節。滑鼠移到哪一段，就告訴你那一步要做什麼；點一下，進入目前任務。"
+      },
+      "controls": {
+        "title": "它身邊的按鈕",
+        "body": "滑鼠移到頭像上，身邊會展開兩個按鈕：調朗讀的快慢，或者關掉聲音。輪到你說話時，氣泡下面會出現輸入框，可以打字，也可以點麥克風用語音說。"
+      },
+      "layout": {
+        "title": "白板和程式碼會自己出現",
+        "body": "講到需要畫的地方，白板會自己冒出來；講到你的程式碼，檔案會自己開啟。想自己開關，或者把對話停靠到右邊，都在這三個按鈕上。"
+      },
+      "start": {
+        "title": "準備好了就開始",
+        "body": "點「開始學習」，你的夥伴會先帶你看清這一課要做成什麼。不懂就問，它不趕時間。"
+      },
+      "conversationPane": {
+        "title": "與夥伴的對話",
+        "body": "在這裡查看夥伴的講解、提問和回饋，也可以回顧先前的訊息。"
+      },
+      "learningPath": {
+        "title": "查看學習進度",
+        "body": "這裡會顯示目前的階段與步驟。點開即可查看專案的學習路徑。"
+      },
+      "reply": {
+        "title": "回覆夥伴",
+        "body": "輪到你時，在這裡輸入並送出回覆。"
+      },
+      "collapsePane": {
+        "title": "切回頭像和對話泡泡",
+        "body": "收合對話面板即可回到頭像和對話泡泡。頭像旁可以調整朗讀速度或靜音。"
+      },
+      "replay": {
+        "title": "再次查看導覽",
+        "body": "以後想複習這些操作，可以隨時從這裡重新開啟導覽。"
+      },
+      "greeting": "你好，我是{{name}}，這一課由我帶你做。準備好了就點下面的開始，我先帶你看清要做成什麼。"
+    },
+    "cast": {
+      "title": "陪你做這個專案的夥伴",
+      "hint": "四位夥伴都在工作臺等你。",
+      "discussion": {
+        "part": "講解與決策",
+        "line": "我先陪你把問題看明白，再一起把要怎麼做定下來。"
+      },
+      "planner": {
+        "part": "計畫",
+        "line": "定好了方向，我把它拆成一步一步的計畫給你過目。"
+      },
+      "coder": {
+        "part": "編碼",
+        "line": "計畫你點頭了我就動手寫，每一處改動都講給你聽。"
+      },
+      "mentor": {
+        "part": "測試與複盤",
+        "line": "最後我帶你測一測、回頭看，哪些是真的學會了。"
+      }
     }
   },
   "mobileClassroom": {

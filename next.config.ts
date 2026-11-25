@@ -11,6 +11,7 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     '/*': [
+      'skills/pbl/pbl-explanation/SKILL.md',
       'lib/server/agent-runtime/import-pptx-worker.mjs',
       'skills/openmaic/**',
       'skills/agent-runtime/**',

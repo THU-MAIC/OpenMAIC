@@ -1062,7 +1062,9 @@ test('installed sample opens in the normal classroom and preserves progress afte
   ).toBeVisible();
   await expect(page.getByTestId('pbl-quiz-feedback')).toHaveCount(2);
   await expect(
-    page.getByText('Last submission: review this answer', { exact: true }),
+    page
+      .getByTestId('pbl-quiz-feedback')
+      .getByText('Last submission: review this answer', { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText(

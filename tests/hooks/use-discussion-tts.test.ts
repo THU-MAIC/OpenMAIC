@@ -68,6 +68,7 @@ vi.mock('@/lib/hooks/use-browser-tts', () => ({
   },
 }));
 
+import { PBL_NARRATORS } from '@/lib/pbl/v3/personas';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { clearUnavailableVoiceBindingsForTests } from '@/lib/audio/unavailable-voice-bindings';
 import { resetDiscussionAudioElementForTests } from '@/lib/audio/discussion-audio';
@@ -213,6 +214,36 @@ afterEach(() => {
   act(() => root.unmount());
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+describe('PBL tutor voices', () => {
+  beforeEach(() => {
+    agents = PBL_NARRATORS;
+  });
+  afterEach(() => {
+    selection.providerId = mocks.settings.ttsProviderId;
+    selection.voice = mocks.settings.ttsVoice;
+  });
+
+  it.each(['mentor', 'discussion', 'planner', 'coder'])(
+    'synthesizes %s with the selected narrator voice even when browser speech is available',
+    async (role) => {
+      selection.voice = 'nova';
+      act(() => root.render(createElement(Probe)));
+      await seal('one', role);
+      expect(requests.map((r) => r.body.ttsVoice)).toEqual(['nova']);
+      expect(mocks.speak).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses browser speech when the platform selects it', async () => {
+    selection.providerId = 'browser-native-tts';
+    selection.voice = 'selected-browser-voice';
+    act(() => root.render(createElement(Probe)));
+    await seal('one', 'planner');
+    expect(mocks.speak).toHaveBeenCalledWith('Sentence one.', 'selected-browser-voice');
+    expect(requests).toHaveLength(0);
+  });
 });
 
 describe('discussion TTS synthesis lookahead', () => {

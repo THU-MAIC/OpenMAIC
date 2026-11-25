@@ -235,7 +235,12 @@
       "createMaterialFolder": "지식 베이스 폴더 만들기",
       "renameMaterialFolder": "지식 베이스 폴더 이름 변경",
       "moveMaterials": "자료 이동",
-      "renameMaterial": "자료 이름 변경"
+      "renameMaterial": "자료 이름 변경",
+      "cueUser": "Suggest replies",
+      "openBoard": "Open the whiteboard",
+      "closeBoard": "Put the whiteboard away",
+      "pointAtCode": "Point at code",
+      "pointAtPreview": "Point at the app"
     },
     "chip": {
       "seconds": "{{count}}초",

@@ -281,6 +281,11 @@ const teachingToolLabels = {
   read_next_skill: 'workbench.tool.label.readTeachingSkill',
   request_skill_review: 'workbench.tool.label.requestReview',
   respond_to_learner: 'workbench.tool.label.respondToLearner',
+  cue_user: 'workbench.tool.label.cueUser',
+  wb_open: 'workbench.tool.label.openBoard',
+  wb_close: 'workbench.tool.label.closeBoard',
+  point_at_code: 'workbench.tool.label.pointAtCode',
+  point_at_preview: 'workbench.tool.label.pointAtPreview',
   complete_stage: 'workbench.tool.label.completeTeachingStage',
 } as const;
 

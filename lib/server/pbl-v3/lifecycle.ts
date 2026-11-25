@@ -63,7 +63,7 @@ async function renewForMaintenance(
   // A pending allocation belongs to the preparation holding the study lock.
   // Renewing it here races initialization/starter writes under the environment
   // lock. Preparation owns its lease until the binding is committed.
-  if (!latest || latest.environment_id !== environmentId) return;
+  if (!latest || latest.is_reset || latest.environment_id !== environmentId) return;
   const now = await store.now();
   if (
     latest.archive_discard?.environmentId === environmentId ||
@@ -203,23 +203,18 @@ export async function maintainStudy(
   const currentEnvironmentId =
     pendingEnvironmentId ?? initial.environment_id ?? initial.environment_recovery?.requestId;
   if (
-    control.release &&
-    initial.environment_id &&
-    (!pendingEnvironmentId || pendingEnvironmentId === initial.environment_id)
+    currentEnvironmentId &&
+    (initial.is_reset || (control.release && currentEnvironmentId === initial.environment_id))
   ) {
-    const service = await SandboxService.forLearningMaintenance(
-      id,
-      ownerId,
-      initial.environment_id,
-    );
+    const service = await SandboxService.forLearningMaintenance(id, ownerId, currentEnvironmentId);
     await withLearningWorkspaceAccess(
       {
         ownerId,
         workspaceId: learningWorkspaceId(id),
-        environmentIds: () => [initial.environment_id],
+        environmentIds: () => [currentEnvironmentId],
         operations: ['destroy'],
       },
-      () => service.destroy(initial.environment_id!),
+      () => service.destroy(currentEnvironmentId),
     );
     return;
   }

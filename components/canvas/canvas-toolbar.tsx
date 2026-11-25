@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useRef, useState } from 'react';
+import { VolumeControl, VolumeIcon } from './volume-control';
 import {
   CircleStop,
   ChevronLeft,
@@ -12,9 +13,6 @@ import {
   LayoutList,
   PanelRightClose,
   PanelRightOpen,
-  Volume1,
-  Volume2,
-  VolumeX,
   Repeat,
   Maximize2,
   Minimize2,
@@ -68,9 +66,9 @@ export interface CanvasToolbarProps {
   readonly canPickSlideElement?: boolean;
   readonly elementPickActive?: boolean;
   readonly onToggleElementPick?: () => void;
-  /** The dock's fold, where the toolbar sits in a dock. */
   /** Next on the last page opens the course's end state, so it is not a dead end. */
   readonly nextOpensEnd?: boolean;
+  /** The dock's fold, where the toolbar sits in a dock. */
   readonly dockCollapsed?: boolean;
   readonly onToggleDock?: () => void;
 }
@@ -85,22 +83,6 @@ export const ctrlBtn = cn(
 /* Subtle separator */
 export function CtrlDivider() {
   return <div className="w-px h-3 bg-gray-200/80 dark:bg-gray-700/60 mx-0.5 shrink-0" />;
-}
-
-/* Volume icon based on level */
-function VolumeIcon({
-  muted,
-  volume,
-  disabled,
-}: {
-  muted: boolean;
-  volume: number;
-  disabled: boolean;
-}) {
-  const cls = 'w-3.5 h-3.5';
-  if (disabled || muted || volume === 0) return <VolumeX className={cls} />;
-  if (volume < 0.5) return <Volume1 className={cls} />;
-  return <Volume2 className={cls} />;
 }
 
 export function CanvasToolbar({
@@ -156,25 +138,10 @@ export function CanvasToolbar({
     (s) => s.stage?.whiteboard?.[0]?.elements?.length || 0,
   );
 
-  // Volume slider hover state
+  // The mobile toolbar opens a touch-friendly settings dialog.
+  const mobileVolumeTrigger = useRef<HTMLButtonElement>(null);
   const [volumeHover, setVolumeHover] = useState(false);
   const [volumeDialogContainer, setVolumeDialogContainer] = useState<HTMLElement | null>(null);
-  const volumeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const volumeContainerRef = useRef<HTMLDivElement>(null);
-  const handleVolumeEnter = useCallback(() => {
-    clearTimeout(volumeTimerRef.current);
-    setVolumeHover(true);
-  }, []);
-
-  const handleVolumeLeave = useCallback(() => {
-    volumeTimerRef.current = setTimeout(() => setVolumeHover(false), 300);
-  }, []);
-
-  // Cleanup volume hover timer on unmount
-  useEffect(() => () => clearTimeout(volumeTimerRef.current), []);
-
-  // Effective volume for display
-  const effectiveVolume = ttsMuted ? 0 : ttsVolume;
   const endLabel = t(mobile && sessionType === 'qa' ? 'chat.endQA' : 'roundtable.stopDiscussion');
   const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
 
@@ -222,26 +189,26 @@ export function CanvasToolbar({
           )}
         >
           {/* Volume with vertical popover slider */}
-          {onToggleMute && (
-            <div
-              data-toolbar-control="volume"
-              ref={volumeContainerRef}
-              className="relative flex items-center"
-              onMouseEnter={mobile ? undefined : handleVolumeEnter}
-              onMouseLeave={mobile ? undefined : handleVolumeLeave}
-            >
+          {onToggleMute && !mobile && (
+            <VolumeControl
+              muted={!!ttsMuted}
+              volume={ttsVolume}
+              enabled={!!ttsEnabled}
+              onToggleMute={onToggleMute}
+              onVolumeChange={onVolumeChange}
+              buttonClassName={cn(ctrlBtn, 'w-6 h-6')}
+            />
+          )}
+          {onToggleMute && mobile && (
+            <div data-toolbar-control="volume" className="relative flex items-center">
               <button
-                onClick={
-                  mobile
-                    ? (event) => {
-                        setVolumeDialogContainer(
-                          event.currentTarget.closest<HTMLElement>('[data-classroom-stage]'),
-                        );
-                        setVolumeHover((open) => !open);
-                      }
-                    : onToggleMute
-                }
-                disabled={!mobile && !ttsEnabled}
+                ref={mobileVolumeTrigger}
+                onClick={(event) => {
+                  setVolumeDialogContainer(
+                    event.currentTarget.closest<HTMLElement>('[data-classroom-stage]'),
+                  );
+                  setVolumeHover((open) => !open);
+                }}
                 className={cn(
                   ctrlBtn,
                   'w-6 h-6',
@@ -251,113 +218,67 @@ export function CanvasToolbar({
                       ? 'text-red-500 dark:text-red-400'
                       : 'text-gray-500 dark:text-gray-400',
                 )}
-                aria-label={mobile ? t('mobileClassroom.volume') : ttsMuted ? 'Unmute' : 'Mute'}
-                aria-expanded={mobile ? volumeHover : undefined}
-                aria-haspopup={mobile ? 'dialog' : undefined}
+                aria-label={t('mobileClassroom.volume')}
+                aria-expanded={volumeHover}
+                aria-haspopup={'dialog'}
               >
                 <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={!ttsEnabled} />
               </button>
 
-              {/* Vertical volume slider (pops up above) */}
-              {!mobile && (
-                <div
-                  inert={!volumeHover || !ttsEnabled}
-                  className={cn(
-                    'absolute bottom-full mb-2 flex flex-col duration-200 ease-out pointer-events-none opacity-0',
-                    'left-1/2 -translate-x-1/2 items-center transition-all',
-                    volumeHover && ttsEnabled && 'pointer-events-auto opacity-100',
-                  )}
+              <Dialog open={volumeHover} onOpenChange={setVolumeHover}>
+                <DialogContent
+                  container={volumeDialogContainer}
+                  className="mobile-sound-settings z-[400] w-[calc(100vw-32px)] max-w-[340px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl p-5 gap-5"
+                  overlayClassName="z-[399] bg-black/30 backdrop-blur-sm"
+                  aria-describedby={undefined}
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    mobileVolumeTrigger.current?.focus();
+                  }}
                 >
-                  <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-2 py-2.5 flex flex-col items-center gap-1.5">
-                    <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums font-medium select-none">
-                      {Math.round(effectiveVolume * 100)}
-                    </span>
+                  <DialogTitle className="text-lg font-semibold pe-10">
+                    {t('mobileClassroom.soundSettings')}
+                  </DialogTitle>
+                  <label className="flex min-h-11 items-center gap-3">
+                    <span>{t('mobileClassroom.volume')}</span>
                     <input
                       type="range"
-                      disabled={!ttsEnabled}
                       aria-label={t('mobileClassroom.volume')}
+                      disabled={!ttsEnabled}
                       min={0}
                       max={1}
                       step={0.05}
-                      value={effectiveVolume}
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        onVolumeChange?.(v);
-                        if (v > 0 && ttsMuted) onToggleMute?.();
-                      }}
-                      className={cn(
-                        'appearance-none cursor-pointer',
-                        'h-16 w-1 rounded-full',
-                        'bg-gray-200 dark:bg-gray-600',
-                        '[writing-mode:vertical-lr] [direction:rtl]',
-                        '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3',
-                        '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-500 [&::-webkit-slider-thumb]:dark:bg-violet-400',
-                        '[&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer',
-                        '[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3',
-                        '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-500 [&::-moz-range-thumb]:border-0',
-                      )}
+                      value={ttsVolume}
+                      onChange={(event) => onVolumeChange?.(parseFloat(event.target.value))}
+                      className="min-w-0 flex-1 accent-violet-600"
                     />
-                  </div>
-                  {/* Arrow pointing down */}
-                  <div className="w-2 h-2 bg-white dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 rotate-45 -mt-[5px]" />
-                </div>
-              )}
-              {mobile && (
-                <Dialog open={volumeHover} onOpenChange={setVolumeHover}>
-                  <DialogContent
-                    container={volumeDialogContainer}
-                    className="mobile-sound-settings z-[400] w-[calc(100vw-32px)] max-w-[340px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl p-5 gap-5"
-                    overlayClassName="z-[399] bg-black/30 backdrop-blur-sm"
-                    aria-describedby={undefined}
-                    onCloseAutoFocus={(event) => {
-                      event.preventDefault();
-                      volumeContainerRef.current?.querySelector('button')?.focus();
-                    }}
-                  >
-                    <DialogTitle className="text-lg font-semibold pe-10">
-                      {t('mobileClassroom.soundSettings')}
-                    </DialogTitle>
-                    <label className="flex min-h-11 items-center gap-3">
-                      <span>{t('mobileClassroom.volume')}</span>
-                      <input
-                        type="range"
-                        aria-label={t('mobileClassroom.volume')}
-                        disabled={!ttsEnabled}
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={ttsVolume}
-                        onChange={(event) => onVolumeChange?.(parseFloat(event.target.value))}
-                        className="min-w-0 flex-1 accent-violet-600"
-                      />
-                      <span className="w-10 text-end tabular-nums">
-                        {Math.round(ttsVolume * 100)}%
-                      </span>
-                    </label>
+                    <span className="w-10 text-end tabular-nums">
+                      {Math.round(ttsVolume * 100)}%
+                    </span>
+                  </label>
+                  <label className="flex min-h-11 items-center justify-between gap-4">
+                    <span>{t('mobileClassroom.playSound')}</span>
+                    <input
+                      type="checkbox"
+                      className="size-5 accent-violet-600"
+                      disabled={!ttsEnabled}
+                      checked={!!ttsEnabled && !ttsMuted}
+                      onChange={onToggleMute}
+                    />
+                  </label>
+                  {onToggleAutoPlay && (
                     <label className="flex min-h-11 items-center justify-between gap-4">
-                      <span>{t('mobileClassroom.playSound')}</span>
+                      <span>{t('roundtable.autoPlay')}</span>
                       <input
                         type="checkbox"
                         className="size-5 accent-violet-600"
-                        disabled={!ttsEnabled}
-                        checked={!!ttsEnabled && !ttsMuted}
-                        onChange={onToggleMute}
+                        checked={!!autoPlayLecture}
+                        onChange={onToggleAutoPlay}
                       />
                     </label>
-                    {onToggleAutoPlay && (
-                      <label className="flex min-h-11 items-center justify-between gap-4">
-                        <span>{t('roundtable.autoPlay')}</span>
-                        <input
-                          type="checkbox"
-                          className="size-5 accent-violet-600"
-                          checked={!!autoPlayLecture}
-                          onChange={onToggleAutoPlay}
-                        />
-                      </label>
-                    )}
-                  </DialogContent>
-                </Dialog>
-              )}
+                  )}
+                </DialogContent>
+              </Dialog>
             </div>
           )}
 

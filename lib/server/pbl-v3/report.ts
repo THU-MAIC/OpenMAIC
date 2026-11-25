@@ -13,7 +13,7 @@ import { reportTextExcerpt } from '@/lib/pbl/v3/report';
 import { handoffEchoes } from '@/lib/pbl/v3/conversation';
 import { LearningStore, type Study, type RoleBinding } from './store';
 import { projectFor } from './runtime';
-import { canonicalReview, reviewQuestions } from './review-question';
+import { reviewQuestions } from './review-question';
 import { canViewProjectReport } from './stage-progress';
 import { decisionResponseLabel } from '@/lib/pbl/v3/domain/orchestration/decisions';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
@@ -256,7 +256,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
            'pblTextClipped',length(e.data->>'text')>$5)
          WHEN e.type='pbl_learner_handoff' THEN jsonb_build_object(
            'question',left(e.data->>'question',$5),'canonical',e.data->'canonical',
-           'toolCallId',e.data->'toolCallId','pblTextClipped',length(e.data->>'question')>$5)
+           'toolCallId',e.data->'toolCallId','spokenAt',e.data->'spokenAt','pblTextClipped',length(e.data->>'question')>$5)
          WHEN octet_length(e.data::text)<=$4 THEN e.data END) ||
          jsonb_build_object('pblInputId',e.input_id) AS data
        FROM sampled e ORDER BY e.seq DESC`,
@@ -277,6 +277,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         scope: string;
         inputId?: number;
         messageId?: number;
+        spokenAt?: number;
         handoff: boolean;
         canonical?: boolean;
       }
@@ -286,7 +287,13 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
       at: number,
       role: 'user' | 'assistant',
       text: string,
-      source: { inputId?: number; messageId?: number; handoff?: boolean; canonical?: boolean } = {},
+      source: {
+        inputId?: number;
+        messageId?: number;
+        spokenAt?: number;
+        handoff?: boolean;
+        canonical?: boolean;
+      } = {},
     ) => {
       if (text)
         messages.push({
@@ -299,6 +306,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           canonical: source.canonical,
           inputId: source.inputId,
           messageId: source.messageId,
+          spokenAt: source.spokenAt,
         });
     };
     // Pending delivery follows the actual input, even when that input is an
@@ -316,19 +324,24 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
         pblOpening?: boolean;
         pblInputId?: number;
         pblTextClipped?: boolean;
-        message?: { role?: string; content?: { type: string; text?: string }[] };
+        message?: {
+          role?: string;
+          timestamp?: number;
+          content?: { type: string; text?: string }[];
+        };
       };
       if (data.pblTextClipped) conversationTruncated = true;
       const inputId =
         typeof data.pblInputId === 'number' && Number.isSafeInteger(data.pblInputId)
           ? data.pblInputId
           : undefined;
-      const question = questions.get(entry.id);
-      if (question !== undefined)
-        pushMessage(entry.id, entry.at, 'assistant', question, {
+      const receipt = questions.get(entry.id);
+      if (receipt)
+        pushMessage(entry.id, entry.at, 'assistant', receipt.text, {
           inputId,
           handoff: true,
-          canonical: canonicalReview(entry),
+          canonical: receipt.canonical,
+          spokenAt: receipt.spokenAt,
         });
       if (entry.type === 'user_message') {
         // Only real learner messages belong in the visible transcript.
@@ -345,7 +358,11 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
           .map((p) => p.text ?? '')
           .join('\n');
         if (text)
-          pushMessage(entry.id, entry.at, 'assistant', text, { inputId, messageId: entry.id });
+          pushMessage(entry.id, entry.at, 'assistant', text, {
+            inputId,
+            messageId: entry.id,
+            spokenAt: data.message.timestamp,
+          });
       }
     }
     for (const pending of [binding.guided?.pending, binding.guided?.handoff]) {
@@ -369,6 +386,7 @@ async function buildLearningEvidence(db: PoolClient, row: Study): Promise<Learni
             inputId: latestInputSequence,
             handoff: true,
             canonical: 'displayText' in pending && !!pending.displayText,
+            spokenAt: 'spokenAt' in pending ? pending.spokenAt : undefined,
           },
         );
     }

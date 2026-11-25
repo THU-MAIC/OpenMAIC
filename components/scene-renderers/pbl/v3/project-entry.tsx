@@ -7,6 +7,7 @@ import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ProjectHero } from '../project-hero';
+import { ProjectCast } from './project-cast';
 import { PBLWorkspaceLayer } from '../workspace-layer';
 import { ProjectReport } from './project-report';
 import { PBLV3Workspace, pblRequest } from './workspace';
@@ -20,6 +21,8 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
     started: boolean;
     studyId?: string | null;
     reportAvailable?: boolean;
+    /** The project is taught by companions the learner sees: its way in introduces them. */
+    companions?: boolean;
   } | null>(null);
   const [error, setError] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
@@ -44,6 +47,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
       started: boolean;
       studyId?: string | null;
       reportAvailable?: boolean;
+      companions?: boolean;
     }>(
       `/api/pbl/v3?${new URLSearchParams({ project: '1', stageId, sceneId })}`,
       undefined,
@@ -94,7 +98,23 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
   return (
     <div ref={hostRef} className="h-full w-full" data-testid="pbl-v3-entry">
       {!entered &&
-        (entrance ? (
+        (entrance?.companions ? (
+          <ProjectCast
+            details={entrance.hero}
+            started={entrance.started}
+            completed={!!entrance.reportAvailable}
+            onReport={
+              entrance.reportAvailable && entrance.studyId
+                ? () => {
+                    setAutoExpand(true);
+                    setReportOpen(true);
+                  }
+                : undefined
+            }
+            onStart={launch}
+            onContinue={launch}
+          />
+        ) : entrance ? (
           <ProjectHero
             details={entrance.hero}
             started={entrance.started}
@@ -159,6 +179,7 @@ export function PBLV3Container({ sceneId }: { sceneId: string }) {
               <PBLV3Workspace
                 sceneId={sceneId}
                 projectHero={entrance?.hero}
+                companions={entrance?.companions}
                 onReturnToHero={returnToHero}
                 // Eligibility belongs to this Hero entry, not the current layout.
                 // layoutReady still waits for the initial expansion to settle.

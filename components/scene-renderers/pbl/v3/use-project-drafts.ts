@@ -47,7 +47,11 @@ const uiSchema = z
     showWorkspace: z.boolean(),
     showAssistant: z.boolean(),
   })
-  .refine((draft) => draft.showWorkspace || draft.showAssistant);
+  // Older sessions could save both panes as hidden. Keep the code pane closed
+  // and restore the assistant preference without discarding the learner's work.
+  .transform((draft) =>
+    draft.showWorkspace || draft.showAssistant ? draft : { ...draft, showAssistant: true },
+  );
 export type EditorBuffer = z.infer<typeof bufferSchema>;
 export type EditorDraft = z.infer<typeof editorSchema>;
 type StudyDraft = z.infer<typeof uiSchema>;
@@ -212,7 +216,12 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     [update],
   );
   const setShowWorkspace = useCallback(
-    (value: boolean) => update((previous) => ({ ...previous, showWorkspace: value })),
+    (visible: boolean) =>
+      update((previous) => ({
+        ...previous,
+        showWorkspace: visible,
+        showAssistant: !visible || previous.showAssistant,
+      })),
     [update],
   );
   const setDecisionDrafts = useCallback(
@@ -224,7 +233,12 @@ export function useStudyDraft(id: string | undefined, onStorageError: () => void
     [update],
   );
   const setShowAssistant = useCallback(
-    (value: boolean) => update((previous) => ({ ...previous, showAssistant: value })),
+    (visible: boolean) =>
+      update((previous) => ({
+        ...previous,
+        showAssistant: visible,
+        showWorkspace: !visible || previous.showWorkspace,
+      })),
     [update],
   );
   return {

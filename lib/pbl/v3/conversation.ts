@@ -9,6 +9,51 @@ export type LearningRunFailure =
   | 'contextTurnCapacity'
   | 'contextPreparation';
 
+/**
+ * How a whiteboard or pointer call shows in the conversation: what it did, and what the telling
+ * of the reply needs to show it at the right moment. Both kinds of call share the `board`
+ * action: they are what the role does beside what it says.
+ */
+export interface LearningBoardDisplay {
+  op:
+    | 'text'
+    | 'table'
+    | 'code'
+    | 'shape'
+    | 'line'
+    | 'latex'
+    | 'chart'
+    | 'edit'
+    | 'delete'
+    | 'clear'
+    | 'read'
+    | 'point'
+    | 'open'
+    | 'close';
+  label: string;
+  seq: number | null;
+  /** Elements this change put on the board, shown when the telling of the reply reaches it. */
+  ids?: string[];
+  /** Elements this change took off the board, gone when the telling of the reply reaches it. */
+  removes?: string[];
+  /** What the role points at while speaking. */
+  target?: CodePointer | PreviewPointer;
+}
+
+/** Lines of a project file, in a spotlight or under a laser dot. */
+export interface CodePointer {
+  path: string;
+  line: number;
+  end?: number;
+  pointer: 'spotlight' | 'laser';
+}
+
+/** An element of the learner's running application, by CSS selector. */
+export interface PreviewPointer {
+  selector: string;
+  pointer: 'spotlight' | 'laser';
+}
+
 /** Learner-owned conversation with OpenPBL thinking and full tool activity. */
 export interface LearningConversationEntry {
   id: string;
@@ -17,6 +62,8 @@ export interface LearningConversationEntry {
   inputId?: number;
   /** Learner send command, used to reconcile its local acknowledgement with HTTP/SSE. */
   commandId?: string;
+  /** This turn belongs to the active role and step in the live study view. */
+  currentStage?: true;
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   failure?: LearningRunFailure;
   omitted?: boolean;
@@ -37,6 +84,12 @@ export interface LearningConversationEntry {
         text: string;
         streaming?: boolean;
         canonical?: true;
+        /** The legacy review receipt requested in the very same assistant message. */
+        reviewReceiptId?: string;
+        /** A finished prose-only stop can be registered by the next legacy tool-only call. */
+        reviewStop?: true;
+        /** Original assistant frame, also referenced by a spoken review receipt. */
+        spokenAt?: number;
       }
     | {
         kind: 'thinking';
@@ -60,7 +113,8 @@ export interface LearningConversationEntry {
           | 'list'
           | 'manage'
           | 'skill'
-          | 'tool';
+          | 'tool'
+          | 'board';
         name?: string;
         omitted?: boolean;
         args?: unknown;
@@ -68,8 +122,11 @@ export interface LearningConversationEntry {
         display?: unknown;
         progress?: { kind?: string; text?: string; percent?: number; data?: unknown };
         projectCompleted?: boolean;
+        readyForStudentConfirmation?: boolean;
         /** A later successful teaching-control call recovered this failure for the same input. */
         recovered?: boolean;
+        /** At rest, a tool-only retry shows the question already spoken by the prior attempt. */
+        restingReview?: string;
         startedAt?: number;
         endedAt?: number;
         status: 'running' | 'succeeded' | 'failed' | 'interrupted';
@@ -118,14 +175,22 @@ export function handoffEchoes<
     text: string;
     handoff: boolean;
     canonical?: boolean;
+    spokenAt?: number;
   },
 >(replies: readonly T[]): Set<T> {
   const originals = new Map<string, Map<number, string[]>>();
   const canonical = new Map<string, T>();
+  const speech = new Map<string, string[]>();
   const key = (reply: T) => `${reply.scope}:${reply.inputId}`;
   for (const reply of replies) {
     if (reply.canonical && reply.inputId !== undefined) canonical.set(key(reply), reply);
     if (reply.handoff || reply.inputId === undefined || reply.messageId === undefined) continue;
+    if (reply.spokenAt !== undefined) {
+      const frame = `${key(reply)}:${reply.spokenAt}`;
+      const words = speech.get(frame) ?? [];
+      words.push(reply.text);
+      speech.set(frame, words);
+    }
     const messages = originals.get(key(reply)) ?? new Map<number, string[]>();
     const blocks = messages.get(reply.messageId) ?? [];
     blocks.push(reply.text);
@@ -143,6 +208,13 @@ export function handoffEchoes<
   );
   return new Set(
     replies.filter((reply) => {
+      // A spoken receipt only supplies fallback text when its source is outside the loaded page.
+      if (reply.handoff && reply.spokenAt !== undefined)
+        return (
+          speech
+            .get(`${key(reply)}:${reply.spokenAt}`)
+            ?.some((part) => part.trimEnd().endsWith(reply.text)) ?? false
+        );
       const committed = reply.inputId === undefined ? undefined : canonical.get(key(reply));
       if (committed && text.get(key(reply)) !== committed.text)
         return reply !== committed && (reply.handoff || reply.messageId !== undefined);
@@ -191,7 +263,7 @@ export function markRecoveredTeachingTools(entries: readonly LearningConversatio
 export function deduplicateHandoffs(entries: readonly LearningConversationEntry[]) {
   const replies = entries.flatMap((entry) =>
     entry.parts.flatMap((part) =>
-      part.kind === 'text'
+      entry.speaker !== 'user' && part.kind === 'text'
         ? [
             {
               scope: conversationScope(entry),
@@ -200,17 +272,145 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
               text: part.text,
               handoff: part.id.startsWith('question-'),
               canonical: part.canonical,
+              spokenAt: part.spokenAt,
               part,
             },
           ]
         : [],
     ),
   );
-  const duplicates = new Set<LearningConversationEntry['parts'][number]>(
-    [...handoffEchoes(replies)].map((reply) => reply.part),
+  // At a whiteboard the role speaks between its board calls and records only the closing in
+  // the review tool. Keep the teaching steps at their original positions.
+  const boardTurns = new Set(
+    entries
+      .filter(
+        (entry) =>
+          entry.inputId !== undefined &&
+          entry.parts.some((part) => part.kind === 'tool' && part.action === 'board'),
+      )
+      .map((entry) => `${conversationScope(entry)}:${entry.inputId}`),
   );
+  const spoken = new Set(
+    replies
+      .filter(
+        (reply) =>
+          !reply.handoff &&
+          reply.inputId !== undefined &&
+          boardTurns.has(`${reply.scope}:${reply.inputId}`),
+      )
+      .map((reply) => reply.part),
+  );
+  // A legacy recovery call can be on a later attempt or history page. Link it only to the
+  // preceding completed stop for this input, never across a file/board operation or user turn.
+  const legacySources = new Map<
+    string,
+    Extract<LearningConversationEntry['parts'][number], { kind: 'text' }>
+  >();
+  const stops = new Map<
+    string,
+    Extract<LearningConversationEntry['parts'][number], { kind: 'text' }>
+  >();
+  for (const entry of entries) {
+    if (entry.inputId === undefined || entry.speaker === 'user') continue;
+    const turn = `${conversationScope(entry)}:${entry.inputId}`;
+    for (const part of entry.parts) {
+      if (part.kind === 'text' && !part.id.startsWith('question-')) {
+        if (part.reviewReceiptId) legacySources.set(`${turn}:${part.reviewReceiptId}`, part);
+        if (part.reviewStop) stops.set(turn, part);
+        else stops.delete(turn);
+      } else if (part.kind === 'tool' && part.name !== 'cue_user') {
+        const stop = stops.get(turn);
+        if (stop && part.action === 'review' && part.status === 'succeeded')
+          legacySources.set(`${turn}:${part.id.replace(/^tool-/, 'question-')}`, stop);
+        stops.delete(turn);
+      }
+    }
+  }
+  const recorded = replies.filter((reply) => reply.handoff && reply.spokenAt === undefined);
+  const duplicates = new Set<LearningConversationEntry['parts'][number]>();
+  const revised = new Map<LearningConversationEntry['parts'][number], string>();
+  const boardReceipts = new Set<(typeof replies)[number]>();
+  for (const receipt of recorded) {
+    if (receipt.inputId === undefined) continue;
+    const source = legacySources.get(`${receipt.scope}:${receipt.inputId}:${receipt.part.id}`);
+    if (!receipt.canonical && !source) continue;
+    const speech = replies.filter(
+      (reply) =>
+        (spoken.has(reply.part) || (!receipt.canonical && reply.part === source)) &&
+        reply.scope === receipt.scope &&
+        reply.inputId === receipt.inputId &&
+        !reply.handoff,
+    );
+    if (!speech.length) continue;
+    boardReceipts.add(receipt);
+    // Keep the original stream position when a recovery receipt copies already spoken words.
+    if (speech.some((reply) => reply.text.trimEnd().endsWith(receipt.text.trim()))) {
+      duplicates.add(receipt.part);
+      continue;
+    }
+    // Older board agents could author a closing question twice in a single tool-call frame.
+    // Preserve the explanation, with the registered question in its original speaking slot.
+    let remaining = receipt.text.trim();
+    for (const reply of speech) {
+      const prefix = reply.text.trim();
+      if (prefix && remaining.startsWith(prefix + '\n'))
+        remaining = remaining.slice(prefix.length).trimStart();
+    }
+    if (!remaining) {
+      duplicates.add(receipt.part);
+      continue;
+    }
+    if (remaining !== receipt.text.trim()) revised.set(receipt.part, remaining);
+    if (!source || !speech.some((reply) => reply.part === source)) continue;
+    // The old receipt and prose share a review call but can each carry unique directions.
+    // Replace only the last question, keeping preceding sentences from both deliveries.
+    const endQuestion = /[?？][*_`"'”’）)\s]*$/u;
+    const end = endQuestion.exec(source.text);
+    if (!end || !endQuestion.test(remaining)) continue;
+    const prefix = source.text.slice(0, end.index);
+    let start = 0;
+    for (const boundary of prefix.matchAll(/[。！？!?]|\.[ \t]+|\n/gu))
+      start = boundary.index + boundary[0].length;
+    const intro = source.text.slice(0, start);
+    if (intro.trim() && remaining.startsWith(intro.trim() + '\n'))
+      remaining = remaining.slice(intro.trim().length).trimStart();
+    const merged = intro + remaining;
+    // An ambiguous old question may itself contain the only file link or code reference.
+    const references =
+      source.text.match(
+        /\[[^\]]+\]\([^)]*\)|`[^`]+`|[\w/-]+\.[a-z][\w-]*(?::\d+(?:[-–]\d+)?)?/giu,
+      ) ?? [];
+    if (references.some((reference) => !merged.includes(reference))) continue;
+    revised.set(source, merged);
+    duplicates.add(receipt.part);
+  }
+  for (const echo of handoffEchoes(replies)) {
+    if (!spoken.has(echo.part) && !boardReceipts.has(echo)) duplicates.add(echo.part);
+  }
   const deduplicated = entries.flatMap((entry) => {
-    const parts = entry.parts.filter((part) => !duplicates.has(part));
+    const parts = entry.parts
+      .filter((part) => !duplicates.has(part))
+      .map((part) => {
+        const text = revised.get(part);
+        return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
+      });
+    // Attach the exact committed words to their tool card when the prior attempt owns the
+    // only speech. The card can show them at rest without creating another narration step.
+    if (!parts.some((part) => part.kind === 'text')) {
+      const closing = entry.parts.findLast(
+        (p) => duplicates.has(p) && p.id.startsWith('question-'),
+      );
+      if (closing?.kind === 'text') {
+        const index = parts.findIndex(
+          (p) =>
+            p.kind === 'tool' &&
+            p.action === 'review' &&
+            p.id === closing.id.replace(/^question-/, 'tool-'),
+        );
+        const card = parts[index];
+        if (card?.kind === 'tool') parts[index] = { ...card, restingReview: closing.text };
+      }
+    }
     if (
       entry.parts.length &&
       !parts.length &&
