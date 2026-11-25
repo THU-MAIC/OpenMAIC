@@ -158,6 +158,49 @@ describe('token plan recommendation', () => {
     expect(tokenPlanConflicts(kimiFirst, recommendationIn(kimiFirst, 'minimax'))).toHaveLength(1);
   });
 
+  it('a higher-priority plan holds no capability its account turned out not to have', async () => {
+    const minimaxWithoutVideo = await applyModelSettingsChange(null, addPlan('minimax'), {
+      unsupportedCapabilities: ['video'],
+    });
+    const config = await applyModelSettingsChange(minimaxWithoutVideo, addPlan('volcengine-ark'));
+    const held = slotsHeldByHigherPlans(viewOf(config), 'volcengine-ark');
+    expect(held).not.toContain('video');
+    expect(held).toContain('image');
+    expect(recommendationIn(viewOf(config), 'volcengine-ark')).toHaveProperty('video');
+  });
+
+  it('a higher-priority plan holds a capability while any of its accounts has it', async () => {
+    // The deployment serves MiniMax on a full tier; the workspace's own MiniMax is a Go plan.
+    deployment({ providers: { operator: { preset: 'minimax', apiKey: 'sk-operator-full' } } });
+    const config = await applyModelSettingsChange(null, addPlan('minimax'), {
+      unsupportedCapabilities: ['video'],
+    });
+    const view = viewOf(await applyModelSettingsChange(config, addPlan('volcengine-ark')));
+    expect(view.providers.filter((provider) => provider.preset === 'minimax')).toHaveLength(2);
+    // Whichever comes first, video stays held by MiniMax.
+    expect(slotsHeldByHigherPlans(view, 'volcengine-ark')).toContain('video');
+    const reversed = { ...view, providers: [...view.providers].reverse() };
+    expect(slotsHeldByHigherPlans(reversed, 'volcengine-ark')).toContain('video');
+  });
+
+  it('a new key with a capability the old one lacked keeps the choice made for it', async () => {
+    // Connected on a tier without video, with video turned off.
+    let config = await applyModelSettingsChange(null, addPlan('minimax-intl'), {
+      unsupportedCapabilities: ['video'],
+    });
+    config = await applyModelSettingsChange(config, { kind: 'slots', set: { video: null } });
+    const view = viewOf(config);
+    const preset = view.presets.find((entry) => entry.id === 'minimax-intl')!;
+    // Nothing about video to ask: the plan does not offer it yet.
+    expect(connectConflicts(view, preset).map((conflict) => conflict.slot.slot)).not.toContain(
+      'video',
+    );
+    // The new key's tier includes video (the vendor reports nothing missing).
+    const server = serverApply(config);
+    await connectTokenPlan(server.apply, view, preset, 'sk-cp-plus-0002', 'overwrite');
+    expect(server.config()?.slots?.video).toBeNull();
+  });
+
   it('a higher-priority plan without a usable key holds nothing', async () => {
     const config = await configure(addPlan('tokendance'), addPlan('kimi-coding-plan'), {
       kind: 'provider',

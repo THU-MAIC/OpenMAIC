@@ -22,6 +22,7 @@ import {
   getSlot,
   isSlotId,
   slotRefusesThinkingEffort,
+  type SlotCapability,
   type SlotId,
 } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
@@ -119,6 +120,17 @@ export const providerOptionsSchema = z.record(
 
 export type ProviderOptions = z.infer<typeof providerOptionsSchema>;
 
+const SLOT_CAPABILITIES = [
+  'chat',
+  'tts',
+  'asr',
+  'image',
+  'video',
+  'webSearch',
+  'webFetch',
+  'document',
+] as const satisfies readonly SlotCapability[];
+
 const providerVoicesSchema = z
   .array(
     z
@@ -170,6 +182,12 @@ export const providerSchema = z
      */
     options: providerOptionsSchema.optional(),
     voices: providerVoicesSchema.optional(),
+    /**
+     * Capabilities of its preset the account behind the key does not have,
+     * as the plan's vendor reported when the key was saved (a token plan tier
+     * without video, for example). The provider does not offer them.
+     */
+    unsupportedCapabilities: z.array(z.enum(SLOT_CAPABILITIES)).min(1).optional(),
   })
   .strict();
 
@@ -403,6 +421,10 @@ function crossCheck(
     if (preset && !preset.capabilities[capability]) {
       issues.push(
         `${at}: provider ${shown(providerId, at)} (preset "${preset.id}") does not offer ${capability}`,
+      );
+    } else if (provider.unsupportedCapabilities?.includes(capability)) {
+      issues.push(
+        `${at}: provider ${shown(providerId, at)} does not offer ${capability} on its account's plan`,
       );
     }
   };

@@ -67,6 +67,8 @@ export interface TokenPlanPreset {
   name: string;
   /** Optional vendor/docs link. */
   websiteUrl?: string;
+  /** What the vendor calls the site `websiteUrl` opens, when not a console. */
+  consoleKind?: 'portal' | 'platform';
   /**
    * Optional plan subscription links (domestic / international). Rendered as a
    * links row in the plan panel; `websiteUrl` stays the generic manage-account
@@ -144,6 +146,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'tokendance',
     name: 'TokenDance',
     websiteUrl: 'https://tokendance.space',
+    consoleKind: 'portal',
     apiKeyPlaceholder: 'sk-...',
     icon: '/logos/tokendance.svg',
     category: 'token_plan',
@@ -458,6 +461,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'deepseek',
     name: 'DeepSeek',
     websiteUrl: 'https://platform.deepseek.com',
+    consoleKind: 'platform',
     apiKeyPlaceholder: 'sk-...',
     icon: '/logos/deepseek.svg',
     category: 'token_plan',

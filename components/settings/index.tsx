@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles } from 'lucide-react';
+import { X, Settings, Boxes, CreditCard, GraduationCap, Sparkles, BarChart3 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useAgentRuntimeAvailable } from '@/lib/hooks/use-agent-runtime-available';
 import { settingsSections } from '@/lib/model-settings/shape';
@@ -113,6 +113,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     }
   }, [open, initialSection]);
 
+  // The Token Plan section puts its region switch in the header.
+  const [regionSlot, setRegionSlot] = useState<HTMLDivElement | null>(null);
+
   // Resizable sidebar width
   const [sidebarWidth, setSidebarWidth] = useState(192);
   const [isResizing, setIsResizing] = useState(false);
@@ -185,7 +188,15 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           </>
         );
       case 'token-plan':
-        return <h2 className="text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>;
+        return (
+          <div className="flex min-w-0 items-baseline gap-3">
+            <h2 className="shrink-0 text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>
+            {/* Beside the region switch on a narrow dialog there is no room for it. */}
+            <p className="hidden min-w-0 truncate text-xs text-muted-foreground lg:block">
+              {t('settings.tokenPlan.subtitle')}
+            </p>
+          </div>
+        );
       default:
         return null;
     }
@@ -239,7 +250,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             {/* Header */}
             <div className="flex items-center justify-between gap-3 border-b p-4 sm:p-5">
               <div className="flex items-center gap-3">{getHeaderContent()}</div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
+                {activeSection === 'token-plan' && <div ref={setRegionSlot} />}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -254,7 +266,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             {/* Content */}
             <div
               className={cn(
-                'p-3 sm:p-5',
+                // Token Plan packs two columns: a little less padding.
+                activeSection === 'token-plan' ? 'p-3 sm:p-4' : 'p-3 sm:p-5',
                 fillsHeight ? 'flex min-h-0 flex-1 flex-col pt-3' : 'flex-1 overflow-y-auto',
               )}
             >
@@ -265,7 +278,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
               {activeSection === 'token-plan' && (
                 <ServerSettingsGate>
-                  {(view, apply) => <TokenPlanSettings view={view} apply={apply} />}
+                  {(view, apply) => (
+                    <TokenPlanSettings view={view} apply={apply} regionSlot={regionSlot} />
+                  )}
                 </ServerSettingsGate>
               )}
 
@@ -299,8 +314,24 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               )}
             </div>
 
-            {/* Footer: every change is saved as it is made; only close here. */}
+            {/* Footer: every change is saved as it is made; only close here. The
+                Token Plan section links this deployment's usage (in System). */}
             <div className="flex items-center justify-end gap-3 px-5 py-3 border-t bg-muted/30">
+              {activeSection === 'token-plan' && listed('general') && (
+                <p className="mr-auto flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  <BarChart3 className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span>{t('settings.tokenPlan.deploymentUsage')}</span>
+                  <span aria-hidden="true">·</span>
+                  <span>{t('settings.tokenPlan.deploymentUsageNote')}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSection('general')}
+                    className="rounded-sm font-medium text-foreground underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {t('settings.tokenPlan.viewStats')} →
+                  </button>
+                </p>
+              )}
               <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 {t('settings.close')}
               </Button>

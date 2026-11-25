@@ -107,6 +107,12 @@ export interface ProviderView {
   cloneTarget?: string;
   /** What it offers, with the models to pick from per capability. */
   capabilities: CapabilityModels;
+  /**
+   * Capabilities of its preset the vendor reported the key's account does not
+   * have: why `capabilities` leaves them out, as opposed to a capability the
+   * deployment switched off or a custom endpoint cannot serve.
+   */
+  unsupportedCapabilities?: SlotCapability[];
   /** Workspace providers only. */
   key?: { set: boolean; mask?: string; unreadable?: boolean };
 }
@@ -302,6 +308,7 @@ function capabilityModels(
     deployment,
     providerId,
     declared,
+    unsupported,
   }: {
     chatOnly?: boolean;
     baseUrl?: string;
@@ -310,11 +317,14 @@ function capabilityModels(
     providerId?: string;
     /** Context windows the provider declares per chat model (`modelContextWindows`). */
     declared?: Record<string, number>;
+    /** Capabilities the account behind the key does not have (`unsupportedCapabilities`). */
+    unsupported?: readonly SlotCapability[];
   } = {},
 ): CapabilityModels {
   const result: CapabilityModels = {};
   if (!preset) return result;
   for (const capability of Object.keys(preset.capabilities) as SlotCapability[]) {
+    if (unsupported?.includes(capability)) continue;
     if (
       chatOnly &&
       capability !== 'chat' &&
@@ -541,11 +551,15 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           : {}),
         ...(provider.options ? { options: { ...provider.options } } : {}),
         ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
+        ...(provider.unsupportedCapabilities
+          ? { unsupportedCapabilities: [...provider.unsupportedCapabilities] }
+          : {}),
         capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
           strictModels: usesServerCredentials(provider),
           deployment: deployment?.config,
           providerId: id,
           declared: provider.modelContextWindows,
+          unsupported: provider.unsupportedCapabilities,
         }),
       }),
     ),
@@ -562,11 +576,15 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           : {}),
         ...(provider.options ? { options: { ...provider.options } } : {}),
         ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
+        ...(provider.unsupportedCapabilities
+          ? { unsupportedCapabilities: [...provider.unsupportedCapabilities] }
+          : {}),
         capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
           // An official regional endpoint is the service's own, not a custom one.
           chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),
           baseUrl: provider.baseUrl,
           declared: provider.modelContextWindows,
+          unsupported: provider.unsupportedCapabilities,
         }),
         key: {
           set: Boolean(provider.apiKey) || unreadable.has(id),
@@ -719,6 +737,16 @@ function dropAssignmentsNaming(
 export async function applyModelSettingsChange(
   current: ModelConfigFile | null,
   change: ModelSettingsChange,
+  {
+    unsupportedCapabilities: reported,
+  }: {
+    /**
+     * For a provider change that saves a key: the capabilities the plan's
+     * vendor reported the key's account does not have (see
+     * lib/server/plan-status). Absent, the preset's capabilities stand.
+     */
+    unsupportedCapabilities?: readonly SlotCapability[];
+  } = {},
 ): Promise<ModelConfigFile> {
   const { layer: deployment } = deploymentConfig();
   const deploymentProviders = deployment?.config.providers ?? {};
@@ -842,6 +870,18 @@ export async function applyModelSettingsChange(
             Object.entries(declaredSource).filter(([modelId]) => models.includes(modelId)),
           )
         : undefined;
+    // What the account behind the key lacks belongs to that key: a new key
+    // takes what its vendor reported (or nothing), an edit that keeps the key
+    // and the endpoint keeps it, a custom endpoint is no longer the plan's.
+    const unsupportedCapabilities = baseUrl
+      ? undefined
+      : change.apiKey !== undefined
+        ? apiKey && reported?.length
+          ? [...reported]
+          : undefined
+        : existing?.preset === change.preset && !existing.baseUrl
+          ? existing.unsupportedCapabilities
+          : undefined;
     const provider: Provider = {
       preset: change.preset,
       ...(apiKey ? { apiKey } : {}),
@@ -850,9 +890,17 @@ export async function applyModelSettingsChange(
       ...(modelContextWindows && Object.keys(modelContextWindows).length
         ? { modelContextWindows }
         : {}),
+      ...(unsupportedCapabilities?.length ? { unsupportedCapabilities } : {}),
     };
     await checkProvider(change.id, provider);
     providers[change.id] = provider;
+    // A capability the account does not have: the assignments that used the
+    // provider for it follow their parents again, as when it is removed.
+    if (unsupportedCapabilities?.length) {
+      dropAssignmentsNaming(slots, change.id, (slot) =>
+        unsupportedCapabilities.includes(getSlot(slot).capability),
+      );
+    }
     // Removing the key leaves the provider unable to serve what needs one:
     // the assignments that used it for that follow their parents again, as
     // when the provider itself is removed.
