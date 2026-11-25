@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Other Changes
 
-- Models: remove retired video models from the built-in catalogs (existing saved IDs remain user-managed).
+- Models: remove retired video models from the built-in catalogs (existing saved IDs remain user-managed): [#2424](https://github.com/THU-MAIC/OpenMAIC/pull/2424)
   - seedance: `doubao-seedance-1-0-pro-250528` and `doubao-seedance-1-0-pro-fast-251015` (shut down November 24, 2026, not migrated automatically), `doubao-seedance-1-0-lite-t2v-250428` (shut down May 11, 2026). Use `doubao-seedance-2-0-mini-260615`.
   - openrouter-video: `kwaivgi/kling-v3.0-pro`, which no OpenRouter endpoint serves any more. Use `google/veo-3.1` or `bytedance/seedance-2.5`, or Kling through the built-in Kling provider.
 
