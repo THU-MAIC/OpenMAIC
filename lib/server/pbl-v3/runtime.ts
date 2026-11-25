@@ -20,7 +20,7 @@ import { getServerPersistenceProvider } from '@/lib/persistence/server-provider'
 import { projectEditAccess } from '@/lib/pbl/v3/edit-access';
 import { learnerActions } from '@/lib/pbl/v3/learner-actions';
 import { handoffEchoes, deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { canonicalReview, reviewQuestions } from './review-question';
+import { reviewQuestions } from './review-question';
 import { createHash, randomUUID } from 'node:crypto';
 import { checkpointIO, checkpointStep } from '@/lib/server/sandbox/checkpoint-errors';
 import { CHECKPOINT_TIMEOUT_MS } from '@/lib/server/sandbox/checkpoint-policy';
@@ -1099,6 +1099,7 @@ export async function learningView(
       scope: string;
       inputId?: number;
       messageId?: number;
+      spokenAt?: number;
       handoff: boolean;
       canonical?: boolean;
     }
@@ -1177,19 +1178,21 @@ export async function learningView(
         toolName?: string;
         isError?: boolean;
         result?: { content?: { type: string; text?: string }[] };
-        message?: { role?: string; content?: unknown };
+        message?: { role?: string; timestamp?: number; content?: unknown };
         pblInputId?: number;
         pblMessageId?: number;
       };
-      const question = questions.get(event.id);
-      if (question !== undefined) {
+      const receipt = questions.get(event.id);
+      if (receipt) {
+        const question = receipt.text;
         messages.push({
           role: 'assistant',
           text: question,
           scope: binding.session_id,
           inputId: data.pblInputId,
           handoff: true,
-          canonical: canonicalReview(event),
+          canonical: receipt.canonical,
+          spokenAt: receipt.spokenAt,
         });
         if (
           event.id > (latestUserSeq ?? 0) &&
@@ -1226,6 +1229,7 @@ export async function learningView(
             scope: binding.session_id,
             inputId: data.pblInputId,
             messageId: data.pblMessageId ?? event.id,
+            spokenAt: data.message.timestamp,
             handoff: false,
           });
       }
@@ -1276,6 +1280,7 @@ export async function learningView(
       scope: binding!.session_id,
       inputId: latestUserSeq,
       canonical: canonicalPending,
+      spokenAt: 'spokenAt' in pendingReview ? pendingReview.spokenAt : undefined,
       handoff: true,
     });
     conversation.push({
@@ -1288,6 +1293,9 @@ export async function learningView(
           kind: 'text',
           id: `question-pending-${pendingReview.runId}`,
           text: pendingDisplay!,
+          ...('spokenAt' in pendingReview && pendingReview.spokenAt !== undefined
+            ? { spokenAt: pendingReview.spokenAt }
+            : {}),
           ...(canonicalPending ? { canonical: true as const } : {}),
         },
       ],

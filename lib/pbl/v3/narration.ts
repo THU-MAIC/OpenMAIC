@@ -187,6 +187,14 @@ export function pointerAt(steps: readonly NarrationStep[], index: number) {
   return undefined;
 }
 
+/** A successful tool-only retry rests on the original question without queuing speech again. */
+export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
+  if (entry?.status !== 'succeeded') return;
+  const card = entry.parts.findLast((part) => part.kind === 'tool' && part.restingReview);
+  if (card?.kind === 'tool' && card.restingReview)
+    return { id: card.id, text: spokenText(card.restingReview) };
+}
+
 /**
  * What the learner just said, while it is the latest thing said: from the moment it is sent
  * until the role's reply has its first words. The bubble holds it so a send is seen to land.

@@ -9,6 +9,7 @@ import {
   narrationSegments,
   narrationSteps,
   pointerAt,
+  recoveredReviewSpeech,
   spokenText,
   type NarrationProgress,
   type NarrationTarget,
@@ -367,7 +368,7 @@ export function useNarration(
         ? { ...say, text: active.text, streaming: true }
         : say && restingPart?.kind === 'text'
           ? { ...say, text: spokenText(restingPart.text) }
-          : say,
+          : (say ?? (!playing ? recoveredReviewSpeech(entry) : undefined)),
     /** The calls that follow that text which the telling has reached, in order. */
     tools: !segment
       ? []

@@ -18,44 +18,50 @@ export function reviewResponse(response: string): { response: string; question: 
 /** A board review records the question the learner just heard. Only this assistant
  * frame, a suggested-replies call, or a plain stop awaiting a receipt can supply it. */
 export function spokenReviewClosing() {
-  let pending: string | undefined;
-  let current: string | undefined;
-  let calls: string[] = [];
+  let spoken: { question: string; spokenAt: number } | undefined;
+  let hasCurrentSpeech = false;
+  let calls: { id: string; arguments: Record<string, unknown> }[] = [];
   return {
     observe(message: AgentMessage) {
       if (message.role === 'toolResult') return;
       calls = [];
-      current = undefined;
-      if (
-        message.role !== 'assistant' ||
-        message.stopReason === 'error' ||
-        message.stopReason === 'aborted'
-      ) {
-        pending = undefined;
+      hasCurrentSpeech = false;
+      if (message.role !== 'assistant' || ['error', 'aborted'].includes(message.stopReason)) {
+        spoken = undefined;
         return;
       }
       const tools = message.content.filter((part) => part.type === 'toolCall');
-      calls = tools.filter((tool) => tool.name === 'request_skill_review').map((tool) => tool.id);
+      calls = tools.filter((tool) => tool.name === 'request_skill_review');
       if (!calls.length && tools.some((tool) => tool.name !== 'cue_user')) {
-        pending = undefined;
+        spoken = undefined;
         return;
       }
-      const spoken = message.content
-        .filter((part) => part.type === 'text')
-        .map((part) => part.text)
-        .join('\n\n')
-        .trim();
-      if (spoken) {
-        current = reviewResponse(spoken).question;
-        pending = current;
+      const last = message.content.findLast((part) => part.type === 'text' && part.text.trim());
+      if (last?.type === 'text') {
+        hasCurrentSpeech = true;
+        spoken = { question: reviewResponse(last.text).question, spokenAt: message.timestamp };
       }
     },
-    forCall(id: string, standalone?: string) {
-      if (!calls.includes(id)) return standalone;
-      // A tool-only question is a fresh delivery. An introductory statement can also
-      // precede it. If the model already asked in this frame, record what was heard.
-      if (standalone && (!current || !/[?？][*_`"'”’）)\s]*$/u.test(current))) return standalone;
-      return pending ?? standalone;
+    forCall(id: string) {
+      const call = calls.find((tool) => tool.id === id);
+      if (!call) return undefined;
+      // Older in-flight calls could supply both prose and a different question. Only the
+      // author can distinguish an introduction from a closing invitation in arbitrary prose.
+      if (call.arguments.askNewQuestion === true && !hasCurrentSpeech)
+        throw new Error('Speak the missing review question before registering it.');
+      const legacy = call.arguments.question;
+      if (
+        hasCurrentSpeech &&
+        typeof legacy === 'string' &&
+        legacy.trim() &&
+        legacy.trim() !== spoken?.question
+      )
+        throw new Error(
+          'Two different review texts were supplied. If you already asked the question, register it with an empty call. If you only gave an introduction, speak the missing question once and register it without a question argument.',
+        );
+      if (spoken) return spoken;
+      // A tool-only call issued under the old schema can still finish after an upgrade.
+      return typeof legacy === 'string' && legacy.trim() ? { question: legacy } : undefined;
     },
   };
 }
@@ -79,15 +85,18 @@ export async function supportTurnSequences(
 }
 
 /** A committed full response is the sole prose delivery for its input; tool cards stay visible. */
-function reviewReceipt(event: {
-  type: string;
-  data: unknown;
-}): { text: string; canonical: boolean } | null {
+type ReviewReceipt = { text: string; canonical: boolean; spokenAt?: number };
+
+function reviewReceipt(event: { type: string; data: unknown }): ReviewReceipt | null {
   if (!event.data || typeof event.data !== 'object') return null;
   if (event.type === LEARNER_HANDOFF_EVENT) {
-    const data = event.data as { question?: unknown; canonical?: unknown };
+    const data = event.data as { question?: unknown; canonical?: unknown; spokenAt?: unknown };
     return typeof data.question === 'string' && data.question.trim()
-      ? { text: data.question, canonical: data.canonical === true }
+      ? {
+          text: data.question,
+          canonical: data.canonical === true,
+          spokenAt: typeof data.spokenAt === 'number' ? data.spokenAt : undefined,
+        }
       : null;
   }
   if (event.type !== 'tool_execution_end') return null;
@@ -115,36 +124,35 @@ function reviewReceipt(event: {
         return { text: receipt.response, canonical: true };
       if (data.toolName === 'respond_to_learner' && typeof receipt.response === 'string')
         return { text: receipt.response, canonical: false };
-      if (typeof receipt.question === 'string') return { text: receipt.question, canonical: false };
+      if (typeof receipt.question === 'string')
+        return {
+          text: receipt.question,
+          canonical: false,
+          spokenAt: typeof receipt.spokenAt === 'number' ? receipt.spokenAt : undefined,
+        };
     } catch {
       /* Malformed or unrelated output is not a teaching response. */
     }
   }
   return null;
 }
-export function reviewQuestion(event: { type: string; data: unknown }): string | null {
-  return reviewReceipt(event)?.text ?? null;
-}
-export function canonicalReview(event: { type: string; data: unknown }): boolean {
-  return reviewReceipt(event)?.canonical === true;
-}
-
 /** Prefer the ordered SDK display event; the atomic handoff survives a crash before it arrives. */
-export function reviewQuestions(events: readonly { id: number; type: string; data: unknown }[]) {
-  const displayed = new Set(
-    events.flatMap((event) => {
-      if (event.type !== 'tool_execution_end' || !reviewQuestion(event)) return [];
-      const id = (event.data as { toolCallId?: unknown }).toolCallId;
-      return typeof id === 'string' ? [id] : [];
-    }),
-  );
-  const questions = new Map<number, string>();
+export function reviewQuestions(
+  events: readonly { id: number; attempt?: number; type: string; data: unknown }[],
+) {
+  const questions = new Map<number, ReviewReceipt>();
+  const displayed = new Set<string>();
+  const atomic = new Map<number, string>();
   for (const event of events) {
-    const id = (event.data as { toolCallId?: unknown } | null)?.toolCallId;
-    if (event.type === LEARNER_HANDOFF_EVENT && typeof id === 'string' && displayed.has(id))
-      continue;
-    const question = reviewQuestion(event);
-    if (question !== null) questions.set(event.id, question);
+    const receipt = reviewReceipt(event);
+    if (!receipt) continue;
+    questions.set(event.id, receipt);
+    const id = (event.data as { toolCallId?: unknown }).toolCallId;
+    if (typeof id !== 'string') continue;
+    const call = `${event.attempt ?? ''}:${id}`;
+    if (event.type === 'tool_execution_end') displayed.add(call);
+    else atomic.set(event.id, call);
   }
+  for (const [event, call] of atomic) if (displayed.has(call)) questions.delete(event);
   return questions;
 }

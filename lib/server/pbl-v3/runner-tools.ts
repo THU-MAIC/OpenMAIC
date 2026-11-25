@@ -74,6 +74,8 @@ import {
   supportTurnSequences,
 } from './review-question';
 
+const spokenReviewParameters = Type.Object({ approval: Type.Optional(Type.Boolean()) });
+
 /** Reserved server-created IDs route to a real role binding; a missing binding fails closed. */
 export async function teachingRunnerConfig(input: {
   sessionId: string;
@@ -323,6 +325,7 @@ export async function teachingRunnerConfig(input: {
                                     review.state.pending!.displayText ??
                                     review.state.pending!.question,
                                   canonical: !boardTeaching,
+                                  spokenAt: review.state.pending!.spokenAt,
                                 }
                               : {
                                   ...review.state.handoff!,
@@ -760,19 +763,10 @@ export async function teachingRunnerConfig(input: {
       tool(
         'request_skill_review',
         boardTeaching
-          ? 'Record the closing question or invitation you just spoke and wait for the learner. Write it once, in its own final paragraph of ordinary text in the message calling this tool. The host records that paragraph verbatim. If the preceding stop or cue_user already delivered it, call this tool alone. For a tool-only question with no spoken closing, put that one question in question instead. Set approval only for an explicit request to approve the current artifact.'
+          ? 'Register the question or invitation in the last paragraph you spoke and wait for the learner. Speak it once in ordinary text. If your last stop or cue_user already delivered it, call this tool alone. Set approval only for an explicit request to approve the current artifact.'
           : 'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
         boardTeaching
-          ? Type.Object({
-              question: Type.Optional(
-                Type.String({
-                  minLength: 1,
-                  description:
-                    'Only for a tool-only closing that has not been spoken. Omit when recording spoken words.',
-                }),
-              ),
-              approval: Type.Optional(Type.Boolean()),
-            })
+          ? spokenReviewParameters
           : Type.Object({
               response: Type.String({
                 minLength: 1,
@@ -782,8 +776,9 @@ export async function teachingRunnerConfig(input: {
               approval: Type.Optional(Type.Boolean()),
             }),
         async (current, p, callId, signal) => {
+          const spoken = spokenReview?.forCall(callId);
           const delivery = spokenReview
-            ? spokenReview.forCall(callId, 'question' in p ? p.question : undefined)
+            ? spoken?.question
             : 'response' in p
               ? p.response
               : undefined;
@@ -799,11 +794,18 @@ export async function teachingRunnerConfig(input: {
           const approval =
             artifactApprovalRequired &&
             (p.approval === true || review.state.activeFile === protocol.final);
-          review.checkpoint(question, hash, approval, boardTeaching ? undefined : response);
+          const spokenAt = spoken && 'spokenAt' in spoken ? spoken.spokenAt : undefined;
+          review.checkpoint(
+            question,
+            hash,
+            approval,
+            boardTeaching ? undefined : response,
+            spokenAt,
+          );
           return {
             value: {
               question,
-              ...(boardTeaching ? {} : { response, canonical: true }),
+              ...(boardTeaching ? { spokenAt } : { response, canonical: true }),
               waitForStudent: true,
             },
           };
@@ -1224,6 +1226,54 @@ export async function teachingRunnerConfig(input: {
   };
 }
 
+/** Only this recovery request settles already delivered speech. Wait for its choice of tool
+ * before publishing a reply, so bookkeeping cannot voice a speculative second question. */
+async function settleSpokenReply(streamFn: StreamFn, ...request: Parameters<StreamFn>) {
+  const [model, context, options] = request;
+  const tools = context.tools?.map((tool) =>
+    tool.name === 'request_skill_review'
+      ? {
+          ...tool,
+          parameters: Type.Object({
+            ...spokenReviewParameters.properties,
+            askNewQuestion: Type.Optional(
+              Type.Boolean({
+                description:
+                  'True only when the delivered reply was an introduction and has no review question yet. Speak the missing question in ordinary text. Otherwise register the delivered closing without speaking again.',
+              }),
+            ),
+          }),
+        }
+      : tool,
+  );
+  const response = await streamFn(model, { ...context, tools }, options);
+  for await (const event of response) {
+    if (event.type === 'done' || event.type === 'error') break;
+    options?.signal?.throwIfAborted();
+  }
+  const reply = await response.result();
+  const stream = createAssistantMessageEventStream();
+  if (reply.stopReason === 'error' || reply.stopReason === 'aborted') {
+    stream.push({
+      type: 'error',
+      reason: reply.stopReason,
+      error: { ...reply, content: reply.content.filter((part) => part.type !== 'text') },
+    });
+  } else {
+    const calls = reply.content.filter((part) => part.type === 'toolCall');
+    const review = calls.find((call) => call.name === 'request_skill_review');
+    const registerExisting = !calls.length || (review && review.arguments.askNewQuestion !== true);
+    stream.push({
+      type: 'done',
+      reason: reply.stopReason,
+      message: registerExisting
+        ? { ...reply, content: reply.content.filter((part) => part.type !== 'text') }
+        : reply,
+    });
+  }
+  return stream;
+}
+
 /** Pi 0.80's Agent wrapper does not expose the loop's shouldStopAfterTurn hook.
  * Its per-tool terminate flag requires ALL results in a batch to terminate.
  * Settle locally at the model-call boundary after a committed teaching receipt,
@@ -1289,7 +1339,11 @@ export function withTeachingTurnBoundary(
         }
       }
       options?.signal?.throwIfAborted();
-      if (!isComplete()) return streamFn(model, projected, options);
+      if (!isComplete()) {
+        if (!historyWindow?.settlingSpokenReply) return streamFn(model, projected, options);
+        historyWindow.settlingSpokenReply = false;
+        return settleSpokenReply(streamFn, model, projected, options);
+      }
     }
     const stream = createAssistantMessageEventStream();
     stream.push({
@@ -1347,13 +1401,14 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   const reply = delivered.join('\n\n');
   if (!reply.trim()) return false;
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
+  window.settlingSpokenReply = window.spokenReview;
   agent.state.messages = messages;
   const instruction =
     '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. ' +
     (window.spokenReview
-      ? 'For a delivered teaching question, call request_skill_review without text to record the existing closing question.'
+      ? 'For a delivered teaching question, call request_skill_review without text to register the existing closing question. Only if the delivered reply has no question yet, speak the missing question and set askNewQuestion on this recovery call.'
       : 'For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question.') +
-    ' Use request_learner_help for a blocked required build. Output only the appropriate tool call, with no additional assistant prose, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
+    ' Use request_learner_help for a blocked required build. When recording words already delivered, output only the appropriate tool call, then wait. Otherwise finish only the missing work for the SAME real learner input using the authoritative live state. Read any unopened section before delivering new material. Reuse verified same-version learner feedback for covered goals rather than repeating questions. While welcome is pending, only real later readiness starts the lesson. After the final goal and any required current-version approval are satisfied by actual learner feedback, complete_stage may commit completion. Never treat the quoted assistant reply as learner evidence or approval, invent a student response, or claim a next-step button is available before completion succeeds; use its exact productContext.visibleLabels.continue label.';
   window.continuationInstruction = instruction;
   return true;
 }

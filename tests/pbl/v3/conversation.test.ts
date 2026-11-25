@@ -14,6 +14,7 @@ import {
   markRecoveredTeachingTools,
   type LearningConversationEntry,
 } from '@/lib/pbl/v3/conversation';
+import { recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import {
@@ -1451,3 +1452,130 @@ it.each([
     expect(parts.filter((p) => p.kind === 'tool')).toHaveLength(2);
   },
 );
+
+it('keeps instructions unique to either delivery of an old board review in live and paginated playback', () => {
+  const id = 'review';
+  const original = 'Read PLAN.md first. Which branch would you choose?';
+  const registered = 'Check handlers.ts before choosing.\n\nWhich branch handles an empty list?';
+  const events = [
+    event(1, 'user_message', { pblOpening: true }),
+    event(2, 'tool_execution_end', { toolCallId: 'board', toolName: 'wb_open' }),
+    event(3, 'message_end', {
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: original },
+          {
+            type: 'toolCall',
+            id,
+            name: 'request_skill_review',
+            arguments: { response: registered },
+          },
+        ],
+      },
+    }),
+    event(4, 'pbl_learner_handoff', {
+      toolCallId: id,
+      question: registered,
+      canonical: true,
+      pblInputId: 1,
+    }),
+  ];
+  const live = projectConversation(events, 'planner', false);
+  const pages = [events.slice(0, 3), events.slice(3)].map((page) =>
+    projectConversation(page, 'planner', false, undefined, true),
+  );
+  for (const view of [live, mergeConversationHistory(pages)]) {
+    expect(
+      view.flatMap((e) => e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : []))),
+    ).toEqual(['Read PLAN.md first. ' + registered]);
+  }
+});
+
+it('uses the registered source across retry, refresh and page boundaries, even with an identical earlier quote', () => {
+  const question = '请说说你会先核对哪一步。';
+  const start = [
+    event(1, 'user_message', { pblOpening: true }),
+    event(2, 'message_end', {
+      message: { ...message('An example: ' + question).message, timestamp: 12 },
+    }),
+  ];
+  const source = event(3, 'message_end', {
+    message: { ...message('先读 PLAN.md。\n\n' + question).message, timestamp: 18 },
+    pblInputId: 1,
+  });
+  const recovery = [
+    event(4, 'session_interrupted', { pblInputId: 1 }),
+    event(5, 'session_resumed', { pblInputId: 1 }, 2),
+    event(
+      6,
+      'pbl_learner_handoff',
+      { toolCallId: 'recovered', question, spokenAt: 18, pblInputId: 1 },
+      2,
+    ),
+    event(
+      7,
+      'tool_execution_end',
+      {
+        toolCallId: 'recovered',
+        toolName: 'request_skill_review',
+        pblInputId: 1,
+        result: { content: [{ type: 'text', text: JSON.stringify({ question, spokenAt: 18 }) }] },
+      },
+      2,
+    ),
+    event(8, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+  ];
+  const texts = (view: LearningConversationEntry[]) =>
+    view.flatMap((e) => e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])));
+  const project = (page: typeof start) =>
+    projectConversation(page, 'planner', false, undefined, true);
+  expect(texts(mergeConversationHistory([project(start), project(recovery)]))).toEqual([
+    'An example: ' + question,
+    question,
+  ]);
+  for (const view of [
+    projectConversation([...start, source, ...recovery], 'planner', false),
+    mergeConversationHistory([project(start), project([source]), project(recovery)]),
+  ]) {
+    expect(texts(view)).toEqual(['An example: ' + question, '先读 PLAN.md。\n\n' + question]);
+    expect(recoveredReviewSpeech(view.at(-1))?.text).toBe(question);
+  }
+});
+
+it('pairs an old tool-only recovery with its completed stop across pages, but never across a file operation', () => {
+  const speech = 'Open the plan. Which branch will you check?';
+  const question = 'Which branch handles empty input?';
+  const receipt = {
+    toolCallId: 'register',
+    toolName: 'request_skill_review',
+    result: { content: [{ type: 'text', text: JSON.stringify({ question }) }] },
+    pblInputId: 1,
+  };
+  const prior = [
+    event(1, 'user_message', { pblOpening: true }),
+    event(2, 'message_end', { message: { ...message(speech).message, stopReason: 'stop' } }),
+  ];
+  const after = [
+    event(5, 'tool_execution_end', receipt, 2),
+    event(6, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+  ];
+  for (const interveningRead of [false, true]) {
+    const middle = interveningRead
+      ? [
+          event(3, 'tool_execution_end', {
+            toolCallId: 'file',
+            toolName: 'read_file',
+            pblInputId: 1,
+          }),
+        ]
+      : [];
+    const pages = [prior, middle, after].map((page) =>
+      projectConversation(page, 'planner', false, undefined, true),
+    );
+    const result = mergeConversationHistory(pages).flatMap((e) =>
+      e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])),
+    );
+    expect(result).toEqual(interveningRead ? [speech, question] : ['Open the plan. ' + question]);
+  }
+});

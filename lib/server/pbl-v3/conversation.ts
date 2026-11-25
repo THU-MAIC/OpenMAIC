@@ -7,7 +7,7 @@ import type {
   LearningBoardDisplay,
 } from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { LEARNER_HANDOFF_EVENT, reviewQuestions, canonicalReview } from './review-question';
+import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   executionFailureCode,
@@ -193,13 +193,15 @@ export function projectConversation(
     return assistant;
   };
   const appendQuestion = (event: PersistedAgentSessionEvent) => {
-    const question = questions.get(event.id);
+    const receipt = questions.get(event.id);
+    if (!receipt) return;
+    const question = receipt.text;
     if (
-      question &&
-      (canonicalReview(event) ||
-        !getAssistant(event).parts.some(
-          (part) => part.kind === 'text' && part.text.includes(question),
-        ))
+      receipt.spokenAt !== undefined ||
+      receipt.canonical ||
+      !getAssistant(event).parts.some(
+        (part) => part.kind === 'text' && part.text.includes(question),
+      )
     )
       getAssistant(event).parts.push({
         kind: 'text',
@@ -208,7 +210,8 @@ export function projectConversation(
             ? `question-${event.attempt}-${record(event.data).toolCallId}`
             : `question-${event.id}`,
         text: question,
-        ...(canonicalReview(event) ? { canonical: true } : {}),
+        ...(receipt.canonical ? { canonical: true } : {}),
+        ...(receipt.spokenAt !== undefined ? { spokenAt: receipt.spokenAt } : {}),
       });
   };
   for (const event of events) {
@@ -306,9 +309,13 @@ export function projectConversation(
       const reviewCall = content.find(
         (block) => block?.type === 'toolCall' && block.name === 'request_skill_review',
       );
-      const closingIndex = reviewCall
-        ? content.findLastIndex((block) => block?.type === 'text')
-        : -1;
+      const closingIndex = content.findLastIndex(
+        (block) => block?.type === 'text' && typeof block.text === 'string' && block.text.trim(),
+      );
+      const reviewStop =
+        event.type === 'message_end' &&
+        message.stopReason === 'stop' &&
+        !content.some((block) => block?.type === 'toolCall');
       for (const [index, raw] of content.entries()) {
         const block = record(raw);
         if (block.type !== 'text' && block.type !== 'thinking') continue;
@@ -335,6 +342,9 @@ export function projectConversation(
           if (typeof timing.startedAt === 'number') part.startedAt = timing.startedAt;
           if (typeof timing.endedAt === 'number') part.endedAt = timing.endedAt;
         }
+        if (part.kind === 'text' && typeof message.timestamp === 'number')
+          part.spokenAt = message.timestamp;
+        if (part.kind === 'text' && index === closingIndex && reviewStop) part.reviewStop = true;
         if (part.kind === 'text' && index === closingIndex && typeof reviewCall?.id === 'string')
           part.reviewReceiptId = `question-${event.attempt}-${reviewCall.id}`;
         part.text = text;

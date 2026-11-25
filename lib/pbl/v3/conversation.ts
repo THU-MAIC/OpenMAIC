@@ -86,6 +86,10 @@ export interface LearningConversationEntry {
         canonical?: true;
         /** The legacy review receipt requested in the very same assistant message. */
         reviewReceiptId?: string;
+        /** A finished prose-only stop can be registered by the next legacy tool-only call. */
+        reviewStop?: true;
+        /** Original assistant frame, also referenced by a spoken review receipt. */
+        spokenAt?: number;
       }
     | {
         kind: 'thinking';
@@ -120,6 +124,8 @@ export interface LearningConversationEntry {
         projectCompleted?: boolean;
         /** A later successful teaching-control call recovered this failure for the same input. */
         recovered?: boolean;
+        /** At rest, a tool-only retry shows the question already spoken by the prior attempt. */
+        restingReview?: string;
         startedAt?: number;
         endedAt?: number;
         status: 'running' | 'succeeded' | 'failed' | 'interrupted';
@@ -168,14 +174,22 @@ export function handoffEchoes<
     text: string;
     handoff: boolean;
     canonical?: boolean;
+    spokenAt?: number;
   },
 >(replies: readonly T[]): Set<T> {
   const originals = new Map<string, Map<number, string[]>>();
   const canonical = new Map<string, T>();
+  const speech = new Map<string, string[]>();
   const key = (reply: T) => `${reply.scope}:${reply.inputId}`;
   for (const reply of replies) {
     if (reply.canonical && reply.inputId !== undefined) canonical.set(key(reply), reply);
     if (reply.handoff || reply.inputId === undefined || reply.messageId === undefined) continue;
+    if (reply.spokenAt !== undefined) {
+      const frame = `${key(reply)}:${reply.spokenAt}`;
+      const words = speech.get(frame) ?? [];
+      words.push(reply.text);
+      speech.set(frame, words);
+    }
     const messages = originals.get(key(reply)) ?? new Map<number, string[]>();
     const blocks = messages.get(reply.messageId) ?? [];
     blocks.push(reply.text);
@@ -193,6 +207,13 @@ export function handoffEchoes<
   );
   return new Set(
     replies.filter((reply) => {
+      // A spoken receipt only supplies fallback text when its source is outside the loaded page.
+      if (reply.handoff && reply.spokenAt !== undefined)
+        return (
+          speech
+            .get(`${key(reply)}:${reply.spokenAt}`)
+            ?.some((part) => part.trimEnd().endsWith(reply.text)) ?? false
+        );
       const committed = reply.inputId === undefined ? undefined : canonical.get(key(reply));
       if (committed && text.get(key(reply)) !== committed.text)
         return reply !== committed && (reply.handoff || reply.messageId !== undefined);
@@ -250,6 +271,7 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
               text: part.text,
               handoff: part.id.startsWith('question-'),
               canonical: part.canonical,
+              spokenAt: part.spokenAt,
               part,
             },
           ]
@@ -277,15 +299,43 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       )
       .map((reply) => reply.part),
   );
-  const recorded = replies.filter((reply) => reply.canonical);
+  // A legacy recovery call can be on a later attempt or history page. Link it only to the
+  // preceding completed stop for this input, never across a file/board operation or user turn.
+  const legacySources = new Map<
+    string,
+    Extract<LearningConversationEntry['parts'][number], { kind: 'text' }>
+  >();
+  const stops = new Map<
+    string,
+    Extract<LearningConversationEntry['parts'][number], { kind: 'text' }>
+  >();
+  for (const entry of entries) {
+    if (entry.inputId === undefined || entry.speaker === 'user') continue;
+    const turn = `${conversationScope(entry)}:${entry.inputId}`;
+    for (const part of entry.parts) {
+      if (part.kind === 'text' && !part.id.startsWith('question-')) {
+        if (part.reviewReceiptId) legacySources.set(`${turn}:${part.reviewReceiptId}`, part);
+        if (part.reviewStop) stops.set(turn, part);
+        else stops.delete(turn);
+      } else if (part.kind === 'tool' && part.name !== 'cue_user') {
+        const stop = stops.get(turn);
+        if (stop && part.action === 'review' && part.status === 'succeeded')
+          legacySources.set(`${turn}:${part.id.replace(/^tool-/, 'question-')}`, stop);
+        stops.delete(turn);
+      }
+    }
+  }
+  const recorded = replies.filter((reply) => reply.handoff && reply.spokenAt === undefined);
   const duplicates = new Set<LearningConversationEntry['parts'][number]>();
   const revised = new Map<LearningConversationEntry['parts'][number], string>();
   const boardReceipts = new Set<(typeof replies)[number]>();
   for (const receipt of recorded) {
     if (receipt.inputId === undefined) continue;
+    const source = legacySources.get(`${receipt.scope}:${receipt.inputId}:${receipt.part.id}`);
+    if (!receipt.canonical && !source) continue;
     const speech = replies.filter(
       (reply) =>
-        spoken.has(reply.part) &&
+        (spoken.has(reply.part) || (!receipt.canonical && reply.part === source)) &&
         reply.scope === receipt.scope &&
         reply.inputId === receipt.inputId &&
         !reply.handoff,
@@ -305,23 +355,33 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       if (prefix && remaining.startsWith(prefix + '\n'))
         remaining = remaining.slice(prefix.length).trimStart();
     }
-    if (remaining !== receipt.text.trim()) {
-      if (remaining) revised.set(receipt.part, remaining);
-      else duplicates.add(receipt.part);
-    }
-    const source = speech.find((reply) => reply.part.reviewReceiptId === receipt.part.id);
-    if (!source) continue;
-    const paragraphs = source.text.trimEnd().split(/\r?\n[ \t]*\r?\n/);
-    const last = paragraphs.at(-1)!;
-    const closing = receipt.text
-      .trim()
-      .split(/\r?\n[ \t]*\r?\n/)
-      .at(-1)!;
-    const asks = (text: string) => /[?？][*_`"'”’）)\s]*$/u.test(text);
-    if (paragraphs.length > 1 && asks(last) && asks(closing)) {
-      revised.set(source.part, source.text.trimEnd().slice(0, -last.length) + closing);
+    if (!remaining) {
       duplicates.add(receipt.part);
+      continue;
     }
+    if (remaining !== receipt.text.trim()) revised.set(receipt.part, remaining);
+    if (!source || !speech.some((reply) => reply.part === source)) continue;
+    // The old receipt and prose share a review call but can each carry unique directions.
+    // Replace only the last question, keeping preceding sentences from both deliveries.
+    const endQuestion = /[?？][*_`"'”’）)\s]*$/u;
+    const end = endQuestion.exec(source.text);
+    if (!end || !endQuestion.test(remaining)) continue;
+    const prefix = source.text.slice(0, end.index);
+    let start = 0;
+    for (const boundary of prefix.matchAll(/[。！？!?]|\.[ \t]+|\n/gu))
+      start = boundary.index + boundary[0].length;
+    const intro = source.text.slice(0, start);
+    if (intro.trim() && remaining.startsWith(intro.trim() + '\n'))
+      remaining = remaining.slice(intro.trim().length).trimStart();
+    const merged = intro + remaining;
+    // An ambiguous old question may itself contain the only file link or code reference.
+    const references =
+      source.text.match(
+        /\[[^\]]+\]\([^)]*\)|`[^`]+`|[\w/-]+\.[a-z][\w-]*(?::\d+(?:[-–]\d+)?)?/giu,
+      ) ?? [];
+    if (references.some((reference) => !merged.includes(reference))) continue;
+    revised.set(source, merged);
+    duplicates.add(receipt.part);
   }
   for (const echo of handoffEchoes(replies)) {
     if (!spoken.has(echo.part) && !boardReceipts.has(echo)) duplicates.add(echo.part);
@@ -333,6 +393,23 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
         const text = revised.get(part);
         return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
       });
+    // Attach the exact committed words to their tool card when the prior attempt owns the
+    // only speech. The card can show them at rest without creating another narration step.
+    if (!parts.some((part) => part.kind === 'text')) {
+      const closing = entry.parts.findLast(
+        (p) => duplicates.has(p) && p.id.startsWith('question-'),
+      );
+      if (closing?.kind === 'text') {
+        const index = parts.findIndex(
+          (p) =>
+            p.kind === 'tool' &&
+            p.action === 'review' &&
+            p.id === closing.id.replace(/^question-/, 'tool-'),
+        );
+        const card = parts[index];
+        if (card?.kind === 'tool') parts[index] = { ...card, restingReview: closing.text };
+      }
+    }
     if (
       entry.parts.length &&
       !parts.length &&

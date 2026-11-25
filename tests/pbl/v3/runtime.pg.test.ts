@@ -1,6 +1,7 @@
 import { HOST_STATE_START, HOST_STATE_END } from '@/lib/ai/request-state-tail';
 import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
+import { recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
@@ -5199,66 +5200,170 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     });
   });
 
-  it.each(['spoken', 'tool-only', 'continuation', 'restated', 'new question'] as const)(
-    'registers one board review from %s delivery',
-    async (mode) => {
-      const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
-      process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
-      try {
-        const study = await freshStudy();
-        const { sessionId } = (await study.send('begin')) as { sessionId: string };
-        const worker = startAgentRunner();
-        await worker.stop();
-        const claim = await agents.claimNextSession(worker.workerId, process.pid, {
+  it.each([
+    'spoken',
+    'tool-only',
+    'continuation',
+    'restated',
+    'new question',
+    'takeover',
+    'missing closing',
+  ] as const)('registers one board review from %s delivery', async (mode) => {
+    const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+    process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+    try {
+      const study = await freshStudy();
+      const { sessionId } = (await study.send('begin')) as { sessionId: string };
+      const worker = startAgentRunner();
+      await worker.stop();
+      let claim = await agents.claimNextSession(worker.workerId, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const question = '请说说你会先核对哪一步。';
+      const speech = 'The project connects a question to a reply.\n\n' + question;
+      const summary = 'Look at the highlighted return value.';
+      const receipt = {
+        type: 'tool-call',
+        toolName: 'request_skill_review',
+        toolCallId: 'record-review',
+        input: mode === 'tool-only' ? { question } : { question: '你准备先检查哪个步骤？' },
+      };
+      const register = { ...receipt, toolCallId: 'register-spoken', input: {} };
+      const callOnly = (call: typeof register) => [call, modelFinish('tool-calls')];
+      const speakAndCall = (text: string, call: typeof register) => [
+        { type: 'text-delta', text },
+        ...callOnly(call),
+      ];
+      const starting = (await store.get(study.id, principal.ownerId)).state.position;
+      const inputs = await agents.listUserMessages(sessionId);
+      if (mode === 'takeover') {
+        // The original worker delivered the question and died before registering it.
+        const input = inputs.at(-1)!;
+        const session = new Session(
+          await AgentSessionEntryStorage.open({
+            sessionId,
+            workerId: worker.workerId,
+            attempt: claim!.attempt,
+          }),
+        );
+        await session.appendMessage(
+          tagDurableUserMessage(
+            {
+              role: 'user',
+              content: input.text,
+              timestamp: Date.now(),
+            },
+            input.seq,
+          ),
+        );
+        const delivered: import('@earendil-works/pi-ai').AssistantMessage = {
+          role: 'assistant',
+          content: [{ type: 'text', text: speech }],
+          stopReason: 'stop',
+          api: 'openai-completions',
+          provider: 'openai',
+          model: 'test-model',
+          timestamp: Date.now(),
+          usage: {
+            input: 0,
+            output: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+        await session.appendMessage(delivered);
+        await agents.appendRunEvent(sessionId, worker.workerId, {
+          ts: delivered.timestamp,
+          type: 'message_end',
+          attempt: claim!.attempt,
+          data: { message: delivered },
+        });
+        await agents.markUserMessageDelivered(
+          sessionId,
+          worker.workerId,
+          claim!.attempt,
+          input.seq,
+        );
+        await agents.appendRunEvent(sessionId, worker.workerId, {
+          ts: Date.now(),
+          attempt: claim!.attempt,
+          type: 'session_interrupted',
+          data: { reason: 'runner shutdown' },
+        });
+        await agents.releaseLease(sessionId, worker.workerId);
+        claim = await agents.claimNextSession('board-review-takeover', process.pid, {
           sessionId,
           leaseTtlMs: 10000,
           maxAttempts: 5,
         });
-        const question = 'Ready to try the first example?';
-        const speech = 'The project connects a question to a reply.\n\n' + question;
-        const summary = 'Look at the highlighted return value.';
-        const receipt = {
-          type: 'tool-call',
-          toolName: 'request_skill_review',
-          toolCallId: 'record-review',
-          input:
-            mode === 'restated'
-              ? { question: 'Shall we start the first example now?' }
-              : mode === 'tool-only' || mode === 'new question'
-                ? { question }
-                : {},
-        };
-        const text = mode === 'new question' ? summary : speech;
-        mocked.responses =
-          mode === 'continuation'
-            ? [textResponse(speech), [receipt, modelFinish('tool-calls')]]
-            : [
-                [
-                  ...(mode === 'tool-only' ? [] : [{ type: 'text-delta', text }]),
-                  receipt,
-                  modelFinish('tool-calls'),
-                ],
-              ];
-        await runSession({ running: new Map(), shuttingDown: false }, claim!);
-        const session = await agents.getSession(sessionId);
-        expect(session?.status, session?.error ?? undefined).toBe('succeeded');
-        expect((await store.binding(sessionId))?.guided?.pending?.question).toBe(question);
-        const view = await learningView(principal, study.id, { passive: true });
-        const parts = view.conversation!.flatMap((entry) => entry.parts);
-        expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
-          mode === 'new question'
-            ? [summary, question]
-            : [mode === 'tool-only' ? question : speech],
-        );
-        expect(
-          parts.filter((p) => p.kind === 'tool' && p.name === 'request_skill_review'),
-        ).toHaveLength(1);
-      } finally {
-        if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
-        else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
       }
-    },
-  );
+      switch (mode) {
+        case 'takeover':
+          mocked.responses = [speakAndCall('你准备先检查哪个步骤？', register)];
+          break;
+        case 'missing closing':
+          mocked.responses = [
+            textResponse(summary),
+            speakAndCall(question, { ...register, input: { askNewQuestion: true } }),
+          ];
+          break;
+        case 'tool-only':
+          mocked.responses = [callOnly(receipt)];
+          break;
+        case 'continuation':
+          mocked.responses = [textResponse(speech), callOnly(receipt)];
+          break;
+        case 'restated':
+          mocked.responses = [speakAndCall(speech, receipt), callOnly(register)];
+          break;
+        case 'new question':
+          mocked.responses = [speakAndCall(summary, receipt), speakAndCall(question, register)];
+          break;
+        case 'spoken':
+          mocked.responses = [speakAndCall(speech, register)];
+          break;
+      }
+      await runSession(
+        { running: new Map(), shuttingDown: false },
+        {
+          ...claim!,
+          ...(await agents.getSession(sessionId))!,
+        },
+      );
+      const session = await agents.getSession(sessionId);
+      expect(session?.status, session?.error ?? undefined).toBe('succeeded');
+      expect((await store.binding(sessionId))?.guided?.pending?.question).toBe(question);
+      const committed = (await store.binding(sessionId))!.guided!;
+      if (mode !== 'tool-only') expect(committed.pending?.spokenAt).toEqual(expect.any(Number));
+      expect(committed.approval).toBeUndefined();
+      expect(await agents.listUserMessages(sessionId)).toEqual(inputs);
+      expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(starting);
+      const view = await learningView(principal, study.id, { passive: true });
+      expect(view.actions).not.toContain('next');
+      const refreshed = await learningView(principal, study.id, { passive: true });
+      expect(refreshed.conversation).toEqual(view.conversation);
+      if (mode === 'takeover')
+        expect(recoveredReviewSpeech(refreshed.conversation!.at(-1))?.text).toBe(question);
+      const parts = view.conversation!.flatMap((entry) => entry.parts);
+      expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
+        mode === 'new question' || mode === 'missing closing'
+          ? [summary, question]
+          : [mode === 'tool-only' ? question : speech],
+      );
+      expect(
+        parts.filter(
+          (p) => p.kind === 'tool' && p.name === 'request_skill_review' && p.status === 'succeeded',
+        ),
+      ).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+      else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
+    }
+  });
   it('rejects feedback for an unopened section instead of silently reopening the first lesson', async () => {
     const study = await freshStudy(),
       opening = (await study.send('begin')) as { sessionId: string };
