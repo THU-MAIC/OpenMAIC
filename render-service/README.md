@@ -103,12 +103,15 @@ IP address of everyone currently rendering.
 
 On `SIGTERM` the service stops admitting renders: `/health` reports
 `accepting: false` from then on and new submissions get `shutting_down`. The
-process exits once nothing is reserved, queued or running: right away when it
-is idle, else when its last render ends. Nothing extends the platform's
-termination grace period: a render still running when it ends is killed with the
-process, so a caller that resubmits lost renders (the app's durable export
-queue) sends it again elsewhere. The grace period does not need to cover a
-render.
+process exits once nothing is reserved, queued or running, no upload is still
+being answered, and every finished render's MP4 has been downloaded once to the
+end: right away when that is already so, else as soon as it is. Jobs and their
+MP4s live only in this process, so a caller that fetches the output after
+polling for it (the app's durable export queue) gets a render that finished
+during the grace period. An MP4 nobody fetches keeps the process up until the
+grace period ends. Nothing extends that period: a render still running when it
+ends is killed with the process, so a caller that resubmits lost renders sends
+it again elsewhere. The grace period does not need to cover a render.
 
 Previews have their own execution budget, defaulting to one concurrent preview,
 independent of the video render queue. Once a preview has passed its body and

@@ -23,16 +23,15 @@
  * `/src/server.ts` or `/public-server.js`. We use the producer as a library, so
  * the entrypoint is `main.ts` to avoid spawning that phantom server.
  */
-import { once } from 'node:events';
 import { createReadStream } from 'node:fs';
 import { mkdir, stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { serve } from '@hono/node-server';
 import { validateScene } from '@openmaic/dsl';
 import { Hono, type Context } from 'hono';
-import { getPath } from 'hono/utils/url';
 import { config } from './config.js';
 import { InMemoryJobStore } from './job-store.js';
+import { ShutdownGate } from './shutdown-gate.js';
 import { LocalDiskArtifactStore } from './artifact-store.js';
 import {
   RenderCoordinator,
@@ -727,39 +726,31 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
           }
         : {}),
     });
-  // Assigned after `jobs` so its reap callback can close over the coordinator.
+  // Assigned after `jobs` so its reap callback can close over them.
   // eslint-disable-next-line prefer-const
   let coordinator: RenderCoordinator;
+  // eslint-disable-next-line prefer-const
+  let shutdown: ShutdownGate;
   const jobs = new InMemoryJobStore(config.jobTtlMs, (record) => {
     // A reaped job's artifact + project dir go with it.
     void artifacts.remove(record.id);
     void coordinator.cleanupProject(record.projectDir);
+    shutdown.forget(record.id);
   });
   coordinator = new RenderCoordinator(executor, jobs, artifacts);
-
-  let pendingUploads = 0;
-  let coordinatorIdle = false;
-  const exitWhenIdle = () => {
-    if (coordinatorIdle && pendingUploads === 0) process.exit(0);
-  };
+  shutdown = new ShutdownGate(jobs, () => process.exit(0));
 
   // On SIGTERM, stop admitting: `/health` reports `accepting: false`, so a
   // caller that checks it before sending a render (the app's durable export
-  // queue) sends nothing more here. The process exits once nothing is left:
-  // now if it is idle, as before this handler existed, else when its last
-  // render ends. Nothing extends the platform's grace period: a render still
-  // running when it ends is killed with the process, and that caller sends it
-  // again. The resource entrypoint has its own SIGTERM handler, which closes
-  // the resource owner and exits.
+  // queue) sends nothing more here. The process exits once nothing is left
+  // (src/shutdown-gate.ts): no render, no upload still answering, and no
+  // finished output not yet fetched. Now if that is already so, as before
+  // this handler existed. Nothing extends the platform's grace period: a
+  // render still running when it ends is killed with the process, and that
+  // caller sends it again. The resource entrypoint has its own SIGTERM
+  // handler, which closes the resource owner and exits.
   process.once('SIGTERM', () => {
-    coordinator.closeAdmission(
-      resourceExecutor
-        ? undefined
-        : () => {
-            coordinatorIdle = true;
-            exitWhenIdle();
-          },
-    );
+    coordinator.closeAdmission(resourceExecutor ? undefined : () => shutdown.idle());
   });
 
   // Build the browser mount off the request path so the first preview does not
@@ -782,27 +773,7 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
   // makeProjectDir() would ENOENT. mktemp still creates a fresh subdir per job.
   await mkdir(config.tmpDir, { recursive: true }).catch(() => {});
 
-  const fetchRequest: Parameters<typeof serve>[0]['fetch'] = (request, env) => {
-    if (
-      resourceExecutor ||
-      request.method !== 'POST' ||
-      getPath(request) !== '/owner-bound/render'
-    ) {
-      return app.fetch(request, env);
-    }
-
-    // Releasing the last reservation can make the coordinator idle before
-    // the upload handler cleans up and the HTTP adapter writes its response.
-    // A disconnected client still needs the handler to finish its cleanup.
-    pendingUploads += 1;
-    const closed = once(env.outgoing, 'close');
-    const response = app.fetch(request, env);
-    void Promise.allSettled([response, closed]).then(() => {
-      pendingUploads -= 1;
-      exitWhenIdle();
-    });
-    return response;
-  };
+  const fetchRequest = resourceExecutor ? app.fetch : shutdown.wrap(app.fetch);
 
   serve({ fetch: fetchRequest, port: config.port }, (info) => {
     console.log(
