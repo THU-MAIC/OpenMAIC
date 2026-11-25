@@ -2096,7 +2096,7 @@
     "resetConfirmDescription": "Việc này sẽ bỏ mọi model tùy chỉnh và đưa về danh sách model mặc định. Khóa API và địa chỉ gốc vẫn được giữ.",
     "resetToDefault": "Đặt lại mặc định",
     "saveModel": "Lưu",
-    "searxngServerOnlyNotice": "SearXNG phải được cấu hình trên máy chủ. Hãy đặt biến môi trường SEARXNG_BASE_URL (hoặc mục web-search trong server-providers.yml). Địa chỉ do phía người dùng gửi lên sẽ không được nhận.",
+    "searxngServerOnlyNotice": "Trong openmaic.yml, khai báo nhà cung cấp với preset: searxng và baseUrl, rồi gán ID của nhà cung cấp cho slots.webSearch.",
     "serverConfigured": "Máy chủ",
     "serverConfiguredNotice": "Nhà cung cấp này do máy chủ quản lý nên không sửa được ở đây.",
     "startRecording": "Bắt đầu ghi âm",

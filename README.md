@@ -492,8 +492,6 @@ slots:
   document: mineru
 ```
 
-Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_MINERU_BASE_URL` in `.env.local` still work.
-
 ### Optional: MiniCPM-OCR (Document Parsing)
 
 [MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) is a compact open-source OCR model from OpenBMB for text, tables, formulas and layout. Use the hosted API with an API key, or point `baseUrl` at the MiniCPM-OCR web demo from the official SDK (its routes live under `/api`).
@@ -507,8 +505,6 @@ providers:
 slots:
   document: minicpm-ocr
 ```
-
-Without `openmaic.yml`, set `PDF_MINICPM_OCR_API_KEY` (hosted) or `PDF_MINICPM_OCR_BASE_URL` (self-hosted) in `.env.local`.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 
@@ -539,8 +535,6 @@ slots:
 ```
 
 Voice registration works only on the `vllm-omni` backend; `python-api` and `nano-vllm` send the voice prompt with each request.
-
-Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` sets the endpoint but cannot choose a backend.
 
 **3. Manage voices.** With VoxCPM2 assigned to the `tts` slot, open **Settings → Model Services → Text-to-Speech → VoxCPM2** (the voice manager appears only when `tts` resolves to a `voxcpm-tts` provider). Three voice modes:
 

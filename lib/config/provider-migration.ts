@@ -12,3 +12,9 @@ export const DEPRECATED_PROVIDER_HEADERS = [
   'x-video-provider',
   'x-video-model',
 ] as const;
+
+export const ALIDOCMIND_LEGACY_SETTINGS = [
+  'ALIDOCMIND_ACCESS_KEY_ID',
+  'ALIDOCMIND_ACCESS_KEY_SECRET',
+  'ALIDOCMIND_BASE_URL',
+] as const;

@@ -2096,7 +2096,7 @@
     "resetConfirmDescription": "This will remove all custom models and restore the built-in default model list. API key and Base URL will be preserved.",
     "resetToDefault": "Reset to Default",
     "saveModel": "Save",
-    "searxngServerOnlyNotice": "SearXNG must be configured on the server. Set the SEARXNG_BASE_URL environment variable (or the web-search section in server-providers.yml). Client-supplied instance URLs are not accepted.",
+    "searxngServerOnlyNotice": "In openmaic.yml, declare a provider with preset: searxng and its baseUrl, then assign its ID to slots.webSearch.",
     "serverConfigured": "Server",
     "serverConfiguredNotice": "This provider is managed by the server and can't be edited here.",
     "startRecording": "Start Recording",

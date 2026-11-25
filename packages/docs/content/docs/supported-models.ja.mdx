@@ -168,7 +168,7 @@ Google TTS の既定モデルは `gemini-3.8-flash-lite-tts` です。明示的�
 
 `deepseek` プリセットはチャット、Web 検索、ホスト型 Markdown 抽出で `DEEPSEEK_API_KEY` と API ベース URL を共有します。検索は `POST /v1/tools/search` を使い、最大 50 件を返します。クエリは Unicode コードポイント単位で 128 文字に切り詰め、結果には `summary`、空の場合は `snippet` を使います。取得は `POST /v1/tools/fetch` を使い、`content` と空でない任意の `title` を読み取ります。
 
-旧設定では `WEB_SEARCH_DEEPSEEK_ENABLED=true`、または `server-providers.yml` の明示的な `web-search.deepseek` エントリーで有効にします。チャットの認証情報だけでは検索を有効にせず、既存の検索の既定値も変更しません。`WEB_SEARCH_DEEPSEEK_ENABLED=false` は検索を強制無効化します。`openmaic.yml` がある場合、旧変数はスロットを割り当てられません。プロバイダーを宣言し、`webSearch` と／または `webFetch` を明示的に割り当ててください。
+`openmaic.yml` でプロバイダーを宣言し、次のスロットに割り当ててください： `webSearch` / `webFetch`。 `WEB_SEARCH_DEEPSEEK_ENABLED=false` を指定すると検索は引き続き無効になります。
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -189,7 +189,7 @@ slots:
 
 Open Platform の `https://api.moonshot.cn/v1` と `https://api.moonshot.ai/v1` は `/tools/search_pro` を使用します。結果の本文はページの断片を連結し、本文がなければ要約を使用します。コーディングプランの `https://api.kimi.com/coding/v1` と `https://api.kimi.ai/coding/v1` は `/search` を使用し、ページの取得を有効にします。結果には要約よりもページ本文を優先します。1 回のリクエストで返す結果は最大 20 件です。
 
-従来の設定では、チャットの認証情報だけで検索が有効になることはありません。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を明示的に追加してください。`openmaic.yml` では `webSearch` スロットを明示的に割り当てます。ウィザードが検索を推奨するのは、公式のベース URL を使用するアカウントだけです。
+`openmaic.yml` またはモデル設定でプロバイダーとスロットを設定してください。 ウィザードが検索を推奨するのは、公式のベース URL を使用するアカウントだけです。
 
 エンドポイントはベース URL のパスで決まります。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。`openmaic.yml` で設定するカスタムプロキシも、このパス構造を維持する必要があります。
 

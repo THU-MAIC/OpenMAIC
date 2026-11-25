@@ -50,12 +50,6 @@ slots:
 
 服务商的 `options.backend` 作用于 `tts` 槽位上的所有请求。音色注册只在 `vllm-omni` 后端可用；使用 `python-api` 和 `nano-vllm` 时，音色提示会随每次请求发送。
 
-没有 `openmaic.yml` 时，旧版变量可以配置端点，但无法选择后端；如需 `python-api` 或 `nano-vllm`，请使用 `openmaic.yml`：
-
-```bash
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
-```
-
 由于该服务商由服务端托管，它的端点可以位于内网而无需 `ALLOW_LOCAL_NETWORKS`，用户也无法覆盖它。
 
 ## 3. 声音管理

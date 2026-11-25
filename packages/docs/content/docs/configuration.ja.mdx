@@ -13,7 +13,7 @@ OpenMAIC には 3 つの設定ソースがあり、それぞれが 1 つの役�
 
 `DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
-以前のリリースでは、モデルはプロバイダー環境変数、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_ROUTES` でしか設定できませんでした。`MODEL_ROUTES` を除き、これらは現在も動作しますが非推奨です。[旧設定からの移行](#旧設定からの移行)を参照してください。
+1.6.0 以降はモデル設定または `openmaic.yml` でプロバイダーとスロットを設定してください。 [旧設定からの移行](#旧設定からの移行)
 
 ## モデルとプロバイダー
 
@@ -27,7 +27,7 @@ OpenMAIC には 3 つの設定ソースがあり、それぞれが 1 つの役�
 
 ### openmaic.yml
 
-サーバーは起動ディレクトリ（リポジトリのルート。Docker イメージでは `/app`）から `openmaic.yml` を読み込みます。別のパスを使うには `OPENMAIC_CONFIG` を設定します。相対パスは同じディレクトリを基準に解決され、この場合ファイルは必ず存在しなければなりません。ファイルがない場合、サーバーは Web アプリの設定と、まだ設定されている[旧来の変数](#旧設定からの移行)を使います。
+サーバーは起動ディレクトリ（リポジトリのルート。Docker イメージでは `/app`）から `openmaic.yml` を読み込みます。別のパスを使うには `OPENMAIC_CONFIG` を設定します。相対パスは同じディレクトリを基準に解決され、この場合ファイルは必ず存在しなければなりません。ファイルがない場合は Web アプリのモデル設定を使います。
 
 ファイルは起動時に一度だけ読み込まれるため、変更後はサーバーを再起動してください。サーバーは起動前にファイル全体を検証します。未設定の `${VAR}`、不明なプリセットやスロット、宣言されていないプロバイダーへの参照、スロットの機能を提供しないプロバイダーがあるとサーバーは起動せず、問題ごとにその場所が表示されます。
 
@@ -227,7 +227,7 @@ Web アプリのモデル設定は、現在のワークスペースについて�
 allowUserKeys: false
 ```
 
-`allowUserKeys`（既定値 `true`）は、ユーザーが独自のプロバイダー、キー、Token Plan を追加できるかどうかを決めます。`false` の場合、ユーザーは `openmaic.yml` が宣言したプロバイダーの中から、ロックされていないスロットについてのみ選択できます。Token Plan とサービスの追加は表示されず、ワークスペースが以前に追加したプロバイダーも使われなくなります。リクエストが独自のモデル、キー、エンドポイントを指定しても（非推奨の `x-model`、`x-api-key`、`x-base-url` ヘッダーや、メディア系 API のプロバイダーフィールド）無視され、プロバイダーのテストボタンのヘッダー形式は拒否されます。すべての利用料を負担するマルチユーザー環境では、通常これを設定し、固定したいスロットをロックします。
+`allowUserKeys`（既定値 `true`）は、ユーザーが独自のプロバイダー、キー、Token Plan を追加できるかどうかを決めます。`false` の場合、ユーザーは `openmaic.yml` が宣言したプロバイダーの中から、ロックされていないスロットについてのみ選択できます。Token Plan とサービスの追加は表示されず、ワークスペースが以前に追加したプロバイダーも使われなくなります。メディアリクエストの本文で指定したプロバイダー項目は無視されます。すべての利用料を負担するマルチユーザー環境では、通常これを設定し、固定したいスロットをロックします。
 
 ### シークレットと OPENMAIC_SECRET_KEY
 
@@ -262,11 +262,11 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 任意：openmaic.yml の別の�
 
 生成リクエストでキーやモデルの選択を送る必要はなくなりました。`/api/generate-classroom` のようなブラウザーを使わない API 呼び出しも、呼び出し元のワークスペースについて Web アプリと同じスロットで解決されます。
 
-旧来のリクエストヘッダー `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`、および音声・検索・ドキュメント API の対応するボディフィールドは非推奨です。これらは、影響するスロットに何も割り当てられていない間、またはレガシー変数で構成されたままのサーバーで、それらから変換された既定値しかない間だけ有効です（`DEFAULT_MODEL` は以前からリクエストが指定したモデルより優先度が低いため）。`openmaic.yml` の既定値、ワークスペース自身の選択、ロックされたスロットが優先され、`null` のスロットはリクエストの内容にかかわらず拒否されます。`allowUserKeys: false` の場合は常に無視されます。リクエストが初めてこれらを使ったとき、サーバーは警告をログに記録します。上記のモデル設定のリリースから 2 マイナーバージョン後に削除される予定です。
+非推奨のヘッダー（`x-model` や `x-api-key` など）を含むリクエストには、HTTP 400 と移行手順が返ります。これらのヘッダーを削除してください。
 
 ### 旧設定からの移行
 
-`openmaic.yml` がない場合、サーバーは起動時に旧設定を変換し、非推奨の通知と、変換できなかった項目ごとの通知をログに出します。
+起動時に検出した旧設定名と移行手順へのリンクをログに記録し、起動を続行します。モデルが未設定のワークスペースでは初期設定を利用できます。
 
 | 旧設定 | 変換後 |
 | --- | --- |
@@ -275,10 +275,10 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 任意：openmaic.yml の別の�
 | `DEFAULT_MODEL` | `llm` の割り当て。ワークスペースが上書きできる既定値として扱われます（ロックされません）。`agent` スロットはこれまでどおり無効のままです |
 | `MODEL_FALLBACK` | `DEFAULT_MODEL` のフォールバック。`DEFAULT_MODEL` がない場合は通知付きで破棄されます |
 | 最初に設定された TTS、ASR、画像、動画、ドキュメントのプロバイダーと、旧来の優先順で選ばれた Web 検索 | その機能の既定の割り当て（画像プロバイダーは `DEFAULT_IMAGE_PROVIDER` で指定） |
-| `MODEL_ROUTES` | **変換されません。** サーバーは起動を拒否します（後述） |
+| `MODEL_ROUTES` | 各ステージのモデルを対応するスロットに割り当てます。 |
 | `<CAP>_<VENDOR>_ENABLED=false` | 引き続き有効。誰が割り当てても、そのプロバイダーは無効のままです |
 
-`openmaic.yml` がある場合、プロバイダー変数、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_FALLBACK`、`MODEL_ROUTES` はモデルの解決に使われず、その旨が通知されます。`<CAP>_<VENDOR>_ENABLED=false` は引き続き適用されます。機能を無効にするには、代わりにスロットを `null` にしてください。
+1.6.0 以降はモデル設定または `openmaic.yml` でプロバイダーとスロットを設定してください。
 
 **環境変数。** 移行前：
 
@@ -360,12 +360,6 @@ slots:
 ```
 
 `server-providers.yml` の各セクションは、対応するプリセットのプロバイダーになります（`providers` → チャットのプリセット、`tts`、`asr`、`pdf` → ドキュメント、`image`、`video`、`web-search`）。`accessKeyId`／`accessKeySecret` は `credentials` の下に移します。
-
-**MODEL_ROUTES。** `openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動しません。
-
-```text
-MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
-```
 
 ステージ別のルートはスロットと 1 対 1 に対応しないため、変換されません。各ルートを、そのステージが属するスロットとして書き直してください。
 
@@ -491,7 +485,7 @@ LLM_THINKING_DISABLED=false
 
 ## 旧来のプロバイダー環境変数
 
-これらの変数と `server-providers.yml` は以前のリリースの設定方法です。`openmaic.yml` がない場合は引き続き動作しますが（[旧設定からの移行](#旧設定からの移行)を参照）、非推奨であり、モデル設定のリリースから 2 マイナーバージョン後に削除されます。`openmaic.yml` を使う場合は `${VAR}` 参照の元としてのみ使ってください。`DEFAULT_MODEL` と `MODEL_FALLBACK` は移行のセクションで説明しています。`MODEL_ROUTES` はもう読み込まれません。
+以下は移行の参考にするための旧形式の例です。 1.6.0 以降はモデル設定または `openmaic.yml` でプロバイダーとスロットを設定してください。
 
 ### LLM プロバイダー
 
@@ -755,9 +749,8 @@ Brave と SearXNG は API key 不要です。Web 検索には生成ごとのス�
 
 ### server-providers.yml
 
-`openmaic.yml` に置き換えられ、非推奨です。両方がある場合、モデルの設定には `openmaic.yml` だけが使われます。
+以下は移行の参考にするための旧形式の例です。
 
-環境変数のほかに、コード内で登録済みの provider 設定をプロジェクトルートの `server-providers.yml` に書くこともできます。サーバー起動時に読み込まれ、環境変数のカテゴリに対応した構造です。
 
 ```yaml title="server-providers.yml"
 providers:
@@ -803,13 +796,12 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-環境変数は YAML の同名フィールドを逐次上書きします。キーはコード内登録済みの provider ID（例：`openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily`、`searxng`）でなければなりません。未知の ID でカスタム LLM provider を登録することはできません。
 
 ## サーバー管理プロバイダーのモデル認可
 
-デプロイの認証情報を使って選択されたモデルを上流へ送るプロバイダーには、`openmaic.yml` で明示的な `models` リスト（`providers.<id>.models`）を設定するか、対応する `*_MODELS` 環境変数 / `server-providers.yml` の該当セクションの `models` リストを設定してください。対象はチャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索です。モデル ID は設定読み込み時に前後の空白を除いたうえで、大文字小文字も含め完全一致で照合されます。決定的なアダプターエイリアスは、宣言されたモデル ID で認可されます。リストにないモデルへのリクエストは HTTP 403、`PROVIDER_DISABLED`、メッセージ「This model is not authorized for server-managed credentials」を返します。
+デプロイの認証情報を使って選択されたモデルを上流へ送るプロバイダーには、`openmaic.yml` で明示的な `models` リスト（`providers.<id>.models`） を設定してください。対象はチャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索です。モデル ID は設定読み込み時に前後の空白を除いたうえで、大文字小文字も含め完全一致で照合されます。決定的なアダプターエイリアスは、宣言されたモデル ID で認可されます。リストにないモデルへのリクエストは HTTP 403、`PROVIDER_DISABLED`、メッセージ「This model is not authorized for server-managed credentials」を返します。
 
-**破壊的変更：** 明示的なリストがない場合に使えるのは、デプロイの既定/フォールバックモデルと、その機能のスロットが参照するプライマリ/フォールバックモデルだけです。旧設定では `DEFAULT_MODEL` と `MODEL_FALLBACK` がチャットモデルを認可します。プロバイダーのみを指定したメディアスロットは、そのアダプターの既定モデル 1 つだけを認可し、プリセットのカタログ全体は認可しません。ワークスペースの割り当てでデプロイの認可範囲を広げることはできません。音声登録と合成でも、音声互換性のために選ばれたモデルを認可する必要があります。
+**破壊的変更：** 明示的なリストがない場合に使えるのは、デプロイの既定/フォールバックモデルと、その機能のスロットが参照するプライマリ/フォールバックモデルだけです。プロバイダーのみを指定したメディアスロットは、そのアダプターの既定モデル 1 つだけを認可し、プリセットのカタログ全体は認可しません。ワークスペースの割り当てでデプロイの認可範囲を広げることはできません。音声登録と合成でも、音声互換性のために選ばれたモデルを認可する必要があります。
 
 移行するには、ユーザーが選べるべきモデルをすべて列挙し、サーバーを再起動し、認可されなくなったワークスペースの選択を更新してください。認証情報があってリストのないプロバイダーについては、追加すべき設定が起動ログに表示されます。ユーザー自身のプロバイダー認証情報と、Ollama や Lemonade のような key 不要のローカルプロバイダーは影響を受けません。認証情報なしで設定されたプロバイダーは制限されないため、独自に上流の認証情報を付加するゲートウェイ（社内の OpenAI 互換プロキシなど）に向けないでください。そのゲートウェイに key を与えて `models` リスト付きの認証情報ありプロバイダーとして設定するか、ゲートウェイ側でモデルを制限してください。モデル選択のないドキュメントパーサーや検索サービス（Tavily など）にはモデルリストは不要です。
 
@@ -829,7 +821,7 @@ slots:
 
 `deepseek` プリセットはチャット、Web 検索、ホスト型 Markdown 抽出で `DEEPSEEK_API_KEY` と API ベース URL を共有します。検索は `POST /v1/tools/search` を使い、最大 50 件を返します。クエリは Unicode コードポイント単位で 128 文字に切り詰め、結果には `summary`、空の場合は `snippet` を使います。取得は `POST /v1/tools/fetch` を使い、`content` と空でない任意の `title` を読み取ります。
 
-旧設定では `WEB_SEARCH_DEEPSEEK_ENABLED=true`、または `server-providers.yml` の明示的な `web-search.deepseek` エントリーで有効にします。チャットの認証情報だけでは検索を有効にせず、既存の検索の既定値も変更しません。`WEB_SEARCH_DEEPSEEK_ENABLED=false` は検索を強制無効化します。`openmaic.yml` がある場合、旧変数はスロットを割り当てられません。プロバイダーを宣言し、`webSearch` と／または `webFetch` を明示的に割り当ててください。
+`openmaic.yml` でプロバイダーを宣言し、次のスロットに割り当ててください： `webSearch` / `webFetch`。 `WEB_SEARCH_DEEPSEEK_ENABLED=false` を指定すると検索は引き続き無効になります。
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -860,7 +852,7 @@ slots:
   webSearch: kimi
 ```
 
-Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1` です。Open Platform と Coding Plan のキーは、それぞれに対応するベース URL と組み合わせる必要があります。 旧設定では、明示的に有効化した場合にのみ `KIMI_API_KEY` と任意の `KIMI_BASE_URL` が検索の認証情報を提供します。`WEB_SEARCH_KIMI_ENABLED=true` を設定するか、`server-providers.yml` に `web-search.kimi` を追加します（例：`enabled: true`）。チャットの認証情報だけでは検索は有効にならず、既定の検索プロバイダーも変わりません。スロットに割り当てられていても、`WEB_SEARCH_KIMI_ENABLED=false` は Kimi 検索を無効にします。`WEB_SEARCH_KIMI_ENABLED` が Kimi 検索の唯一のスイッチです。 `KIMI_MODELS` はチャットにのみ適用されます。旧設定のチャットと検索でアカウントが競合すると警告が出て、検索エントリーはスキップされます。別々のアカウントを使う場合は、`openmaic.yml` で別々のプロバイダー ID を宣言してください。 `openmaic.yml` が存在する場合は、プロバイダーを宣言してスロットを明示的に割り当ててください。設定と初回起動ウィザードでは、同じアカウントから両方の機能を利用できます。
+Coding Plan のキーには `preset: kimi-coding-plan` と `llm: kimi:kimi-for-coding` を指定します。既定のベース URL は `https://api.kimi.com/coding/v1`。 `openmaic.yml` でプロバイダーを宣言し、次のスロットに割り当ててください： `llm` / `webSearch`。 `WEB_SEARCH_KIMI_ENABLED=false` を指定すると検索は引き続き無効になります。
 
 
 エンドポイントはベースパスに応じて選択されます。末尾のスラッシュを除いたパスが `/coding/v1` で終わる場合は `/search`、それ以外は `/tools/search_pro` を使用します。デプロイで設定するカスタムプロキシも、このパス構成を維持する必要があります。ウィザードが検索を推奨するのは公式アカウントのベース URL のみなので、ワークスペースのカスタムチャットプロキシに検索が自動で割り当てられることはありません。

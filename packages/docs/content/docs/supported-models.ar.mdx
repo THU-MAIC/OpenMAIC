@@ -168,7 +168,7 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 
 يشترك الإعداد `deepseek` في `DEEPSEEK_API_KEY` وعنوان API الأساسي بين المحادثة والبحث واستخراج Markdown المستضاف. يستخدم البحث `POST /v1/tools/search` ويعيد حتى 50 نتيجة، ويقتطع الاستعلام إلى 128 نقطة ترميز Unicode. يستخدم `summary` ثم `snippet` عند فراغه. يستخدم الجلب `POST /v1/tools/fetch` ويقرأ `content` و`title` الاختياري غير الفارغ.
 
-في الإعدادات القديمة، فعّل `WEB_SEARCH_DEEPSEEK_ENABLED=true` أو أضف `web-search.deepseek` صراحةً إلى `server-providers.yml`. بيانات اعتماد المحادثة وحدها لا تفعّل البحث ولا تستبدل مزود البحث الافتراضي الحالي. يعطّل `WEB_SEARCH_DEEPSEEK_ENABLED=false` البحث قسرًا. عند وجود `openmaic.yml` لا يستطيع المتغير القديم تعيين خانة؛ أعلن المزود وعيّن `webSearch` و/أو `webFetch` صراحةً.
+عرّف المزوّد في `openmaic.yml` وأسنده إلى `webSearch` / `webFetch`. `WEB_SEARCH_DEEPSEEK_ENABLED=false` يبقى خيارًا لتعطيل البحث.
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -189,7 +189,7 @@ slots:
 
 يستخدم عنوانا Open Platform الأساسيان `https://api.moonshot.cn/v1` و`https://api.moonshot.ai/v1` المسار `/tools/search_pro`. يُجمع نص النتيجة من مقاطع الصفحة، ويُستخدم الملخص عند غيابها. ويستخدم عنوانا خطة البرمجة `https://api.kimi.com/coding/v1` و`https://api.kimi.ai/coding/v1` المسار `/search` مع تفعيل جلب الصفحات. تكون الأولوية لنص الصفحة ثم للملخص. يعيد كل طلب 20 نتيجة كحد أقصى.
 
-في الإعدادات القديمة، لا تؤدي بيانات اعتماد المحادثة وحدها إلى تفعيل البحث. اضبط `WEB_SEARCH_KIMI_ENABLED=true` أو أضف إدخال `web-search.kimi` صراحةً إلى `server-providers.yml`. وفي `openmaic.yml`، عيّن خانة `webSearch` صراحةً. لا يوصي معالج الإعداد بالبحث إلا للحسابات التي تستخدم عنوان URL أساسيًا رسميًا.
+اضبط المزوّدين والخانات في `openmaic.yml` أو في إعدادات النماذج. لا يوصي معالج الإعداد بالبحث إلا للحسابات التي تستخدم عنوان URL أساسيًا رسميًا.
 
 يُختار مسار الطلب وفق مسار عنوان URL الأساسي: بعد إزالة الشرطات المائلة النهائية، يُستخدم `/search` إذا انتهى المسار بـ `/coding/v1`، ويُستخدم `/tools/search_pro` في الحالات الأخرى. يجب أن تحافظ خدمات الوكيل المخصصة المضبوطة في `openmaic.yml` على بنية المسار هذه.
 

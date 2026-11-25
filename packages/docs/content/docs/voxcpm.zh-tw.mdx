@@ -50,12 +50,6 @@ slots:
 
 供應商的 `options.backend` 適用於 `tts` 插槽上的所有請求。聲音註冊只在 `vllm-omni` 後端可用；使用 `python-api` 和 `nano-vllm` 時，聲音提示會隨每次請求傳送。
 
-沒有 `openmaic.yml` 時，舊版變數可以設定端點，但無法選擇後端；如需 `python-api` 或 `nano-vllm`，請使用 `openmaic.yml`：
-
-```bash
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
-```
-
 由於該供應商由伺服器端管理，它的端點可以位於內網而不需要 `ALLOW_LOCAL_NETWORKS`，使用者也無法覆寫它。
 
 ## 3. 聲音管理

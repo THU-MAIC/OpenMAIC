@@ -277,7 +277,7 @@ sign-in, keep the caps and `lifetimeMs` low, and set a budget at the sandbox pro
 allowUserKeys: false
 ```
 
-`allowUserKeys` (default `true`) decides whether users may add providers, keys and token plans of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it does not lock: Token Plan and adding services are not shown, and providers a workspace added earlier are no longer used. Requests that still name their own model, key or endpoint (the deprecated `x-model`, `x-api-key` and `x-base-url` headers, and the provider fields of the media routes) are ignored then, and the header form of the provider test buttons is refused. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
+`allowUserKeys` (default `true`) decides whether users may add providers, keys and token plans of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it does not lock: Token Plan and adding services are not shown, and providers a workspace added earlier are no longer used. Provider fields in media request bodies are ignored under this setting. Deprecated provider headers return HTTP 400 regardless of this setting. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
 
 ### Secrets and OPENMAIC_SECRET_KEY
 
@@ -808,9 +808,7 @@ Brave and SearXNG do not require an API key. Web search has no per-generation sw
 
 ### server-providers.yml
 
-Deprecated in favour of `openmaic.yml`. When both exist, only `openmaic.yml` configures models.
-
-In addition to environment variables, place configuration for providers registered in the code in `server-providers.yml` at the project root. The server loads it at startup, and its structure follows the environment variable categories:
+Before 1.6.0, this file held provider configuration. Use the following example to identify old entries when migrating them to providers and slots in `openmaic.yml`.
 
 ```yaml title="server-providers.yml"
 providers:
@@ -858,13 +856,12 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `minicpm-ocr`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
 
 ## Model authorization for server-managed providers
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`). This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
 
 To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
 
@@ -884,7 +881,7 @@ Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For me
 
 The `deepseek` preset shares `DEEPSEEK_API_KEY` and the API base across chat, web search and hosted Markdown extraction. Search uses `POST /v1/tools/search`, returns up to 50 results, truncates queries to 128 Unicode code points, and uses `summary` with `snippet` as a fallback. Fetch uses `POST /v1/tools/fetch` and reads `content` and an optional nonempty `title`.
 
-In legacy configuration, opt in with `WEB_SEARCH_DEEPSEEK_ENABLED=true` or an explicit `web-search.deepseek` entry in `server-providers.yml`. Chat credentials alone never enable search or replace another search default. `WEB_SEARCH_DEEPSEEK_ENABLED=false` force-disables search. When `openmaic.yml` exists, the legacy variable cannot assign a slot: explicitly declare the provider and assign `webSearch` and/or `webFetch`.
+Declare the provider and assign `webSearch` and/or `webFetch` in `openmaic.yml`. `WEB_SEARCH_DEEPSEEK_ENABLED=false` still force-disables search.
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -915,7 +912,7 @@ slots:
   webSearch: kimi
 ```
 
-For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-coding`; its default base is `https://api.kimi.com/coding/v1`. The Open Platform and Coding Plan keys must be paired with their matching base URL. In legacy configuration, `KIMI_API_KEY` and optional `KIMI_BASE_URL` supply search credentials only after explicit opt-in: set `WEB_SEARCH_KIMI_ENABLED=true` or add `web-search.kimi` in `server-providers.yml` (for example, with `enabled: true`). Chat credentials alone do not enable search or change the default search provider. `WEB_SEARCH_KIMI_ENABLED=false` disables Kimi search even when a slot assigns it. `WEB_SEARCH_KIMI_ENABLED` is the only Kimi search switch. `KIMI_MODELS` applies only to chat. Conflicting legacy chat and search accounts produce a warning and the search entry is skipped; declare separate provider ids in `openmaic.yml` when separate accounts are needed. When `openmaic.yml` exists, declare the provider and assign the slots explicitly. Settings and the first-run wizard offer both capabilities through the same account.
+For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-coding`; its default base is `https://api.kimi.com/coding/v1`. The Open Platform and Coding Plan keys must be paired with their matching base URL. `WEB_SEARCH_KIMI_ENABLED=false` disables Kimi search even when a slot assigns it. Settings and the first-run wizard offer both capabilities through the same account.
 
 
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; otherwise it uses `/tools/search_pro`. Custom proxies configured by the deployment must preserve that path layout. The wizard recommends search only for official account bases, so a custom workspace chat proxy does not automatically acquire a search assignment.

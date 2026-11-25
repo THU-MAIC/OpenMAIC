@@ -77,7 +77,7 @@ export async function middleware(request: NextRequest) {
 
   // Whitelist: access-code endpoints, health check
   if (pathname.startsWith('/api/access-code/') || pathname === '/api/health') {
-    return next(request, identity);
+    return forward();
   }
 
   // Check cookie — validate HMAC signature, not just existence

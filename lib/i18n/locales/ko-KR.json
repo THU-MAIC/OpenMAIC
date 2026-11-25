@@ -2096,7 +2096,7 @@
     "resetConfirmDescription": "이 작업은 모든 사용자 지정 모델을 제거하고 기본 내장 모델 목록을 복원합니다. API 키 및 Base URL은 유지됩니다.",
     "resetToDefault": "기본값으로 초기화",
     "saveModel": "저장",
-    "searxngServerOnlyNotice": "SearXNG는 서버에서 구성해야 합니다. SEARXNG_BASE_URL 환경 변수(또는 server-providers.yml의 web-search 섹션)를 설정하세요. 클라이언트가 제공한 인스턴스 URL은 허용되지 않습니다.",
+    "searxngServerOnlyNotice": "openmaic.yml에서 preset: searxng와 baseUrl을 지정해 공급자를 선언한 뒤 공급자 ID를 slots.webSearch에 할당하세요.",
     "serverConfigured": "서버",
     "serverConfiguredNotice": "이 제공업체는 서버에서 관리되므로 여기서 편집할 수 없습니다.",
     "startRecording": "녹음 시작",

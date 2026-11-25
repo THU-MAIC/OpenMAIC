@@ -69,6 +69,10 @@ export function loadDeploymentLayer(): DeploymentLayer {
     },
   });
   const loaded = loadModelConfigFile(env);
+  // A declared Bedrock provider reads its region directly from the environment.
+  if (Object.values(loaded?.providers ?? {}).some((provider) => provider.preset === 'bedrock')) {
+    referencedEnv.add('BEDROCK_REGION');
+  }
   const deprecated = deprecatedProviderSettings(process.env, referencedEnv);
   const notices = [
     ...retiredVariableNotices(),

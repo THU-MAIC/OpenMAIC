@@ -81,6 +81,35 @@ describe('loadDeploymentLayer', () => {
     expect(notices[0]).not.toMatch(/DEEPSEEK_API_KEY|operator-secret/);
   });
 
+  it('uses BEDROCK_REGION for a declared Bedrock provider without a migration warning', () => {
+    vi.stubEnv('BEDROCK_REGION', 'us-west-2');
+    expect(loadDeploymentLayer().notices.join(' ')).toContain('BEDROCK_REGION');
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'providers:\n  aws:\n    preset: bedrock\n');
+    const deployment = loadDeploymentLayer();
+    expect(deployment.layer?.config.providers?.aws.preset).toBe('bedrock');
+    expect(deployment.notices.join(' ')).not.toContain('BEDROCK_REGION');
+  });
+
+  it('warns about a legacy AliDocMind endpoint unless the deployment references it', () => {
+    vi.stubEnv('ALIDOCMIND_BASE_URL', 'https://example.com');
+    const old = loadDeploymentLayer();
+    expect(old.layer).toBeNull();
+    expect(old.notices.join(' ')).toContain('ALIDOCMIND_BASE_URL');
+    expect(old.notices.join(' ')).not.toContain('https://example.com');
+    fs.writeFileSync(
+      path.join(dir, 'openmaic.yml'),
+      [
+        'providers:',
+        '  docs:',
+        '    preset: alidocmind',
+        '    baseUrl: ${ALIDOCMIND_BASE_URL}',
+      ].join('\n'),
+    );
+    const migrated = loadDeploymentLayer();
+    expect(migrated.layer?.config.providers?.docs.baseUrl).toBe('https://example.com');
+    expect(migrated.notices.join(' ')).not.toContain('ALIDOCMIND_BASE_URL');
+  });
+
   it('leaves a retired Veo provider unused, with a notice, instead of refusing the file', () => {
     fs.writeFileSync(
       path.join(dir, 'openmaic.yml'),

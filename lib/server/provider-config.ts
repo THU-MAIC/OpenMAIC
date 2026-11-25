@@ -1,3 +1,4 @@
+import { ALIDOCMIND_LEGACY_SETTINGS } from '@/lib/config/provider-migration';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import {
@@ -312,8 +313,7 @@ export function deprecatedProviderSettings(
     ...Array.from(prefixes).flatMap((prefix) =>
       ['API_KEY', 'BASE_URL', 'MODELS'].map((suffix) => `${prefix}_${suffix}`),
     ),
-    'ALIDOCMIND_ACCESS_KEY_ID',
-    'ALIDOCMIND_ACCESS_KEY_SECRET',
+    ...ALIDOCMIND_LEGACY_SETTINGS,
     'BEDROCK_REGION',
     'DEFAULT_IMAGE_PROVIDER',
     'DEFAULT_MODEL',

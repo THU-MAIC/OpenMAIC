@@ -47,14 +47,9 @@ slots:
   llm: openai:gpt-5.5
 ```
 
-`openmaic.example.yml` はこれと同じ出発点で、任意のプロバイダーとスロットがコメントアウトされた状態で含まれています。ファイルを使わない場合も、`DEFAULT_MODEL` でモデルを指定すれば旧来のプロバイダー変数が使えます。
+`openmaic.example.yml` はこれと同じ出発点で、任意のプロバイダーとスロットがコメントアウトされた状態で含まれています。
 
-```bash title=".env.local"
-ANTHROPIC_API_KEY=sk-ant-...
-DEFAULT_MODEL=anthropic:claude-sonnet-4-6
-```
-
-どちらも使わない場合は、アプリを起動して **設定 → Token Plan** でプランのキーを、または **設定 → モデルサービス** でサービスのキーを入力してください。`openmaic.yml`、`DEFAULT_MODEL`、そこで設定したサービスのいずれもなければ、モデルは設定されず生成は失敗します。
+アプリを起動し、**設定 → Token Plan** または **設定 → モデルサービス** でキーを入力することもできます。
 
 プロバイダー、画像／動画生成、TTS、ASR、ドキュメント解析、Web 検索、アクセス制御、feature flag の詳細設定は[設定説明](./configuration.mdx)を参照してください。
 

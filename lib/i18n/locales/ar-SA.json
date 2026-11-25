@@ -2096,7 +2096,7 @@
     "resetConfirmDescription": "سيؤدي هذا إلى إزالة جميع النماذج المخصصة واستعادة قائمة النماذج الافتراضية المُدمجة. سيتم الاحتفاظ بمفتاح API والعنوان الأساسي.",
     "resetToDefault": "إعادة التعيين للافتراضي",
     "saveModel": "حفظ",
-    "searxngServerOnlyNotice": "يجب تكوين SearXNG على الخادم. عيّن متغير البيئة SEARXNG_BASE_URL (أو قسم web-search في server-providers.yml). لا يُقبل عناوين URL للمثيلات المقدمة من العميل.",
+    "searxngServerOnlyNotice": "في openmaic.yml، عرّف مزوّدًا باستخدام preset: searxng وحدّد baseUrl، ثم أسند معرّفه إلى slots.webSearch.",
     "serverConfigured": "الخادم",
     "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا.",
     "startRecording": "بدء التسجيل",

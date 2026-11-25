@@ -123,6 +123,29 @@ describe('retired provider request headers', () => {
     },
   );
 
+  it.each(['/api/health', '/api/access-code/verify'])(
+    'keeps %s public while rejecting deprecated headers with or without an access code',
+    async (path) => {
+      for (const code of ['', CODE]) {
+        vi.stubEnv('ACCESS_CODE', code);
+        const url = new URL(path, 'http://localhost');
+        const clean = await middleware(new NextRequest(url));
+        expect(clean.headers.get('x-middleware-next')).toBe('1');
+        const stale = await middleware(new NextRequest(url, { headers: { 'x-model': 'old' } }));
+        expect(stale.status).toBe(400);
+        expect((await stale.json()).error).toContain('#migrating-from-the-legacy-configuration');
+      }
+    },
+  );
+
+  it('checks access before reporting deprecated headers on protected routes', async () => {
+    vi.stubEnv('ACCESS_CODE', CODE);
+    const request = new NextRequest('http://localhost/api/chat/pi', {
+      headers: { 'x-model': 'old' },
+    });
+    expect((await middleware(request)).status).toBe(401);
+  });
+
   it('checks the migration after accepting a valid access cookie', async () => {
     vi.stubEnv('ACCESS_CODE', CODE);
     const request = new NextRequest('http://localhost/api/chat/pi', {

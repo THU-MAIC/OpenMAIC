@@ -47,14 +47,9 @@ slots:
   llm: openai:gpt-5.5
 ```
 
-`openmaic.example.yml` is this same starting point, with optional providers and slots commented out. Without the file, the legacy provider variables still work as long as `DEFAULT_MODEL` names the model:
+`openmaic.example.yml` is this same starting point, with optional providers and slots commented out.
 
-```bash title=".env.local"
-ANTHROPIC_API_KEY=sk-ant-...
-DEFAULT_MODEL=anthropic:claude-sonnet-4-6
-```
-
-To skip both, start the app and enter a plan's key in **Settings → Token Plan**, or a service's key in **Settings → Model Services**. Without `openmaic.yml`, `DEFAULT_MODEL` or a service set up there, no model is configured and generation fails.
+Alternatively, start the app and enter a key in **Settings → Token Plan** or **Settings → Model Services**.
 
 See [Configuration](./configuration.mdx) for complete provider, image/video generation, TTS, ASR, document parsing, web search, access control, and feature flag configuration.
 

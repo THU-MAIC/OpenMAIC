@@ -50,12 +50,6 @@ slots:
 
 プロバイダーの `options.backend` は `tts` スロットのすべてのリクエストに適用されます。音声の登録は `vllm-omni` バックエンドでのみ使え、`python-api` と `nano-vllm` では音声プロンプトがリクエストごとに送られます。
 
-`openmaic.yml` がない場合、旧来の変数でエンドポイントは設定できますが、バックエンドは選べません。`python-api` や `nano-vllm` を使うには `openmaic.yml` を使ってください。
-
-```bash
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
-```
-
 プロバイダーはサーバー管理なので、エンドポイントは `ALLOW_LOCAL_NETWORKS` なしでプライベートネットワーク上に置け、ユーザーが上書きすることもできません。
 
 ## 3. 音声管理

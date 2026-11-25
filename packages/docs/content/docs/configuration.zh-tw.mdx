@@ -13,7 +13,7 @@ OpenMAIC 有三個設定來源，各自只負責一件事：
 
 `DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
-早期版本只能透過供應商環境變數、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_ROUTES` 設定模型。除了 `MODEL_ROUTES`，這些方式目前仍可使用，但已棄用，請見[從舊設定遷移](#從舊設定遷移)。
+從 1.6.0 起，請透過模型設定或 `openmaic.yml` 設定供應商和插槽。 [從舊設定遷移](#從舊設定遷移)
 
 ## 模型與供應商
 
@@ -27,7 +27,7 @@ OpenMAIC 有三個設定來源，各自只負責一件事：
 
 ### openmaic.yml
 
-伺服器端從啟動目錄（儲存庫根目錄；Docker 映像檔中為 `/app`）讀取 `openmaic.yml`。設定 `OPENMAIC_CONFIG` 可以改用其他路徑；相對路徑同樣以啟動目錄為基準解析，而且此時檔案必須存在。沒有該檔案時，伺服器端會使用 Web 端的設定，以及仍在設定中的[舊版變數](#從舊設定遷移)。
+伺服器端從啟動目錄（儲存庫根目錄；Docker 映像檔中為 `/app`）讀取 `openmaic.yml`。設定 `OPENMAIC_CONFIG` 可以改用其他路徑；相對路徑同樣以啟動目錄為基準解析，而且此時檔案必須存在。沒有該檔案時，伺服器會使用 Web 端的模型設定。
 
 該檔案只在啟動時讀取一次，修改後需要重新啟動服務。服務啟動前會完整驗證檔案：未設定的 `${VAR}`、未知的範本或插槽、引用了未宣告的供應商，或供應商不提供插槽所需的能力，都會讓服務拒絕啟動，並逐條列出問題所在的位置：
 
@@ -227,7 +227,7 @@ Web 端的模型設定讀寫目前工作區的同一棵樹：
 allowUserKeys: false
 ```
 
-`allowUserKeys`（預設 `true`）決定使用者能否新增自己的供應商、Key 和 Token Plan。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為未鎖定的插槽選擇模型：不顯示 Token Plan 和新增服務入口，工作區先前新增的供應商也不再使用。請求自帶的模型、金鑰或端點（已棄用的 `x-model`、`x-api-key`、`x-base-url` 請求標頭以及媒體介面的供應商欄位）也會被忽略，供應商測試按鈕的請求標頭形式會被拒絕。由部署方承擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
+`allowUserKeys`（預設 `true`）決定使用者能否新增自己的供應商、Key 和 Token Plan。設為 `false` 時，使用者只能在 `openmaic.yml` 宣告的供應商中，為未鎖定的插槽選擇模型：不顯示 Token Plan 和新增服務入口，工作區先前新增的供應商也不再使用。媒體請求本文中的供應商欄位會被忽略。由部署方承擔全部費用的多使用者部署通常會設定它，並鎖定需要固定的插槽。
 
 ### 金鑰與 OPENMAIC_SECRET_KEY
 
@@ -262,11 +262,11 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 
 生成請求不再需要攜帶 key 或模型選擇：`/api/generate-classroom` 等無瀏覽器 API 呼叫會依呼叫端所在的工作區，透過與 Web 端相同的插槽解析模型。
 
-舊的請求標頭 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及語音、搜尋和文件介面中對應的請求本文欄位，皆已棄用。只有當它們會影響的插槽沒有指派，或者在仍透過舊變數設定的伺服器上只有由舊變數轉換得到的預設值時（`DEFAULT_MODEL` 一直排在請求指定的模型之後），才會生效；`openmaic.yml` 中的預設值、工作區自己的選擇和鎖定的插槽優先，設為 `null` 的插槽無論請求寫了什麼都會拒絕。設定 `allowUserKeys: false` 時，它們一律會被忽略。請求第一次使用這些欄位時，伺服器端會記錄一則警告。它們將在上述模型設定發布兩個次要版本後移除。
+帶有已棄用標頭（例如 `x-model` 或 `x-api-key`）的請求會收到 HTTP 400 和遷移說明。請移除這些標頭。
 
 ### 從舊設定遷移
 
-沒有 `openmaic.yml` 時，伺服器端會在啟動時轉換舊設定，記錄一則棄用提示，並為每個無法轉換的項目各記錄一則提示：
+啟動時會記錄偵測到的舊設定名稱及遷移連結。服務會繼續啟動，尚未設定模型的工作區可使用首次設定精靈。
 
 | 舊設定 | 轉換結果 |
 | --- | --- |
@@ -275,10 +275,10 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 | `DEFAULT_MODEL` | `llm` 的指派，作為工作區可以覆寫的預設值（不鎖定）。`agent` 插槽和以前一樣維持關閉 |
 | `MODEL_FALLBACK` | `DEFAULT_MODEL` 的備援模型。沒有 `DEFAULT_MODEL` 時會被捨棄並給出提示 |
 | 第一個設定的 TTS、ASR、圖像、影片和文件供應商，以及依舊優先順序選出的網路搜尋供應商 | 該能力的預設指派（圖像供應商由 `DEFAULT_IMAGE_PROVIDER` 指定） |
-| `MODEL_ROUTES` | **不轉換。** 服務拒絕啟動（見下文） |
+| `MODEL_ROUTES` | 將各階段的模型指派給對應插槽。 |
 | `<CAP>_<VENDOR>_ENABLED=false` | 仍然有效：無論誰指派，該供應商都維持關閉 |
 
-存在 `openmaic.yml` 時，供應商變數、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_FALLBACK` 和 `MODEL_ROUTES` 都不再參與模型解析，並會給出提示。`<CAP>_<VENDOR>_ENABLED=false` 仍然有效；要關閉某項能力，請改為把它的插槽設為 `null`。
+從 1.6.0 起，請透過模型設定或 `openmaic.yml` 設定供應商和插槽。
 
 **環境變數。** 遷移前：
 
@@ -360,12 +360,6 @@ slots:
 ```
 
 `server-providers.yml` 的每個區段都對應使用相應範本的供應商（`providers` → 對話範本，`tts`、`asr`、`pdf` → 文件，`image`、`video`、`web-search`），`accessKeyId`/`accessKeySecret` 移到 `credentials` 之下。
-
-**MODEL_ROUTES。** 設定了 `MODEL_ROUTES` 但沒有 `openmaic.yml` 的服務不會啟動：
-
-```text
-MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
-```
 
 依階段的路由與插槽並非一一對應，因此不會自動轉換。請把每條路由改寫成該階段所屬的插槽：
 
@@ -491,7 +485,7 @@ LLM_THINKING_DISABLED=false
 
 ## 舊版供應商環境變數
 
-這些變數和 `server-providers.yml` 是早期版本的設定方式。在沒有 `openmaic.yml` 時它們仍然有效（見[從舊設定遷移](#從舊設定遷移)），但已棄用，將在模型設定發布兩個次要版本後移除。使用 `openmaic.yml` 時，它們只作為 `${VAR}` 引用的來源。`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 請見遷移一節；`MODEL_ROUTES` 已不再讀取。
+升級前的設定範例，僅供遷移參考。 從 1.6.0 起，請透過模型設定或 `openmaic.yml` 設定供應商和插槽。
 
 ### LLM 供應商
 
@@ -757,9 +751,8 @@ Brave 和 SearXNG 不需要 API key。網路搜尋沒有逐次生成的開關：
 
 ### server-providers.yml
 
-已由 `openmaic.yml` 取代。兩者同時存在時，只有 `openmaic.yml` 用於設定模型。
+升級前的設定範例，僅供遷移參考。
 
-除了環境變數，也可以將程式碼中已註冊 provider 的設定放在專案根目錄下的 `server-providers.yml` 檔案中。伺服器啟動時會載入此檔案，其結構與環境變數分類相對應：
 
 ```yaml title="server-providers.yml"
 providers:
@@ -805,13 +798,12 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-環境變數會逐欄位覆蓋 YAML 中的同名 provider 設定。鍵名必須使用程式碼中已註冊的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在這裡註冊為自訂 LLM provider。
 
 ## 伺服器端託管供應商的模型授權
 
-對於使用部署憑證把所選模型送往上游的供應商，請在 `openmaic.yml` 中設定明確的 `models` 清單（`providers.<id>.models`），或設定對應的 `*_MODELS` 環境變數 / `server-providers.yml` 中該區段的 `models` 清單。這適用於對話、圖像、影片、語音合成、語音辨識和基於模型的網路搜尋。模型 ID 在載入設定時去掉首尾空白後精確比對，區分大小寫。確定性的轉接器別名依宣告的模型 ID 授權。請求未列出的模型會回傳 HTTP 403，錯誤碼 `PROVIDER_DISABLED`，訊息為「This model is not authorized for server-managed credentials」。
+對於使用部署憑證把所選模型送往上游的供應商，請在 `openmaic.yml` 中設定明確的 `models` 清單（`providers.<id>.models`）。這適用於對話、圖像、影片、語音合成、語音辨識和基於模型的網路搜尋。模型 ID 在載入設定時去掉首尾空白後精確比對，區分大小寫。確定性的轉接器別名依宣告的模型 ID 授權。請求未列出的模型會回傳 HTTP 403，錯誤碼 `PROVIDER_DISABLED`，訊息為「This model is not authorized for server-managed credentials」。
 
-**破壞性變更：** 沒有明確清單時，只能使用部署的預設/備援模型，以及該能力的插槽所引用的主要/備援模型。在舊版設定下，`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 授權對話模型。只寫供應商的媒體插槽只授權該轉接器的預設模型，不授權該預設的整個模型目錄。工作區的指派無法擴大部署的授權範圍。音色註冊和合成也必須授權為音色相容性而選擇的模型。
+**破壞性變更：** 沒有明確清單時，只能使用部署的預設/備援模型，以及該能力的插槽所引用的主要/備援模型。只寫供應商的媒體插槽只授權該轉接器的預設模型，不授權該預設的整個模型目錄。工作區的指派無法擴大部署的授權範圍。音色註冊和合成也必須授權為音色相容性而選擇的模型。
 
 遷移時，列出使用者應能選擇的每個模型，重新啟動服務，並更新不再獲授權的工作區選擇。對於有憑證但沒有清單的供應商，啟動日誌會指出需要新增的設定。使用者自己的供應商憑證，以及 Ollama、Lemonade 這類不需要 key 的本機供應商不受影響。未設定憑證的供應商不受限制，因此不要把它指向會自行加上上游憑證的閘道（例如內部的 OpenAI 相容代理）：請給該閘道一個 key，把它設定為帶 `models` 清單的有憑證供應商，或在閘道本身限制模型。沒有模型選擇的文件解析器和搜尋服務（如 Tavily）不需要模型清單。
 
@@ -831,7 +823,7 @@ slots:
 
 `deepseek` 預設在對話、網路搜尋和託管 Markdown 擷取之間共用 `DEEPSEEK_API_KEY` 與 API 基底位址。搜尋使用 `POST /v1/tools/search`，最多傳回 50 筆結果，查詢依 Unicode code point 截斷至 128 個字元，優先使用 `summary`，空白時改用 `snippet`。擷取使用 `POST /v1/tools/fetch`，讀取 `content` 與非空的選填 `title`。
 
-舊版設定需使用 `WEB_SEARCH_DEEPSEEK_ENABLED=true`，或在 `server-providers.yml` 明確加入 `web-search.deepseek`。僅設定對話憑證不會啟用搜尋或取代現有預設搜尋。`WEB_SEARCH_DEEPSEEK_ENABLED=false` 會強制停用搜尋。有 `openmaic.yml` 時，舊版變數無法指定插槽，必須明確宣告提供者並指定 `webSearch` 和／或 `webFetch`。
+在 `openmaic.yml` 中宣告供應商，並將它指派給 `webSearch` / `webFetch`。 `WEB_SEARCH_DEEPSEEK_ENABLED=false` 仍可強制停用搜尋。
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -862,7 +854,7 @@ slots:
   webSearch: kimi
 ```
 
-使用 Coding Plan 金鑰時，請設定 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其預設位址為 `https://api.kimi.com/coding/v1`。開放平台和 Coding Plan 金鑰必須使用各自對應的基礎 URL。 在舊版設定中，只有明確啟用後，`KIMI_API_KEY` 和可選的 `KIMI_BASE_URL` 才會為搜尋提供憑證：設定 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中新增 `web-search.kimi`（例如設定 `enabled: true`）。僅有對話憑證不會啟用搜尋，也不會改變預設搜尋供應商。即使插槽已指派給 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍會停用 Kimi 搜尋。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜尋的唯一開關。 `KIMI_MODELS` 僅適用於對話。舊版對話和搜尋帳號衝突時會產生警告，並略過搜尋項目；若需使用不同帳號，請在 `openmaic.yml` 中宣告不同的供應商 ID。 存在 `openmaic.yml` 時，請明確宣告供應商並指派插槽。設定和首次使用精靈允許透過同一帳號使用兩項能力。
+使用 Coding Plan 金鑰時，請設定 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其預設位址為 `https://api.kimi.com/coding/v1`。 在 `openmaic.yml` 中宣告供應商，並將它指派給 `llm` / `webSearch`。 `WEB_SEARCH_KIMI_ENABLED=false` 仍可強制停用搜尋。
 
 
 端點選擇取決於基礎路徑：移除結尾斜線後，以 `/coding/v1` 結尾的路徑使用 `/search`，其他路徑使用 `/tools/search_pro`。部署設定的自訂代理必須保留此路徑配置。精靈只為官方帳號位址推薦搜尋，因此工作區自訂對話代理不會自動取得搜尋指派。

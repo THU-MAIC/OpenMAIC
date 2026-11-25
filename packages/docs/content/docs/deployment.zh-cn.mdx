@@ -65,7 +65,7 @@ services:
       - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-不要挂载宿主机上不存在的路径：Docker 会在该位置创建一个目录，导致服务拒绝启动。使用 `docker run` 时，添加 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改文件后需要重启容器。`openmaic.yml` 已列入 `.dockerignore`，不会被打包进从仓库构建的镜像：请在运行时挂载它。没有 `openmaic.yml` 时，仍会从 `/app/server-providers.yml` 读取旧版的 `server-providers.yml`。
+不要挂载宿主机上不存在的路径：Docker 会在该位置创建一个目录，导致服务拒绝启动。使用 `docker run` 时，添加 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改文件后需要重启容器。`openmaic.yml` 已列入 `.dockerignore`，不会被打包进从仓库构建的镜像：请在运行时挂载它。
 
 Docker 容器中的 `localhost` 指向容器自身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 运行在宿主机上，请使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常还需要为 `openmaic` 服务添加 `extra_hosts: ["host.docker.internal:host-gateway"]`。在 `openmaic.yml`（或旧版变量）中声明的服务商由服务端托管，其端点可以位于宿主机或内网，无需 `ALLOW_LOCAL_NETWORKS`。该变量只影响用户自行填写的端点：在 **设置 → 模型服务** 中添加的对话 Base URL，以及已弃用的请求字段。
 
@@ -139,7 +139,7 @@ PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 | 部署方式 | 操作 |
 | --- | --- |
-| `docker compose` | 拉取新版本，运行 `docker compose up --build`。把模型设置迁到 `openmaic.yml` 或 **设置 → 模型**（没有 `openmaic.yml` 时，服务商环境变量仍然有效），并把 `MODEL_ROUTES` 改写为槽位：设置了它却没有 `openmaic.yml` 的服务会拒绝启动。在每个存有本地课程的浏览器中打开一次应用，完成导入。 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，还要设置 `OWNER_SINGLE_USER=false`：Compose 现在默认以单用户模式启动。此前的服务端部署中属于匿名所有者的课程不会自动合并给单用户，需要在创建它们的每个浏览器中用 `POST /api/identity/claim` 认领（打开浏览器只会导入它在本地保存的数据）。 |
+| `docker compose` | 拉取新版本，运行 `docker compose up --build`。通过 `openmaic.yml` 或模型设置配置服务商和槽位。 在每个存有本地课程的浏览器中打开一次应用，完成导入。 如果 `.env.local` 设置了 `PERSISTENCE_SHARED_OWNER_ID`，还要设置 `OWNER_SINGLE_USER=false`：Compose 现在默认以单用户模式启动。此前的服务端部署中属于匿名所有者的课程不会自动合并给单用户，需要在创建它们的每个浏览器中用 `POST /api/identity/claim` 认领（打开浏览器只会导入它在本地保存的数据）。 |
 | `pnpm start` + 自己的 PostgreSQL | 停止服务，拉取新版本，运行 `pnpm install` 和 `pnpm build`，然后在同一个工作目录里用 `pnpm start` 重新启动，这样会保留 `data/`。设置 `DATABASE_URL`、身份模式；多个实例共用数据库时设置 `OPENMAIC_SECRET_KEY`，并且多个实例还需要共用同一个数据目录（见[必需配置](#必需配置)）。模型设置、`MODEL_ROUTES` 和浏览器中的课程同上一行。 |
 | Vercel | 留在 1.1.x，或迁移到使用同一数据库的常驻主机（见下文）。 |
 | Skill / API | 按更新后的 `openmaic` skill 操作：以同一所有者上传资料、提交并轮询。 |
@@ -148,7 +148,7 @@ PostgreSQL 数据保存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 - **保留数据目录。** 启动 1.2.0 时，工作目录里要有原来的 `data/`（或使用相同的 `OPENMAIC_CLASSROOMS_DIR`）；使用 Compose 时沿用同一个 `openmaic-data` 卷。1.1.x 以文件形式保存在 `data/classrooms` 下的课堂，会在启动后于后台导入数据库一次；没有这个目录的服务器没有可导入的内容。
 - **先设置身份模式。** 导入时，这些课堂归属于那次启动时配置的所有者：设置了单用户（`OWNER_SINGLE_USER=true`）或团队共享所有者（`PERSISTENCE_SHARED_OWNER_ID`）时归它们所有；否则（匿名模式）归专用所有者 `system:legacy-classrooms`，此时它们只能通过原链接以只读方式打开，也不会出现在任何课程库中。每个课堂只导入一次，所以在匿名模式下导入的课堂，之后即使再设置身份模式，也仍然属于 `system:legacy-classrooms`。
-- **列出模型。** 每个使用服务端托管凭据、并把所选模型发往上游的服务商（对话、图像、视频、语音合成、语音识别、基于模型的联网搜索）都需要显式的模型列表（`*_MODELS`，或 `openmaic.yml`、`server-providers.yml` 中该服务商下的 `models`）。没有列表时，只有默认模型、回退模型和槽位引用的模型获得授权；启动日志会逐一列出这类缺少列表的服务商。Tavily、文档解析器等没有模型选择的服务不需要列表。见[模型授权](./configuration.mdx#服务端托管服务商的模型授权)。
+- **列出模型。** 每个使用服务端托管凭据、并把所选模型发往上游的服务商（对话、图像、视频、语音合成、语音识别、基于模型的联网搜索）都需要显式的模型列表(`openmaic.yml`: `providers.<id>.models`)。没有列表时，只有默认模型、回退模型和槽位引用的模型获得授权；启动日志会逐一列出这类缺少列表的服务商。Tavily、文档解析器等没有模型选择的服务不需要列表。见[模型授权](./configuration.mdx#服务端托管服务商的模型授权)。
 - **渲染服务与应用一起升级。** 如果使用 MP4 视频导出，请在升级应用的同时或之前升级所有 render-service 实例：渲染任务绑定到所有者，新旧版本混用时会安全失败（拒绝请求）。
 - **检查课堂互动模型。** Pi 课堂对话会拒绝内置模型目录标明不支持工具调用的模型（`tool_calling_required`），也会拒绝 Google 的 OpenAI 兼容 Gemini 端点（`gemini_native_required`）。Gemini 请使用原生 `google` 预设，见 [LLM 提供方](./configuration.mdx#llm-提供方)。
 

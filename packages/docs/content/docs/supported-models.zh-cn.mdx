@@ -178,7 +178,7 @@ Google TTS 默认使用 `gemini-3.8-flash-lite-tts`，已显式选择的模型�
 
 `deepseek` 预设在对话、联网搜索和托管 Markdown 提取之间共享 `DEEPSEEK_API_KEY` 和 API 基础地址。搜索使用 `POST /v1/tools/search`，最多返回 50 条结果，查询按 Unicode code point 截断到 128 个字符，优先使用 `summary`，为空时回退到 `snippet`。抓取使用 `POST /v1/tools/fetch`，读取 `content` 和非空的可选 `title`。
 
-旧版配置需要设置 `WEB_SEARCH_DEEPSEEK_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.deepseek`。仅配置对话凭据不会启用搜索或替换已有搜索默认项。`WEB_SEARCH_DEEPSEEK_ENABLED=false` 会强制禁用搜索。存在 `openmaic.yml` 时，旧版变量不能指定槽位，必须显式声明服务商并指定 `webSearch` 和/或 `webFetch`。
+在 `openmaic.yml` 中声明服务商，并把它分配给 `webSearch` / `webFetch`。 `WEB_SEARCH_DEEPSEEK_ENABLED=false` 仍可强制禁用搜索。
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -199,7 +199,7 @@ slots:
 
 Open Platform 的 `https://api.moonshot.cn/v1` 和 `https://api.moonshot.ai/v1` 使用 `/tools/search_pro`，搜索结果正文由页面片段拼接而成，没有正文时回退到摘要。编程套餐的 `https://api.kimi.com/coding/v1` 和 `https://api.kimi.ai/coding/v1` 使用 `/search` 并启用页面抓取，优先使用页面正文，其次使用摘要。每次请求最多返回 20 条结果。
 
-在旧版配置中，仅配置对话密钥不会启用搜索。请设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.kimi`。使用 `openmaic.yml` 时，需要显式指定 `webSearch` 槽位。首次运行向导仅为使用官方 Base URL 的账户推荐搜索。
+通过 `openmaic.yml` 或模型设置配置服务商和槽位。 首次运行向导仅为使用官方 Base URL 的账户推荐搜索。
 
 端点按 Base URL 的路径选择：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。在 `openmaic.yml` 中配置的自定义代理必须保留这一端点路径结构。
 

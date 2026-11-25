@@ -178,7 +178,7 @@ Most web search providers have no model selector, so slots usually name them by 
 
 The `deepseek` preset shares `DEEPSEEK_API_KEY` and the API base across chat, web search and hosted Markdown extraction. Search uses `POST /v1/tools/search`, returns up to 50 results, truncates queries to 128 Unicode code points, and uses `summary` with `snippet` as a fallback. Fetch uses `POST /v1/tools/fetch` and reads `content` and an optional nonempty `title`.
 
-In legacy configuration, opt in with `WEB_SEARCH_DEEPSEEK_ENABLED=true` or an explicit `web-search.deepseek` entry in `server-providers.yml`. Chat credentials alone never enable search or replace another search default. `WEB_SEARCH_DEEPSEEK_ENABLED=false` force-disables search. When `openmaic.yml` exists, the legacy variable cannot assign a slot: explicitly declare the provider and assign `webSearch` and/or `webFetch`.
+Declare the provider and assign `webSearch` and/or `webFetch` in `openmaic.yml`. `WEB_SEARCH_DEEPSEEK_ENABLED=false` still force-disables search.
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -199,7 +199,7 @@ The `kimi` preset (Moonshot Open Platform) and `kimi-coding-plan` preset both se
 
 Open Platform bases `https://api.moonshot.cn/v1` and `https://api.moonshot.ai/v1` use `/tools/search_pro`; result content joins page chunks, falling back to the snippet. Coding Plan bases `https://api.kimi.com/coding/v1` and `https://api.kimi.ai/coding/v1` use `/search` with page crawling enabled; result content prefers page content over the snippet. Each request returns at most 20 results.
 
-Chat credentials alone do not enable search in legacy configuration. Opt in with `WEB_SEARCH_KIMI_ENABLED=true` or an explicit `web-search.kimi` entry in `server-providers.yml`. In `openmaic.yml`, explicitly assign the `webSearch` slot. The wizard recommends search only for official account bases.
+Configure providers and slots in `openmaic.yml` or Model Settings. The wizard recommends search only for official account bases.
 
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; every other base uses `/tools/search_pro`. Custom proxies configured in `openmaic.yml` must preserve that path layout.
 
