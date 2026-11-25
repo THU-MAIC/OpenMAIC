@@ -144,6 +144,7 @@ function PBLV3WorkspaceContent({
     finish: finishMessage,
     observe: observeMessage,
   } = useLearnerMessage(view, storageError, savedMessage);
+  const [speechActive, setSpeechActive] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   // Explanation-board mode: the code keeps the whole work area; the board floats over it
   // like the classroom whiteboard, and the role lives at the corner as a companion whose
@@ -483,6 +484,7 @@ function PBLV3WorkspaceContent({
               ? 'opening'
               : null;
   const disabled = blockedReason !== null;
+  const canSend = !disabled && !speechActive && !!text.trim();
   const onboardingBlocked =
     !!error ||
     preparationFailed ||
@@ -588,7 +590,7 @@ function PBLV3WorkspaceContent({
     : null;
   const blockedId = `pbl-input-blocked-${sceneId}`;
   const button =
-    'rounded-md border px-2 py-1 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
+    'rounded-md border px-2 py-1.5 text-xs disabled:opacity-40 hover:bg-muted aria-pressed:bg-primary aria-pressed:text-primary-foreground';
   // The role points at lines of a file or at something in the running application: whichever
   // it is comes into view, and the whiteboard steps aside for it.
   const pointAt = (point: NarrationTarget | null) => {
@@ -916,7 +918,7 @@ function PBLV3WorkspaceContent({
           {retry.current && retry.current.type !== 'prepare' && (
             <button
               className={button}
-              disabled={pending}
+              disabled={pending || (retry.current.type === 'chat' && speechActive)}
               onClick={() => void command('', {}, true)}
             >
               {t('pblV3.retry')}
@@ -1076,6 +1078,8 @@ function PBLV3WorkspaceContent({
                   inputId={`pbl-companion-chat-${sceneId}`}
                   text={text}
                   onTextChange={setText}
+                  speechActive={speechActive}
+                  onSpeechActiveChange={setSpeechActive}
                   command={command}
                 />
               ) : undefined
@@ -1161,7 +1165,7 @@ function PBLV3WorkspaceContent({
                   <header
                     data-window-drag={assistantMode === 'window' ? '' : undefined}
                     className={cn(
-                      'pbl-chrome relative z-30 flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs',
+                      'pbl-pane-header pbl-chrome relative z-30 flex shrink-0 items-center gap-2 border-b px-3 text-xs',
                       boardMode &&
                         assistantMode === 'window' &&
                         'cursor-grab active:cursor-grabbing',
@@ -1189,9 +1193,9 @@ function PBLV3WorkspaceContent({
                       </>
                     ) : (
                       <>
-                        <MessageSquareText size={15} />
-                        <h3 className="font-semibold">{t('pblV3.learning')}</h3>
-                        <span className="ml-auto text-muted-foreground">
+                        <MessageSquareText size={15} className="shrink-0" />
+                        <h3 className="min-w-0 truncate font-semibold">{t('pblV3.learning')}</h3>
+                        <span className="ml-auto truncate text-muted-foreground">
                           {view.role ? t(`pblV3.roles.${view.role}`) : t('pblV3.checks')}
                         </span>
                       </>
@@ -1441,7 +1445,7 @@ function PBLV3WorkspaceContent({
                       className="shrink-0 border-t bg-background p-3"
                       onSubmit={(event) => {
                         event.preventDefault();
-                        if (!disabled && text.trim()) void command('chat', { text });
+                        if (canSend) void command('chat', { text });
                       }}
                     >
                       {blockedReason &&
@@ -1476,6 +1480,7 @@ function PBLV3WorkspaceContent({
                         </span>
                       )}
                       <LearnerComposer
+                        key={view.id}
                         id={`pbl-chat-${sceneId}`}
                         text={text}
                         onTextChange={setText}
@@ -1489,8 +1494,9 @@ function PBLV3WorkspaceContent({
                           blockedReason ? t(`pblV3.inputBlocked.${blockedReason}`) : undefined
                         }
                         describedBy={blockedReason ? blockedId : undefined}
-                        // With the role as a companion, speaking is offered wherever typing is.
-                        voice={boardMode}
+                        voice={boardMode ? assistantMode !== 'closed' : showAssistant}
+                        speechActive={speechActive}
+                        onSpeechActiveChange={setSpeechActive}
                         classic={!boardMode}
                       />
                     </form>

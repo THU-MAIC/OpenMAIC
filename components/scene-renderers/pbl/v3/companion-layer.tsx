@@ -47,6 +47,8 @@ export function CompanionLayer({
   inputId,
   text,
   onTextChange,
+  speechActive,
+  onSpeechActiveChange,
   command,
 }: {
   view: LearningView;
@@ -75,7 +77,9 @@ export function CompanionLayer({
   blockedReason: string | null;
   inputId: string;
   text: string;
-  onTextChange: (text: string) => void;
+  onTextChange: (update: React.SetStateAction<string>) => void;
+  speechActive: boolean;
+  onSpeechActiveChange: (active: boolean) => void;
   command: (type: string, payload?: Record<string, unknown>) => Promise<boolean>;
 }) {
   const { t } = useI18n();
@@ -199,6 +203,8 @@ export function CompanionLayer({
               inputId={inputId}
               text={text}
               onTextChange={onTextChange}
+              speechActive={speechActive}
+              onSpeechActiveChange={onSpeechActiveChange}
               onSend={(message) => void command('chat', { text: message })}
               sending={pendingAction === 'chat'}
               showControls={introducing}

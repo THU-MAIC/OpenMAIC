@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, type CSSProperties } from 'react';
 import {
   createInteractiveMediaSession,
   mediaDocumentId,
@@ -13,7 +13,6 @@ import {
   useInteractiveIframePool,
   type IframePoolEntry,
 } from '@/lib/store/interactive-iframe-pool';
-import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 import { GENUI_LOGICAL_HEIGHT, GENUI_LOGICAL_WIDTH } from '@/lib/interactive/logical-viewport';
 import {
   GENUI_FIT_REPORT_REQUEST,
@@ -31,7 +30,6 @@ import {
   INTERACTIVE_OUTERHTML_MAX,
   makeInteractiveElementRef,
 } from '@/lib/workbench/element-refs';
-import { InteractiveRuntimeErrorBanner } from './InteractiveRuntimeErrorBanner';
 import { InteractiveMoreBelowCue } from './InteractiveMoreBelowCue';
 
 type InteractivePickerMessage = {
@@ -256,9 +254,6 @@ function PooledIframe({
       mediaSession.current = null;
     };
   }, [mediaId, onMediaPlay, visible]);
-  const runtimeErrors = useSceneRuntimeErrors((state) => state.errors[sceneId]);
-  const runtimeErrorSignature = runtimeErrors?.join('\n') ?? '';
-  const [dismissedRuntimeSignature, setDismissedRuntimeSignature] = useState<string | null>(null);
   // `srcDoc` already carries every shim, the observation reader included; the
   // reader is installed for each pooled document and one that publishes no
   // outlet answers `no-interface`. This reads the identity baked into that
@@ -371,30 +366,12 @@ function PooledIframe({
     });
   }, [effectiveMode, entry.srcDoc, getSendMessage, playbackSelectedSelector, sceneId, selectors]);
 
-  // Capture runtime errors the iframe's error shim posts out (see iframe.ts).
-  // The active scene's banner reads this store. Matched to THIS iframe by
-  // event.source (sandboxed null-origin iframes still postMessage to the parent).
-  //
-  // The errors that matter most (a JSON.parse that aborts setup) fire while srcDoc
-  // parses — possibly BEFORE this passive effect subscribes. The shim buffers every
-  // error and re-emits it on request, so after subscribing we ask for a replay to
-  // recover anything posted pre-subscription. Re-subscribed per document version
-  // (entry.srcDoc) so each fresh page gets its own replay request; addError dedups
-  // the live + replayed copies. iframeRef is read lazily, so the handler is stable.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
       if (handleFitMessage(e.data)) return;
-      const d = e.data as
-        | (InteractivePickerMessage & { errorKind?: string; message?: unknown })
-        | undefined;
-      if (!d || d.__maicInteractive !== true) return;
-      if (d.kind === 'runtime-error') {
-        const kind = typeof d.errorKind === 'string' ? d.errorKind : 'error';
-        const msg = typeof d.message === 'string' ? d.message : String(d.message ?? '');
-        useSceneRuntimeErrors.getState().addError(sceneId, `[${kind}] ${msg}`);
-        return;
-      }
+      const d = e.data as InteractivePickerMessage | undefined;
+      if (!d || d.__maicInteractive !== true || d.kind === 'runtime-error') return;
       if (
         onPlaybackPick &&
         onPlaybackCancel &&
@@ -411,7 +388,6 @@ function PooledIframe({
       if (effectiveMode === 'editor') handleInteractivePickerMessage(sceneId, d, t);
     };
     window.addEventListener('message', onMessage);
-    iframeRef.current?.contentWindow?.postMessage({ __maicErrorReplayRequest: true }, '*');
     iframeRef.current?.contentWindow?.postMessage(GENUI_FIT_REPORT_REQUEST, '*');
     return () => window.removeEventListener('message', onMessage);
   }, [
@@ -424,13 +400,6 @@ function PooledIframe({
     playbackArmed,
     t,
   ]);
-
-  // A content change reloads the iframe; drop the previous render's errors so the
-  // captured set reflects the CURRENT page (e.g. after the agent applies a fix).
-  useEffect(() => {
-    setDismissedRuntimeSignature(null);
-    useSceneRuntimeErrors.getState().clearScene(sceneId);
-  }, [sceneId, entry.srcDoc]);
 
   const clip = entry.clip ?? rect;
   // Fitted to the slot and to the content extent the page reports: a page
@@ -450,11 +419,6 @@ function PooledIframe({
     visibleViewport.height > 0 &&
     rect.width > 0 &&
     rect.height > 0;
-  const latestRuntimeError = runtimeErrors?.[runtimeErrors.length - 1];
-  const showRuntimeError =
-    shown &&
-    typeof latestRuntimeError === 'string' &&
-    dismissedRuntimeSignature !== runtimeErrorSignature;
   const wrapStyle: CSSProperties = {
     position: 'fixed',
     left: visibleViewport?.left ?? 0,
@@ -496,13 +460,7 @@ function PooledIframe({
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-forms allow-popups"
       />
-      {showRuntimeError && latestRuntimeError ? (
-        <InteractiveRuntimeErrorBanner
-          message={latestRuntimeError}
-          onDismiss={() => setDismissedRuntimeSignature(runtimeErrorSignature)}
-        />
-      ) : null}
-      {shown && fit.showMoreCue && !showRuntimeError && !playbackArmed ? (
+      {shown && fit.showMoreCue && !playbackArmed ? (
         <InteractiveMoreBelowCue
           onClick={() =>
             iframeRef.current?.contentWindow?.postMessage(GENUI_FIT_SCROLL_REQUEST, '*')

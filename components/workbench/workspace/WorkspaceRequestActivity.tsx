@@ -219,9 +219,11 @@ export function WorkspaceRequestActivity({
 }
 
 /**
- * Which open question the preview hosts as its form. Decided here rather than
- * inside an animated child, so the conversation hands its form over the moment
- * the question is on screen.
+ * Which open question the preview hosts as its form: the preview is on screen,
+ * the conversation has published its answer path, and the user has not handed
+ * this question back. The claim that turns the conversation's own form into a
+ * pointer here is made by the card once that form is on the page
+ * (`QuestionCard`), never from the view alone (#2283).
  */
 function useHostedQuestion(
   view: RequestPreviewView,
@@ -232,21 +234,12 @@ function useHostedQuestion(
   readonly handBack: () => void;
 } {
   const answer = useQuestionHost((s) => s.answer);
-  const setPreviewKey = useQuestionHost((s) => s.setPreviewKey);
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const [handedBack, setHandedBack] = useState<string | null>(null);
   const node = view.question?.node ?? null;
   // Question keys repeat across conversations: both memories carry the conversation.
   const nodeKey = node ? sessionScopedKey(sessionId, node.key) : null;
   const hosted = node && !hidden && answer !== null && handedBack !== nodeKey ? node : null;
-  const hostedKey = hosted ? nodeKey : null;
-  useEffect(() => {
-    if (!hostedKey) return;
-    setPreviewKey(hostedKey);
-    return () => {
-      if (useQuestionHost.getState().previewKey === hostedKey) setPreviewKey(null);
-    };
-  }, [hostedKey, setPreviewKey]);
   return { node: hosted, handBack: () => nodeKey && setHandedBack(nodeKey) };
 }
 
@@ -420,42 +413,48 @@ function RequestPreview({
             asking ? 'max-w-2xl' : revealing ? 'max-w-4xl' : 'max-w-lg',
           )}
         >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              key={
-                asking && view.question
-                  ? `question-${sessionScopedKey(sessionId, view.question.node.key)}`
-                  : revealing
-                    ? 'roster'
-                    : 'scene'
-              }
-              className="w-full"
-              initial={reduced ? false : { opacity: 0, y: 12, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={reduced ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
-              transition={{ duration: reduced ? 0 : 0.35, ease: EASE }}
+          {asking && view.question ? (
+            // The agent waits on the user: the question takes the screen at
+            // once, never after the previous scene's exit. Motion runs exits
+            // on animation frames, which a covered window or a stalled
+            // frameloop does not produce, and the one answer form would wait
+            // with them (#2283). Its entrance is CSS for the same reason.
+            <div
+              key={`question-${sessionScopedKey(sessionId, view.question.node.key)}`}
+              className="w-full animate-in fade-in-0 zoom-in-98 slide-in-from-bottom-3 duration-[350ms] ease-[cubic-bezier(0.22,0.61,0.36,1)] motion-reduce:animate-none"
             >
-              {asking && view.question ? (
-                <QuestionCard
-                  question={view.question.node}
-                  hosted={hosted.node}
-                  onHandBack={hosted.handBack}
-                  skills={view.skills}
-                  t={t}
-                />
-              ) : revealing && view.roster ? (
-                <div
-                  data-testid="request-preview-card"
-                  className={cn(CARD, 'items-center px-6 pb-7 pt-5 text-center md:px-8')}
-                >
-                  <EquippedSkills skills={view.skills} t={t} className="mb-4" />
-                  <RosterRevealVisualizer key={revealKey} agents={view.roster} />
-                </div>
-              ) : (
-                <SceneCard view={view} copy={copy} prompt={prompt} t={t} />
-              )}
-            </motion.div>
-          </AnimatePresence>
+              <QuestionCard
+                question={view.question.node}
+                hosted={hosted.node}
+                onHandBack={hosted.handBack}
+                skills={view.skills}
+                t={t}
+              />
+            </div>
+          ) : (
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={revealing ? 'roster' : 'scene'}
+                className="w-full"
+                initial={reduced ? false : { opacity: 0, y: 12, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={reduced ? { opacity: 0 } : { opacity: 0, y: -8, scale: 0.98 }}
+                transition={{ duration: reduced ? 0 : 0.35, ease: EASE }}
+              >
+                {revealing && view.roster ? (
+                  <div
+                    data-testid="request-preview-card"
+                    className={cn(CARD, 'items-center px-6 pb-7 pt-5 text-center md:px-8')}
+                  >
+                    <EquippedSkills skills={view.skills} t={t} className="mb-4" />
+                    <RosterRevealVisualizer key={revealKey} agents={view.roster} />
+                  </div>
+                ) : (
+                  <SceneCard view={view} copy={copy} prompt={prompt} t={t} />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          )}
 
           <div
             className={cn(
@@ -598,10 +597,21 @@ function QuestionCard({
   readonly t: Translate;
 }) {
   const answer = useQuestionHost((s) => s.answer);
+  const setPreviewKey = useQuestionHost((s) => s.setPreviewKey);
   // Node keys repeat across sessions; keying the form by session keeps one
   // conversation's in-flight form state off another's question.
   const sessionId = useWorkbenchStore((s) => s.sessionId);
   const details = question.questionDetails;
+  // The form below is on the page from this commit on: only now does the
+  // conversation hand its own form over and point here.
+  const formKey = hosted && answer ? sessionScopedKey(sessionId, hosted.key) : null;
+  useEffect(() => {
+    if (!formKey) return;
+    setPreviewKey(formKey);
+    return () => {
+      if (useQuestionHost.getState().previewKey === formKey) setPreviewKey(null);
+    };
+  }, [formKey, setPreviewKey]);
   return (
     // The whole card is the question's surface: hovering any of it (the plan
     // included) pauses an auto-confirm countdown, and pressing any of it stops it.

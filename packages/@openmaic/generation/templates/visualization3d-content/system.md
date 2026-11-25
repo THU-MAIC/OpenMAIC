@@ -621,34 +621,37 @@ switch (action) {
 
 ### 2. Teacher Actions Listener Pattern
 
+Register the listener inside `initScene()`, in the same scope as `const camera` and `const objects`, after both have been initialized. Store each highlightable object's meshes in `objects` under its stable target selector. The optional scale example applies to a visualization that stores a scalable group as `objects.cellGroup`.
+
 Always wrap switch cases in braces:
 
 ```javascript
 window.addEventListener('message', (event) => {
-  const { action, payload } = event.data;
-  
-  switch (action) {
+  const { type, state, target, content } = event.data || {};
+
+  switch (type) {
     case 'SET_WIDGET_STATE': {
-      if (payload.cameraPosition) camera.position.set(...payload.cameraPosition);
-      if (payload.scale !== undefined) {
-        objects.cellGroup.scale.setScalar(payload.scale);
+      if (state?.cameraPosition) camera.position.set(...state.cameraPosition);
+      if (state?.scale !== undefined && objects.cellGroup) {
+        objects.cellGroup.scale.setScalar(state.scale);
       }
       break;
     }
-    
+
     case 'HIGHLIGHT_ELEMENT': {
-      const { elementId, highlight } = payload;
-      if (objects[elementId]) {
-        objects[elementId].forEach(mesh => {
-          mesh.material.emissive.set(highlight ? 0xffff00 : 0x000000);
-        });
-      }
+      objects[target]?.forEach(mesh => {
+        mesh.material.emissive.set(0xffff00);
+      });
       break;
     }
-    
+
     case 'ANNOTATE_ELEMENT': {
-      const { elementId, text } = payload;
-      // Create annotation tooltip
+      // Create a temporary annotation at target using content.
+      break;
+    }
+
+    case 'REVEAL_ELEMENT': {
+      // Show the object or control identified by target.
       break;
     }
   }

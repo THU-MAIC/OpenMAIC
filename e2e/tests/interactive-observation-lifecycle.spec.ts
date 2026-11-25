@@ -393,9 +393,6 @@ const widget={documentTokenByScene:{},sendMessageByScene:{},registerObservation(
 const useWidgetIframeStore=Object.assign(selector=>selector(widget),{getState:()=>widget});
 const useCanvasStore={use:{pickTarget:()=>null}};
 const useElementRefsStore={use:{refs:()=>[]}};
-const runtimeErrorState={errors:{},clearScene(){}};
-const useSceneRuntimeErrors=Object.assign((selector)=>selector(runtimeErrorState),{getState:()=>runtimeErrorState});
-const InteractiveRuntimeErrorBanner=()=>null;
 const InteractiveMoreBelowCue=()=>null;
 const resolveInteractivePickerMode=()=>null;
 import { GENUI_LOGICAL_WIDTH, GENUI_LOGICAL_HEIGHT } from './lib/interactive/logical-viewport';

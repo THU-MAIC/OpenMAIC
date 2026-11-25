@@ -114,6 +114,12 @@ describe('standalone player playback key', () => {
 });
 
 describe('standalone player media key', () => {
+  it.each(['VIDEO', 'AUDIO'])('leaves the arrow keys to focused %s controls', (tagName) => {
+    const target = { tagName };
+    expect(navigationActionForKey({ key: 'ArrowLeft', target })).toBeNull();
+    expect(navigationActionForKey({ key: 'ArrowRight', target })).toBeNull();
+  });
+
   it('lets the player toggle a focused video or audio element on Space', () => {
     expect(isMediaToggleKey({ key: ' ', target: { tagName: 'VIDEO' } })).toBe(true);
     expect(isMediaToggleKey({ key: ' ', target: { tagName: 'AUDIO' } })).toBe(true);

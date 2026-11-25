@@ -88,6 +88,7 @@ import {
 } from './skills';
 import { registerSessionUrls } from './session-urls';
 import { buildScenePreviewTools } from './scene-preview';
+import { createInteractiveRuntimeClient } from './interactive-runtime';
 import {
   AgentSessionEntryStorage,
   loadSessionEntryHistory,
@@ -1791,6 +1792,9 @@ async function executeSession(
             imageConnection: capabilities.connections.image,
             videoConnection: capabilities.connections.video,
             capabilities,
+            checkInteractiveRuntime: capabilities.isAvailable('interactive_runtime_check')
+              ? createInteractiveRuntimeClient(meta.ownerId)
+              : undefined,
             stageAccess,
             onCheckpoint: (info) => emit(LIFECYCLE.checkpoint, info),
             sessionId: id,

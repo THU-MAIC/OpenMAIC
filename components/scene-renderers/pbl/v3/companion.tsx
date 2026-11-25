@@ -249,6 +249,8 @@ export function Companion({
   sending = false,
   text,
   onTextChange,
+  speechActive,
+  onSpeechActiveChange,
   onSend,
 }: {
   view: LearningView;
@@ -278,7 +280,9 @@ export function Companion({
   /** The learner's message is on its way. */
   sending?: boolean;
   text: string;
-  onTextChange: (text: string) => void;
+  onTextChange: (update: React.SetStateAction<string>) => void;
+  speechActive: boolean;
+  onSpeechActiveChange: (active: boolean) => void;
   onSend: (text: string) => void;
   /** What the stage asks the learner to do here, such as a decision to make. */
   task?: ReactNode;
@@ -405,7 +409,7 @@ export function Companion({
           >
             <SuggestedReplies
               labels={suggestions}
-              disabled={disabled}
+              disabled={disabled || speechActive}
               onPick={onSend}
               avatar={DEFAULT_USER_AVATAR}
               full
@@ -422,9 +426,12 @@ export function Companion({
           className="pointer-events-auto relative z-10 me-6 w-full shrink-0"
         >
           <LearnerComposer
+            key={view.id}
             id={inputId}
             text={text}
             onTextChange={onTextChange}
+            speechActive={speechActive}
+            onSpeechActiveChange={onSpeechActiveChange}
             onSend={() => onSend(text)}
             // While the role has the floor the send button stops it, as in the conversation.
             busy={active}

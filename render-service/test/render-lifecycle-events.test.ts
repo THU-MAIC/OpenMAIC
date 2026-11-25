@@ -98,9 +98,10 @@ describe('render job lifecycle events', () => {
     expect(started.queueWaitMs).toBeGreaterThanOrEqual(0);
     expect(events[2]).toMatchObject({ jobId: id, outcome: 'succeeded' });
     expect(typeof events[2]!.durationMs).toBe('number');
+    expect(events[2]).not.toHaveProperty('failureReason');
   });
 
-  it('reports a failed render with its failure code and never its message', async () => {
+  it('reports a failed render with its failure code and a sanitized reason', async () => {
     const events: RenderEvent[] = [];
     const { coordinator, jobs } = coordinatorWith(events, async () => {
       throw new Error('chromium crashed at /tmp/secret-project/scene.html');
@@ -117,7 +118,31 @@ describe('render job lifecycle events', () => {
     expect(finished).toMatchObject({ outcome: 'failed', errorCode: 'execution_failed' });
     // The free-text message carries a scratch path; it must not reach the log.
     expect(JSON.stringify(events)).not.toContain('secret-project');
-    expect(JSON.stringify(events)).not.toContain('chromium crashed');
+    expect(finished).toHaveProperty('failureReason', 'chromium crashed at [path]');
+  });
+
+  it('logs a returned executor failure with its paths and URLs masked', async () => {
+    const events: RenderEvent[] = [];
+    const { coordinator, jobs } = coordinatorWith(events, async () => ({
+      status: 'failed',
+      failure: {
+        code: 'execution_failed',
+        message:
+          'ENOENT: no such file or directory, open /tmp/private-course/index.html\n\tat https://cdn.example.com/lesson?sig=Private',
+      },
+    }));
+    const id = await submitRender(coordinator, 'tester', await projectDir(), {
+      fps: 24,
+      quality: 'draft',
+      format: 'mp4',
+    });
+    await waitForJob(jobs, id, (job) => job.status === 'failed');
+    expect(events.find((event) => event.event === 'render_job_finished')).toMatchObject({
+      jobId: id,
+      outcome: 'failed',
+      errorCode: 'execution_failed',
+      failureReason: 'ENOENT: no such file or directory, open [path] at [url]',
+    });
   });
 
   it('reports a cancelled render as cancelled rather than failed', async () => {
@@ -144,6 +169,9 @@ describe('render job lifecycle events', () => {
     expect(events.find((event) => event.event === 'render_job_finished')).toMatchObject({
       outcome: 'cancelled',
     });
+    expect(events.find((event) => event.event === 'render_job_finished')).not.toHaveProperty(
+      'failureReason',
+    );
   });
 
   it('closes a job exactly once when the terminal job-store write rejects', async () => {

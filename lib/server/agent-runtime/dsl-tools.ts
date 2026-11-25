@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
@@ -26,6 +27,7 @@ import {
 } from './course-edit/media-byte-omission';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { validateSlideCanvas } from './course-edit/element-schema';
+import { interactiveRuntimeFeedback } from './interactive-runtime';
 
 const READ_PAGE_CHARS = 12_000;
 const SEARCH_CONTEXT_CHARS = 200;
@@ -1196,6 +1198,13 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
           );
         }
       }
+      const previous = resolved.scene;
+      const checkRuntime =
+        deps.checkInteractiveRuntime &&
+        next.type === 'interactive' &&
+        previous.type === 'interactive' &&
+        (next.content.html !== previous.content.html ||
+          !isDeepStrictEqual(next.actions, previous.actions));
       try {
         await runStageMutation(signal, () =>
           putSceneBringingCurrent(deps.store, loaded.stageId, next),
@@ -1220,12 +1229,23 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
         (detail.notes ?? []).map((note) => `op ${index + 1}: ${note}`),
       );
       const summary = `Updated scene "${next.title}": ${params.intent}`;
-      return toolResult(notes.length ? `${summary}\nNotes: ${notes.join('; ')}` : summary, {
-        intent: params.intent,
-        updated: { sceneId: next.id, order: next.order, type: next.type, ops: params.ops.length },
-        ops: opDetails,
-        tree: sceneTree(next),
-      });
+      const runtimeFeedback = checkRuntime
+        ? await interactiveRuntimeFeedback(
+            deps.checkInteractiveRuntime,
+            next,
+            loaded.doc.stage,
+            signal ?? deps.abortSignal,
+          )
+        : '';
+      return toolResult(
+        `${summary}${notes.length ? `\nNotes: ${notes.join('; ')}` : ''}${runtimeFeedback}`,
+        {
+          intent: params.intent,
+          updated: { sceneId: next.id, order: next.order, type: next.type, ops: params.ops.length },
+          ops: opDetails,
+          tree: sceneTree(next),
+        },
+      );
     },
   };
 

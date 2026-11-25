@@ -167,6 +167,9 @@
     "videoQueueFull": "レンダリングキューが混雑しています。しばらくしてから再試行してください。",
     "videoRenderInProgress": "レンダリング処理がすでに進行中です。しばらくしてから再試行してください。",
     "videoTooLarge": "エクスポートファイルがサービスのサイズ上限を超えています。",
+    "videoUploading": "ビデオプロジェクトをアップロード中...",
+    "videoQueued": "レンダリングキューで待機中...",
+    "videoQueuePosition": "キュー待機中、{{position}} 番目",
     "videoWarnings": "{{assets}} 個の素材が不足しており、エクスポートレポートに {{diagnostics}} 件の問題があります。",
     "videoMp4Success": "動画をレンダリングしました",
     "videoServiceUnavailable": "レンダーサービスが未設定です — ローカルレンダリング用にプロジェクト ZIP をダウンロードしました。",
@@ -267,10 +270,6 @@
         "videoMetadata": "動画（メタデータのみ）",
         "audioMetadata": "音声（メタデータのみ）"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "このインタラクティブは実行できませんでした",
-      "dismiss": "閉じる"
     },
     "interactiveMoreBelow": "下に続きがあります",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "{{name}}とのプロジェクトガイドはここから始まります。",
         "continueError": "続行できません：{{error}}",
         "stillTyping": "まだ入力中",
-        "handoverHint": "「次のステージへ進む」を押してください。"
+        "handoverHint": "「次のステージへ進む」を押してください。",
+        "emptyOutput": "今回は新しい応答がありませんでした。もう一度お試しください。"
       },
       "scene": {
         "expand": "展開",

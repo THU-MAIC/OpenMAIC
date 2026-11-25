@@ -167,6 +167,9 @@
     "videoQueueFull": "La file d’attente de rendu est pleine. Réessayez dans quelques instants.",
     "videoRenderInProgress": "Un rendu est déjà en cours. Réessayez dans quelques instants.",
     "videoTooLarge": "Le fichier d’exportation dépasse la taille maximale autorisée par le service.",
+    "videoUploading": "Envoi du projet vidéo...",
+    "videoQueued": "Dans la file d’attente de rendu...",
+    "videoQueuePosition": "Dans la file, position {{position}}",
     "videoWarnings": "Rapport d’export : {{assets}} ressources manquantes et {{diagnostics}} problèmes.",
     "videoMp4Success": "Vidéo générée",
     "videoServiceUnavailable": "Service de rendu non configuré. Le ZIP du projet a été téléchargé pour un rendu local.",
@@ -267,10 +270,6 @@
         "videoMetadata": "Vidéo (métadonnées uniquement)",
         "audioMetadata": "Audio (métadonnées uniquement)"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "Cette activité interactive n'a pas pu s'exécuter",
-      "dismiss": "Fermer"
     },
     "interactiveMoreBelow": "Suite plus bas",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "Votre parcours de projet avec {{name}} commencera ici.",
         "continueError": "Impossible de continuer : {{error}}",
         "stillTyping": "Toujours en train d’écrire",
-        "handoverHint": "Cliquez sur « Passer à l’étape suivante » pour poursuivre."
+        "handoverHint": "Cliquez sur « Passer à l’étape suivante » pour poursuivre.",
+        "emptyOutput": "Aucune nouvelle réponse n'est arrivée cette fois. Veuillez réessayer."
       },
       "scene": {
         "expand": "Déplier",

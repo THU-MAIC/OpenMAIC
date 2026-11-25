@@ -167,6 +167,9 @@
     "videoQueueFull": "A fila de renderização está cheia. Tente novamente em instantes.",
     "videoRenderInProgress": "Uma renderização já está em andamento. Tente novamente em instantes.",
     "videoTooLarge": "O arquivo de exportação excede o limite de tamanho do serviço.",
+    "videoUploading": "Enviando projeto de vídeo...",
+    "videoQueued": "Na fila de renderização...",
+    "videoQueuePosition": "Na fila, posição {{position}}",
     "videoWarnings": "{{assets}} recurso(s) ausente(s) e {{diagnostics}} problema(s) no relatório de exportação.",
     "videoMp4Success": "Vídeo renderizado",
     "videoServiceUnavailable": "Serviço de renderização não configurado — o ZIP do projeto foi baixado para renderização local.",
@@ -267,10 +270,6 @@
         "videoMetadata": "Vídeo (somente metadados)",
         "audioMetadata": "Áudio (somente metadados)"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "Esta atividade interativa não pôde ser executada",
-      "dismiss": "Fechar"
     },
     "interactiveMoreBelow": "Há mais abaixo",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "Your project walkthrough with {{name}} will start here.",
         "continueError": "Unable to continue: {{error}}",
         "stillTyping": "Still typing",
-        "handoverHint": "Click \"Continue to Next Stage\" to keep going."
+        "handoverHint": "Click \"Continue to Next Stage\" to keep going.",
+        "emptyOutput": "Nenhuma nova resposta chegou desta vez. Tente novamente."
       },
       "scene": {
         "expand": "Expandir",

@@ -31,13 +31,13 @@ export function applyNavigation(index: number, action: NavigationAction, count: 
   }
 }
 
-const EDITABLE_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+const ARROW_KEY_CONTROL_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'VIDEO', 'AUDIO']);
 
 /**
  * The navigation a key press asks for, or `null`. Only Left/Right navigate:
  * Up/Down, PageUp/PageDown and Home/End keep scrolling long quiz and PBL
- * scenes. Keys typed into a form field (a quiz answer) or with a modifier held
- * are never navigation.
+ * scenes. Form fields and media controls keep their arrow keys. Keys with a
+ * modifier held are never navigation.
  */
 export function navigationActionForKey(event: {
   key: string;
@@ -48,7 +48,9 @@ export function navigationActionForKey(event: {
 }): NavigationAction | null {
   if (event.altKey || event.ctrlKey || event.metaKey) return null;
   const target = event.target;
-  if (target && (EDITABLE_TAGS.has(target.tagName ?? '') || target.isContentEditable)) return null;
+  if (target && (ARROW_KEY_CONTROL_TAGS.has(target.tagName ?? '') || target.isContentEditable)) {
+    return null;
+  }
   switch (event.key) {
     case 'ArrowLeft':
       return 'previous';

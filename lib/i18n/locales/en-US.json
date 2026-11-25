@@ -167,6 +167,9 @@
     "videoQueueFull": "The render queue is busy. Please try again shortly.",
     "videoRenderInProgress": "A render is already in progress. Please try again shortly.",
     "videoTooLarge": "The export archive exceeds the service's size limit.",
+    "videoUploading": "Uploading video project...",
+    "videoQueued": "Waiting in render queue...",
+    "videoQueuePosition": "In queue, position {{position}}",
     "videoWarnings": "{{assets}} asset(s) missing and {{diagnostics}} issue(s) in the export report.",
     "videoMp4Success": "Video rendered",
     "videoServiceUnavailable": "Render service not configured — downloaded the project ZIP for local rendering.",
@@ -267,10 +270,6 @@
         "videoMetadata": "Video (metadata only)",
         "audioMetadata": "Audio (metadata only)"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "This interactive failed to run",
-      "dismiss": "Dismiss"
     },
     "interactiveMoreBelow": "More below",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "Your project walkthrough with {{name}} will start here.",
         "continueError": "Unable to continue: {{error}}",
         "stillTyping": "Still typing",
-        "handoverHint": "Click \"Continue to Next Stage\" to keep going."
+        "handoverHint": "Click \"Continue to Next Stage\" to keep going.",
+        "emptyOutput": "No new response came through this turn. Please try again."
       },
       "scene": {
         "expand": "Expand",

@@ -379,7 +379,7 @@ function ApplicationPreviewContent({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-background"
       data-testid="pbl-application-panel"
     >
-      <header className="relative flex shrink-0 items-center gap-2 border-b px-3 py-2 text-xs">
+      <header className="pbl-pane-header relative flex shrink-0 items-center gap-2 border-b px-3 text-xs">
         <AppWindow size={15} className="shrink-0" />
         <h3 className="min-w-0 flex-1 truncate font-semibold">{application.title}</h3>
         <DismissibleDetails>

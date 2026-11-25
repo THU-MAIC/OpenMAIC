@@ -10,7 +10,11 @@ import type {
   RenderExecutionResult,
   RenderJobRecord,
 } from '../src/types.js';
-import { createMemoryArtifactStore, createMemoryJobStore } from './support/fakes.js';
+import {
+  createMemoryArtifactStore,
+  createMemoryJobStore,
+  succeedingExecutor,
+} from './support/fakes.js';
 import { owner, submitRender } from './support/identities.js';
 
 const scratch: string[] = [];
@@ -68,6 +72,33 @@ async function waitForCleanup(path: string): Promise<void> {
 }
 
 const renderOptions = { fps: 30, quality: 'standard', format: 'mp4' } as const;
+
+describe('RenderCoordinator queue position', () => {
+  it('returns 0 for the first queued job, 1 for the second', async () => {
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
+    const coordinator = new RenderCoordinator(succeedingExecutor, jobs, artifacts.store, {
+      maxConcurrency: 0,
+    });
+    const dir1 = await projectDir();
+    const dir2 = await projectDir();
+    const id1 = await submitRender(coordinator, 'user-a', dir1, renderOptions);
+    const id2 = await submitRender(coordinator, 'user-b', dir2, renderOptions);
+    expect(coordinator.getQueuePosition(id1)).toBe(0);
+    expect(coordinator.getQueuePosition(id2)).toBe(1);
+  });
+
+  it('returns null for a running or unknown job', async () => {
+    const jobs = createMemoryJobStore();
+    const artifacts = createMemoryArtifactStore();
+    const coordinator = new RenderCoordinator(succeedingExecutor, jobs, artifacts.store);
+    const dir1 = await projectDir();
+    const id1 = await submitRender(coordinator, 'user-a', dir1, renderOptions);
+    await waitForJob(jobs, id1, (j) => j.status === 'succeeded');
+    expect(coordinator.getQueuePosition(id1)).toBeNull();
+    expect(coordinator.getQueuePosition('nonexistent')).toBeNull();
+  });
+});
 
 describe('RenderCoordinator through the RenderExecutor seam', () => {
   it('persists normalized progress, performance, and the artifact on success', async () => {

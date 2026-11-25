@@ -2,6 +2,7 @@
 import { act, createElement, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import * as audio from '@/lib/hooks/use-audio-recorder';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningSnapshot } from '@/lib/pbl/v3/event-stream';
 import { ONBOARDING_STORAGE_KEY } from '@/lib/pbl/v3/onboarding';
@@ -210,6 +211,44 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   returned.mockClear();
   mocks.reconnect.mockClear();
+});
+
+it('keeps a typed draft unsent until speech processing finishes', async () => {
+  view.id = 'speech-study';
+  view.onboardingCompleted = true;
+  view.needsOpening = false;
+  let processing = true;
+  const useRecorder = audio.useAudioRecorder;
+  const recorder = vi.spyOn(audio, 'useAudioRecorder').mockImplementation((options) => ({
+    ...useRecorder(options),
+    isProcessing: processing,
+  }));
+  await render(false);
+  await publish();
+  const form = host.querySelector<HTMLFormElement>('[data-pbl-tour="composer"]')!;
+  const input = form.querySelector('textarea')!;
+  const send = form.querySelector<HTMLButtonElement>('[aria-label="pblV3.send"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+      input,
+      'Typed',
+    );
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(send.disabled).toBe(true);
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    form.requestSubmit();
+  });
+  expect(commands).toEqual([]);
+  await act(async () => {
+    recorder.mock.lastCall![0]!.onTranscription!('and spoken');
+    processing = false;
+  });
+  await publish();
+  expect(input.value).toBe('Typed and spoken');
+  await click(send);
+  expect(commands).toEqual([expect.objectContaining({ type: 'chat', text: 'Typed and spoken' })]);
 });
 
 it.each([false, true])(

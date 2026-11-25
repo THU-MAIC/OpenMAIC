@@ -167,6 +167,9 @@
     "videoQueueFull": "Die Render-Warteschlange ist voll. Bitte versuche es in Kürze erneut.",
     "videoRenderInProgress": "Ein Rendervorgang läuft bereits. Bitte versuche es in Kürze erneut.",
     "videoTooLarge": "Das Exportarchiv überschreitet die Größenbeschränkung des Dienstes.",
+    "videoUploading": "Videoprojekt wird hochgeladen...",
+    "videoQueued": "Warte in der Rendering-Warteschlange...",
+    "videoQueuePosition": "In der Warteschlange, Position {{position}}",
     "videoWarnings": "Exportbericht — fehlende Ressourcen: {{assets}}, Probleme: {{diagnostics}}.",
     "videoMp4Success": "Video gerendert",
     "videoServiceUnavailable": "Renderdienst nicht konfiguriert — das Projekt-ZIP wurde zum lokalen Rendern heruntergeladen.",
@@ -267,10 +270,6 @@
         "videoMetadata": "Video (nur Metadaten)",
         "audioMetadata": "Audio (nur Metadaten)"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "Diese Interaktion konnte nicht ausgeführt werden",
-      "dismiss": "Schließen"
     },
     "interactiveMoreBelow": "Weiter unten geht es weiter",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "Hier beginnt deine Projektbegleitung mit {{name}}.",
         "continueError": "Fortsetzen nicht möglich: {{error}}",
         "stillTyping": "Schreibt noch",
-        "handoverHint": "Klicke auf „Weiter zur nächsten Phase“, um fortzufahren."
+        "handoverHint": "Klicke auf „Weiter zur nächsten Phase“, um fortzufahren.",
+        "emptyOutput": "In diesem Durchgang kam keine neue Antwort. Bitte versuche es erneut."
       },
       "scene": {
         "expand": "Vergrößern",

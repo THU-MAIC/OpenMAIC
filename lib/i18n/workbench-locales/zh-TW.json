@@ -22,7 +22,8 @@
     "waiting": "正在處理",
     "emptyTitle": "開始一個新對話",
     "emptyHint": "描述你想做的變更，或用 @ 指一堂課",
-    "copyReply": "複製 Agent 回覆",
+    "copyReply": "複製回覆",
+    "copied": "已複製",
     "queued": "正在排隊，輪到後會自動開始",
     "queuedPlaceholder": "排隊中，可以先補充要求，Enter 送出",
     "cancelQueued": "取消排隊"

@@ -31,11 +31,11 @@
  *
  * ## Bounds
  *
- * The same as media keyframes (`lib/document/extractors/images.ts`): at most
- * `MAX_DERIVED_IMAGES` images, in provider order, each downsampled to a WebP
- * within `MAX_DERIVED_IMAGE_BYTES`. A reference to an image that was not kept
- * -- past the limit, unreadable, or unknown to the provider -- becomes its
- * alt text. When the input exceeds the parser budget, keep the provider's
+ * At most `MAX_DOCUMENT_IMAGES` images (`lib/document/extractors/images.ts`),
+ * in provider order, each downsampled to a WebP within
+ * `MAX_DERIVED_IMAGE_BYTES` like media keyframes. A reference to an image
+ * that was not kept -- past the limit, unreadable, or unknown to the
+ * provider -- becomes its alt text. When the input exceeds the parser budget, keep the provider's
  * text unchanged and record the skipped rewriting; kept images remain
  * derivatives, even though their references are not rewritten.
  */
@@ -44,7 +44,7 @@ import { DocumentImageInputBudgetError, runDocumentImageWorker } from './documen
 import { normalizePath, basename, type ImagePathIndex } from './document-image-paths.mjs';
 export type { ImagePathIndex } from './document-image-paths.mjs';
 
-import { MAX_DERIVED_IMAGES, prepareDerivedImage } from '@/lib/document/extractors/images';
+import { MAX_DOCUMENT_IMAGES, prepareDerivedImage } from '@/lib/document/extractors/images';
 import type { DocumentArtifact, DocumentExtractorProvider } from '@/lib/document/types';
 import { STEP_DEADLINES_MS } from '@/lib/server/generation/run/deadline';
 import { inlineRemoteImages, remoteImageUrl } from '@/lib/server/materials/inline-images';
@@ -87,6 +87,7 @@ async function downloadedImages(
   const deadline = AbortSignal.timeout(STEP_DEADLINES_MS.materialAnalysis);
   const { images, retryable } = await inlineRemoteImages(remote, {
     deadline,
+    maxImages: MAX_DOCUMENT_IMAGES,
     ...(signal ? { signal } : {}),
   });
   return {
@@ -116,7 +117,7 @@ async function keptImages(
   let skipped = 0;
   let notDownloaded = 0;
   for (const [index, asset] of candidates.entries()) {
-    if (kept.length >= MAX_DERIVED_IMAGES) {
+    if (kept.length >= MAX_DOCUMENT_IMAGES) {
       skipped += 1;
       continue;
     }
@@ -262,7 +263,7 @@ export async function ownerDocumentOutcome(
   const diagnostics = [
     ...(base.stats.diagnostics ?? []),
     ...(skipped > 0
-      ? [`${skipped} document image(s) not kept (limit ${MAX_DERIVED_IMAGES}, or unreadable)`]
+      ? [`${skipped} document image(s) not kept (limit ${MAX_DOCUMENT_IMAGES}, or unreadable)`]
       : []),
     ...(notDownloaded > 0 ? [`${notDownloaded} document image(s) could not be downloaded`] : []),
   ];

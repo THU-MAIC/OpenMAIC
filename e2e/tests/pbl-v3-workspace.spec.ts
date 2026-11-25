@@ -419,6 +419,32 @@ test('installed sample opens in the normal classroom and preserves progress afte
   await expect(page.getByRole('button', { name: 'Retry project setup', exact: true })).toHaveCount(
     0,
   );
+  await test.step('an unchanged message draft reflows as the conversation narrows and widens', async () => {
+    const originalViewport = page.viewportSize()!;
+    const composer = page.getByRole('textbox', { name: 'Your message' });
+    const draft = 'I will write an example greeting and check it against several names. '.repeat(3);
+    const height = () => composer.evaluate((field) => field.clientHeight);
+
+    await page.setViewportSize({ width: 1200, height: originalViewport.height });
+    await composer.fill(draft);
+    await expect.poll(height).toBeGreaterThan(52);
+    const wideHeight = await height();
+
+    await page.setViewportSize({ width: 960, height: originalViewport.height });
+    await expect.poll(height).toBeGreaterThan(wideHeight);
+    expect(await composer.evaluate((field) => field.scrollHeight)).toBe(await height());
+
+    await page.setViewportSize({ width: 1200, height: originalViewport.height });
+    await expect.poll(height).toBe(wideHeight);
+    await expect(composer).toHaveValue(draft);
+
+    await composer.fill(draft.repeat(10));
+    await expect.poll(height).toBe(160);
+    expect(await composer.evaluate((field) => field.scrollHeight)).toBeGreaterThan(160);
+    await composer.fill('');
+    await expect.poll(height).toBe(52);
+    await page.setViewportSize(originalViewport);
+  });
   // Read-only Monaco model switches and server value refreshes are not learner edits.
   await expect(page.getByRole('button', { name: 'Reload file', exact: true })).toBeEnabled();
   let releaseRead!: () => void;

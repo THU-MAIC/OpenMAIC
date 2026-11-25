@@ -22,7 +22,8 @@
     "waiting": "処理中",
     "emptyTitle": "新しい会話を始めましょう",
     "emptyHint": "変更したい内容を書くか、@ でクラスを指定してください",
-    "copyReply": "Copy Agent reply"
+    "copyReply": "返信をコピー",
+    "copied": "コピーしました"
   },
   "question": {
     "waiting": "回答をお待ちしています",

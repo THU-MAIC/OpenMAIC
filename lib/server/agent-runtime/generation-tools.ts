@@ -32,6 +32,7 @@ import {
 } from './scene-tts';
 import { toGenerationContent } from './generation-content';
 import { checkScenesAgainstSkill } from './skills';
+import { interactiveRuntimeFeedback } from './interactive-runtime';
 import { mayNameAPoolAsset } from '@/lib/media/media-placeholder';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 import { createLogger } from '@/lib/logger';
@@ -546,6 +547,12 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
         ...(skillViolations.length ? { skillViolations } : {}),
         detail: `page ${scene.order} persisted`,
       });
+      const runtimeFeedback = await interactiveRuntimeFeedback(
+        deps.checkInteractiveRuntime,
+        persisted,
+        doc.stage,
+        signal ?? deps.abortSignal,
+      );
       return result(
         `Page ${scene.order} "${scene.title}" persisted.${
           skillViolations.length
@@ -555,7 +562,7 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
           mediaPlaceholders.length
             ? ` ${mediaPlaceholders.length} media placeholder(s) still render as skeletons.`
             : ''
-        }`,
+        }${runtimeFeedback}`,
         {
           sceneId: scene.id,
           order: scene.order,
@@ -646,10 +653,15 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       }
       const voiceNote =
         audio?.voice && audio.generated > 0 ? ` ${describeNarrationVoice(audio.voice)}` : '';
+      // Without a TTS capability the speech lines stay silent. Say so, with the
+      // reason generate_tts gives, instead of reporting nothing; the actions
+      // themselves were persisted, so this is a note, not an error.
       const narration =
         audio?.available === true
           ? ` Narration audio: ${audio.generated} generated, ${audio.skipped} skipped, ${formatTtsFailureTally(audio.failed)}.${voiceNote}`
-          : '';
+          : audio?.available === false && actions.some((action) => action.type === 'speech')
+            ? ' Narration audio was skipped: no enabled server TTS capability is available.'
+            : '';
       return result(`Persisted ${actions.length} known actions for "${scene.title}".${narration}`, {
         sceneId: scene.id,
         actions,

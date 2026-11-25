@@ -2,7 +2,13 @@
 import { ArrowUp, LoaderCircle, Square } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
-import { VoiceInputButton } from './voice-input-button';
+import { SpeechButton } from '@/components/audio/speech-button';
+import { useCallback, useLayoutEffect, useRef } from 'react';
+
+function fitMessageField(field: HTMLTextAreaElement) {
+  field.style.height = 'auto';
+  field.style.height = `${field.scrollHeight}px`;
+}
 
 /**
  * Where the learner writes to the role: the same box in the conversation and under the
@@ -12,6 +18,8 @@ export function LearnerComposer({
   id,
   text,
   onTextChange,
+  speechActive,
+  onSpeechActiveChange,
   onSend,
   busy = false,
   onStop,
@@ -27,7 +35,9 @@ export function LearnerComposer({
 }: {
   id: string;
   text: string;
-  onTextChange: (text: string) => void;
+  onTextChange: (update: React.SetStateAction<string>) => void;
+  speechActive: boolean;
+  onSpeechActiveChange: (active: boolean) => void;
   onSend: () => void;
   /** The role is replying: the send button becomes the way to stop it. */
   busy?: boolean;
@@ -49,16 +59,44 @@ export function LearnerComposer({
   className?: string;
 }) {
   const { t } = useI18n();
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const observeComposer = useCallback((field: HTMLTextAreaElement | null) => {
+    composerRef.current = field;
+    if (!field || typeof ResizeObserver === 'undefined') return;
+    let lastWidth = 0;
+    let frame = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.borderBoxSize[0].inlineSize;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      cancelAnimationFrame(frame);
+      if (width > 0) frame = requestAnimationFrame(() => fitMessageField(field));
+    });
+    observer.observe(field, { box: 'border-box' });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+      composerRef.current = null;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (composerRef.current) fitMessageField(composerRef.current);
+  }, [text]);
   const send = () => {
-    if (!disabled && !busy && text.trim()) onSend();
+    if (!disabled && !busy && !speechActive && text.trim()) onSend();
   };
   const voiceButton = voice && (
-    <VoiceInputButton
+    <SpeechButton
+      size="md"
+      continuous
+      className={classic ? undefined : 'rounded-full'}
       disabled={disabled || busy}
-      // Into the input, after anything already typed, to be read before sending.
-      onSpoken={(spoken) => {
-        onTextChange(`${text}${spoken}`);
-        document.getElementById(id)?.focus();
+      onActiveChange={onSpeechActiveChange}
+      onTranscription={(transcript) => {
+        const said = transcript.trim();
+        if (!said) return;
+        onTextChange((draft) => (draft && !/\s$/.test(draft) ? `${draft} ${said}` : draft + said));
+        composerRef.current?.focus();
       }}
     />
   );
@@ -87,7 +125,7 @@ export function LearnerComposer({
         )}
         aria-label={t('pblV3.send')}
         aria-busy={sending}
-        disabled={disabled || busy || !text.trim()}
+        disabled={disabled || busy || speechActive || !text.trim()}
         title={blockedTitle}
         aria-describedby={describedBy}
         onClick={send}
@@ -116,7 +154,9 @@ export function LearnerComposer({
         >
           <textarea
             id={id}
-            className="h-20 w-full resize-none bg-transparent p-1 text-sm outline-none"
+            ref={observeComposer}
+            rows={1}
+            className="max-h-40 min-h-[52px] w-full resize-none overflow-y-auto bg-transparent p-1 text-sm outline-none"
             placeholder={t('pblV3.ide.messagePlaceholder')}
             value={text}
             aria-describedby={describedBy}
@@ -149,11 +189,11 @@ export function LearnerComposer({
         <textarea
           id={id}
           rows={1}
+          ref={observeComposer}
           className={cn(
             'max-h-40 min-w-0 flex-1 resize-none self-center bg-transparent py-1.5 text-sm leading-5 outline-none placeholder:text-muted-foreground/70',
             !compact && 'min-h-[3.25rem]',
           )}
-          style={{ fieldSizing: 'content' } as React.CSSProperties}
           placeholder={t('pblV3.ide.messagePlaceholder')}
           value={text}
           aria-describedby={describedBy}

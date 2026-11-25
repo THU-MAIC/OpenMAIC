@@ -35,6 +35,11 @@ export function useProjectEditor(
   // Keep cached content visible, but do not accept edits until its fresh read succeeds.
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmedSave, setConfirmedSave] = useState<{
+    path: string;
+    hash: string;
+    environment: string;
+  } | null>(null);
   const [saveFailures, setSaveFailures] = useState<{
     pausedFile: string | null;
     errors: Record<string, string>;
@@ -393,20 +398,15 @@ export function useProjectEditor(
             saveEditorDraft(view.id, cached);
           }
           if (!mounted.current) return;
-          updateBuffers((previous) => {
-            const existing = previous[name];
-            return existing?.environment === buffer.environment && existing.hash === buffer.hash
-              ? {
-                  ...previous,
-                  [name]: {
-                    ...existing,
-                    saved: buffer.text,
-                    hash: receipt.hash,
-                    changes: undefined,
-                  },
-                }
-              : previous;
-          });
+          const existing = current.current.buffers[name];
+          if (existing?.environment !== buffer.environment || existing.hash !== buffer.hash)
+            continue;
+          updateBuffers((previous) => ({
+            ...previous,
+            [name]: { ...existing, saved: buffer.text, hash: receipt.hash, changes: undefined },
+          }));
+          if (name === current.current.path && existing.text === buffer.text)
+            setConfirmedSave({ path: name, hash: receipt.hash, environment: buffer.environment });
         } catch (error) {
           // A late outcome from the released workspace cannot freeze its replacement.
           if (buffer.environment !== editorSource(current.current.view)) continue;
@@ -490,11 +490,27 @@ export function useProjectEditor(
     setTabs(next);
     if (path === name) setPath(next.at(-1)!);
   };
+  const savedNotice =
+    confirmedSave !== null &&
+    confirmedSave.path === path &&
+    confirmedSave.environment === selectedSource &&
+    confirmedSave.hash === buffers[path]?.hash &&
+    !dirty(path);
+  useEffect(() => {
+    if (!confirmedSave) return;
+    if (!savedNotice) {
+      setConfirmedSave(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setConfirmedSave(null), 2400);
+    return () => window.clearTimeout(timer);
+  }, [confirmedSave, savedNotice]);
   const saveErrorFor = (name: string) =>
     Object.hasOwn(saveFailures.errors, name) ? saveFailures.errors[name] : undefined;
   return {
     path,
     tabs,
+    savedNotice,
     buffer: buffers[path],
     loading,
     refreshing,

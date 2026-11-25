@@ -167,6 +167,9 @@
     "videoQueueFull": "La cola de renderizado está llena. Inténtalo de nuevo en unos momentos.",
     "videoRenderInProgress": "Ya hay un renderizado en curso. Inténtalo de nuevo en unos momentos.",
     "videoTooLarge": "El archivo de exportación supera el límite de tamaño del servicio.",
+    "videoUploading": "Subiendo proyecto de video...",
+    "videoQueued": "En espera en la cola de renderizado...",
+    "videoQueuePosition": "En la cola, posición {{position}}",
     "videoWarnings": "{{assets}} recurso(s) faltante(s) y {{diagnostics}} problema(s) en el reporte de exportación.",
     "videoMp4Success": "Video renderizado",
     "videoServiceUnavailable": "Servicio de renderizado no configurado — se descargó el ZIP del proyecto para renderizar en tu equipo.",
@@ -267,10 +270,6 @@
         "videoMetadata": "Video (solo metadatos)",
         "audioMetadata": "Audio (solo metadatos)"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "Esta actividad interactiva no se pudo ejecutar",
-      "dismiss": "Cerrar"
     },
     "interactiveMoreBelow": "Hay más abajo",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "Tu recorrido del proyecto con {{name}} comenzará aquí.",
         "continueError": "No se pudo continuar: {{error}}",
         "stillTyping": "Sigue escribiendo",
-        "handoverHint": "Haz clic en \"Continuar a la siguiente etapa\" para seguir."
+        "handoverHint": "Haz clic en \"Continuar a la siguiente etapa\" para seguir.",
+        "emptyOutput": "No llegó una nueva respuesta esta vez. Inténtalo de nuevo."
       },
       "scene": {
         "expand": "Expandir",

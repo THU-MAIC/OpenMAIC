@@ -167,6 +167,9 @@
     "videoQueueFull": "渲染佇列繁忙，請稍後再試。",
     "videoRenderInProgress": "已有渲染工作正在進行，請稍後再試。",
     "videoTooLarge": "匯出檔案超過服務允許的大小。",
+    "videoUploading": "正在上傳影片專案...",
+    "videoQueued": "排隊等待轉檔...",
+    "videoQueuePosition": "排隊中，第 {{position}} 位",
     "videoWarnings": "影片警告：缺少 {{assets}} 個素材，匯出報告有 {{diagnostics}} 個問題。",
     "videoMp4Success": "MP4 影片已就緒",
     "videoServiceUnavailable": "未設定渲染服務 — 已下載專案 ZIP 供本機渲染。",
@@ -267,10 +270,6 @@
         "videoMetadata": "影片（僅引用中繼資料）",
         "audioMetadata": "音訊（僅引用中繼資料）"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "這個互動未能執行",
-      "dismiss": "關閉"
     },
     "interactiveMoreBelow": "下方還有內容",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "你和 {{name}} 的專案導學會從這裡開始。",
         "continueError": "無法繼續到下一階段：{{error}}",
         "stillTyping": "仍在輸入中",
-        "handoverHint": "請先點擊「繼續到下一階段」。"
+        "handoverHint": "請先點擊「繼續到下一階段」。",
+        "emptyOutput": "這一輪沒有新的回覆，請再試一次。"
       },
       "scene": {
         "expand": "展開",

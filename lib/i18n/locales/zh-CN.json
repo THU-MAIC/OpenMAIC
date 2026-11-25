@@ -167,6 +167,9 @@
     "videoQueueFull": "渲染队列繁忙，请稍后重试。",
     "videoRenderInProgress": "已有渲染任务正在进行，请稍后重试。",
     "videoTooLarge": "导出文件超过服务允许的大小。",
+    "videoUploading": "正在上传视频工程...",
+    "videoQueued": "排队等待渲染...",
+    "videoQueuePosition": "排队中，第 {{position}} 位",
     "videoWarnings": "有 {{assets}} 个素材缺失，导出报告中有 {{diagnostics}} 个问题。",
     "videoMp4Success": "视频已渲染",
     "videoServiceUnavailable": "未配置渲染服务 —— 已下载项目 ZIP 供本地渲染。",
@@ -267,10 +270,6 @@
         "videoMetadata": "视频（仅引用元数据）",
         "audioMetadata": "音频（仅引用元数据）"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "这个互动未能运行",
-      "dismiss": "关闭"
     },
     "interactiveMoreBelow": "下方还有内容",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "你和 {{name}} 的项目导学会从这里开始。",
         "continueError": "无法继续到下一阶段：{{error}}",
         "stillTyping": "仍在输入中",
-        "handoverHint": "请先点击「继续到下一阶段」。"
+        "handoverHint": "请先点击「继续到下一阶段」。",
+        "emptyOutput": "这一轮没有新的回复，请再试一次。"
       },
       "scene": {
         "expand": "展开",

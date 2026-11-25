@@ -11,6 +11,7 @@ import {
   filterKnownActions,
 } from '@/lib/server/agent-runtime/generation-tools';
 import { generateImagePromptBlock } from '@/lib/server/agent-runtime/generate-image';
+import type { InteractiveRuntimeClient } from '@/lib/server/agent-runtime/interactive-runtime';
 import type { Scene } from '@/lib/types/stage';
 
 function slide(id: string, order: number, title = id): Scene {
@@ -101,6 +102,61 @@ function deps(store: CourseStore, extra: Record<string, unknown> = {}) {
 }
 
 describe('generation and deck tools', () => {
+  it('checks the saved interactive page and feeds bounded errors back to the author', async () => {
+    const current = state(document([]));
+    const html = '<!doctype html><html><body><script>missing()</script></body></html>';
+    const actions = [{ id: 'reveal', type: 'widget_reveal', target: '#part' }];
+    let persistedDuringCheck: Scene | undefined;
+    const checkInteractiveRuntime = vi.fn<InteractiveRuntimeClient>(async () => {
+      persistedDuringCheck = current.get()?.scenes[0];
+      return [
+        { phase: 'load', message: 'ReferenceError: missing is not defined' },
+        { phase: 'load', message: 'ReferenceError: missing is not defined' },
+        { phase: 'action', actionIndex: 0, actionType: 'REVEAL_ELEMENT', message: 'x'.repeat(500) },
+        { phase: 'load', message: 'Third failure' },
+        { phase: 'load', message: 'Fourth failure' },
+        { phase: 'load', message: 'Fifth failure' },
+      ];
+    });
+    const generate = find(
+      buildGenerationTools(
+        deps(current.store, {
+          aiCall: vi.fn(async () => html),
+          generateActions: vi.fn(async () => actions),
+          checkInteractiveRuntime,
+        }),
+      ),
+      'generate_scene',
+    );
+    const response = await generate.execute('runtime', {
+      stageId: 'stage-test',
+      order: 1,
+      title: 'Widget',
+      type: 'interactive',
+      brief: 'Explore a widget',
+    } as never);
+
+    expect(checkInteractiveRuntime).toHaveBeenCalledOnce();
+    expect(persistedDuringCheck).toMatchObject({
+      content: { html: expect.stringContaining('<script>missing()</script>') },
+      actions,
+    });
+    expect(checkInteractiveRuntime).toHaveBeenCalledWith(
+      persistedDuringCheck,
+      expect.objectContaining({ id: 'stage-test' }),
+      expect.any(AbortSignal),
+    );
+    expect(response).not.toHaveProperty('isError');
+    const output = response.content[0];
+    expect(output?.type).toBe('text');
+    const text = output?.type === 'text' ? output.text : '';
+    expect(text).toContain('persisted.');
+    expect(text).toContain('Fix it with patch_stage');
+    expect(text.match(/ReferenceError/g)).toHaveLength(1);
+    expect(text).toContain(`actions[0] (REVEAL_ELEMENT) "${'x'.repeat(177)}..."`);
+    expect(text).not.toContain('Fifth failure');
+  });
+
   it('reports active-skill diagnostics against the persisted stage after generation', async () => {
     const current = state(document([]));
     const onCheckpoint = vi.fn();
@@ -903,6 +959,54 @@ describe('generation and deck tools', () => {
     expect(response.details).toMatchObject({
       audio: { failed: [{ id: 'speech-a', reason: 'RATE_LIMITED' }] },
     });
+  });
+
+  it('says in generate_actions content that narration was skipped when no TTS is available', async () => {
+    const current = state(document([slide('a', 1, 'Intro')]));
+    const unavailable = vi.fn(async () => ({
+      available: false,
+      changed: false,
+      generated: 0,
+      skipped: 0,
+      failed: [],
+    }));
+    const run = (generateActions: () => Promise<unknown[]>, synthesizeAudio?: boolean) =>
+      find(
+        buildGenerationTools(
+          deps(current.store, {
+            generateActions: vi.fn(generateActions),
+            synthesizeTts: unavailable,
+          }),
+        ),
+        'generate_actions',
+      ).execute('call', {
+        stageId: 'stage-test',
+        order: 1,
+        ...(synthesizeAudio === undefined ? {} : { synthesizeAudio }),
+      } as never);
+    const skippedNote =
+      'Narration audio was skipped: no enabled server TTS capability is available.';
+
+    const speech = await run(async () => [{ id: 'speech-a', type: 'speech', text: 'Hello' }]);
+    const speechText = (speech.content[0] as { text: string }).text;
+    expect(speechText).toBe(`Persisted 1 known actions for "Intro". ${skippedNote}`);
+    expect((speech as { isError?: boolean }).isError).toBeFalsy();
+    expect(speech.details).toMatchObject({ audio: { available: false } });
+
+    // A page without speech has nothing to narrate, so there is nothing to report.
+    const silent = await run(async () => [{ id: 'spot-a', type: 'spotlight', elementId: 'el-1' }]);
+    expect((silent.content[0] as { text: string }).text).toBe(
+      'Persisted 1 known actions for "Intro".',
+    );
+
+    // An explicit opt-out is the caller's own choice: no synthesis and no note.
+    unavailable.mockClear();
+    const optedOut = await run(
+      async () => [{ id: 'speech-b', type: 'speech', text: 'Hello' }],
+      false,
+    );
+    expect((optedOut.content[0] as { text: string }).text).not.toContain(skippedNote);
+    expect(unavailable).not.toHaveBeenCalled();
   });
 
   it('counts narration failures by error code without provider bodies', async () => {

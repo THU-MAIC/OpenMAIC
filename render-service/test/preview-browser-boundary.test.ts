@@ -25,6 +25,15 @@ const executable =
   process.env.PRODUCER_HEADLESS_SHELL_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
 
 describe.skipIf(!executable)('real Chromium previews through tsx', () => {
+  it('checks load and ordered action errors while leaving a clean page clean', async () => {
+    const { stdout } = await execute(
+      process.execPath,
+      ['--import', 'tsx', 'test/interactive-runtime-browser.fixture.mjs'],
+      { cwd, timeout: 15_000 },
+    );
+    expect(stdout.trim()).toBe('Interactive runtime checks verified');
+  }, 20_000);
+
   it.each(['slide', 'interactive', 'quiz', 'pbl'])(
     'renders a %s scene as PNG',
     async (type) => {

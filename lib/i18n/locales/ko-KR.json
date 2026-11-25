@@ -167,6 +167,9 @@
     "videoQueueFull": "렌더링 대기열이 혼잡합니다. 잠시 후 다시 시도해 주세요.",
     "videoRenderInProgress": "이미 렌더링 작업이 진행 중입니다. 잠시 후 다시 시도해 주세요.",
     "videoTooLarge": "내보내기 파일이 서비스의 크기 제한을 초과했습니다.",
+    "videoUploading": "비디오 프로젝트 업로드 중...",
+    "videoQueued": "렌더링 대기열에서 대기 중...",
+    "videoQueuePosition": "대기열에서 {{position}}번째",
     "videoWarnings": "{{assets}}개의 에셋이 누락되었고 내보내기 보고서에 {{diagnostics}}개의 문제가 있습니다.",
     "videoMp4Success": "동영상이 렌더링되었습니다",
     "videoServiceUnavailable": "렌더 서비스가 구성되지 않았습니다 — 로컬 렌더링용 프로젝트 ZIP을 다운로드했습니다.",
@@ -267,10 +270,6 @@
         "videoMetadata": "비디오 (메타데이터만)",
         "audioMetadata": "오디오 (메타데이터만)"
       }
-    },
-    "interactiveRuntimeError": {
-      "title": "이 인터랙티브를 실행하지 못했습니다",
-      "dismiss": "닫기"
     },
     "interactiveMoreBelow": "아래에 내용이 더 있습니다",
     "tabs": {
@@ -942,7 +941,8 @@
         "emptyChatHint": "Your project walkthrough with {{name}} will start here.",
         "continueError": "Unable to continue: {{error}}",
         "stillTyping": "Still typing",
-        "handoverHint": "Click \"Continue to Next Stage\" to keep going."
+        "handoverHint": "Click \"Continue to Next Stage\" to keep going.",
+        "emptyOutput": "이번에는 새 응답이 없었습니다. 다시 시도해 주세요."
       },
       "scene": {
         "expand": "Expand",

@@ -250,6 +250,38 @@ describe('VideoRegistry', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('releases playback when the video never finishes starting', async () => {
+    const registry = new VideoRegistry();
+    const { video, scripted } = mountedVideo(registry);
+    let done = false;
+    void registry.play('clip', control()).then(() => (done = true));
+    // Browsers set paused=false when play is requested, before its promise
+    // resolves once enough media has buffered.
+    scripted.state.paused = false;
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(done).toBe(true);
+    expect(video.paused).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('releases a still-buffering video as soon as playback is cancelled', async () => {
+    const registry = new VideoRegistry();
+    const { video, scripted } = mountedVideo(registry);
+    const ctl = control();
+    let done = false;
+    void registry.play('clip', ctl).then(() => (done = true));
+    scripted.state.paused = false;
+
+    ctl.abort.abort();
+    await flush();
+
+    expect(done).toBe(true);
+    expect(video.paused).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('caps a video of unknown duration and never past the global cap', async () => {
     const registry = new VideoRegistry();
     const { scripted } = mountedVideo(registry);

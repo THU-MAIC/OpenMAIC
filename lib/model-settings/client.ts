@@ -276,7 +276,7 @@ export type ModelSettingsClient = ReturnType<typeof createModelSettingsClient>;
 export const modelSettingsClient = createModelSettingsClient((input, init) => fetch(input, init));
 
 export function findSlot(view: ModelSettingsView, slot: string): SlotView | undefined {
-  return view.slots.find((entry) => entry.slot === slot);
+  return view.slots?.find((entry) => entry.slot === slot);
 }
 
 /** Whether the workspace has a language model: the effective `llm` is assigned. */

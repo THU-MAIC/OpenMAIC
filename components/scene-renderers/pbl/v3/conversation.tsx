@@ -1,18 +1,11 @@
 'use client';
 import { parseFileReference, type FileReference } from '@/lib/pbl/v3/file-reference';
 import { continueActionLabel, hasTaskDrawer, TASK_DRAWER_LINK } from '@/lib/pbl/v3/presentation';
-import { useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
-import {
-  Check,
-  Copy,
-  Route,
-  Code2,
-  GraduationCap,
-  ListChecks,
-  MessageSquareText,
-} from 'lucide-react';
+import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import { Route, Code2, GraduationCap, ListChecks, MessageSquareText } from 'lucide-react';
 import { TextBlock } from '@/components/workbench/chat/text-block';
 import { ThinkingBlock } from '@/components/workbench/chat/thinking-block';
+import { ReplyCopyButton } from './reply-copy-button';
 import { WaitingBar } from '@/components/workbench/chat/waiting-bar';
 import { ToolActivity } from './tool-activity';
 import { ConversationHistory } from './conversation-history';
@@ -66,7 +59,6 @@ function AgentTurn({
   persona?: boolean;
 }) {
   const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
   const role = entry.speaker === 'user' ? 'mentor' : entry.speaker;
   const Icon = icons[role];
   // Keep the turn visibly alive between text blocks and after completed tools.
@@ -175,21 +167,7 @@ function AgentTurn({
           </p>
         )}
       </div>
-      {copyText && (
-        <button
-          type="button"
-          className="rounded p-1 text-muted-foreground opacity-0 hover:text-foreground group-hover/turn:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100"
-          aria-label={t('workbench.chat.copyReply')}
-          onClick={() => {
-            void navigator.clipboard
-              .writeText(copyText)
-              .then(() => setCopied(true))
-              .catch(() => setCopied(false));
-          }}
-        >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-        </button>
-      )}
+      {copyText && <ReplyCopyButton text={copyText} />}
     </article>
   );
 }
