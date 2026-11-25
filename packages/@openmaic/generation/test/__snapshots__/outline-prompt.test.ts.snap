@@ -59,6 +59,13 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 - **Do NOT** include: quotes, numbering, leading emojis, the teacher's name/role, or words like "Course"/"课程"/"A course about".
 - If the requirement is already a crisp title, you may reuse it (trimmed to the limit). If it is a long prompt, distill it to its essence.
 
+### Course Subject
+
+Produce **\`subject\`** (required): the school subject of the course as ONE short label, in the teaching language (for example Mathematics, 数学, or Matemáticas).
+
+- For language learning, \`subject\` is the language being learned, not the teaching language: "我想学英语" → 英语; "I want to learn Chinese" → Chinese.
+- Use the discipline taught in this course.
+
 ---
 
 ## Design Principles
@@ -230,12 +237,13 @@ Leave **both unset** for ordinary build-an-artefact PBL projects (this is the de
 
 ### Top-level shape — NON-NEGOTIABLE
 
-Your entire response MUST be a single JSON **object** with exactly these three top-level keys:
+Your entire response MUST be a single JSON **object** with exactly these four top-level keys:
 
 \`\`\`json
 {
   "languageDirective": "<the directive you inferred in the Language Inference step>",
   "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
+  "subject": "<the course's school subject as one short label in the teaching language, e.g. Mathematics>",
   "outlines": [ /* array of scene objects */ ]
 }
 \`\`\`
@@ -243,7 +251,7 @@ Your entire response MUST be a single JSON **object** with exactly these three t
 Rules:
 
 - **Never** return a bare array. The top level is an object, not an array.
-- **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
+- **Never** omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
 
 ### Minimal complete example
@@ -252,6 +260,7 @@ Rules:
 {
   "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
   "courseTitle": "Intro to Projectile Motion",
+  "subject": "物理",
   "outlines": [
     {
       "id": "scene_1",
@@ -365,7 +374,7 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 **Top-level response shape (these come first because they are most often violated):**
 
 1. Return exactly one JSON **object** — never a bare array.
-2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
+2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), \`subject\` (string, one short subject label in the teaching language), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
 3. Do not wrap the object in prose, markdown, or code fences.
 
 **Scene-level rules:**
@@ -435,11 +444,12 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "subject": "the course's school subject as one short label in the teaching language, e.g. Mathematics or 数学",
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All four keys are required.
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
@@ -473,7 +483,7 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with exactly four top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), \`subject\` (string, one short subject label in the teaching language; for language learning, the language being learned), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
 }
 `;
 
@@ -535,6 +545,13 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 - **Style**: a noun phrase summarizing the topic — e.g. "抛体运动入门", "Intro to Recursion", "光合作用原理". Not a sentence, not a question.
 - **Do NOT** include: quotes, numbering, leading emojis, the teacher's name/role, or words like "Course"/"课程"/"A course about".
 - If the requirement is already a crisp title, you may reuse it (trimmed to the limit). If it is a long prompt, distill it to its essence.
+
+### Course Subject
+
+Produce **\`subject\`** (required): the school subject of the course as ONE short label, in the teaching language (for example Mathematics, 数学, or Matemáticas).
+
+- For language learning, \`subject\` is the language being learned, not the teaching language: "我想学英语" → 英语; "I want to learn Chinese" → Chinese.
+- Use the discipline taught in this course.
 
 ---
 
@@ -773,12 +790,13 @@ Leave **both unset** for ordinary build-an-artefact PBL projects (this is the de
 
 ### Top-level shape — NON-NEGOTIABLE
 
-Your entire response MUST be a single JSON **object** with exactly these three top-level keys:
+Your entire response MUST be a single JSON **object** with exactly these four top-level keys:
 
 \`\`\`json
 {
   "languageDirective": "<the directive you inferred in the Language Inference step>",
   "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
+  "subject": "<the course's school subject as one short label in the teaching language, e.g. Mathematics>",
   "outlines": [ /* array of scene objects */ ]
 }
 \`\`\`
@@ -786,7 +804,7 @@ Your entire response MUST be a single JSON **object** with exactly these three t
 Rules:
 
 - **Never** return a bare array. The top level is an object, not an array.
-- **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
+- **Never** omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
 
 ### Minimal complete example
@@ -795,6 +813,7 @@ Rules:
 {
   "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
   "courseTitle": "Intro to Projectile Motion",
+  "subject": "物理",
   "outlines": [
     {
       "id": "scene_1",
@@ -912,7 +931,7 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 **Top-level response shape (these come first because they are most often violated):**
 
 1. Return exactly one JSON **object** — never a bare array.
-2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
+2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), \`subject\` (string, one short subject label in the teaching language), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
 3. Do not wrap the object in prose, markdown, or code fences.
 
 **Scene-level rules:**
@@ -989,11 +1008,12 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "subject": "the course's school subject as one short label in the teaching language, e.g. Mathematics or 数学",
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All four keys are required.
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
@@ -1029,7 +1049,7 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with exactly four top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), \`subject\` (string, one short subject label in the teaching language; for language learning, the language being learned), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
 }
 `;
 
@@ -1091,6 +1111,13 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 - **Style**: a noun phrase summarizing the topic — e.g. "抛体运动入门", "Intro to Recursion", "光合作用原理". Not a sentence, not a question.
 - **Do NOT** include: quotes, numbering, leading emojis, the teacher's name/role, or words like "Course"/"课程"/"A course about".
 - If the requirement is already a crisp title, you may reuse it (trimmed to the limit). If it is a long prompt, distill it to its essence.
+
+### Course Subject
+
+Produce **\`subject\`** (required): the school subject of the course as ONE short label, in the teaching language (for example Mathematics, 数学, or Matemáticas).
+
+- For language learning, \`subject\` is the language being learned, not the teaching language: "我想学英语" → 英语; "I want to learn Chinese" → Chinese.
+- Use the discipline taught in this course.
 
 ---
 
@@ -1302,12 +1329,13 @@ Leave **both unset** for ordinary build-an-artefact PBL projects (this is the de
 
 ### Top-level shape — NON-NEGOTIABLE
 
-Your entire response MUST be a single JSON **object** with exactly these three top-level keys:
+Your entire response MUST be a single JSON **object** with exactly these four top-level keys:
 
 \`\`\`json
 {
   "languageDirective": "<the directive you inferred in the Language Inference step>",
   "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
+  "subject": "<the course's school subject as one short label in the teaching language, e.g. Mathematics>",
   "outlines": [ /* array of scene objects */ ]
 }
 \`\`\`
@@ -1315,7 +1343,7 @@ Your entire response MUST be a single JSON **object** with exactly these three t
 Rules:
 
 - **Never** return a bare array. The top level is an object, not an array.
-- **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
+- **Never** omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
 
 ### Minimal complete example
@@ -1324,6 +1352,7 @@ Rules:
 {
   "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
   "courseTitle": "Intro to Projectile Motion",
+  "subject": "物理",
   "outlines": [
     {
       "id": "scene_1",
@@ -1439,7 +1468,7 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 **Top-level response shape (these come first because they are most often violated):**
 
 1. Return exactly one JSON **object** — never a bare array.
-2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
+2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), \`subject\` (string, one short subject label in the teaching language), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
 3. Do not wrap the object in prose, markdown, or code fences.
 
 **Scene-level rules:**
@@ -1509,11 +1538,12 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "subject": "the course's school subject as one short label in the teaching language, e.g. Mathematics or 数学",
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All four keys are required.
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
@@ -1547,7 +1577,7 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with exactly four top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), \`subject\` (string, one short subject label in the teaching language; for language learning, the language being learned), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
 }
 `;
 
@@ -1609,6 +1639,13 @@ Produce a **\`courseTitle\`** (required): a concise, human-readable name for the
 - **Style**: a noun phrase summarizing the topic — e.g. "抛体运动入门", "Intro to Recursion", "光合作用原理". Not a sentence, not a question.
 - **Do NOT** include: quotes, numbering, leading emojis, the teacher's name/role, or words like "Course"/"课程"/"A course about".
 - If the requirement is already a crisp title, you may reuse it (trimmed to the limit). If it is a long prompt, distill it to its essence.
+
+### Course Subject
+
+Produce **\`subject\`** (required): the school subject of the course as ONE short label, in the teaching language (for example Mathematics, 数学, or Matemáticas).
+
+- For language learning, \`subject\` is the language being learned, not the teaching language: "我想学英语" → 英语; "I want to learn Chinese" → Chinese.
+- Use the discipline taught in this course.
 
 ---
 
@@ -1781,12 +1818,13 @@ Leave **both unset** for ordinary build-an-artefact PBL projects (this is the de
 
 ### Top-level shape — NON-NEGOTIABLE
 
-Your entire response MUST be a single JSON **object** with exactly these three top-level keys:
+Your entire response MUST be a single JSON **object** with exactly these four top-level keys:
 
 \`\`\`json
 {
   "languageDirective": "<the directive you inferred in the Language Inference step>",
   "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
+  "subject": "<the course's school subject as one short label in the teaching language, e.g. Mathematics>",
   "outlines": [ /* array of scene objects */ ]
 }
 \`\`\`
@@ -1794,7 +1832,7 @@ Your entire response MUST be a single JSON **object** with exactly these three t
 Rules:
 
 - **Never** return a bare array. The top level is an object, not an array.
-- **Never** omit \`languageDirective\` or \`courseTitle\`. Both are required even if you think they are obvious.
+- **Never** omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
 
 ### Minimal complete example
@@ -1803,6 +1841,7 @@ Rules:
 {
   "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
   "courseTitle": "Intro to Projectile Motion",
+  "subject": "物理",
   "outlines": [
     {
       "id": "scene_1",
@@ -1918,7 +1957,7 @@ Omit \`scenarioRoleplay\` and \`scenarioBrief\` entirely for ordinary build-an-a
 **Top-level response shape (these come first because they are most often violated):**
 
 1. Return exactly one JSON **object** — never a bare array.
-2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
+2. That object MUST have \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars), \`subject\` (string, one short subject label in the teaching language), and \`outlines\` (array) as top-level keys. Omitting any is a failure.
 3. Do not wrap the object in prose, markdown, or code fences.
 
 **Scene-level rules:**
@@ -1988,11 +2027,12 @@ Then output your response as a single JSON object.
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
   "courseTitle": "concise course name, ≤30 chars, in the teaching language",
+  "subject": "the course's school subject as one short label in the teaching language, e.g. Mathematics or 数学",
   "outlines": [ /* array of scene objects, schema described below */ ]
 }
 \`\`\`
 
-Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. All three keys are required.
+Never return a bare array. Never omit \`languageDirective\`, \`courseTitle\`, or \`subject\`. All four keys are required.
 
 **Each scene inside the \`outlines\` array has this minimum shape:**
 
@@ -2028,6 +2068,6 @@ Never return a bare array. Never omit \`languageDirective\` or \`courseTitle\`. 
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 - **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
-**Final reminder**: your entire response must be a JSON **object** with exactly three top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
+**Final reminder**: your entire response must be a JSON **object** with exactly four top-level keys — \`languageDirective\` (string), \`courseTitle\` (string, ≤30 chars, in the teaching language), \`subject\` (string, one short subject label in the teaching language; for language learning, the language being learned), and \`outlines\` (array). Do not return a bare array. Do not wrap in prose or code fences.",
 }
 `;

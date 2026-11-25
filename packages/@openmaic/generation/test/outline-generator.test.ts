@@ -5,6 +5,7 @@ import {
   DEFAULT_LANGUAGE_DIRECTIVE,
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
+  normalizeCourseSubject,
   sanitizeProceduralSkillOutline,
   type AICallFn,
   type GenerationLogger,
@@ -135,6 +136,45 @@ describe('generateSceneOutlinesFromRequirements', () => {
     const result = await runWith(raw);
     expect(result.success).toBe(true);
     expect(result.data?.courseTitle).toBeUndefined();
+  });
+
+  test('adopts a trimmed subject label from the wrapper object', async () => {
+    const result = await runWith({
+      languageDirective: '使用中文授课。',
+      courseTitle: '拼音入门',
+      subject: '  语文  ',
+      outlines: [baseOutline],
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.subject).toBe('语文');
+  });
+
+  test('caps an overlong subject label', async () => {
+    const result = await runWith({
+      languageDirective: 'Teach in English.',
+      subject: `  ${'Economics '.repeat(10)}`,
+      outlines: [],
+    });
+    expect(result.data?.subject).toBe('Economics Economics');
+    expect(result.data?.subject?.length).toBeLessThanOrEqual(20);
+  });
+
+  test.each([
+    [{ languageDirective: 'Teach in English.', courseTitle: 'Photosynthesis', outlines: [] }],
+    [{ languageDirective: 'Teach in English.', subject: '   ', outlines: [] }],
+    [{ languageDirective: 'Teach in English.', subject: ['数学'], outlines: [] }],
+  ])('omits a missing, empty, or non-string subject without failing', async (raw) => {
+    const result = await runWith(raw);
+    expect(result.success).toBe(true);
+    expect(result.data).not.toHaveProperty('subject');
+  });
+
+  test('normalizeCourseSubject trims, caps, and rejects non-strings', () => {
+    expect(normalizeCourseSubject(' 英语 ')).toBe('英语');
+    expect(normalizeCourseSubject('x'.repeat(50))).toHaveLength(20);
+    expect(normalizeCourseSubject('')).toBeUndefined();
+    expect(normalizeCourseSubject(42)).toBeUndefined();
+    expect(normalizeCourseSubject(undefined)).toBeUndefined();
   });
 });
 

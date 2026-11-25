@@ -169,6 +169,51 @@ describe('narration step', () => {
     expect(mocks.generateTTS.mock.calls[0]).toEqual(routedCall);
   });
 
+  it('forwards a valid request subject to managed MOSS only', async () => {
+    const { POST } = await import('@/app/api/generate/tts/route');
+    const post = async (body: Record<string, unknown>) => {
+      mocks.generateTTS.mockClear();
+      const response = await POST(
+        jsonRequest('http://localhost/api/generate/tts', { text: '拼音', audioId: 'a1', ...body }),
+      );
+      expect(response.status).toBe(200);
+      return mocks.generateTTS.mock.calls[0]?.[0];
+    };
+
+    // Any other provider never receives the field.
+    const ordinary = await post({
+      subject: '语文',
+      previousTexts: ['上一段'],
+      ttsVoice: 'nova',
+      ttsProviderOptions: { backend: 'moss' },
+    });
+    expect(ordinary).not.toHaveProperty('subject');
+    expect(ordinary).not.toHaveProperty('previousTexts');
+    expect(ordinary.options?.backend).toBeUndefined();
+
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: { 'openai-tts': { preset: 'openai-tts', apiKey: 'server-key' } },
+          slots: { tts: 'openai-tts:classroom-v3' },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
+    mocks.resolveMediaSlot.mockResolvedValue({
+      ...connection,
+      modelId: 'classroom-v3',
+      options: { backend: 'moss' },
+      voices: [{ id: 'course-narrator', name: '课程女教师', gender: 'female' }],
+    } satisfies MediaConnection);
+    expect(await post({ subject: '  语文  ' })).toMatchObject({ subject: '语文' });
+    for (const subject of ['   ', 'x'.repeat(201), 42]) {
+      expect(await post({ subject })).not.toHaveProperty('subject');
+    }
+  });
+
   it('answers a refusal with the 400 the route always answered', async () => {
     mocks.resolveMediaSlot.mockResolvedValue({ ...connection, apiKey: undefined });
     const { POST } = await import('@/app/api/generate/tts/route');

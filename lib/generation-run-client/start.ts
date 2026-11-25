@@ -61,6 +61,7 @@ export function selectedRunVoice(capabilities: ModelCapabilities): StartRunInput
     providerId: selection.providerId,
     voiceId: selection.voice,
     ...(selection.speed ? { speed: selection.speed } : {}),
+    ...(selection.explicit !== undefined ? { explicit: selection.explicit } : {}),
   };
 }
 

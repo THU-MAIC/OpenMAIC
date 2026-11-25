@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { speechForTts } from '@openmaic/dsl';
 
 import {
   splitLongSpeechText,
@@ -79,5 +80,41 @@ describe('splitLongSpeechActions', () => {
     expect(out.every((a) => a.audioId === undefined)).toBe(true);
     // …and the text is preserved across the split.
     expect(out.map((a) => a.text).join('')).toBe(long);
+  });
+
+  it('splits paired spokenText alongside caption chunks without repeating or exceeding the limit', () => {
+    const max = TTS_MAX_TEXT_LENGTH['glm-tts']!;
+    const displaySentence = '导数定义为 $f(x)$。';
+    const spokenSentence = '导数定义为函数 f 括号 x 括号的极限变化率。';
+    const original: SpeechAction = {
+      id: 'paired',
+      type: 'speech',
+      text: displaySentence.repeat(120),
+      spokenText: spokenSentence.repeat(120),
+      audioId: 'ast_old',
+    };
+    const out = splitLongSpeechActions([original], 'glm-tts') as SpeechAction[];
+    expect(out.length).toBeGreaterThan(1);
+    expect(out.every((a) => a.audioId === undefined)).toBe(true);
+    expect(out.every((a) => a.text.length <= max && speechForTts(a).length <= max)).toBe(true);
+    expect(out.map((a) => a.text).join('')).toBe(original.text);
+    expect(out.map((a) => speechForTts(a)).join('')).toBe(original.spokenText);
+
+    // Also splits when the caption is short but the spoken reading exceeds the provider cap.
+    const shortCaptionLongReading: SpeechAction = {
+      id: 'reading-heavy',
+      type: 'speech',
+      text: '$S_n = \\sum_{k=1}^{n} a_k$',
+      spokenText: '第 k 项从一累加到第 n 项的求和结果。'.repeat(90),
+    };
+    const readingOut = splitLongSpeechActions(
+      [shortCaptionLongReading],
+      'glm-tts',
+    ) as SpeechAction[];
+    expect(readingOut.length).toBeGreaterThan(1);
+    expect(readingOut.every((a) => speechForTts(a).length <= max)).toBe(true);
+    expect(readingOut.map((a) => speechForTts(a)).join('')).toBe(
+      shortCaptionLongReading.spokenText,
+    );
   });
 });

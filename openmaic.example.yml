@@ -75,6 +75,24 @@ providers:
   #     - id: serena
   #       name: Serena
 
+  # MOSS uses the same OpenAI-compatible POST /v1/audio/speech transport.
+  # Point slots.tts at moss-api:${MOSS_TTS_MODEL} to use this deployment.
+  # The model and voice IDs come from your API. The backend option enables
+  # previous_texts, subject, and bounded concurrency (see MOSS_TTS_CONCURRENCY in .env.example).
+  # Return audio bytes or JSON with a same-origin signed audioUrl.
+  # moss-api:
+  #   preset: openai-tts
+  #   baseUrl: ${MOSS_TTS_BASE_URL} # Include the /v1 prefix.
+  #   apiKey: ${MOSS_OPENMAIC_API_KEY}
+  #   models:
+  #     - ${MOSS_TTS_MODEL}
+  #   options:
+  #     backend: moss
+  #     defaultVoice: teacher-female
+  #   voices:
+  #     - { id: teacher-female, name: Teacher, gender: female }
+  #     - { id: teacher-male, name: Tutor, gender: male }
+
   # Zhipu GLM CogView image generation:
   # glm-image:
   #   preset: glm-image

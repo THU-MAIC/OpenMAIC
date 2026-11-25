@@ -30,7 +30,7 @@ import type {
   DiscussionAction,
   WbClearAction,
 } from '@openmaic/dsl';
-import { FIRE_AND_FORGET_ACTIONS } from '@openmaic/dsl';
+import { FIRE_AND_FORGET_ACTIONS, speechForTts } from '@openmaic/dsl';
 import { EMPTY_SCENE_DWELL } from './cursor';
 import {
   EFFECT_AUTO_CLEAR_MS,
@@ -191,7 +191,7 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
       // lockstep is what stops non-1× exports from drifting.
       const audio = opts.getAudioDurationMs?.(action);
       if (audio != null) return audio / speed;
-      return estimateSpeechDurationMs(action.text, { speed });
+      return estimateSpeechDurationMs(speechForTts(action), { speed });
     }
     case 'spotlight':
     case 'laser':

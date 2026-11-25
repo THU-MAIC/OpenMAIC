@@ -1,5 +1,7 @@
 import type { TTSProviderId, ConfiguredTTSVoice } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
+import { getRoleVoicePolicy, type RoleVoicePolicy } from '@/lib/audio/role-voice';
+import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   QWEN_VOICE_CLONE_GROUP_ID,
@@ -40,15 +42,51 @@ export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
 
 type ProviderConfigMap = Record<
   string,
-  (TTSEnablementConfig & { modelId?: string; voices?: ConfiguredTTSVoice[] }) | undefined
+  | (TTSEnablementConfig & {
+      modelId?: string;
+      voices?: ConfiguredTTSVoice[];
+      providerOptions?: Record<string, unknown>;
+    })
+  | undefined
 >;
 
 /** Prefer a persisted narrator binding, retaining the global fallback when it is unusable. */
 export function resolveNarratorVoiceBinding(
   bound: AgentConfig['voiceConfig'] | undefined,
-  globalVoice: ResolvedVoice,
+  globalVoice: ResolvedVoice & { explicit?: boolean },
   providerConfigs: ProviderConfigMap,
+  design?: AgentConfig['voiceDesign'],
 ): ResolvedVoice {
+  const { explicit, ...cleanGlobal } = globalVoice;
+  const config = providerConfigs[cleanGlobal.providerId];
+  const rolePolicy = getRoleVoicePolicy({
+    providerId: cleanGlobal.providerId,
+    managed: config?.isServerConfigured,
+    options: config?.providerOptions,
+    voices: config?.voices,
+  });
+  const crossProviderBound =
+    bound &&
+    bound.providerId !== cleanGlobal.providerId &&
+    bound.voiceId.trim() &&
+    isTTSProviderEnabled(bound.providerId, providerConfigs[bound.providerId]) &&
+    voiceServesModel(
+      bound.providerId,
+      bound.voiceId,
+      providerConfigs[bound.providerId]?.modelId || bound.modelId,
+      providerConfigs[bound.providerId]?.voices,
+    );
+  if (rolePolicy && (explicit === true || !crossProviderBound)) {
+    return {
+      ...cleanGlobal,
+      voiceId: rolePolicy.resolveNarratorVoice({
+        boundVoiceId: bound?.providerId === cleanGlobal.providerId ? bound.voiceId : undefined,
+        globalVoiceId: cleanGlobal.voiceId,
+        explicitGlobal: explicit === true,
+        design,
+      }),
+    };
+  }
   if (
     bound &&
     bound.voiceId.trim() &&
@@ -78,12 +116,12 @@ export function resolveNarratorVoiceBinding(
     };
   }
   return {
-    ...globalVoice,
+    ...cleanGlobal,
     modelId: resolveTTSModelForVoice(
-      globalVoice.providerId,
-      globalVoice.voiceId,
-      globalVoice.modelId,
-      providerConfigs[globalVoice.providerId]?.voices,
+      cleanGlobal.providerId,
+      cleanGlobal.voiceId,
+      cleanGlobal.modelId,
+      providerConfigs[cleanGlobal.providerId]?.voices,
     ),
   };
 }
@@ -131,6 +169,12 @@ export function resolveAgentVoice(
     }
     const fromEnabled = enabledProviders.find((p) => p.providerId === choice.providerId);
     if (!fromEnabled) continue;
+    if (
+      fromEnabled.roleVoicePolicy &&
+      !fromEnabled.voices.some((voice) => voice.id === choice.voiceId)
+    ) {
+      continue;
+    }
     if (choice.providerId === 'qwen-tts') {
       const catalogVoice = isQwenCatalogVoice(choice.voiceId, fromEnabled.configuredVoices);
       if (catalogVoice || choice.voiceId.trim()) {
@@ -198,7 +242,12 @@ export function resolveAgentVoice(
 
   // Fallback: index inside the agent's gender when the catalogue lists it.
   // No male/female data, or an unknown agent gender, keeps the full-list index.
-  return resolveDeterministicFallbackVoice(enabledProviders, agentIndex, agentBinaryGender(agent));
+  return resolveDeterministicFallbackVoice(
+    enabledProviders,
+    agentIndex,
+    agentBinaryGender(agent),
+    agent.voiceDesign,
+  );
 }
 
 /** Explicit voiceDesign.gender wins. A missing field keeps the English identity words. */
@@ -228,9 +277,24 @@ export function resolveDeterministicFallbackVoice(
   enabledProviders: ProviderWithVoices[],
   index: number,
   agentGender?: 'male' | 'female',
+  voiceDesign?: VoiceDesign,
 ): ResolvedVoice | null {
   if (enabledProviders.length === 0) return null;
   const first = enabledProviders[0];
+  if (first.roleVoicePolicy) {
+    const voiceId = first.roleVoicePolicy.resolveAgentFallbackVoice(
+      voiceDesign ??
+        (agentGender
+          ? { gender: agentGender, identity: '', texture: '', delivery: '' }
+          : undefined),
+    );
+    if (!voiceId) return null;
+    return {
+      providerId: first.providerId,
+      ...(first.modelGroups[0]?.modelId ? { modelId: first.modelGroups[0].modelId } : {}),
+      voiceId,
+    };
+  }
   const fallbackVoices =
     first.providerId === 'qwen-tts'
       ? first.voices.filter((voice) => isQwenCatalogVoice(voice.id, first.configuredVoices))
@@ -357,6 +421,8 @@ export interface ModelVoiceGroup {
 }
 
 export interface ProviderWithVoices {
+  /** Optional provider-local policy for automatic role-voice fallback. */
+  roleVoicePolicy?: RoleVoicePolicy;
   providerId: TTSProviderId;
   providerName: string;
   voices: Array<{
@@ -449,10 +515,17 @@ export function getEnabledProvidersWithVoices(
         (voice) => !voices.some((entry) => entry.id === voice.id),
       );
       const allVoices = [...voices, ...extraVoices];
+      const roleVoicePolicy = getRoleVoicePolicy({
+        providerId,
+        managed: providerConfig.isServerConfigured,
+        options: providerConfig.providerOptions,
+        voices: providerConfig.voices,
+      });
       result.push({
         providerId,
         providerName: config.name,
         configuredVoiceList: true,
+        ...(roleVoicePolicy ? { roleVoicePolicy } : {}),
         configuredVoices: providerConfig.voices,
         voices: allVoices,
         modelGroups: [

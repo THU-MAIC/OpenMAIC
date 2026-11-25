@@ -380,4 +380,14 @@ describe('resolveActionTimeline — implicit whiteboard auto-open', () => {
     // wb_clear on an (implicitly) empty board is still 0ms.
     expect(tl[1]).toMatchObject({ startMs: WB_OPEN_MS, durationMs: 0 });
   });
+
+  it('estimates no-audio speech duration from spokenText when paired', () => {
+    const spoken = 'the derivative of f at x equals the limit as h approaches zero of the quotient';
+    const scenes = [
+      sc('S0', [act({ id: 'sp', type: 'speech', text: "$f'(x)$", spokenText: spoken })]),
+    ];
+    const tl = resolveActionTimeline(scenes);
+    expect(tl[0]?.durationMs).toBe(estimateSpeechDurationMs(spoken));
+    expect(tl[0]?.durationMs).toBeGreaterThan(estimateSpeechDurationMs("$f'(x)$"));
+  });
 });

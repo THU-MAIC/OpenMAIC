@@ -1,5 +1,5 @@
 import katex from 'katex';
-import { safeKatexOptions } from '@openmaic/dsl';
+import { safeKatexOptions, speechMathSpans, splitSpeechFormulaPairs } from '@openmaic/dsl';
 
 export type QuizMathTextSegment =
   | {
@@ -247,6 +247,42 @@ export function renderQuizMathText(value: string): QuizMathTextSegment[] {
     { type: 'math', value: latex, html, displayMode: false },
     ...(suffix ? ([{ type: 'text', value: suffix }] as QuizMathTextSegment[]) : []),
   ]);
+}
+
+/**
+ * Parse inline math delimiters (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`) inside
+ * speech captions. Also unwraps any unparsed `[[$LaTeX$ | spoken]]` pair to `$LaTeX$`.
+ * Unlike `parseQuizMathText`, allows derivatives (`$f'(x)$`), `±`, and matrix `&`
+ * while still ignoring prose currency like `"$5 and $10"`.
+ */
+export function renderCaptionMathText(rawValue: string): QuizMathTextSegment[] {
+  if (!rawValue) return [{ type: 'text', value: '' }];
+  const value = rawValue.includes('[[') ? splitSpeechFormulaPairs(rawValue).text : rawValue;
+  if (!EXPLICIT_DELIMITER_RE.test(value)) return [{ type: 'text', value }];
+
+  const segments: QuizMathTextSegment[] = [];
+  let cursor = 0;
+
+  for (const span of speechMathSpans(value)) {
+    if (cursor < span.start)
+      segments.push({ type: 'text', value: value.slice(cursor, span.start) });
+    const html = renderLatexToHtml(span.latex, span.displayMode);
+    segments.push(
+      html
+        ? { type: 'math', value: span.latex, html, displayMode: span.displayMode }
+        : { type: 'text', value: value.slice(span.start, span.end) },
+    );
+    cursor = span.end;
+  }
+  if (cursor < value.length) {
+    segments.push({ type: 'text', value: value.slice(cursor) });
+  }
+
+  return mergeTextSegments(segments);
+}
+
+export function hasCaptionMath(value?: string | null): boolean {
+  return !!value && renderCaptionMathText(value).some((segment) => segment.type === 'math');
 }
 
 function findNextDelimiter(

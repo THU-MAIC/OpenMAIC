@@ -117,6 +117,23 @@ describe('useExportPPTX placeholders', () => {
     ];
   });
 
+  it('writes the authored formula reading into the actual speaker-notes XML', async () => {
+    mocks.stageState.scenes = [
+      {
+        ...scene('s1', 'slide', { type: 'slide', canvas }),
+        actions: [
+          { id: 'a', type: 'speech', text: '$\\frac{a}{b}$', spokenText: 'Divide a by b.' },
+        ],
+      },
+    ];
+    const hook = useExportPPTX({ classroomOrigin: ORIGIN });
+    await runExport(() => hook.exportPPTX());
+    const zip = await savedPptx();
+    const notes = await zip.file('ppt/notesSlides/notesSlide1.xml')!.async('text');
+    expect(notes).toContain('Divide a by b.');
+    expect(notes).not.toMatch(/\\frac|\$/);
+  });
+
   for (const mode of ['exportPPTX', 'exportResourcePack'] as const) {
     it(`${mode}: links placeholders online, makes no request, shows no publish wording`, async () => {
       const hook = useExportPPTX({ classroomOrigin: ORIGIN });

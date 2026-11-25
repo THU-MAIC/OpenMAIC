@@ -84,7 +84,11 @@ export async function generateAndStoreTTS(
   text: string,
   language?: string,
   signal?: AbortSignal,
-  retryOptions?: ClientRetryOptions<TTSApiResponse>,
+  options?: ClientRetryOptions<TTSApiResponse> & {
+    previousTexts?: readonly string[];
+    /** The course's subject label (or title); the server forwards it to managed MOSS. */
+    subject?: string;
+  },
   stageId?: string,
   // Internal: an explicit voice that bypasses narrator binding resolution — used
   // to retry narration against the deterministic enabled-provider pick when the
@@ -95,6 +99,7 @@ export async function generateAndStoreTTS(
   // /api/generate/tts beyond a single fallback hop.
   fallbackHops = 0,
 ): Promise<string | null> {
+  const { previousTexts, subject, ...retryOptions } = options ?? {};
   // The `tts` slot's provider, and the user's voice for it.
   const selection = ttsSelection(await loadModelCapabilities());
   if (!selection) return null;
@@ -129,8 +134,9 @@ export async function generateAndStoreTTS(
     overrideVoice ??
     resolveNarratorVoiceBinding(
       boundVoice && isVoiceBindingUnavailable(boundVoice) ? undefined : boundVoice,
-      globalVoice,
+      { ...globalVoice, explicit: selection.explicit },
       providersConfig,
+      teacher?.voiceDesign,
     );
 
   // Pinned narrator (bound == global) whose provider became disabled:
@@ -178,6 +184,8 @@ export async function generateAndStoreTTS(
           // voice-clone model on the server.
           body: JSON.stringify({
             text,
+            ...(previousTexts?.length ? { previousTexts } : {}),
+            ...(subject ? { subject } : {}),
             audioId: requestId,
             ttsVoice,
             ttsSpeed: selection.speed,
@@ -238,7 +246,7 @@ export async function generateAndStoreTTS(
             text,
             language,
             signal,
-            retryOptions,
+            options,
             stageId,
             globalDiffers ? undefined : retryVoice,
             fallbackHops + 1,

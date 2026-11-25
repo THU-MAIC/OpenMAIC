@@ -151,6 +151,12 @@ export interface Stage {
   updatedAt: number;
   // Stage metadata
   languageDirective?: string;
+  /**
+   * The course's school subject as one short label (e.g. 语文, 数学, 英语),
+   * produced by the outline step. Speech synthesis reads it to decide how to
+   * pronounce pinyin and Latin letters. Absent on older courses and imports.
+   */
+  subject?: string;
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];

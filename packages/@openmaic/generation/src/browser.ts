@@ -10,6 +10,15 @@ export {
 export type { GenerationRetryEvent, GenerationRetryOptions } from './generation-retry.js';
 export { changeOutlineType } from './outline-type.js';
 export { parseJsonResponse } from './json-repair.js';
+export {
+  plainSpeechText,
+  speechMathSpans,
+  recoverJsonLatexEscapes,
+  speechForTts,
+  splitSpeechFormulaPairs,
+  stripInlineLatexForPlainTts,
+} from '@openmaic/dsl';
+export type { SpeechFormulaViews } from '@openmaic/dsl';
 export * from './pbl/operations/kernel/engagement.js';
 export * from './pbl/operations/kernel/proficiency.js';
 export * from './pbl/operations/kernel/progress.js';

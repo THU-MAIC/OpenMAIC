@@ -263,3 +263,26 @@ describe('buildScriptFileName', () => {
     expect(buildScriptFileName('???', 'docx')).toBe('script.docx');
   });
 });
+
+it('writes the spoken formula to the Markdown file and the Word document', async () => {
+  const scripts = collectSceneScripts(
+    [
+      scene({
+        actions: [
+          { ...speechAction('a', String.raw`$\frac{a}{b}$`), spokenText: 'Divide a by b.' },
+          speechAction('b', String.raw`面积是 $x^2$。`),
+        ],
+      }),
+    ],
+    String,
+  );
+  const doc = await JSZip.loadAsync(await (await buildDocxBlob('Formula', scripts)).arrayBuffer());
+  for (const exported of [
+    buildMarkdown('Formula', scripts),
+    await doc.file('word/document.xml')!.async('text'),
+  ]) {
+    expect(exported).toContain('Divide a by b.');
+    expect(exported).toContain('面积是 x 的平方。');
+    expect(exported).not.toMatch(/\\frac|\$x\^2\$/);
+  }
+});

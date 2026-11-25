@@ -1,4 +1,5 @@
 import { configuredDefaultVoice } from '@/lib/audio/provider-default-voice';
+import { getRoleVoicePolicy } from '@/lib/audio/role-voice';
 /**
  * Which voice a run narrates with, decided as the browser decides it for the
  * `tts` slot (`lib/audio/tts-selection.ts`, `generateAndStoreTTS`): the slot
@@ -84,7 +85,7 @@ function defaultVoiceFor(
 export function slotVoice(
   target: RunNarrationTarget,
   preference: GenerationRunInput['voice'],
-): { voice: string; speed: number } {
+): { voice: string; speed: number; explicit: boolean } {
   const usable =
     preference?.providerId === target.providerId &&
     !!preference.voiceId &&
@@ -109,6 +110,7 @@ export function slotVoice(
           target.connection.voices,
         ),
     speed: preference?.speed ?? 1,
+    explicit: usable && preference?.explicit !== false,
   };
 }
 
@@ -124,30 +126,37 @@ function catalogVoiceGender(
 }
 
 /** The voices the agent-profiles step may bind agents to, as the browser advertises them. */
-export function advertisedVoices(target: RunNarrationTarget) {
+export function advertisedVoices(
+  target: RunNarrationTarget,
+  preference?: GenerationRunInput['voice'],
+) {
+  const rolePolicy = getRoleVoicePolicy(target.connection);
+  const automatic = rolePolicy?.automaticVoiceIds(slotVoice(target, preference).voice);
   return getEnabledProvidersWithVoices(providersConfig(target)).flatMap((provider) =>
-    provider.voices.map((voice) => {
-      const cloneModelGroup =
-        provider.providerId === 'qwen-tts' && isQwenCloneVoice(voice.id, target.connection.voices)
-          ? provider.modelGroups.find((group) =>
-              group.voices.some((groupVoice) => groupVoice.id === voice.id),
-            )
+    provider.voices
+      .filter((v) => !automatic || automatic.has(v.id))
+      .map((voice) => {
+        const cloneModelGroup =
+          provider.providerId === 'qwen-tts' && isQwenCloneVoice(voice.id, target.connection.voices)
+            ? provider.modelGroups.find((group) =>
+                group.voices.some((groupVoice) => groupVoice.id === voice.id),
+              )
+            : undefined;
+        const modelId = cloneModelGroup
+          ? resolveTTSModelForVoice(provider.providerId, voice.id, cloneModelGroup.modelId)
           : undefined;
-      const modelId = cloneModelGroup
-        ? resolveTTSModelForVoice(provider.providerId, voice.id, cloneModelGroup.modelId)
-        : undefined;
-      const gender = provider.configuredVoiceList
-        ? voice.gender
-        : (voice.gender ?? catalogVoiceGender(provider.providerId, voice.id));
-      return {
-        providerId: provider.providerId,
-        ...(modelId ? { modelId } : {}),
-        voiceId: voice.id,
-        voiceName: voice.name,
-        voiceLanguage: voice.language,
-        ...(gender ? { gender } : {}),
-      };
-    }),
+        const gender = provider.configuredVoiceList
+          ? voice.gender
+          : (voice.gender ?? catalogVoiceGender(provider.providerId, voice.id));
+        return {
+          providerId: provider.providerId,
+          ...(modelId ? { modelId } : {}),
+          voiceId: voice.id,
+          voiceName: voice.name,
+          voiceLanguage: voice.language,
+          ...(gender ? { gender } : {}),
+        };
+      }),
   );
 }
 
@@ -156,7 +165,9 @@ export function narratorVoiceForGeneration(
   target: RunNarrationTarget,
   preference: GenerationRunInput['voice'],
 ): ResolvedVoice | undefined {
-  const { voice } = slotVoice(target, preference);
+  const { voice, explicit } = slotVoice(target, preference);
+  const rolePolicy = getRoleVoicePolicy(target.connection);
+  if (rolePolicy && !rolePolicy.pinsDefaultNarrator && !explicit) return undefined;
   return resolveNarratorVoiceForGeneration(
     target.providerId,
     voice,
@@ -176,6 +187,7 @@ export function clipVoice(input: {
   target: RunNarrationTarget;
   preference: GenerationRunInput['voice'];
   bound: AgentConfig['voiceConfig'] | undefined;
+  design?: AgentConfig['voiceDesign'];
   /** The bindings this run found unusable (a deleted clone, say). */
   unavailable: ReadonlySet<string>;
   /** An explicit voice a retry uses instead. */
@@ -183,17 +195,19 @@ export function clipVoice(input: {
 }): { voice: ResolvedVoice; globalVoice: ResolvedVoice } | null {
   const { target, bound } = input;
   const configs = providersConfig(target);
+  const resolvedSlot = slotVoice(target, input.preference);
   const globalVoice: ResolvedVoice = {
     providerId: target.providerId,
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
-    voiceId: slotVoice(target, input.preference).voice,
+    voiceId: resolvedSlot.voice,
   };
   let voice =
     input.override ??
     resolveNarratorVoiceBinding(
       bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
-      globalVoice,
+      { ...globalVoice, explicit: resolvedSlot.explicit },
       configs,
+      input.design,
     );
   if (
     bound &&

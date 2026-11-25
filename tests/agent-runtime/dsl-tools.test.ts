@@ -2357,3 +2357,39 @@ it('allows unrelated text edits on a slide with imported chart formatting', asyn
   expect(result).not.toHaveProperty('isError');
   expect(current.putScene).toHaveBeenCalledTimes(1);
 });
+
+it('invalidates cached speech audio when patch_stage edits only spokenText', async () => {
+  const initial = course();
+  initial.scenes[0].actions = [
+    {
+      id: 'sp-1',
+      type: 'speech',
+      text: '$x^2$',
+      spokenText: 'x squared',
+      audioId: 'ast_old_clip',
+    },
+    {
+      id: 'sp-2',
+      type: 'speech',
+      text: 'Keep me.',
+      audioId: 'ast_keep',
+    },
+  ];
+  const current = state(initial);
+  const patch = tool(dslTools(current.store), 'patch_stage');
+  const result = await patch.execute('edit-spoken-only', {
+    target: '/scenes/scene_slide',
+    intent: 'Refine the spoken math reading',
+    ops: [{ op: 'set', path: '/actions/0/spokenText', value: 'x to the power of two' }],
+  } as never);
+  expect(result).not.toHaveProperty('isError');
+  const savedActions = current.get().scenes[0]!.actions!;
+  expect(savedActions[0]).toMatchObject({
+    id: 'sp-1',
+    type: 'speech',
+    text: '$x^2$',
+    spokenText: 'x to the power of two',
+  });
+  expect(savedActions[0]).not.toHaveProperty('audioId');
+  expect(savedActions[1]).toMatchObject({ id: 'sp-2', audioId: 'ast_keep' });
+});

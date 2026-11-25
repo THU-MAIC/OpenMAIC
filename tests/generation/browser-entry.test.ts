@@ -32,7 +32,10 @@ describe('generation browser entry', () => {
           /^(node:|fs$|path$|url$|crypto$|child_process$)/,
         );
         if (name.startsWith('.')) visit(resolve(dirname(file), name));
-        else
+        else if (name === '@openmaic/dsl') {
+          // Follow the workspace dependency so its transitive imports are held to the same browser contract.
+          visit(resolve('packages/@openmaic/dsl/dist/index.js'));
+        } else
           expect([
             'jsonrepair',
             'parse5',

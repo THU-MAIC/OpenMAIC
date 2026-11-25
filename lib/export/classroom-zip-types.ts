@@ -27,6 +27,8 @@ export interface ManifestStage {
   name: string;
   description?: string;
   language?: string;
+  /** Course subject label (Stage.subject), read by narration TTS. */
+  subject?: string;
   style?: string;
   videoManifest?: VideoManifest;
   createdAt: number;

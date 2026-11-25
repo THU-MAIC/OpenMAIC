@@ -4,6 +4,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core';
 
 import type { AppDocumentOutline } from '@/lib/document-store/persistence-types';
 import type { Scene } from '@/lib/types/stage';
+import { mossCourseSubject } from '@/lib/audio/moss-tts';
 import { matchOutlineEntries } from '../course-outline-union';
 import { putSceneBringingCurrent } from '../document-writes';
 import { createBlankScene } from './apply';
@@ -121,6 +122,8 @@ export function buildCourseAudioAndDeckTools(deps: CourseToolDeps): AgentTool<ne
       if (!doc || !scene) return result('Page not found. Call list_scenes.', {}, true);
       const summary = await (deps.synthesizeTts ?? synthesizeSceneNarration)({
         scene,
+        courseScenes: doc.scenes,
+        subject: mossCourseSubject(doc.stage),
         force: params.force ?? false,
         roster: doc.stage.generatedAgentConfigs,
         signal,

@@ -37,5 +37,6 @@ export * from './asset-manifest.js';
 export * from './slide-media-slots.js';
 export * from './runtime.js';
 export * from './math-render.js';
+export * from './speech-formula-pairs.js';
 export * from './course-issues.js';
 export * from './media-address.js';

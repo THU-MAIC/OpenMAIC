@@ -32,6 +32,8 @@ import type {
 import { INTERACTIVE_STATIC_MESSAGE_FLAG } from '../interactive-static';
 import { emitManifestJson } from '../passes/emit';
 import { RUNTIME_DIAGNOSTIC_CODES } from '../runtime-diagnostics';
+import { renderCaptionMathText } from '../../quiz/math-text';
+import { splitCue } from '../split-cue';
 import { toSrt, toVtt } from '../subtitles';
 import { EASE_DEFS, emitEffect } from './effects';
 import { escapeHtml, sec } from './format';
@@ -738,9 +740,21 @@ function subtitleBandHeight(height: number): number {
 function renderSubtitles(
   ir: VideoTimeline,
   height: number,
-): { html: string; statements: string[] } {
-  const cues = ir.subtitles.filter((c) => c.text.trim());
-  if (cues.length === 0) return { html: '', statements: [] };
+): { html: string; statements: string[]; hasMath: boolean } {
+  const cues = ir.subtitles
+    .filter((c) => c.text.trim())
+    .flatMap((c) => (c.spokenText === undefined ? [c] : splitCue(c)));
+  let hasMath = false;
+  function captionHtml(text: string): string {
+    return renderCaptionMathText(text)
+      .map((segment) => {
+        if (segment.type === 'text') return escapeHtml(segment.value);
+        hasMath = true;
+        return segment.html;
+      })
+      .join('');
+  }
+  if (cues.length === 0) return { html: '', statements: [], hasMath };
 
   // Scale caption type to the render height so it reads at any resolution.
   const fontPx = Math.max(SUBTITLE.minFontPx, Math.round(height * SUBTITLE.fontHeightRatio));
@@ -762,7 +776,7 @@ function renderSubtitles(
   const cueDivs = cues
     .map(
       (c, i) =>
-        `  <div id="subtitle-cue-${i}" dir="auto" style="grid-area:1/1;display:none;justify-self:center;max-width:${SUBTITLE.maxWidthPct}%;max-height:${maxTextHeight}px;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:${SUBTITLE.maxLines};padding:${padV}px ${padH}px;background:rgba(0,0,0,${SUBTITLE.bgOpacity});color:#fff;font-size:${fontPx}px;line-height:${SUBTITLE.lineHeight};border-radius:${padV}px;white-space:pre-wrap;text-shadow:0 1px 2px rgba(0,0,0,0.9)">${escapeHtml(c.text)}</div>`,
+        `  <div id="subtitle-cue-${i}" dir="auto" style="grid-area:1/1;display:none;justify-self:center;max-width:${SUBTITLE.maxWidthPct}%;max-height:${maxTextHeight}px;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:${SUBTITLE.maxLines};padding:${padV}px ${padH}px;background:rgba(0,0,0,${SUBTITLE.bgOpacity});color:#fff;font-size:${fontPx}px;line-height:${SUBTITLE.lineHeight};border-radius:${padV}px;white-space:pre-wrap;text-shadow:0 1px 2px rgba(0,0,0,0.9)">${captionHtml(c.text)}</div>`,
     )
     .join('\n');
 
@@ -782,7 +796,7 @@ function renderSubtitles(
     statements.push(`tl.set('#subtitle-cue-${i}',{display:'-webkit-box'},${sec(c.startMs)});`);
     statements.push(`tl.set('#subtitle-cue-${i}',{display:'none'},${sec(c.endMs)});`);
   }
-  return { html, statements };
+  return { html, statements, hasMath };
 }
 
 /** Stage width the cover-card design is authored against (720p). */
@@ -1121,6 +1135,7 @@ function renderReadme(project: {
   labels: VideoExportLabels;
   cta: VideoExportCta | null;
   hasQuizQuestionList: boolean;
+  hasCaptionMath: boolean;
   quizScriptFonts: readonly QuizScriptFont[];
 }): string {
   const seconds = (project.totalDurationMs / 1000).toFixed(1);
@@ -1176,7 +1191,9 @@ folder — no network access, no CDN.
 ${
   project.hasQuizQuestionList
     ? `- \`assets/fonts\` — 20 KaTeX faces plus selected deterministic Quiz text WOFF2 assets.\n- \`LICENSES/KaTeX-MIT.txt\` — license for the KaTeX renderer and math-font faces.\n- \`LICENSES/Noto-Sans-SC-OFL-1.1.txt\` — license for the bundled deterministic Han/Kana face.\n- \`LICENSES/Noto-Sans-KR-OFL-1.1.txt\` — license for the bundled deterministic Hangul face.${scriptFontEntries ? `\n${scriptFontEntries}` : ''}`
-    : ''
+    : project.hasCaptionMath
+      ? '- Math captions bundle the KaTeX fonts in assets/fonts and their license in LICENSES/KaTeX-MIT.txt.'
+      : ''
 }
 
 ## Render
@@ -1297,7 +1314,8 @@ export function emitHyperframes(
   // depends on this flag.
   const subtitles = options.burnInSubtitles
     ? renderSubtitles(ir, height)
-    : { html: '', statements: [] };
+    : { html: '', statements: [], hasMath: false };
+  const needsMathFonts = hasQuizQuestionList || subtitles.hasMath;
   statements.push(...subtitles.statements);
 
   // Extend the timeline to the full composition length even if the last tween
@@ -1314,7 +1332,9 @@ export function emitHyperframes(
   ${INTER_FONT_FACE_CSS}${
     hasQuizQuestionList
       ? `\n  ${NOTO_CJK_EXPORT_CSS}\n  ${KATEX_EXPORT_CSS}${quizFontPlan.exportCss ? `\n  ${quizFontPlan.exportCss}` : ''}`
-      : ''
+      : needsMathFonts
+        ? KATEX_EXPORT_CSS
+        : ''
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #000; }
@@ -1353,9 +1373,9 @@ window.__openmaicInteractiveReady.then(function () {
   const files: EmittedFile[] = [
     { path: 'index.html', content: html },
     { path: 'LICENSES/Inter-OFL-1.1.txt', content: INTER_OFL_LICENSE },
+    ...(needsMathFonts ? [{ path: 'LICENSES/KaTeX-MIT.txt', content: KATEX_MIT_LICENSE }] : []),
     ...(hasQuizQuestionList
       ? [
-          { path: 'LICENSES/KaTeX-MIT.txt', content: KATEX_MIT_LICENSE },
           {
             path: 'LICENSES/Noto-Sans-SC-OFL-1.1.txt',
             content: NOTO_SANS_SC_OFL_LICENSE,
@@ -1385,6 +1405,7 @@ window.__openmaicInteractiveReady.then(function () {
         labels,
         cta,
         hasQuizQuestionList,
+        hasCaptionMath: subtitles.hasMath,
         quizScriptFonts: quizFontPlan.scripts,
       }),
     },
@@ -1394,7 +1415,9 @@ window.__openmaicInteractiveReady.then(function () {
     files,
     vendorAssets: hasQuizQuestionList
       ? [...NOTO_CJK_FONT_ASSETS, ...KATEX_FONT_ASSETS, ...quizFontPlan.assets]
-      : [],
+      : needsMathFonts
+        ? [...KATEX_FONT_ASSETS]
+        : [],
     width,
     height,
     compositionId,

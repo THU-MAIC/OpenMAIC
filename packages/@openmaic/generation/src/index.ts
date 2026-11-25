@@ -37,6 +37,15 @@ export {
 } from './generation-retry.js';
 export type { GenerationRetryEvent, GenerationRetryOptions } from './generation-retry.js';
 export { parseActionsFromStructuredOutput } from './action-parser.js';
+export {
+  plainSpeechText,
+  speechMathSpans,
+  recoverJsonLatexEscapes,
+  speechForTts,
+  splitSpeechFormulaPairs,
+  stripInlineLatexForPlainTts,
+} from '@openmaic/dsl';
+export type { SpeechFormulaViews } from '@openmaic/dsl';
 export { postProcessInteractiveHtml } from './interactive-post-processor.js';
 export { generatePBLV2ProjectSingleCall } from './pbl/planner-single-call.js';
 export type { PlannerSingleCallFn } from './pbl/planner-single-call.js';
@@ -84,6 +93,7 @@ export {
   applyOutlineFallbacks,
   buildOutlinePrompt,
   generateSceneOutlinesFromRequirements,
+  normalizeCourseSubject,
   sanitizeProceduralSkillOutline,
 } from './outline-generator.js';
 export type {

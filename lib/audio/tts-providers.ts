@@ -120,6 +120,9 @@ import {
 } from '@/lib/server/audio-provider-fetch';
 import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
+import { stripInlineLatexForPlainTts } from '@openmaic/generation/browser';
+import { runMossRequest } from '@/lib/server/narration-concurrency';
+import { isManagedMossTts, MOSS_REQUEST_TIMEOUT_MS } from './moss-tts';
 import { pcmS16leMonoToWav } from './pcm-wav';
 import {
   DEEPSEEK_TOOLS_DEFAULT_BASE_URL,
@@ -245,8 +248,8 @@ export class TTSRequestTimeoutError extends Error {
 }
 
 /** Combine the caller's cancel signal with the per-request timeout. */
-function ttsRequestSignal(callerSignal?: AbortSignal): AbortSignal {
-  const timeout = AbortSignal.timeout(ttsRequestTimeoutMs());
+function ttsRequestSignal(callerSignal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
   return callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout;
 }
 
@@ -315,11 +318,24 @@ export async function generateTTS(
     throw new Error(`API key required for TTS provider: ${config.providerId}`);
   }
 
-  const signal = ttsRequestSignal(config.signal);
+  const moss = isManagedMossTts({ ...config, options: config.providerOptions });
+  const timeoutMs = moss
+    ? Math.max(ttsRequestTimeoutMs(), MOSS_REQUEST_TIMEOUT_MS)
+    : ttsRequestTimeoutMs();
+  // MOSS runs a full LaTeX AST normalizer server-side; other providers receive
+  // plain text if bare `$...$` survived without a paired `spokenText`.
+  if (!moss && (text.includes('$') || text.includes('\\'))) {
+    text = stripInlineLatexForPlainTts(text);
+  }
+  const signal = ttsRequestSignal(config.signal, timeoutMs);
   try {
     switch (config.providerId) {
       case 'openai-tts':
-        return await generateOpenAITTS(config, text, signal);
+        return moss && config.baseUrl
+          ? await runMossRequest(config.baseUrl, signal, () =>
+              generateOpenAITTS(config, text, signal, true),
+            )
+          : await generateOpenAITTS(config, text, signal, moss);
 
       case 'azure-tts':
         return await generateAzureTTS(config, text, signal);
@@ -368,7 +384,7 @@ export async function generateTTS(
     if (isTimeoutSignal(signal)) {
       throw new TTSRequestTimeoutError(
         config.providerId,
-        `TTS request timed out after ${ttsRequestTimeoutMs()}ms (provider ${config.providerId}) — the provider did not respond. Do not retry with the same input without splitting long narration text or increasing TTS_REQUEST_TIMEOUT_MS.`,
+        `TTS request timed out after ${timeoutMs}ms (provider ${config.providerId}) — the provider did not respond. Do not retry with the same input without splitting long narration text or increasing TTS_REQUEST_TIMEOUT_MS.`,
       );
     }
     throw error;
@@ -382,8 +398,15 @@ async function generateOpenAITTS(
   config: TTSModelConfig,
   text: string,
   signal: AbortSignal,
+  moss = false,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl;
+  if (moss && (!config.baseUrl || !config.modelId)) {
+    throw new Error('Configure a base URL and model for the MOSS speech API.');
+  }
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl)!.replace(
+    /\/+$/,
+    '',
+  );
 
   // Use gpt-4o-mini-tts for best quality and intelligent realtime applications
   const response = await ttsFetch(config, `${baseUrl}/audio/speech`, {
@@ -396,6 +419,8 @@ async function generateOpenAITTS(
       model: config.modelId || 'gpt-4o-mini-tts',
       input: text,
       voice: config.voice,
+      ...(moss && config.previousTexts?.length ? { previous_texts: config.previousTexts } : {}),
+      ...(moss && config.subject?.trim() ? { subject: config.subject.trim() } : {}),
       speed: config.speed || 1.0,
       // Ask for a container the browser can decode. OpenAI defaults to mp3, but
       // this same function serves every custom OpenAI-compatible provider and
@@ -417,6 +442,23 @@ async function generateOpenAITTS(
       `OpenAI TTS API error: ${error.error?.message || response.statusText}`,
       options,
     );
+  }
+
+  if (moss && response.headers.get('content-type')?.toLowerCase().includes('application/json')) {
+    const payload = (await response.json().catch(() => null)) as { audioUrl?: unknown } | null;
+    const url = typeof payload?.audioUrl === 'string' ? URL.parse(payload.audioUrl) : null;
+    if (!url || url.origin !== new URL(baseUrl).origin || url.username || url.password) {
+      throw new TTSInvalidResponseError('MOSS', 'MOSS returned an invalid audio URL.');
+    }
+    const audio = await audioProviderFetch(
+      url,
+      { method: 'GET', signal },
+      { ...audioEndpointPolicy(config), rejectRedirects: true },
+    );
+    if (!audio.ok || !audio.headers.get('content-type')?.toLowerCase().startsWith('audio/')) {
+      throw new TTSInvalidResponseError('MOSS', 'MOSS audio download failed.');
+    }
+    return validateTTSAudioResponse(audio, 'MOSS');
   }
 
   return await validateTTSAudioResponse(response, 'OpenAI');

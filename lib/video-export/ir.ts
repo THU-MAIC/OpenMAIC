@@ -327,6 +327,8 @@ export const SubtitleCueSchema = z.object({
   startMs: z.number(),
   endMs: z.number(),
   text: z.string(),
+  /** Author-provided or derived plain reading when the display contains a formula. */
+  spokenText: z.string().optional(),
 });
 
 /** The kind of asset a plan entry bundles. */

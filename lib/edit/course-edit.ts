@@ -17,6 +17,7 @@ import {
   nextStep,
   noteDocumentRefs,
   pushEntry,
+  sameSpeechAudioTarget,
   stampAudioOnLine,
   stepLine,
   useCourseTimeline,
@@ -107,18 +108,21 @@ export function stampGeneratedAudio(
   actionId: string,
   text: string,
   audioId: string,
+  spokenText?: string,
 ): void {
   const store = useStageStore.getState();
   const actions = store.scenes.find((scene) => scene.id === sceneId)?.actions ?? [];
   const live = actions.find((action) => action.id === actionId);
-  if (live?.type === 'speech' && live.text === text) {
+  if (live?.type === 'speech' && sameSpeechAudioTarget(live, text, spokenText)) {
     store.updateScene(sceneId, { actions: setAudioIdById(actions, actionId, audioId) });
   }
   const stageId = store.stage?.id;
   if (!stageId || !useCourseTimeline.getState().lines[stageId]) return;
   useCourseTimeline
     .getState()
-    .updateLine(stageId, (line) => stampAudioOnLine(line, sceneId, actionId, text, audioId));
+    .updateLine(stageId, (line) =>
+      stampAudioOnLine(line, sceneId, actionId, text, audioId, spokenText),
+    );
 }
 
 /**

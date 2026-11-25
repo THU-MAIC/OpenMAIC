@@ -1,3 +1,4 @@
+import { splitSpeechFormulaPairs } from '@openmaic/generation/browser';
 import type { Action } from '@/lib/types/action';
 
 /**
@@ -95,7 +96,14 @@ export function setSpeechText(actions: Action[], index: number, text: string): A
   const a = actions[index];
   if (!a || a.type !== 'speech') return actions;
   const next = actions.slice();
-  next[index] = { ...a, text } as Action;
+  const split = text.includes('[[') ? splitSpeechFormulaPairs(text) : undefined;
+  const updated = {
+    ...a,
+    text: split ? split.text : text,
+  } as Action & { spokenText?: string };
+  if (split?.spokenText) updated.spokenText = split.spokenText;
+  else delete updated.spokenText;
+  next[index] = updated;
   return next;
 }
 
@@ -117,11 +125,19 @@ export function setSpeechTextClearAudioById(actions: Action[], id: string, text:
   const a = actions[index];
   if (!a || a.type !== 'speech') return actions;
   const next = actions.slice();
+  const split = text.includes('[[') ? splitSpeechFormulaPairs(text) : undefined;
   const cleaned = {
     ...a,
-    text,
+    text: split ? split.text : text,
     audioInvalidated: true,
-  } as Action & { audioId?: string; audioUrl?: string; audioInvalidated?: boolean };
+  } as Action & {
+    spokenText?: string;
+    audioId?: string;
+    audioUrl?: string;
+    audioInvalidated?: boolean;
+  };
+  if (split?.spokenText) cleaned.spokenText = split.spokenText;
+  else delete cleaned.spokenText;
   delete cleaned.audioId;
   // The legacy URL of an unconverted pair points at the old wording's
   // narration just as much as the id does; keeping it would let a later

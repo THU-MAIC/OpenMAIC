@@ -20,6 +20,7 @@ import type { AppDocumentOutline } from '@/lib/document-store/persistence-types'
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Action } from '@/lib/types/action';
 import type { Scene } from '@/lib/types/stage';
+import { mossCourseSubject } from '@/lib/audio/moss-tts';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import type { CourseToolDeps } from './course-tools';
 import { runStageMutation } from './mutation-fence';
@@ -633,6 +634,8 @@ export function buildGenerationTools(deps: GenerationToolDeps): AgentTool<never,
       if (params.synthesizeAudio !== false) {
         audio = await (deps.synthesizeTts ?? synthesizeSceneNarration)({
           scene: next,
+          courseScenes: doc.scenes.map((item) => (item.id === next.id ? next : item)),
+          subject: mossCourseSubject(doc.stage),
           force: false,
           roster: doc.stage.generatedAgentConfigs,
           signal,

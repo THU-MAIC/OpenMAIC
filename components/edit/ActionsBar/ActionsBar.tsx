@@ -25,7 +25,9 @@
  *
  * Reactive to the stage store; collapse and height belong to the dock.
  */
+import { splitSpeechFormulaPairs } from '@openmaic/dsl';
 import { commitCourseEdit, stampGeneratedAudio } from '@/lib/edit/course-edit';
+import { sameSpeechAudioTarget } from '@/lib/edit/course-timeline';
 import {
   useCallback,
   useEffect,
@@ -61,6 +63,8 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
+import { CaptionMathText } from '@/components/common/CaptionMathText';
+import { hasCaptionMath } from '@/lib/quiz/math-text';
 import {
   Select,
   SelectContent,
@@ -316,6 +320,8 @@ export function SpeechTtsBar({
   sceneOrder,
   language,
   text,
+  spokenText,
+  prepareSource,
   refreshKey,
   regenerating,
   onGenerated,
@@ -328,6 +334,8 @@ export function SpeechTtsBar({
   sceneOrder: number;
   language?: string;
   text: string;
+  spokenText?: string;
+  prepareSource?: () => { text: string; spokenText?: string };
   refreshKey?: number;
   regenerating?: boolean;
   /**
@@ -336,7 +344,7 @@ export function SpeechTtsBar({
    * identities (the blob is stored under the returned id), so the id cannot be
    * re-derived by the caller like the reference's deterministic key.
    */
-  onGenerated: (audioId: string, sourceText: string) => void;
+  onGenerated: (audioId: string, sourceText: string, sourceSpokenText?: string) => void;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
@@ -482,18 +490,27 @@ export function SpeechTtsBar({
     setStatus('generating');
     try {
       const previousAudioId = audioId;
+      const source = prepareSource ? prepareSource() : { text, spokenText };
       const id = await regenerateSpeechAudio(
         sceneOrder,
-        { id: actionId, text, audioId: previousAudioId },
+        {
+          id: actionId,
+          text: source.text,
+          ...(source.spokenText ? { spokenText: source.spokenText } : {}),
+          audioId: previousAudioId,
+        },
         language,
       );
       if (id) {
-        onGenerated(id, text);
+        onGenerated(id, source.text, source.spokenText);
         const live = useStageStore
           .getState()
           .scenes.find((scene) => scene.order === sceneOrder)
           ?.actions?.find((action) => action.id === actionId);
-        if (live?.type === 'speech' && live.text === text) {
+        if (
+          live?.type === 'speech' &&
+          sameSpeechAudioTarget(live, source.text, source.spokenText)
+        ) {
           setReadAudioId(id);
           setStatus('ready');
         } else {
@@ -599,6 +616,7 @@ export function SpeechTtsBar({
 /** One spoken line — a numbered, editable clip block. */
 function SpeechClip({
   text,
+  spokenText,
   actionId,
   audioId,
   audioUrl,
@@ -619,6 +637,7 @@ function SpeechClip({
   onDragEnd,
 }: {
   text: string;
+  spokenText?: string;
   actionId: string;
   audioId?: string;
   audioUrl?: string;
@@ -629,7 +648,7 @@ function SpeechClip({
   ttsRefresh?: number;
   regenerating?: boolean;
   onCommit: (text: string) => void;
-  onGenerated: (audioId: string, sourceText: string) => void;
+  onGenerated: (audioId: string, sourceText: string, sourceSpokenText?: string) => void;
   onDelete: () => void;
   onMoveLeft: () => void;
   onMoveRight: () => void;
@@ -641,6 +660,8 @@ function SpeechClip({
   const { t } = useI18n();
   const ref = useRef<HTMLTextAreaElement>(null);
   const [val, setVal] = useState(text);
+  const fieldId = useId();
+  const showFormula = useMemo(() => hasCaptionMath(text), [text]);
   // Has the user typed since the last external sync? If not, external text
   // changes (e.g. an agent regeneration mid-edit) are adopted even while
   // focused — so a stale draft can't clobber regenerated narration on blur.
@@ -652,10 +673,15 @@ function SpeechClip({
       setVal(text);
       dirtyRef.current = false;
     }
-  }, [text]);
+  }, [text, spokenText]);
 
   const commit = () => {
-    if (dirtyRef.current && val !== text) onCommit(val);
+    if (dirtyRef.current && val !== text) {
+      onCommit(val);
+      if (val.includes('[[')) {
+        setVal(splitSpeechFormulaPairs(val).text);
+      }
+    }
     dirtyRef.current = false;
   };
 
@@ -688,6 +714,23 @@ function SpeechClip({
             sceneOrder={sceneOrder}
             language={language}
             text={val}
+            spokenText={spokenText}
+            prepareSource={() => {
+              if (dirtyRef.current && val !== text) {
+                onCommit(val);
+                dirtyRef.current = false;
+                if (val.includes('[[')) {
+                  const split = splitSpeechFormulaPairs(val);
+                  setVal(split.text);
+                  return split;
+                }
+                return { text: val };
+              }
+              if (val.includes('[[')) {
+                return splitSpeechFormulaPairs(val);
+              }
+              return { text: val, ...(val === text && spokenText ? { spokenText } : {}) };
+            }}
             refreshKey={ttsRefresh}
             regenerating={regenerating}
             onGenerated={onGenerated}
@@ -705,19 +748,32 @@ function SpeechClip({
           <DeleteButton onDelete={onDelete} />
         </span>
       </div>
-      <QuietTextarea
-        ref={ref}
-        lineHeightPx={SPEECH_LINE_PX}
-        wrapperClassName="mt-1"
-        value={val}
-        onChange={(e) => {
-          dirtyRef.current = true;
-          setVal(e.target.value);
-        }}
-        onBlur={commit}
-        placeholder={t('edit.timeline.speechPlaceholder')}
-        className="px-3 text-[12.5px] leading-[19px] text-foreground/90 placeholder:text-muted-foreground/40"
-      />
+      <div className="group/speech relative mt-1 flex min-h-0 flex-1 flex-col">
+        <QuietTextarea
+          id={fieldId}
+          ref={ref}
+          lineHeightPx={SPEECH_LINE_PX}
+          wrapperClassName={showFormula ? 'opacity-0 focus-within:opacity-100' : undefined}
+          value={val}
+          onChange={(e) => {
+            dirtyRef.current = true;
+            setVal(e.target.value);
+          }}
+          onBlur={commit}
+          aria-label={t('edit.timeline.speechPlaceholder')}
+          placeholder={t('edit.timeline.speechPlaceholder')}
+          className="px-3 text-[12.5px] leading-[19px] text-foreground/90 placeholder:text-muted-foreground/40"
+        />
+        {showFormula && (
+          <label
+            htmlFor={fieldId}
+            aria-hidden="true"
+            className="absolute inset-0 cursor-text overflow-y-auto whitespace-pre-wrap break-words px-3 text-[12.5px] leading-[19px] text-foreground/90 group-focus-within/speech:hidden [scrollbar-width:thin]"
+          >
+            <CaptionMathText text={text} />
+          </label>
+        )}
+      </div>
     </div>
   );
 }
@@ -1285,12 +1341,19 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             {
               id: liveAction.id,
               text: liveAction.text,
+              spokenText: liveAction.spokenText,
               audioId: previousAudioId,
             },
             language,
           );
           if (id) {
-            stampGeneratedAudio(sceneId, liveAction.id!, liveAction.text, id);
+            stampGeneratedAudio(
+              sceneId,
+              liveAction.id!,
+              liveAction.text,
+              id,
+              liveAction.spokenText,
+            );
             await flushStageSave();
           }
         } catch {
@@ -1526,6 +1589,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                       {action.type === 'speech' ? (
                         <SpeechClip
                           text={(action as { text?: string }).text ?? ''}
+                          spokenText={(action as { spokenText?: string }).spokenText}
                           actionId={key}
                           audioId={(action as { audioId?: string }).audioId}
                           audioUrl={(action as { audioUrl?: string }).audioUrl}
@@ -1544,8 +1608,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                             commit((cur) => setSpeechTextClearAudioById(cur, key, text));
                             setTtsRefresh((n) => n + 1);
                           }}
-                          onGenerated={(assetId, sourceText) => {
-                            stampGeneratedAudio(sceneId, key, sourceText, assetId);
+                          onGenerated={(assetId, sourceText, sourceSpokenText) => {
+                            stampGeneratedAudio(
+                              sceneId,
+                              key,
+                              sourceText,
+                              assetId,
+                              sourceSpokenText,
+                            );
                             // Stage persistence is debounced; flush so the
                             // stamped reference is durable once the row
                             // settles (pool bytes persist first, stamp last).

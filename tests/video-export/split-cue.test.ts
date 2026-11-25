@@ -228,3 +228,18 @@ describe('splitCues — track renumbering', () => {
     }
   });
 });
+
+it('keeps long delimited formulas intact when wrapping display subtitles', () => {
+  const formula = '$' + 'x_{12}+'.repeat(25) + 'y$';
+  const cue = {
+    index: 0,
+    sceneId: 's',
+    startMs: 0,
+    endMs: 16000,
+    text: '这是一段导言。'.repeat(12) + formula + '。下一步继续。',
+  };
+  const split = splitCue(cue);
+  expect(split.length).toBeGreaterThan(1);
+  expect(split.filter((c) => c.text.includes('$'))).toHaveLength(1);
+  expect(split.some((c) => c.text.includes(formula))).toBe(true);
+});
