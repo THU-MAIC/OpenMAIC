@@ -261,6 +261,23 @@ it('adds one spoken next action after confirmed completion, never on failure, re
   ]);
   const spoken = (e: LearningConversationEntry, next?: string) =>
     narrationSteps(e, next).flatMap((s) => (s.kind === 'say' ? [s.text] : []));
+  const afterMention = { label: 'Enter discussion', confirmation: 'This step is complete.' };
+  for (const closing of [
+    'Click **Enter discussion**.',
+    'Wait until you can click Enter discussion.',
+  ]) {
+    expect(
+      narrationSteps(entry([text('summary', closing), complete]), instruction, afterMention).at(-1),
+    ).toMatchObject({ kind: 'say', text: afterMention.confirmation });
+  }
+  for (const closing of [
+    'Let us discuss this.',
+    'Enter discussion later.\n\nFirst, compare both options.',
+  ]) {
+    expect(
+      narrationSteps(entry([text('summary', closing), complete]), instruction, afterMention).at(-1),
+    ).toMatchObject({ kind: 'say', text: instruction });
+  }
   expect(spoken(reply, instruction)).toEqual(['Keep this explanation.', instruction]);
   expect(
     spoken(entry([{ ...complete, readyForStudentConfirmation: undefined }]), instruction),

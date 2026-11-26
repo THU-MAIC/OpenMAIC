@@ -97,6 +97,7 @@ export function CompanionLayer({
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
   const opening = pendingAction === 'begin' || (blockedReason === 'opening' && !view.roleRun);
   const role = view.role ?? 'mentor';
+  const nextAction = continueActionLabel(view, t);
   return (
     <Narrated
       conversation={conversation}
@@ -104,11 +105,13 @@ export function CompanionLayer({
       onBoard={onBoard}
       onPoint={onPoint}
       onTold={onTold}
+      nextActionLabel={nextAction === t('pblV3.next') ? undefined : nextAction}
+      completionConfirmation={t('pblV3.journey.completionHandoff')}
       nextInstruction={
         'studentActions' in view.stage &&
         view.stage.studentActions.includes('next') &&
         !view.evaluation
-          ? t('pblV3.journey.ready', { action: continueActionLabel(view, t) })
+          ? t('pblV3.journey.ready', { action: nextAction })
           : undefined
       }
     >

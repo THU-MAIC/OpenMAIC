@@ -97,7 +97,9 @@ function isSpokenReceipt(part: Extract<Part, { kind: 'text' }>) {
 export function narrationSteps(
   entry: LearningConversationEntry,
   nextInstruction?: string,
+  afterMention?: { label: string; confirmation: string },
 ): NarrationStep[] {
+  let closing = '';
   let announcedCompletion = false;
   let pendingPoints: PointStep[] = [];
   let explanationPoints: PointStep[] = [];
@@ -111,6 +113,7 @@ export function narrationSteps(
       if (isSpokenReceipt(part)) return [];
       const text = spokenText(part.text, part.streaming);
       if (!text) return [];
+      if (afterMention) closing = text.split(/\n[ \t]*\n/).at(-1) ?? '';
       // A model can explain one batch of cues in several consecutive text parts.
       // A new pointing sequence or a whiteboard change starts a new explanation.
       if (pendingPoints.length) {
@@ -194,9 +197,13 @@ export function narrationSteps(
       !part.projectCompleted
     ) {
       announcedCompletion = true;
+      const instruction =
+        afterMention?.label && closing.includes(afterMention.label)
+          ? afterMention.confirmation
+          : nextInstruction;
       return [
         tool,
-        { ...at, kind: 'say', id: part.id + ':continue', text: nextInstruction, streaming: false },
+        { ...at, kind: 'say', id: part.id + ':continue', text: instruction, streaming: false },
       ];
     }
     return [tool];

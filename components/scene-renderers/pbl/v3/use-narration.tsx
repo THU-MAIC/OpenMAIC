@@ -48,8 +48,12 @@ export function useNarration(
     onBoard,
     onTold,
     nextInstruction,
+    nextActionLabel,
+    completionConfirmation,
   }: {
     nextInstruction?: string;
+    nextActionLabel?: string;
+    completionConfirmation?: string;
     /** The role points at code or at the running application, or stops pointing. */
     onPoint?: (point: NarrationTarget | null) => void;
     /** The role brings the whiteboard into view, or puts it away. */
@@ -60,8 +64,17 @@ export function useNarration(
 ) {
   const entry = conversation.findLast((item) => !item.boundary && item.speaker !== 'user');
   const steps = useMemo(
-    () => (entry ? narrationSteps(entry, nextInstruction) : []),
-    [entry, nextInstruction],
+    () =>
+      entry
+        ? narrationSteps(
+            entry,
+            nextInstruction,
+            nextActionLabel && completionConfirmation
+              ? { label: nextActionLabel, confirmation: completionConfirmation }
+              : undefined,
+          )
+        : [],
+    [entry, nextInstruction, nextActionLabel, completionConfirmation],
   );
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);
