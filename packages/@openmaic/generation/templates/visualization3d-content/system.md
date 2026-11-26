@@ -607,9 +607,16 @@ window.addEventListener('message', (event) => {
     }
     case 'ANNOTATE_ELEMENT': {
       // Use the widget's annotation UI for targets that map to meshes.
+      // #info is hidden on narrow screens, so notes get their own layer.
       const element = findTeacherTarget(target);
-      const info = document.getElementById('info');
-      if (element && info && typeof content === 'string') info.textContent = content;
+      if (element && typeof content === 'string') {
+        const rect = element.getBoundingClientRect();
+        const note = document.createElement('div');
+        note.textContent = content;
+        note.style.cssText = `position:fixed;left:${rect.left + rect.width / 2}px;top:${Math.max(8, rect.top - 44)}px;transform:translateX(-50%);max-width:calc(100vw - 16px);padding:8px 12px;border-radius:8px;background:rgba(139,92,246,0.95);color:#fff;z-index:1000`;
+        document.body.appendChild(note);
+        setTimeout(() => note.remove(), 4000);
+      }
       break;
     }
     case 'REVEAL_ELEMENT': {

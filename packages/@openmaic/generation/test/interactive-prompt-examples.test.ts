@@ -66,8 +66,12 @@ it('runs the 3D listener with scene-local state and the platform message fields'
   const setEmissive = vi.fn();
   const updateControls = vi.fn();
   const render = vi.fn();
-  const canvas = { style: { outline: '' }, removeAttribute: vi.fn() };
-  const info = { textContent: '' };
+  const canvas = {
+    style: { outline: '' },
+    removeAttribute: vi.fn(),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 375, height: 667 }),
+  };
+  const notes: Array<{ textContent: string }> = [];
   const context = createContext({
     setPosition,
     setScale,
@@ -76,7 +80,8 @@ it('runs the 3D listener with scene-local state and the platform message fields'
     render,
     document: {
       querySelector: (selector: string) => (selector === '#canvas-container' ? canvas : null),
-      getElementById: () => info,
+      createElement: () => ({ textContent: '', style: { cssText: '' }, remove: vi.fn() }),
+      body: { appendChild: (note: { textContent: string }) => notes.push(note) },
     },
     setTimeout: () => {},
   });
@@ -109,7 +114,7 @@ it('runs the 3D listener with scene-local state and the platform message fields'
   expect(render).toHaveBeenCalledTimes(2);
   expect(setEmissive).toHaveBeenCalledWith(0xffff00);
   expect(canvas.style.outline).toBe('3px solid #a78bfa');
-  expect(info.textContent).toBe('Orbit');
+  expect(notes.map((note) => note.textContent)).toEqual(['Orbit']);
   expect(canvas.removeAttribute).toHaveBeenCalledWith('hidden');
 });
 
