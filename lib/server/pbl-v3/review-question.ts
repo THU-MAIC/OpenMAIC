@@ -15,8 +15,10 @@ export function reviewResponse(response: string): { response: string; question: 
   return { response: text, question };
 }
 
-/** A board review records the question the learner just heard. Only this assistant
- * frame, a suggested-replies call, or a plain stop awaiting a receipt can supply it. */
+/** Presentation actions can accompany a closing or follow it before registration. */
+function preservesSpokenClosing(name: string) {
+  return name.startsWith('wb_') || ['cue_user', 'point_at_code', 'point_at_preview'].includes(name);
+}
 export function spokenReviewClosing() {
   let spoken: { question: string; spokenAt: number } | undefined;
   let hasCurrentSpeech = false;
@@ -32,7 +34,12 @@ export function spokenReviewClosing() {
       }
       const tools = message.content.filter((part) => part.type === 'toolCall');
       calls = tools.filter((tool) => tool.name === 'request_skill_review');
-      if (!calls.length && tools.some((tool) => tool.name !== 'cue_user')) {
+      if (
+        tools.some(
+          (tool) => tool.name !== 'request_skill_review' && !preservesSpokenClosing(tool.name),
+        )
+      ) {
+        calls = [];
         spoken = undefined;
         return;
       }

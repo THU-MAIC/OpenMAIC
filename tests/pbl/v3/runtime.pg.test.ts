@@ -5203,6 +5203,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
 
   it.each([
     'spoken',
+    'closing the board',
+    'separate board action',
     'tool-only',
     'continuation',
     'restated',
@@ -5317,6 +5319,24 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           break;
         case 'continuation':
           mocked.responses = [textResponse(speech), callOnly(receipt)];
+          break;
+        case 'closing the board':
+          mocked.responses = [
+            speakAndCall(speech, { ...register, toolName: 'wb_close', toolCallId: 'close-board' }),
+            callOnly(register),
+          ];
+          break;
+        case 'separate board action':
+          mocked.responses = [
+            speakAndCall(speech, {
+              ...register,
+              toolName: 'cue_user',
+              toolCallId: 'replies',
+              input: { options: ['Ready', 'Explain again'] },
+            }),
+            callOnly({ ...register, toolName: 'wb_open', toolCallId: 'show-board' }),
+            callOnly(register),
+          ];
           break;
         case 'restated':
           mocked.responses = [speakAndCall(speech, receipt), callOnly(register)];

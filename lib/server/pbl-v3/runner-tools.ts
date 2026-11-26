@@ -763,7 +763,7 @@ export async function teachingRunnerConfig(input: {
       tool(
         'request_skill_review',
         boardTeaching
-          ? 'Register the question or invitation in the last paragraph you spoke and wait for the learner. Speak it once in ordinary text. If your last stop or cue_user already delivered it, call this tool alone. Set approval only for an explicit request to approve the current artifact.'
+          ? 'Register the question or invitation in the last paragraph you spoke and wait for the learner. Speak it once in ordinary text. Calling this tool alone confirms that the last spoken paragraph was the question, even after drawing or pointing. If it was only an explanation, ask the missing question first. Set approval only for an explicit request to approve the current artifact.'
           : 'Record a concrete student review question for this section. End your turn and wait for a new student reply. Set approval only when explicitly asking the learner to approve the current plan/code version. Understanding alone is not approval. The final artifact section always records an approval request.',
         boardTeaching
           ? spokenReviewParameters
