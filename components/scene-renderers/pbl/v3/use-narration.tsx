@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import {
+  acknowledgeSilentCompletion,
   boardAt,
   boardWrites,
   narrationSegments,
@@ -65,6 +67,8 @@ export function useNarration(
     onTold?: (told: NarrationProgress | null) => void;
   },
 ) {
+  const { t } = useI18n();
+  const acknowledgement = t('pblV3.journey.acceptedResponse');
   const ttsMuted = useSettingsStore((state) => state.ttsMuted);
   const [audio, setAudio] = useState<AudioIndicatorState>('idle');
   const tts = useDiscussionTTS({
@@ -128,19 +132,17 @@ export function useNarration(
       ? entry?.id
       : undefined;
   const speaker = entry?.speaker;
-  const projected = useMemo(
-    () =>
-      entry
-        ? narrationSteps(
-            entry,
-            nextInstruction,
-            nextActionLabel && completionConfirmation
-              ? { label: nextActionLabel, confirmation: completionConfirmation }
-              : undefined,
-          )
-        : [],
-    [entry, nextInstruction, nextActionLabel, completionConfirmation],
-  );
+  const projected = useMemo(() => {
+    if (!entry) return [];
+    const steps = narrationSteps(
+      entry,
+      nextInstruction,
+      nextActionLabel && completionConfirmation
+        ? { label: nextActionLabel, confirmation: completionConfirmation }
+        : undefined,
+    );
+    return acknowledgeSilentCompletion(steps, acknowledgement);
+  }, [entry, nextInstruction, nextActionLabel, completionConfirmation, acknowledgement]);
   const active =
     stage && entry?.id === stage.id && previous?.turn === turn && !failed ? stage : null;
   // A legacy receipt can replace the text in the transcript while its audio is playing.

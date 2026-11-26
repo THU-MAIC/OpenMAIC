@@ -243,6 +243,27 @@ export function narrationSteps(
   return steps;
 }
 
+/** Reuse a successful completion's own speech slot so its button hint is still spoken once. */
+export function acknowledgeSilentCompletion(steps: NarrationStep[], text: string): NarrationStep[] {
+  const index = steps.findIndex((step) => step.kind === 'tool' && step.tool.acknowledgeResponse);
+  if (index === -1) return steps;
+  const receipt = steps[index];
+  const hint = steps[index + 1];
+  const result = steps.slice();
+  if (hint?.kind === 'say' && hint.part === receipt.part) {
+    result[index + 1] = { ...hint, text: text + ' ' + hint.text };
+  } else {
+    result.splice(index + 1, 0, {
+      id: receipt.id + ':acknowledgement',
+      part: receipt.part,
+      kind: 'say',
+      text,
+      streaming: false,
+    });
+  }
+  return result;
+}
+
 /** The pointer in force at a step: the last one set, until the board is written again. */
 export function pointerAt(steps: readonly NarrationStep[], index: number) {
   let closed = false;

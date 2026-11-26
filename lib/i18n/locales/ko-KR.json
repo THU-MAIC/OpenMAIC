@@ -3170,6 +3170,7 @@
       "currentMilestone": "현재 단계",
       "milestoneGoal": "목표:",
       "milestoneResult": "결과:",
+      "acceptedResponse": "고마워요. 이번 단계에서 확인할 내용은 모두 짚었어요.",
       "completionHandoff": "This step is complete.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

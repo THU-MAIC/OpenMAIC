@@ -3170,6 +3170,7 @@
       "currentMilestone": "当前阶段",
       "milestoneGoal": "目标：",
       "milestoneResult": "成果：",
+      "acceptedResponse": "谢谢，这一步需要确认的内容已经说清楚了。",
       "completionHandoff": "本环节已完成。",
       "startConversation": "学习环境就绪后，助手会主动开始当前环节。",
       "latest": "回到最新消息",

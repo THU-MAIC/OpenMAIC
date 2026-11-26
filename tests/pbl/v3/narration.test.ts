@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { deduplicateHandoffs, type LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import {
+  acknowledgeSilentCompletion,
   boardAt,
   boardWrites,
   narrationSegments,
@@ -305,6 +306,58 @@ it('adds one spoken next action after confirmed completion, never on failure, re
   expect(spoken(reply)).toEqual(['Keep this explanation.']);
   expect(spoken(entry([{ ...complete, projectCompleted: true }]), instruction)).toEqual([]);
   expect(spoken(entry([{ ...complete, action: 'read' }]), instruction)).toEqual([]);
+});
+
+it('acknowledges a silent successful completion once for its actual learner reply', () => {
+  const learner: LearningConversationEntry = {
+    ...entry([text('answer', 'Use the recorded value.')]),
+    id: 'user-1',
+    speaker: 'user',
+  };
+  const receipt = {
+    kind: 'tool',
+    id: 'receipt',
+    action: 'complete',
+    status: 'succeeded',
+    readyForStudentConfirmation: true,
+  } as const;
+  const response = 'Thanks, we have what we need for this step.';
+  const next = 'Continue to the next step.';
+  const visible = (entries: LearningConversationEntry[]) => {
+    const turn = deduplicateHandoffs(entries).at(-1)!;
+    const spoken = acknowledgeSilentCompletion(narrationSteps(turn, next), response).flatMap((s) =>
+      s.kind === 'say' ? [s.text] : [],
+    );
+    return {
+      acknowledged: turn.parts.some((p) => p.kind === 'tool' && p.acknowledgeResponse),
+      spoken,
+    };
+  };
+  const silent = entry([{ kind: 'thinking', id: 'thinking', text: 'Internal evidence.' }, receipt]);
+  expect(visible([learner, silent])).toEqual({
+    acknowledged: true,
+    spoken: [response + ' ' + next],
+  });
+  expect(
+    visible([
+      learner,
+      entry([{ ...receipt, readyForStudentConfirmation: false, projectCompleted: true }]),
+    ]),
+  ).toEqual({ acknowledged: true, spoken: [response] });
+  expect(visible([learner, entry([{ ...receipt, status: 'failed' }])])).toEqual({
+    acknowledged: false,
+    spoken: [],
+  });
+  expect(visible([learner, entry([text('authored', 'You found the source.'), receipt])])).toEqual({
+    acknowledged: false,
+    spoken: ['You found the source.', next],
+  });
+  // A page starting mid-turn is inconclusive. A prior attempt can already own the response.
+  expect(visible([silent])).toEqual({ acknowledged: false, spoken: [next] });
+  expect(visible([learner, entry([text('previous', 'You found the source.')]), silent])).toEqual({
+    acknowledged: false,
+    spoken: [next],
+  });
 });
 
 it('never navigates from a file link alone and avoids guessing between competing ranges', () => {
