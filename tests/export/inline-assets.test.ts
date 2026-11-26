@@ -253,6 +253,20 @@ describe('createAssetFetcher', () => {
     expect(counter.pulled).toBeLessThanOrEqual(8 * 1024);
   });
 
+  it('reads through a same-origin body when Transfer-Encoding overrides its Content-Length', async () => {
+    const fetchImpl = (async () => {
+      const res = new Response('hello', {
+        status: 200,
+        headers: { 'content-length': '999999', 'transfer-encoding': 'chunked' },
+      });
+      Object.defineProperty(res, 'type', { value: 'basic' });
+      return res;
+    }) as unknown as typeof fetch;
+    const fetchAsset = createAssetFetcher({ fetchImpl, maxAssetBytes: 10 });
+
+    expect((await fetchAsset('https://x/chunked'))?.bytes.byteLength).toBe(5);
+  });
+
   it('refuses a same-origin body whose Content-Length exceeds the limit without reading it', async () => {
     const { counter, fetchImpl } = streamedBody(1024 * 1024, {
       'content-length': String(1024 * 1024),

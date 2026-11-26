@@ -144,9 +144,12 @@ const DEFAULT_MAX_ASSET_BYTES = 8 * 1024 * 1024;
 async function readBodyWithin(res: Response, maxBytes: number): Promise<Uint8Array | null> {
   // Only a same-origin response exposes every header, so only there does a
   // missing Content-Encoding mean Content-Length counts the decoded bytes.
+  // Transfer-Encoding takes precedence over Content-Length per RFC 7230,
+  // so a stale length from a chunked response could reject a body that fits.
   if (
     res.type === 'basic' &&
     !res.headers.has('content-encoding') &&
+    !res.headers.has('transfer-encoding') &&
     Number(res.headers.get('content-length')) > maxBytes
   ) {
     await res.body?.cancel();
