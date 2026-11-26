@@ -3,7 +3,8 @@
  * storage package's PostgreSQL backends and this application's own tables.
  *
  * Several are provisioned lazily, by the feature that uses them (the agent
- * runtime's sessions, session materials and user skills, generation runs), so no single
+ * runtime's sessions, session materials and user skills, generation runs,
+ * render jobs), so no single
  * bootstrap call covers them all. This list is what the startup check verifies
  * against the database (./schema-boot-check.ts), and what the upgrade and
  * checksum tests enumerate; a new store belongs here.
@@ -26,6 +27,7 @@ import { OWNER_MERGE_MIGRATIONS } from './owner-merges';
 import { SANDBOX_ENVIRONMENT_MIGRATIONS } from './sandbox-environments';
 import { PBL_PROJECT_MIGRATIONS } from './pbl-projects';
 import { PBL_MIGRATIONS } from './pbl-studies';
+import { RENDER_JOB_MIGRATIONS } from './render-jobs';
 import { SESSION_MATERIAL_LINK_MIGRATIONS } from './session-material-links';
 import { STAGE_META_MIGRATIONS } from './stage-meta';
 import { WORKSPACE_MODEL_CONFIG_MIGRATIONS } from './workspace-model-config';
@@ -49,4 +51,5 @@ export const APP_SCHEMA_STORES: readonly SchemaMigrationSet[] = [
   SANDBOX_ENVIRONMENT_MIGRATIONS,
   PBL_PROJECT_MIGRATIONS,
   PBL_MIGRATIONS,
+  RENDER_JOB_MIGRATIONS,
 ];

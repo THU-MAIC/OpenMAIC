@@ -1,5 +1,6 @@
 import { apiSuccess } from '@/lib/server/api-response';
 import { getRenderServiceCapability } from '@/lib/server/render-service';
+import { isRenderDurableQueueEnabled } from '@/lib/server/render-queue/config';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,5 +13,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   const { enabled, accepting } = await getRenderServiceCapability();
+  // With the durable queue, a job waits in PostgreSQL while the render service
+  // is busy, so room is the queue's, not the service's.
+  if (enabled && isRenderDurableQueueEnabled()) {
+    const { queuedRenderAccepting } = await import('@/lib/server/render-queue/routes');
+    return apiSuccess({ enabled: true, accepting: await queuedRenderAccepting() });
+  }
   return apiSuccess({ enabled, ...(accepting !== undefined ? { accepting } : {}) });
 }

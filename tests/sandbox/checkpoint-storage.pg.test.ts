@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import type { AssetByteStore } from '@openmaic/storage/asset/pg';
 import { S3AssetByteStore } from '@openmaic/storage/asset/s3-bytes';
+import { PgAssetByteStore } from '@openmaic/storage/asset/pg-bytes';
 import type { ServerPersistenceProvider } from '@/lib/persistence/server-provider';
 vi.mock('server-only', () => ({}));
 import { CheckpointStorage } from '@/lib/server/sandbox/checkpoint-storage';
@@ -326,5 +327,14 @@ describe.skipIf(!contractUrl)('isolated checkpoint metadata and collection', () 
     expect((await storage.get(target.owner_id, target.workspace_id))?.revision).toBe(1);
     expect((await store.get(target.owner_id, target.id)).preview_epoch).toBe(0);
     await pending.discard();
+  });
+  it('stays off on the PostgreSQL byte layer, which has isolated prefixes but no external bytes', async () => {
+    const onPg = new CheckpointStorage(
+      persistence,
+      store.exclusive.bind(store),
+      async () => new PgAssetByteStore(pool),
+    );
+    expect(typeof new PgAssetByteStore(pool).withPrefix).toBe('function');
+    expect(await onPg.available()).toBe(false);
   });
 });

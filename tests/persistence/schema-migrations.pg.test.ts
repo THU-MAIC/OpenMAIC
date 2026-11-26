@@ -21,6 +21,7 @@ vi.mock('@/lib/server/boot-failure', () => ({ exitOnBootFailure }));
 
 import { ensureSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
+import { ensureRenderJobSchema } from '@/lib/persistence/render-jobs';
 import { startSchemaBootCheck } from '@/lib/persistence/schema-boot-check';
 import { withSchemaBootstrapLock } from '@/lib/persistence/schema-bootstrap-lock';
 import { ensureSessionMaterialLinkSchema } from '@/lib/persistence/session-material-links';
@@ -82,6 +83,7 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
       await withSchemaBootstrapLock(locked, ensureUserSkillSchema);
       await withSchemaBootstrapLock(locked, ensureGenerationRunSchema);
       await withSchemaBootstrapLock(locked, ensureSandboxEnvironmentSchema);
+      await withSchemaBootstrapLock(locked, ensureRenderJobSchema);
     } finally {
       await pool.end().catch(() => {});
     }

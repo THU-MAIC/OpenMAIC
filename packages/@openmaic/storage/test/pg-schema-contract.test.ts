@@ -738,6 +738,20 @@ const EXPECTED_ASSET_PG_SCHEMA: readonly string[] = [
      ON asset_blob_stages (expires_at)`,
 ];
 
+const EXPECTED_PREFIXED_BYTES = [
+  `CREATE TABLE IF NOT EXISTS asset_prefixed_bytes (
+     prefix TEXT NOT NULL,
+     key TEXT NOT NULL,
+     bytes BYTEA NOT NULL,
+     PRIMARY KEY (prefix, key)
+   )`,
+];
+
+const EXPECTED_ASSET_PG_SCHEMA_WITH_PREFIXED: readonly string[] = [
+  ...EXPECTED_ASSET_PG_SCHEMA,
+  ...EXPECTED_PREFIXED_BYTES,
+];
+
 const EXPECTED_RETAINED_ASSETS_UPGRADE = [
   'ALTER TABLE document_asset_refs DROP CONSTRAINT document_asset_refs_scope_check',
   `ALTER TABLE document_asset_refs ADD CONSTRAINT document_asset_refs_scope_check
@@ -752,6 +766,7 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
     expect(schemaStatements(statements)).toEqual([
       ...EXPECTED_ASSET_PG_SCHEMA,
       ...EXPECTED_RETAINED_ASSETS_UPGRADE,
+      ...EXPECTED_PREFIXED_BYTES,
     ]);
   });
 
@@ -763,8 +778,10 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
     expect(schemaStatements(statements)).toEqual([
       ...EXPECTED_ASSET_PG_SCHEMA,
       ...EXPECTED_RETAINED_ASSETS_UPGRADE,
+      ...EXPECTED_PREFIXED_BYTES,
       ...EXPECTED_ASSET_PG_SCHEMA,
       ...EXPECTED_RETAINED_ASSETS_UPGRADE,
+      ...EXPECTED_PREFIXED_BYTES,
     ]);
   });
 
@@ -772,7 +789,7 @@ describe('ASSET_PG_SCHEMA is a pinned contract', () => {
     // A failure here is not a broken test: it means the schema changed. Update
     // this pin in the same change, and treat it as a breaking change for any
     // deployment that provisions these tables through its own migrations.
-    expect(ASSET_PG_SCHEMA).toEqual(EXPECTED_ASSET_PG_SCHEMA);
+    expect(ASSET_PG_SCHEMA).toEqual(EXPECTED_ASSET_PG_SCHEMA_WITH_PREFIXED);
   });
 
   it('keeps every statement guarded, single, and PGlite-compatible', () => {

@@ -8,6 +8,7 @@ import {
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { isRenderDurableQueueEnabled } from '@/lib/server/render-queue/config';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ExportVideo Download API');
@@ -31,6 +32,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     const resolved = resolveRenderServiceUrl();
     if ('error' in resolved) {
       return answer(apiError('PROVIDER_DISABLED', 501, 'Render service is not configured'));
+    }
+    if (isRenderDurableQueueEnabled()) {
+      const { downloadQueuedRender } = await import('@/lib/server/render-queue/routes');
+      return answer(await downloadQueuedRender(jobId, ownerId));
     }
 
     // Bound only the time to obtain the response headers — NOT the body stream.

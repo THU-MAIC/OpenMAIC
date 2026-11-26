@@ -256,7 +256,7 @@ describe('PgAssetStore registry behavior with PGlite', () => {
     );
     // Recorded as applied: a later start issues no schema statement at all.
     expect(second.filter((statement) => schema.has(statement))).toEqual([]);
-    expect(ASSET_PG_SCHEMA).toHaveLength(21);
+    expect(ASSET_PG_SCHEMA).toHaveLength(22);
     expect(ASSET_PG_SCHEMA.every((statement) => !statement.includes(';'))).toBe(true);
   });
 
