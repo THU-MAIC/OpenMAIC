@@ -142,14 +142,6 @@ const DEFAULT_MAX_ASSET_BYTES = 8 * 1024 * 1024;
 
 /** Reads a response body, or returns null as soon as it exceeds `maxBytes`. */
 async function readBodyWithin(res: Response, maxBytes: number): Promise<Uint8Array | null> {
-  // Content-Length counts encoded bytes, while the body yields decoded bytes.
-  if (
-    !res.headers.has('content-encoding') &&
-    Number(res.headers.get('content-length')) > maxBytes
-  ) {
-    await res.body?.cancel();
-    return null;
-  }
   if (!res.body) return new Uint8Array();
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];

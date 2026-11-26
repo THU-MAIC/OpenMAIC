@@ -860,7 +860,9 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
             bytes: new TextEncoder().encode(
               url.endsWith('/pyodide.js')
                 ? 'globalThis.loadPyodide = async (options) => (await fetch(options.lockFileURL)).text();'
-                : '42',
+                : url.endsWith('/pyodide-lock.json')
+                  ? '{"packages":{}}'
+                  : '42',
             ),
             contentType: 'text/javascript',
           }),
@@ -874,7 +876,7 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
             ?.getAttribute('data-interactive-static-state') === 'frozen',
       );
       const child = page.frames().find((frame) => frame !== page.mainFrame())!;
-      expect(await child.locator('output').textContent()).toBe('42');
+      expect(await child.locator('output').textContent()).toBe('{"packages":{}}');
     } finally {
       await page.close();
     }
@@ -1026,7 +1028,9 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
               await fetch(new Request('https://pypi.org/pypi/widget-package/json'));
             }
           });`
-                  : '42',
+                  : url.endsWith('/pyodide-lock.json')
+                    ? '{"packages":{}}'
+                    : '42',
               ),
               contentType: 'application/octet-stream',
             }),

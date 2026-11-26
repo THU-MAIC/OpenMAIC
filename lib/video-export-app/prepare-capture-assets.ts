@@ -237,21 +237,25 @@ type PyodideFile = {
   asset: NonNullable<Awaited<ReturnType<FetchAsset>>>;
 };
 
+function lockfilePackages(bytes: Uint8Array): Record<string, PyodidePackage> | undefined {
+  try {
+    const { packages } = JSON.parse(new TextDecoder().decode(bytes));
+    if (packages && typeof packages === 'object') return packages;
+  } catch {
+    // A missing lockfile can arrive as an HTML error page.
+  }
+}
+
 async function fetchPyodidePackageFiles(
   archiveRoot: URL,
-  lockBytes: Uint8Array,
+  packages: Record<string, PyodidePackage>,
   requested: ReadonlySet<string>,
   fetcher: FetchAsset,
   budget: SceneBudget,
 ): Promise<PyodideFile[]> {
   if (!requested.size) return [];
-  const lockfile = JSON.parse(new TextDecoder().decode(lockBytes)) as {
-    packages: Record<string, PyodidePackage>;
-  };
   const normalize = (name: string) => name.toLowerCase().replace(/[-_.]+/g, '-');
-  const available = new Map(
-    Object.entries(lockfile.packages).map(([name, pkg]) => [normalize(name), pkg]),
-  );
+  const available = new Map(Object.entries(packages).map(([name, pkg]) => [normalize(name), pkg]));
   const pending = Array.from(requested, normalize).reverse();
   const visited = new Set<string>();
   const files = new Map<string, PyodideFile>();
@@ -291,12 +295,20 @@ async function inlinePyodide(
   budget: SceneBudget,
 ) {
   const files: PyodideFile[] = [];
+  let bootSize = 0;
   for (const [filename, mime] of PYODIDE_BOOT_FILES) {
-    const asset = await fetchWithin(fetcher, new URL(filename, url).href, budget.remaining);
+    const asset = await fetchWithin(
+      fetcher,
+      new URL(filename, url).href,
+      budget.remaining - bootSize,
+    );
     if (!asset) return;
-    budget.remaining -= encodedSize(asset.bytes.length);
+    bootSize += encodedSize(asset.bytes.length);
     files.push({ filename, mime, asset });
   }
+  const packages = lockfilePackages(files[4]!.asset.bytes);
+  if (!packages) return;
+  budget.remaining -= bootSize;
 
   const upstreamRoot = new URL('.', url);
   const rootPath = upstreamRoot.pathname;
@@ -313,7 +325,7 @@ async function inlinePyodide(
   const [entry, factory, wasm, stdlib, lockfile] = files;
   const archives = await fetchPyodidePackageFiles(
     archiveRoot,
-    lockfile.asset.bytes,
+    packages,
     requested,
     fetcher,
     budget,

@@ -230,7 +230,9 @@ describe('prepareInteractiveHtmlScenes', () => {
         fetcher: async (url) => {
           fetched.add(url);
           return {
-            bytes: new TextEncoder().encode(new URL(url).pathname),
+            bytes: new TextEncoder().encode(
+              url.endsWith('/pyodide-lock.json') ? '{"packages":{}}' : new URL(url).pathname,
+            ),
             contentType: 'application/octet-stream',
           };
         },
@@ -390,21 +392,29 @@ describe('prepareInteractiveHtmlScenes', () => {
 
   it.each([
     { problem: 'a missing boot file', missing: 'pyodide.asm.wasm', maxHtmlBytes: undefined },
-    { problem: 'boot files over the scene budget', missing: undefined, maxHtmlBytes: 45_000 },
+    { problem: 'boot files over the scene budget', maxHtmlBytes: 45_000 },
+    { problem: 'an invalid lockfile', lock: '<!doctype html><p>Not found</p>' },
   ])(
     'keeps the view and names the Pyodide entry it could not bundle for $problem',
     async (fixture) => {
       const entry = 'https://static.example.edu/pyodide/v0.26.2/full/pyodide.js';
       const prepared = await prepareInteractiveHtmlScenes(
-        [scene(`<p>Run the cell to start Python.</p><script src="${entry}"></script>`)],
+        [
+          scene(
+            `<p>Run the cell to start Python.</p><script src="${entry}"></script>` +
+              `<script>document.querySelector('p').addEventListener('click', () => loadPyodide({packages: ['numpy']}));</script>`,
+          ),
+        ],
         {
           maxHtmlBytes: fixture.maxHtmlBytes,
           fetcher: async (url) =>
-            url.endsWith(`/${fixture.missing}`)
+            'missing' in fixture && url.endsWith(`/${fixture.missing}`)
               ? null
               : {
                   bytes: new TextEncoder().encode(
-                    url.endsWith('/pyodide-lock.json') ? '{"packages":{}}' : 'x'.repeat(10_000),
+                    url.endsWith('/pyodide-lock.json')
+                      ? (fixture.lock ?? '{"packages":{}}')
+                      : 'x'.repeat(10_000),
                   ),
                   contentType: 'application/octet-stream',
                 },
@@ -424,6 +434,37 @@ describe('prepareInteractiveHtmlScenes', () => {
       );
     },
   );
+
+  it('returns the budget of a discarded Pyodide bundle to later scripts', async () => {
+    const entry = 'https://static.example.edu/pyodide/v0.26.2/full/pyodide.js';
+    const scriptUrl = 'https://cdn.test/chart.js';
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script src="${entry}"></script><script>
+            var script = document.createElement('script');
+            script.src = '${scriptUrl}';
+            document.head.appendChild(script);
+          </script>`,
+        ),
+      ],
+      {
+        maxHtmlBytes: 100_000,
+        fetcher: async (url) =>
+          url.endsWith('/python_stdlib.zip')
+            ? null
+            : {
+                bytes: new TextEncoder().encode(
+                  url === scriptUrl ? `/*${'x'.repeat(30_000)}*/` : 'x'.repeat(20_000),
+                ),
+                contentType: 'text/javascript',
+              },
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(prepared.content('interactive:widget')).not.toContain(scriptUrl);
+  });
 
   it.each([
     { startup: false, extraBytes: 0 },
