@@ -2,6 +2,7 @@ export const QWEN_REFERENCE_SAMPLE_RATE = 24_000;
 export const QWEN_REFERENCE_CHANNELS = 1;
 export const MIN_REFERENCE_DURATION_SECONDS = 1;
 export const QWEN_MIN_REFERENCE_DURATION_SECONDS = 5;
+export const MINIMAX_MIN_REFERENCE_DURATION_SECONDS = 10;
 export const MAX_REFERENCE_DURATION_SECONDS = 60;
 
 export interface ValidatedReferenceAudio {

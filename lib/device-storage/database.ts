@@ -83,6 +83,8 @@ export interface MediaFileRecord {
 export interface VoiceProfileRecord {
   id: string;
   providerId: string;
+  /** The device owner and provider instance for account-bound voices. */
+  accountScope?: string;
   kind: 'prompt' | 'clone';
   name: string;
   voicePrompt?: string;

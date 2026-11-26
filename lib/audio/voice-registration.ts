@@ -10,6 +10,8 @@
  */
 
 import type { VoiceDesign } from '@/lib/audio/voice-design';
+import type { AccountVoice } from '@/lib/audio/types';
+import { minimaxVoiceRegistrationAdapter } from '@/lib/audio/minimax-voice-registration';
 import { qwenVoiceCloneRegistrationAdapter } from '@/lib/audio/qwen-voice-clone-registration';
 import { voxcpmVoiceRegistrationAdapter } from '@/lib/audio/voxcpm-registration';
 
@@ -31,6 +33,8 @@ export interface VoiceRegistrationConfig {
 }
 
 export interface VoiceRegistrationAdapter {
+  /** Speech voices that the caller's provider account can use. */
+  listVoices?(cfg: VoiceRegistrationConfig, signal?: AbortSignal): Promise<AccountVoice[]>;
   /** Provider wire name used for enrollment identity; omitted adapters send the name unchanged. */
   normalizeRegistrationName?(name: string): string;
   /** Minimum reference duration in seconds; omitted adapters use the shared minimum. */
@@ -72,7 +76,12 @@ export interface VoiceRegistrationAdapter {
     signal?: AbortSignal,
   ): Promise<string>;
   /** Delete a provider-side registered voice, when supported. */
-  deleteVoice?(cfg: VoiceRegistrationConfig, voiceId: string, signal?: AbortSignal): Promise<void>;
+  deleteVoice?(
+    cfg: VoiceRegistrationConfig,
+    voiceId: string,
+    signal?: AbortSignal,
+    kind?: Exclude<AccountVoice['kind'], 'system'>,
+  ): Promise<void>;
   /** Synthesize the voice design once into a reference clip. */
   bootstrapReferenceClip(
     cfg: VoiceRegistrationConfig,
@@ -83,6 +92,7 @@ export interface VoiceRegistrationAdapter {
 
 /** providerId → adapter. The only seam to touch when adding a provider. */
 const VOICE_REGISTRATION_ADAPTERS: Record<string, VoiceRegistrationAdapter> = {
+  'minimax-tts': minimaxVoiceRegistrationAdapter,
   'qwen-tts': qwenVoiceCloneRegistrationAdapter,
   'voxcpm-tts': voxcpmVoiceRegistrationAdapter,
 };

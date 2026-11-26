@@ -361,6 +361,7 @@ it.each(['vllm-omni', 'python-api', 'nano-vllm'])(
 it.each([
   { providerId: 'qwen-tts' as const, voiceId: 'enrolled-clone' },
   { providerId: 'voxcpm-tts' as const, voiceId: 'voxcpm:profile:user-clone' },
+  { providerId: 'minimax-tts' as const, voiceId: 'openmaic-12345678-1234-4123-8123-0123456789ab' },
 ])('keeps a user voice selected globally for $providerId', async ({ providerId, voiceId }) => {
   const { ttsSelection } = await import('@/lib/audio/tts-selection');
   const { slotVoice } = await import('@/lib/server/generation/run/narration-voice');
@@ -398,6 +399,57 @@ it.each([
       { providerId, voiceId },
     ).voice,
   ).toBe(voiceId);
+});
+
+it('groups account and locally saved MiniMax voices once under the active model and binds the actual ID', () => {
+  const providerId = 'minimax-tts';
+  const modelId = 'speech-2.8-hd';
+  const accountVoices = [
+    { id: 'female-yujie', name: 'System duplicate', kind: 'system' as const },
+    { id: 'voice-account', name: 'Studio', kind: 'designed' as const },
+    { id: 'voice-synced', name: 'Synced', kind: 'clone' as const },
+  ];
+  const profiles = [
+    { providerId, id: 'voice-synced', name: 'Synced on this browser', kind: 'clone' },
+    { providerId, id: 'voice-local', name: 'My saved clone', kind: 'clone' },
+  ];
+  const target = {
+    providerSource: 'workspace' as const,
+    providerId: 'personal',
+    registryId: providerId,
+    presetId: providerId,
+    modelId,
+  };
+  const [provider] = getEnabledProvidersWithVoices(
+    slotTTSProvidersConfig(target, accountVoices),
+    profiles,
+  );
+  const ids = provider.modelGroups[0].voices.map((voice) => voice.id);
+  expect(ids).toContain('female-yujie');
+  expect(ids).toContain('voice-account');
+  expect(ids).toContain('voice-synced');
+  expect(ids).toContain('voice-local');
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(provider.voices.map((v) => v.id)).toEqual(ids);
+  expect(
+    resolveAgentVoice(
+      {
+        id: 'teacher',
+        voiceConfig: { providerId, modelId, voiceId: 'voice-account' },
+      } as AgentConfig,
+      0,
+      [provider],
+    ),
+  ).toEqual({ providerId, modelId, voiceId: 'voice-account' });
+
+  const [configured] = getEnabledProvidersWithVoices(
+    slotTTSProvidersConfig(
+      { ...target, voices: [{ id: 'curated', name: 'Curated' }] },
+      accountVoices,
+    ),
+    [profiles[1]],
+  );
+  expect(configured.modelGroups[0].voices.map((v) => v.id)).toEqual(['curated', 'voice-local']);
 });
 
 it.each([42, true, false, '', '   '])(

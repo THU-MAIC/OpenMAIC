@@ -95,6 +95,7 @@
  */
 
 import type { TTSModelConfig } from './types';
+import { TTSVoiceUnavailableError } from './provider-error';
 import { isCustomTTSProvider } from './types';
 import {
   isQwenCloneVoice,
@@ -121,6 +122,7 @@ import {
 import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
 import { pcmS16leMonoToWav } from './pcm-wav';
+import { minimaxEndpoint, minimaxStatusCode } from './minimax';
 import {
   DEEPSEEK_TOOLS_DEFAULT_BASE_URL,
   deepseekToolsEndpoint,
@@ -1091,15 +1093,6 @@ const MINIMAX_RATE_LIMIT_STATUS_CODES = new Set([1002, 1039, 1041, 2045]);
  */
 const MINIMAX_QUOTA_STATUS_CODES = new Set([1008, 2056]);
 
-function minimaxStatusCode(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return undefined;
-}
-
 /** The `base_resp.status_code` of a MiniMax error response body, if it has one. */
 function minimaxBodyStatusCode(body: string): number | undefined {
   try {
@@ -1110,11 +1103,15 @@ function minimaxBodyStatusCode(body: string): number | undefined {
   }
 }
 
-/** A MiniMax quota code as the provider-neutral quota error; undefined for any other code. */
-function minimaxQuotaError(
+/** Translate MiniMax business codes at the adapter boundary (T2A v2). */
+function minimaxSynthesisRefusal(
   statusCode: number | undefined,
   message: string,
-): ProviderQuotaExhaustedError | undefined {
+): Error | undefined {
+  // Invalid synthesis voice_id, no access to this voice_id, or voice_id not found.
+  if (statusCode === 20132 || statusCode === 2042 || statusCode === 2054) {
+    return new TTSVoiceUnavailableError();
+  }
   return statusCode !== undefined && MINIMAX_QUOTA_STATUS_CODES.has(statusCode)
     ? new ProviderQuotaExhaustedError('MiniMax', message)
     : undefined;
@@ -1142,7 +1139,7 @@ function throwIfMiniMaxBaseRespFailed(
   }
 
   const message = `MiniMax TTS API error (${statusCode}): ${statusMsg}`;
-  throw minimaxQuotaError(statusCode, message) ?? new Error(message);
+  throw minimaxSynthesisRefusal(statusCode, message) ?? new Error(message);
 }
 
 /**
@@ -1153,11 +1150,8 @@ async function generateMiniMaxTTS(
   text: string,
   signal: AbortSignal,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = (config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '').replace(
-    /\/$/,
-    '',
-  );
-  const response = await ttsFetch(config, `${baseUrl}/v1/t2a_v2`, {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '';
+  const response = await ttsFetch(config, minimaxEndpoint(baseUrl, 't2a_v2').href, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
@@ -1191,14 +1185,14 @@ async function generateMiniMaxTTS(
     const message = `MiniMax TTS API error: ${errorText}`;
     // A quota code in the body says what the HTTP status does not; an HTTP 429
     // keeps its rate-limit type and carries the quota error as its cause.
-    const quota = minimaxQuotaError(minimaxBodyStatusCode(errorText), message);
+    const refusal = minimaxSynthesisRefusal(minimaxBodyStatusCode(errorText), message);
     throwIfTtsRateLimited(
       'MiniMax',
       response.status,
       response.headers?.get('retry-after'),
-      quota ? { cause: quota } : undefined,
+      refusal instanceof ProviderQuotaExhaustedError ? { cause: refusal } : undefined,
     );
-    throw quota ?? new Error(message);
+    throw refusal ?? new Error(message);
   }
 
   const data = await response.json();

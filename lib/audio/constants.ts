@@ -80,6 +80,10 @@ export const MINIMAX_TTS_MODELS = [
   { id: 'speech-02-turbo', name: 'Speech 02 Turbo' },
 ] as const;
 
+/** IDs issued by OpenMAIC for new MiniMax clones, independent of the display name. */
+export const MINIMAX_CLONE_VOICE_PREFIX = 'openmaic-';
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /** Default wire target for enrollment and synthesis; the server may override it. */
 export const DEFAULT_QWEN_VOICE_CLONE_TARGET = 'cosyvoice-v3.5-plus';
 /** Persisted clone group, not an upstream request model. Keep its saved value stable. */
@@ -150,15 +154,32 @@ export function resolveTTSModelForVoice(
     : TTS_PROVIDERS['qwen-tts'].defaultModelId;
 }
 
+/** Provider-hosted clones can be used by ID without a browser-local profile. */
+export function isProviderCloneVoice(
+  providerId: string,
+  voiceId: string,
+  configuredVoices?: readonly { id: string }[],
+): boolean {
+  if (providerId === 'qwen-tts') return isQwenCloneVoice(voiceId, configuredVoices);
+  return (
+    providerId === 'minimax-tts' &&
+    voiceId.startsWith(MINIMAX_CLONE_VOICE_PREFIX) &&
+    UUID_V4.test(voiceId.slice(MINIMAX_CLONE_VOICE_PREFIX.length))
+  );
+}
+
 /** Replacement catalogues restrict presets while retaining provider-specific user voices. */
 export function voiceAllowedByConfiguredCatalogue(
   providerId: string,
   voiceId: string,
   configuredVoices?: readonly { id: string }[],
 ): boolean {
-  if (!configuredVoices || configuredVoices.some((voice) => voice.id === voiceId)) return true;
-  if (providerId === 'qwen-tts') return isQwenCloneVoice(voiceId, configuredVoices);
-  return providerId === VOXCPM_TTS_PROVIDER_ID && !!getVoxCPMProfileIdFromVoiceId(voiceId);
+  return (
+    !configuredVoices ||
+    configuredVoices.some((voice) => voice.id === voiceId) ||
+    isProviderCloneVoice(providerId, voiceId, configuredVoices) ||
+    (providerId === VOXCPM_TTS_PROVIDER_ID && !!getVoxCPMProfileIdFromVoiceId(voiceId))
+  );
 }
 
 /**
@@ -779,6 +800,7 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     id: 'minimax-tts',
     name: 'MiniMax TTS',
     requiresApiKey: true,
+    supportsAccountVoices: true,
     defaultBaseUrl: 'https://api.minimaxi.com',
     icon: '/logos/minimax.svg',
     models: MINIMAX_TTS_MODELS.map((m) => ({ id: m.id, name: m.name })),

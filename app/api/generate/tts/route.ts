@@ -27,6 +27,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
 import { findUnsafeNetworkTargetError, validatePublicUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { QwenVoiceCloneError, qwenVoiceCloneErrorMessage } from '@/lib/audio/qwen-voice-clone';
+import { TTSVoiceUnavailableError } from '@/lib/audio/provider-error';
 import {
   RequestedProviderRefusedError,
   resolveMediaSlot,
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
     if (error instanceof TTSRateLimitError) {
       return apiError('RATE_LIMITED', 429, error.message);
     }
-    if (error instanceof TTSInvalidResponseError) {
+    if (error instanceof TTSInvalidResponseError || error instanceof TTSVoiceUnavailableError) {
       return apiError(error.code, error.httpStatus, error.message);
     }
     if (error instanceof QwenVoiceCloneError) {

@@ -63,6 +63,15 @@ describe('run narration voices', () => {
       unavailable: new Set([voiceBindingKey(clone)]),
     });
     expect(skipped?.voice.voiceId).toBe('Cherry');
+    const unavailable = new Set([voiceBindingKey(clone), voiceBindingKey(skipped!.voice)]);
+    const alternative = clipVoice({
+      target: qwen,
+      preference: undefined,
+      bound: clone,
+      unavailable,
+    });
+    expect(alternative?.voice.providerId).toBe('qwen-tts');
+    expect(unavailable.has(voiceBindingKey(alternative!.voice))).toBe(false);
   });
 
   it('retries a missing clone once: with the slot voice when the binding differs from it', () => {

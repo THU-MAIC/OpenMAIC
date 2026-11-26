@@ -41,7 +41,7 @@
  * owner-bound document store); a worker executing it loses its lease.
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
-import { audioFailureKind } from '@/lib/audio/provider-error';
+import { audioFailureKind, isVoiceUnavailableCode } from '@/lib/audio/provider-error';
 import { isAbortError } from '@openmaic/generation';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
@@ -1008,7 +1008,6 @@ async function executeClaimedRun(
     const narrate = async (
       action: SpeechAction,
       override?: ResolvedVoice,
-      hops = 0,
     ): Promise<string | null> => {
       const chosen = clipVoice({
         target,
@@ -1049,21 +1048,17 @@ async function executeClaimedRun(
         );
       } catch (error) {
         // The bound voice's clone is gone: one retry with a different voice.
-        if (
-          errorCode(error) === 'QWEN_VC_VOICE_NOT_FOUND' &&
-          bound &&
-          hops < 1 &&
-          voiceBindingKey(voice) === voiceBindingKey(bound)
-        ) {
-          unavailableBindings.add(voiceBindingKey(bound));
+        if (isVoiceUnavailableCode(errorCode(error)) && bound) {
+          unavailableBindings.add(voiceBindingKey(voice));
           const retryVoice = clipVoiceAfterMissingClone({
             target,
             bound,
             globalVoice,
             failed: voice,
             usedFallbackVoice: !!override,
+            unavailable: unavailableBindings,
           });
-          if (retryVoice) return narrate(action, retryVoice, hops + 1);
+          if (retryVoice) return narrate(action, retryVoice);
         }
         throw error;
       }

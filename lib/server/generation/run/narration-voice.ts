@@ -27,6 +27,7 @@ import {
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import { personalVoiceAccount } from '@/lib/server/audio/account-voices';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 
 import type { GenerationRunInput } from './types';
@@ -155,13 +156,25 @@ export function advertisedVoices(target: RunNarrationTarget) {
 export function narratorVoiceForGeneration(
   target: RunNarrationTarget,
   preference: GenerationRunInput['voice'],
-): ResolvedVoice | undefined {
+) {
   const { voice } = slotVoice(target, preference);
-  return resolveNarratorVoiceForGeneration(
+  const narrator = resolveNarratorVoiceForGeneration(
     target.providerId,
     voice,
     providersConfig(target)[target.providerId],
   );
+  // A personal account may use its selected voice without advertising the
+  // private catalogue to the model. An explicit catalogue takes precedence.
+  if (
+    narrator &&
+    preference?.providerId === narrator.providerId &&
+    preference.voiceId === narrator.voiceId &&
+    !target.connection.voices?.length &&
+    personalVoiceAccount(target.connection)
+  ) {
+    return { ...narrator, allowAccountVoice: true };
+  }
+  return narrator;
 }
 
 /**
@@ -188,19 +201,21 @@ export function clipVoice(input: {
     ...(target.connection.modelId ? { modelId: target.connection.modelId } : {}),
     voiceId: slotVoice(target, input.preference).voice,
   };
+  const isUnavailable = (voice: ResolvedVoice) => input.unavailable.has(voiceBindingKey(voice));
+  const boundUnavailable = bound && isUnavailable(bound);
   let voice =
     input.override ??
-    resolveNarratorVoiceBinding(
-      bound && input.unavailable.has(voiceBindingKey(bound)) ? undefined : bound,
-      globalVoice,
-      configs,
-    );
+    resolveNarratorVoiceBinding(boundUnavailable ? undefined : bound, globalVoice, configs);
   if (
+    !input.override &&
     bound &&
-    !narratorBindingDiffers(bound, globalVoice) &&
-    !isTTSProviderEnabled(voice.providerId, configs[voice.providerId])
+    (isUnavailable(voice) ||
+      (!narratorBindingDiffers(bound, globalVoice) &&
+        !isTTSProviderEnabled(voice.providerId, configs[voice.providerId])))
   ) {
-    voice = deterministicNarratorVoice(configs) ?? voice;
+    const alternative = deterministicNarratorVoice(configs, isUnavailable);
+    if (!alternative) return null;
+    voice = alternative;
   }
   if (!isTTSProviderEnabled(voice.providerId, configs[voice.providerId])) return null;
   return { voice, globalVoice };
@@ -213,6 +228,7 @@ export function clipVoiceAfterMissingClone(input: {
   globalVoice: ResolvedVoice;
   failed: ResolvedVoice;
   usedFallbackVoice: boolean;
+  unavailable?: ReadonlySet<string>;
 }): ResolvedVoice | null {
   return narratorVoiceAfterMissingClone({
     bound: input.bound,
@@ -220,6 +236,7 @@ export function clipVoiceAfterMissingClone(input: {
     failed: input.failed,
     providerConfigs: providersConfig(input.target),
     usedFallbackVoice: input.usedFallbackVoice,
+    isUnavailable: (voice) => input.unavailable?.has(voiceBindingKey(voice)) ?? false,
   });
 }
 

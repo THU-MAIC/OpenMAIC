@@ -27,12 +27,13 @@ export interface TTSPreviewOptions {
  * Shared hook for TTS preview playback (browser-native and API-based).
  *
  * - `previewing`: true while a preview is active (including audio playback)
+ * - `previewingVoiceId`: the voice being generated or played
  * - `startPreview(opts)`: start a preview; rejects with non-abort errors
  * - `stopPreview()`: cancel any active preview and reset state
  */
 export function useTTSPreview() {
   const { locale } = useI18n();
-  const [previewing, setPreviewing] = useState(false);
+  const [previewingVoiceId, setPreviewingVoiceId] = useState<string | null>(null);
   const cancelRef = useRef<(() => void) | null>(null);
   const requestIdRef = useRef(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -56,7 +57,7 @@ export function useTTSPreview() {
   /** Cancel any active preview and reset the previewing flag. */
   const stopPreview = useCallback(() => {
     cleanup();
-    setPreviewing(false);
+    setPreviewingVoiceId(null);
   }, [cleanup]);
 
   // Cleanup on unmount (skip state update to avoid React warnings).
@@ -72,7 +73,7 @@ export function useTTSPreview() {
       const requestId = ++requestIdRef.current;
       const isStale = () => requestIdRef.current !== requestId;
 
-      setPreviewing(true);
+      setPreviewingVoiceId(options.voice);
       try {
         if (options.providerId === 'browser-native-tts') {
           // Rejects when speech is unsupported or no voices load.
@@ -86,7 +87,7 @@ export function useTTSPreview() {
           await controller.promise;
           if (!isStale()) {
             cancelRef.current = null;
-            setPreviewing(false);
+            setPreviewingVoiceId(null);
           }
           return;
         }
@@ -137,20 +138,20 @@ export function useTTSPreview() {
         audio.onended = () => {
           if (!isStale()) {
             audioRef.current = null;
-            setPreviewing(false);
+            setPreviewingVoiceId(null);
           }
         };
         audio.onerror = () => {
           if (!isStale()) {
             audioRef.current = null;
-            setPreviewing(false);
+            setPreviewingVoiceId(null);
           }
         };
         await audio.play();
       } catch (error) {
         if (!isStale()) {
           cancelRef.current = null;
-          setPreviewing(false);
+          setPreviewingVoiceId(null);
         }
         if (!isBrowserTTSAbortError(error)) {
           throw error;
@@ -160,5 +161,5 @@ export function useTTSPreview() {
     [cleanup, locale],
   );
 
-  return { previewing, startPreview, stopPreview };
+  return { previewing: previewingVoiceId !== null, previewingVoiceId, startPreview, stopPreview };
 }
