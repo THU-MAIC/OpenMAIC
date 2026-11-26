@@ -43,7 +43,6 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { cn } from '@/lib/utils';
 import { RosterDialog } from '@/components/edit/AgentsView/RosterDialog';
 import { DOCK_BAR_ACTION, DockBarTip } from './dock-context';
-import { CourseIssuesButton } from './CourseIssuesButton';
 import { ElementRefLassoButton } from './ElementRefLassoButton';
 
 /** The bar's own height, in px. The dock adds it to whatever the timeline is. */
@@ -232,9 +231,6 @@ export function DockEditBar({
 
         <div className="flex shrink-0 items-center justify-end gap-px pr-1">
           <CtrlDivider />
-          {/* The course's issues list — course-scoped, so it lives in this row's
-              own right controls rather than the page pill. */}
-          <CourseIssuesButton />
           {/* Playback's fullscreen and chat toggle; the fold is where it is in playback. */}
           <span className="h-6 w-6 shrink-0" />
           <span className="h-6 w-6 shrink-0" />
