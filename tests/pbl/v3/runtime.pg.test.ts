@@ -6104,6 +6104,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     { crash: true, board: false, delivery: 'register' },
     { crash: false, board: true, delivery: 'register' },
     { crash: true, board: true, delivery: 'register' },
+    { crash: true, board: true, delivery: 'tool carries missing detail' },
+    { crash: false, board: true, delivery: 'unmarked missing detail' },
     { crash: false, board: true, delivery: 'missing detail' },
     { crash: false, board: true, delivery: 'board before receipt' },
     { crash: false, board: true, delivery: 'mixed missing detail' },
@@ -6277,8 +6279,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       mocked.responses = crash ? [] : [textResponse(response)];
       switch (delivery) {
         case 'register':
+          mocked.responses.push(board ? speak(response, [answer]) : toolResponse([answer]));
+          break;
+        case 'unmarked missing detail':
+          mocked.responses.push(speak(response + ' ' + lastDetail, [answer]));
+          break;
+        case 'tool carries missing detail':
           mocked.responses.push(
-            board ? speak('Speculative duplicate answer.', [answer]) : toolResponse([answer]),
+            toolResponse([{ ...answer, input: { remainingSpeech: lastDetail } }]),
           );
           break;
         case 'missing detail':
@@ -6336,14 +6344,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       if (delivery === 'register')
         expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
           board
-            ? 'Register an already delivered answer'
+            ? 'Original learner input:'
             : 'For an assistance-only answer or product clarification',
         );
       function expectDelivery(fragments: string[]) {
         const words = fragments.join('\n\n');
         for (const paragraph of [opening, closing]) expect(words.split(paragraph)).toHaveLength(2);
         expect(words.split(lastDetail)).toHaveLength(missing ? 2 : 1);
-        expect(words).not.toContain('Speculative duplicate answer.');
       }
       if (board) {
         const restored = await learningView(principal, study.id, { passive: true });

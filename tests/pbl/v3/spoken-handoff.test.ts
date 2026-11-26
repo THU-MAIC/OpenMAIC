@@ -27,6 +27,24 @@ function stop(timestamp: number, words: string): AssistantMessage {
   } as AssistantMessage;
 }
 
+async function recoverSpeech(given: string, message: AssistantMessage) {
+  const boundary = withTeachingTurnBoundary(
+    () => {
+      const response = createAssistantMessageEventStream();
+      response.push({
+        type: 'done',
+        reason: message.stopReason === 'stop' ? 'stop' : 'toolUse',
+        message,
+      });
+      return response;
+    },
+    () => false,
+    { stageKey: 'intro:0', studentTurns: 1, spokenReview: true, recoverySpeech: [given] },
+  );
+  const stream = await boundary({} as Parameters<StreamFn>[0], { messages: [] });
+  return (await stream.result()).content;
+}
+
 it.each([
   ['The value is 4', 'The value is 42.', 'The value is 42.'],
   ['Save', 'Saved automatically.', 'Saved automatically.'],
@@ -47,25 +65,37 @@ it.each([
   async (given, next, expected) => {
     for (const message of [
       stop(2, next),
+      frame(2, next, 'respond_to_learner'),
       frame(2, next, 'respond_to_learner', { deliverMissing: true }),
     ]) {
-      const boundary = withTeachingTurnBoundary(
-        () => {
-          const response = createAssistantMessageEventStream();
-          response.push({
-            type: 'done',
-            reason: message.stopReason === 'stop' ? 'stop' : 'toolUse',
-            message,
-          });
-          return response;
-        },
-        () => false,
-        { stageKey: 'intro:0', studentTurns: 1, spokenReview: true, recoverySpeech: [given] },
-      );
-      const stream = await boundary({} as Parameters<StreamFn>[0], { messages: [] });
-      expect((await stream.result()).content).toEqual([
+      expect(await recoverSpeech(given, message)).toEqual([
         { type: 'text', text: expected },
         ...message.content.filter((part) => part.type === 'toolCall'),
+      ]);
+    }
+  },
+);
+
+it.each(['respond_to_learner', 'request_learner_help'])(
+  'publishes missing words once in the normal speech channel when recovering %s',
+  async (tool) => {
+    const original = 'Open the files.';
+    const hint = 'Inspect the second file for the return value.';
+    for (const [prose, remainingSpeech, expected] of [
+      ['', '', ''],
+      ['', original, ''],
+      ['', hint, hint],
+      [hint, hint, hint],
+      [original, hint, hint],
+      [hint, '', hint],
+      [hint, original + ' ' + hint, hint],
+      [original + ' ' + hint, hint, hint],
+      [original + ' ' + hint, original + ' ' + hint, hint],
+    ] as const) {
+      const content = await recoverSpeech(original, frame(2, prose, tool, { remainingSpeech }));
+      expect(content).toEqual([
+        ...(expected ? [{ type: 'text', text: expected }] : []),
+        { type: 'toolCall', id: '2', name: tool, arguments: {} },
       ]);
     }
   },

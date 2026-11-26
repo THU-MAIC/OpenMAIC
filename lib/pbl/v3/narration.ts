@@ -53,6 +53,19 @@ export function spokenText(text: string, streaming = false) {
     .trim();
 }
 
+/** A legacy receipt can republish speech after it was voiced, then append a new direction. */
+export function unspokenReceipt(text: string, delivered: Iterable<string>) {
+  let rest = text;
+  for (const previous of delivered) {
+    if (rest === previous) return '';
+    if (!previous || !rest.startsWith(previous)) continue;
+    const suffix = rest.slice(previous.length);
+    // A longer number, filename or unfinished word is a different statement.
+    if (/^\s/u.test(suffix) || /[。！？]$/u.test(previous)) rest = suffix.trimStart();
+  }
+  return rest;
+}
+
 type MarkdownBlock = ReturnType<typeof fromMarkdown>['children'][number];
 
 /** Resolve only locations the role actually pointed at before this explanation. */
@@ -99,7 +112,7 @@ export function narrationSteps(
   nextInstruction?: string,
   afterMention?: { label: string; confirmation: string },
 ): NarrationStep[] {
-  let closing = '';
+  let namedNextAction = false;
   let announcedCompletion = false;
   let pendingPoints: PointStep[] = [];
   let explanationPoints: PointStep[] = [];
@@ -113,7 +126,7 @@ export function narrationSteps(
       if (isSpokenReceipt(part)) return [];
       const text = spokenText(part.text, part.streaming);
       if (!text) return [];
-      if (afterMention) closing = text.split(/\n[ \t]*\n/).at(-1) ?? '';
+      if (afterMention?.label && text.includes(afterMention.label)) namedNextAction = true;
       // A model can explain one batch of cues in several consecutive text parts.
       // A new pointing sequence or a whiteboard change starts a new explanation.
       if (pendingPoints.length) {
@@ -198,9 +211,7 @@ export function narrationSteps(
     ) {
       announcedCompletion = true;
       const instruction =
-        afterMention?.label && closing.includes(afterMention.label)
-          ? afterMention.confirmation
-          : nextInstruction;
+        afterMention && namedNextAction ? afterMention.confirmation : nextInstruction;
       return [
         tool,
         { ...at, kind: 'say', id: part.id + ':continue', text: instruction, streaming: false },
@@ -235,9 +246,9 @@ export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
   const closing = entry.parts.findLast((part) => part.kind === 'text' && part.text.trim());
   if (closing?.kind === 'text') {
     if (isSpokenReceipt(closing)) return { id: closing.id, text: spokenText(closing.text) };
-  } else if (entry.restingHandoff) {
-    return { id: entry.id, text: spokenText(entry.restingHandoff) };
+    if (!closing.id.startsWith('question-')) return;
   }
+  if (entry.restingHandoff) return { id: entry.id, text: spokenText(entry.restingHandoff) };
 }
 
 /**

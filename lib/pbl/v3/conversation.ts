@@ -1,3 +1,4 @@
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { AgentRole } from './domain/project/project-schema';
 
 export type LearningRunFailure =
@@ -66,7 +67,7 @@ export interface LearningConversationEntry {
   currentStage?: true;
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   failure?: LearningRunFailure;
-  /** Already delivered words to show in the bubble after a tool-only recovery. */
+  /** Full registered words for the resting bubble when some or all were already delivered. */
   restingHandoff?: string;
   omitted?: boolean;
   speaker: 'user' | AgentRole;
@@ -166,6 +167,68 @@ export function mergeConversationHistory(pages: readonly (readonly LearningConve
   );
 }
 
+/** Only Markdown emphasis may differ. Keep link destinations and literal code significant. */
+function sameLegacyWords(a: string, b: string) {
+  if (a === b) return true;
+  if (a.replace(/[*_]/g, '') !== b.replace(/[*_]/g, '')) return false;
+  const unstyled = (markdown: string) => {
+    const characters = markdown.split('');
+    function visit(
+      node: ReturnType<typeof fromMarkdown> | ReturnType<typeof fromMarkdown>['children'][number],
+    ) {
+      if (node.type === 'strong' || node.type === 'emphasis') {
+        const width = node.type === 'strong' ? 2 : 1;
+        const { start, end } = node.position!;
+        characters.fill('', start.offset!, start.offset! + width);
+        characters.fill('', end.offset! - width, end.offset!);
+      }
+      if ('children' in node) node.children.forEach(visit);
+    }
+    visit(fromMarkdown(markdown));
+    return characters.join('');
+  };
+  return unstyled(a) === unstyled(b);
+}
+
+/** A known legacy review can repeat exactly the same final question after new directions. */
+function closingQuestion(text: string) {
+  const end = /[?？][*_`"'”’）)\s]*$/u.exec(text);
+  if (!end) return;
+  let start = 0;
+  for (const boundary of text.slice(0, end.index).matchAll(/[。！？!?]|\.[ \t]+|\n/gu))
+    start = boundary.index + boundary[0].length;
+  return { before: text.slice(0, start).trim(), question: text.slice(start).trim() };
+}
+
+/** Only cut at a shared sentence or block boundary, never inside a reference or code span. */
+function newLegacyDirections(previous: string, recorded: string) {
+  let shared = 0;
+  while (shared < recorded.length && previous[shared] === recorded[shared]) shared++;
+  if (!shared) return recorded;
+  function boundaries(text: string) {
+    const ends = new Set<number>();
+    for (const block of fromMarkdown(text).children) {
+      ends.add(block.position!.end.offset!);
+      if (block.type !== 'paragraph') continue;
+      for (const inline of block.children) {
+        if (inline.type !== 'text') continue;
+        const start = inline.position!.start.offset!;
+        const raw = text.slice(start, inline.position!.end.offset!);
+        for (const match of raw.matchAll(/[。！？.!?]/gu)) {
+          const end = start + match.index + 1;
+          if (/[。！？]/u.test(match[0]) || !text[end] || /\s/u.test(text[end])) ends.add(end);
+        }
+      }
+    }
+    return ends;
+  }
+  const ends = boundaries(previous);
+  let cut = 0;
+  for (const end of boundaries(recorded))
+    if (end <= shared && ends.has(end)) cut = Math.max(cut, end);
+  return recorded.slice(cut).trimStart();
+}
+
 /** Resolve committed response delivery and legacy exact echoes without changing durable records. */
 export function handoffEchoes<
   T extends {
@@ -206,6 +269,13 @@ export function handoffEchoes<
         .join('\n\n'),
     ]),
   );
+  // Evaluate a canonical replacement once per turn, including across history pages.
+  const replacements = new Map(canonical);
+  for (const [turn, receipt] of canonical) {
+    const original = text.get(turn);
+    if (original !== undefined && sameLegacyWords(original, receipt.text))
+      replacements.delete(turn);
+  }
   return new Set(
     replies.filter((reply) => {
       // A spoken receipt only supplies fallback text when its source is outside the loaded page.
@@ -215,14 +285,15 @@ export function handoffEchoes<
             .get(`${key(reply)}:${reply.spokenAt}`)
             ?.some((part) => part.trimEnd().endsWith(reply.text)) ?? false
         );
-      const committed = reply.inputId === undefined ? undefined : canonical.get(key(reply));
-      if (committed && text.get(key(reply)) !== committed.text)
-        return reply !== committed && (reply.handoff || reply.messageId !== undefined);
+      const committed = reply.inputId === undefined ? undefined : replacements.get(key(reply));
+      const original = text.get(key(reply));
+      if (committed) return reply !== committed && (reply.handoff || reply.messageId !== undefined);
       return (
         reply.handoff &&
         reply.inputId !== undefined &&
         !!reply.text &&
-        text.get(key(reply))?.includes(reply.text)
+        original !== undefined &&
+        (original.includes(reply.text) || sameLegacyWords(original, reply.text))
       );
     }),
   );
@@ -330,13 +401,15 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
   const duplicates = new Set<LearningConversationEntry['parts'][number]>();
   const revised = new Map<LearningConversationEntry['parts'][number], string>();
   const boardReceipts = new Set<(typeof replies)[number]>();
+  const resting = new Map<LearningConversationEntry['parts'][number], string>();
   for (const receipt of recorded) {
     if (receipt.inputId === undefined) continue;
     const source = legacySources.get(`${receipt.scope}:${receipt.inputId}:${receipt.part.id}`);
     if (!receipt.canonical && !source) continue;
+    if (source) spoken.add(source);
     const speech = replies.filter(
       (reply) =>
-        (spoken.has(reply.part) || (!receipt.canonical && reply.part === source)) &&
+        spoken.has(reply.part) &&
         reply.scope === receipt.scope &&
         reply.inputId === receipt.inputId &&
         !reply.handoff,
@@ -344,12 +417,17 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
     if (!speech.length) continue;
     boardReceipts.add(receipt);
     // Keep the original stream position when a recovery receipt copies already spoken words.
-    if (speech.some((reply) => reply.text.trimEnd().endsWith(receipt.text.trim()))) {
+    if (
+      speech.some(
+        (reply) =>
+          reply.text.trimEnd().endsWith(receipt.text.trim()) ||
+          sameLegacyWords(reply.text.trim(), receipt.text.trim()),
+      )
+    ) {
       duplicates.add(receipt.part);
       continue;
     }
-    // Older board agents could author a closing question twice in a single tool-call frame.
-    // Preserve the explanation, with the registered question in its original speaking slot.
+    // A full legacy receipt may also prefix its closing with entire earlier paragraphs.
     let remaining = receipt.text.trim();
     for (const reply of speech) {
       const prefix = reply.text.trim();
@@ -361,28 +439,26 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       continue;
     }
     if (remaining !== receipt.text.trim()) revised.set(receipt.part, remaining);
-    if (!source || !speech.some((reply) => reply.part === source)) continue;
-    // The old receipt and prose share a review call but can each carry unique directions.
-    // Replace only the last question, keeping preceding sentences from both deliveries.
-    const endQuestion = /[?？][*_`"'”’）)\s]*$/u;
-    const end = endQuestion.exec(source.text);
-    if (!end || !endQuestion.test(remaining)) continue;
-    const prefix = source.text.slice(0, end.index);
-    let start = 0;
-    for (const boundary of prefix.matchAll(/[。！？!?]|\.[ \t]+|\n/gu))
-      start = boundary.index + boundary[0].length;
-    const intro = source.text.slice(0, start);
-    if (intro.trim() && remaining.startsWith(intro.trim() + '\n'))
-      remaining = remaining.slice(intro.trim().length).trimStart();
-    const merged = intro + remaining;
-    // An ambiguous old question may itself contain the only file link or code reference.
-    const references =
-      source.text.match(
-        /\[[^\]]+\]\([^)]*\)|`[^`]+`|[\w/-]+\.[a-z][\w-]*(?::\d+(?:[-–]\d+)?)?/giu,
-      ) ?? [];
-    if (references.some((reference) => !merged.includes(reference))) continue;
-    revised.set(source, merged);
-    duplicates.add(receipt.part);
+    if (!source) continue;
+    // Different old questions can contain the only instruction. Keep both unless their
+    // entire closing question matches, then append only the directions the learner has not heard.
+    const previous = closingQuestion(source.text);
+    const recordedQuestion = closingQuestion(remaining);
+    if (
+      !previous ||
+      !recordedQuestion ||
+      !sameLegacyWords(previous.question, recordedQuestion.question)
+    )
+      continue;
+    const directions = sameLegacyWords(previous.before, recordedQuestion.before)
+      ? ''
+      : newLegacyDirections(previous.before, recordedQuestion.before);
+    if (!directions) {
+      duplicates.add(receipt.part);
+    } else {
+      revised.set(receipt.part, directions);
+      resting.set(receipt.part, receipt.text);
+    }
   }
   for (const echo of handoffEchoes(replies)) {
     if (!spoken.has(echo.part) && !boardReceipts.has(echo)) duplicates.add(echo.part);
@@ -394,6 +470,9 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
         const text = revised.get(part);
         return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
       });
+    const latestText = entry.parts.findLast((p) => p.kind === 'text');
+    const restingHandoff = latestText && resting.get(latestText);
+    if (restingHandoff) return [{ ...entry, parts, restingHandoff }];
     // The durable handoff owns the resting bubble, even when the worker never wrote a tool card.
     const closing =
       entry.status === 'succeeded' && !parts.some((part) => part.kind === 'text')

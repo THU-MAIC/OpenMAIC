@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from '../fixtures/pbl-learning-events';
+import { MockApi } from '../fixtures/mock-api';
 import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningSnapshot } from '@/lib/pbl/v3/event-stream';
@@ -636,6 +637,84 @@ for (const mode of assistantModes) {
     await publish();
     await expect(form.getByTestId('pbl-quiz-feedback')).toContainText('Last submission: correct');
     await expect(correct).toHaveCount(0);
+  });
+}
+
+for (const sawToolStart of [false, true]) {
+  test(`voices a legacy answer's new instruction once (saw tool start: ${sawToolStart})`, async ({
+    page,
+    learningEvents,
+  }) => {
+    const spoken: string[] = [];
+    await new MockApi(page).mockModelSettings({ media: { tts: 'openai-tts' } });
+    await page.route('**/api/generate/tts', async (route) => {
+      spoken.push(route.request().postDataJSON().text);
+      // A short silent WAV lets the real player settle before the late receipt arrives.
+      await route.fulfill({
+        json: {
+          base64:
+            'UklGRkQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YSAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
+          format: 'wav',
+        },
+      });
+    });
+    const fixture = await project(page, learningEvents, { started: true, explanationBoard: true });
+    type Entry = NonNullable<LearningView['conversation']>[number];
+    const original = 'Open the project.';
+    const hint = 'Read line seven.';
+    const read: Entry['parts'][number] = {
+      kind: 'tool',
+      id: 'read',
+      name: 'read_file',
+      action: 'read',
+      status: 'succeeded',
+    };
+    const tool: Entry['parts'][number] = {
+      kind: 'tool',
+      id: 'answer',
+      name: 'respond_to_learner',
+      action: 'tool',
+      status: 'running',
+    };
+    const source: Entry['parts'][number] = {
+      kind: 'text',
+      id: 'text-2-0',
+      messageId: 2,
+      text: original,
+    };
+    const publish = async (parts: Entry['parts'], status: Entry['status']) => {
+      fixture.view.conversation = [
+        {
+          id: 'teaching-turn',
+          inputId: 1,
+          speaker: 'discussion',
+          status,
+          currentStage: true,
+          parts,
+        },
+      ];
+      fixture.view.revision++;
+      fixture.view.activitySequence = (fixture.view.activitySequence ?? 0) + 1;
+      await fixture.publish();
+    };
+    await publish([source, read], 'running');
+    await expect.poll(() => spoken).toEqual([original]);
+    if (sawToolStart) {
+      await publish([source, read, tool], 'running');
+      await expect(
+        page.getByTestId('pbl-bubble-tools').locator('[data-status="running"]'),
+      ).toBeVisible();
+    }
+    await publish(
+      [
+        read,
+        { ...tool, status: 'succeeded' },
+        { kind: 'text', id: 'question-1-answer', canonical: true, text: `${original} ${hint}` },
+      ],
+      'succeeded',
+    );
+    await expect.poll(() => spoken, { timeout: 15000 }).toEqual([original, hint]);
+    expect(fixture.commands).toEqual([]);
   });
 }
 

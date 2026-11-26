@@ -3178,7 +3178,7 @@
       "fullscreenUnavailable": "暂时无法全屏，可以继续在课堂内学习。",
       "currentTask": "当前学习环节",
       "collectResult": "请先收集执行结果，再继续学习。",
-      "ready": "本环节已就绪，准备好后点击“{{action}}”。",
+      "ready": "本环节已就绪，“{{action}}”按钮已可用。",
       "followStep": "按下方要求完成当前环节；助手可能正在等待你的回答或确认。",
       "steps": {
         "intro": "项目介绍",

@@ -3178,7 +3178,7 @@
       "fullscreenUnavailable": "Fullscreen is unavailable. You can continue in the classroom layout.",
       "currentTask": "Current learning step",
       "collectResult": "Collect the execution result before continuing.",
-      "ready": "本環節已就緒，準備好後點擊「{{action}}」。",
+      "ready": "本環節已就緒，「{{action}}」按鈕已可用。",
       "followStep": "Follow the current step below. The assistant may need your answer or confirmation.",
       "steps": {
         "intro": "Project introduction",

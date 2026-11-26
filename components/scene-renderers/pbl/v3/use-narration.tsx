@@ -10,6 +10,7 @@ import {
   pointerAt,
   recoveredReviewSpeech,
   spokenText,
+  unspokenReceipt,
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
@@ -87,36 +88,31 @@ export function useNarration(
     onAudioStateChange: (_agent, state) => setAudio(state),
   });
   const ttsRef = useRef(tts);
-  const latest = useRef({ steps, complete });
+  const stepById = useMemo(() => new Map(steps.map((step) => [step.id, step])), [steps]);
+  const latest = useRef(stepById);
   useEffect(() => {
     ttsRef.current = tts;
-    latest.current = { steps, complete };
+    latest.current = stepById;
   });
 
   // Where the buffer's playhead is: the step being told, how much of its text is out, and
   // whether the learner has paused the telling.
   const [stage, setStage] = useState<{
     id: string;
-    head: number;
+    head: string | null;
     text: string;
     paused: boolean;
   } | null>(null);
   const run = useRef<{
     id: string;
     buffer: StreamBuffer;
-    /** Steps handed to the buffer so far, and how much of the last piece of text. */
-    fed: number;
-    fedText: number;
-    sealed: boolean;
+    /** A legacy receipt can replace earlier prose, moving following tools to a new index. */
+    queued: Set<string>;
+    openText: { id: string; length: number } | null;
     done: boolean;
-    /**
-     * Where in the reply each text part given to the buffer is, in the order given: the
-     * buffer's part ids count them. A place, not an id: a part's id changes when the stream
-     * finishes it.
-     */
-    says: number[];
-    /** Speech given to the voice, and when its silent reading began if there is no voice. */
-    voiced: Set<number>;
+    /** The buffer numbers its text parts; each one belongs to a particular source step. */
+    says: string[];
+    voiced: Map<string, string>;
     reading: { id: string; since: number; ms: number } | null;
   } | null>(null);
   // A reply the learner stopped is not taken up again while it is still being produced.
@@ -147,17 +143,21 @@ export function useNarration(
         onAgentEnd() {},
         onTextReveal(_message, partId, revealed) {
           const state = mine();
-          const head = state?.says[Number(partId.slice(1))] ?? -1;
-          const step = latest.current.steps[head];
-          if (!state || !step || step.kind !== 'say') return;
+          const head = state?.says[Number(partId.slice(1))];
+          const step = head ? latest.current.get(head) : undefined;
+          if (!state || !head || step?.kind !== 'say') return;
           // The voice gets a piece of text when the playhead is on it and it is whole.
           if (!step.streaming && !state.voiced.has(head)) {
-            state.voiced.add(head);
-            ttsRef.current.handleSegmentSealed(id, step.id, step.text, speaker ?? null);
+            const words = step.id.startsWith('question-')
+              ? unspokenReceipt(step.text, state.voiced.values())
+              : step.text;
+            state.voiced.set(head, words);
+            if (words) ttsRef.current.handleSegmentSealed(id, step.id, words, speaker ?? null);
             // Muted, or no voice for this role: the playhead holds for reading time instead.
-            state.reading = ttsRef.current.shouldHold().holding
-              ? null
-              : { id: step.id, since: Date.now(), ms: readingTime(step.text) };
+            state.reading =
+              !words || ttsRef.current.shouldHold().holding
+                ? null
+                : { id: step.id, since: Date.now(), ms: readingTime(words) };
           }
           setStage((now) =>
             now?.id === id && now.head === head && now.text === revealed
@@ -168,10 +168,10 @@ export function useNarration(
         async onActionReady(_message, action, signal) {
           // The call is shown being made, and the playhead stays on it until it is done:
           // only then is what it drew on the board, and it is given its beat to be seen.
-          const head = Number(action.actionId);
+          const head = action.actionId;
           setStage((now) => ({ id, head, text: '', paused: now?.paused ?? false }));
           for (;;) {
-            const step = latest.current.steps[head];
+            const step = latest.current.get(head);
             if (signal.aborted || !step || step.kind === 'say') return;
             if (step.tool.status !== 'running') {
               if (step.kind === 'board' && step.clear) await wait(SWEEP, signal);
@@ -203,16 +203,15 @@ export function useNarration(
     run.current = {
       id,
       buffer,
-      fed: 0,
-      fedText: 0,
-      sealed: true,
+      queued: new Set(),
+      openText: null,
       done: false,
       says: [],
-      voiced: new Set(),
+      voiced: new Map(),
       reading: null,
     };
     buffer.start();
-    setStage({ id, head: 0, text: '', paused: false });
+    setStage({ id, head: null, text: '', paused: false });
   }, [live, speaker]);
 
   // The stream fills the buffer: new steps are queued, growing text is appended in place.
@@ -220,36 +219,37 @@ export function useNarration(
     const state = run.current;
     if (!state || state.id !== entry?.id || state.done) return;
     const { buffer } = state;
-    const last = steps[state.fed - 1];
-    if (last?.kind === 'say' && !state.sealed) {
-      if (last.text.length > state.fedText) {
-        buffer.pushText(state.id, last.text.slice(state.fedText), speaker);
-        state.fedText = last.text.length;
+    for (const step of steps) {
+      if (state.queued.has(step.id)) {
+        if (step.kind === 'say' && state.openText?.id === step.id) {
+          const delta = step.text.slice(state.openText.length);
+          if (delta) {
+            buffer.pushText(state.id, delta, speaker);
+            state.openText.length = step.text.length;
+          }
+          if (!step.streaming) {
+            buffer.sealText(state.id);
+            state.openText = null;
+          }
+        }
+        continue;
       }
-      if (!last.streaming) {
-        buffer.sealText(state.id);
-        state.sealed = true;
-      }
-    }
-    for (; state.fed < steps.length; state.fed++) {
-      const step = steps[state.fed];
+      state.queued.add(step.id);
+      buffer.sealText(state.id);
+      state.openText = null;
       if (step.kind === 'say') {
-        // One text part per piece of speech: the part before it is closed first.
-        buffer.sealText(state.id);
-        state.says.push(state.fed);
+        state.says.push(step.id);
         buffer.pushText(state.id, step.text, speaker);
-        state.fedText = step.text.length;
-        state.sealed = !step.streaming;
-        if (state.sealed) buffer.sealText(state.id);
+        if (step.streaming) state.openText = { id: step.id, length: step.text.length };
+        else buffer.sealText(state.id);
       } else {
         buffer.pushAction({
           messageId: state.id,
-          actionId: String(state.fed),
+          actionId: step.id,
           actionName: step.tool.name ?? step.tool.action,
           params: {},
           agentId: speaker ?? '',
         });
-        state.sealed = true;
       }
     }
     if (complete) {
@@ -275,7 +275,7 @@ export function useNarration(
   );
 
   const playing = !!active && !failed;
-  const head = playing ? Math.min(active.head, steps.length - 1) : -1;
+  const head = playing ? steps.findIndex((step) => step.id === active.head) : -1;
   // At rest the bubble holds the last thing the role said, not the tool calls that closed
   // the reply after it: those have no words, and a bubble without words reads as waiting.
   const at = playing

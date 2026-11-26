@@ -103,10 +103,11 @@ describe('teaching stage handoff', () => {
     const context = { messages: [reflection] };
     const live = currentTeachingContext(context, { ...source, recoverySpeech: [initial, detail] });
     expect(requestStateTail(live)).toContain(JSON.stringify(initial + '\n\n' + detail));
-    expect(requestStateTail(live)).toContain('Register an already delivered answer');
+    expect(requestStateTail(live)).toContain('remainingSpeech');
+    expect(requestStateTail(live)).toContain(JSON.stringify(reflection.content));
     const afterRead = requestStateTail(currentTeachingContext(context, source));
     expect(afterRead).toContain(JSON.stringify(initial));
-    expect(afterRead).not.toContain('Register an already delivered answer');
+    expect(afterRead).not.toContain('remainingSpeech');
   });
 
   it.each([true, false])(

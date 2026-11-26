@@ -118,7 +118,7 @@ describe('learner-facing actions', () => {
     const action = continueActionLabel(view, i18n.t);
     expect(action).toBe('进入下一阶段');
     expect(i18n.t('pblV3.journey.ready', { action })).toBe(
-      '本环节已就绪，准备好后点击“进入下一阶段”。',
+      '本环节已就绪，“进入下一阶段”按钮已可用。',
     );
     const context = teachingProductContext({
       ...input,

@@ -1309,13 +1309,13 @@ async function settleSpokenReply(
     if (tool.name === 'respond_to_learner' || tool.name === 'request_learner_help')
       return {
         ...tool,
+        description:
+          'Finish this interrupted answer or build request. Use one tool call, without separate prose. If there is already an adequate answer for each requested item, use an empty string. Otherwise put only the still-unanswered item in remainingSpeech; the host delivers it. Preserve the pending review.',
         parameters: Type.Object({
-          deliverMissing: Type.Optional(
-            Type.Boolean({
-              description:
-                'True only when the previous reply was incomplete. Speak only the missing answer or build request before registering it.',
-            }),
-          ),
+          remainingSpeech: Type.String({
+            description:
+              'Only the missing learner-facing information, in the learner’s language. Include requested commands, paths, steps or questions even if shown on the board. Empty only when everything was already said.',
+          }),
         }),
       };
     return tool;
@@ -1336,39 +1336,49 @@ async function settleSpokenReply(
   } else {
     const calls = reply.content.filter((part) => part.type === 'toolCall');
     const handoffs = calls.filter((call) => isSpokenHandoff(call.name));
-    const missingFlag = (name: string) =>
-      name === 'request_skill_review' ? 'askNewQuestion' : 'deliverMissing';
-    // Registration alone delivers no prose. An explicit new closing in the same batch takes
-    // precedence: each tool validates its own call after the learner receives those words.
-    const registerExisting =
+    const registeringReview =
       handoffs.length > 0 &&
-      calls.every((call) => isSpokenHandoff(call.name) || preservesSpokenClosing(call.name)) &&
-      handoffs.every((call) => call.arguments[missingFlag(call.name)] !== true);
+      handoffs.every(
+        (call) => call.name === 'request_skill_review' && call.arguments.askNewQuestion !== true,
+      ) &&
+      calls.every((call) => isSpokenHandoff(call.name) || preservesSpokenClosing(call.name));
+    // Settle ordinary prose against the previous delivery first. Only the new part of
+    // this frame can also have been copied into its recovery-tool argument.
     const words = reply.content
-      .filter((part) => part.type === 'text')
-      .map((part) => part.text)
+      .flatMap((part) => (part.type === 'text' ? [part.text] : []))
       .join('\n\n');
     const skip = replayedPrefixLength(delivered, words);
     let offset = 0;
-    const content = reply.content.flatMap<(typeof reply.content)[number]>((part) => {
-      if (
-        part.type === 'toolCall' &&
-        skip > 0 &&
-        skip === words.length &&
-        isSpokenHandoff(part.name)
-      ) {
-        // The model supplied these exact words on this call. Register their original delivery.
-        const flag = missingFlag(part.name);
-        if (part.arguments[flag] === true)
-          return [{ ...part, arguments: { ...part.arguments, [flag]: false } }];
-      }
+    const speech = reply.content.flatMap<(typeof reply.content)[number]>((part) => {
       if (part.type !== 'text') return [part];
-      if (registerExisting) return [];
-      const cut = skip - offset;
-      offset += part.text.length + 2; // The two newlines between text blocks in the comparison.
-      if (cut <= 0) return [part];
-      const text = part.text.slice(cut);
+      if (registeringReview) return [];
+      const start = Math.max(0, skip - offset);
+      offset += part.text.length + 2;
+      if (!start) return [part];
+      const text = part.text.slice(start);
       return text.trim() ? [{ ...part, text }] : [];
+    });
+    const authored = speech.flatMap((part) => (part.type === 'text' ? [part.text] : []));
+    const content = speech.flatMap<(typeof reply.content)[number]>((part) => {
+      if (part.type !== 'toolCall' || !isSpokenHandoff(part.name)) return [part];
+      if (
+        part.name !== 'request_skill_review' &&
+        typeof part.arguments.remainingSpeech === 'string'
+      ) {
+        const { remainingSpeech, ...args } = part.arguments;
+        const call = { ...part, arguments: args };
+        const words = remainingSpeech.trim();
+        const unspoken = words.slice(replayedPrefixLength(delivered, words));
+        const missing = unspoken.slice(replayedPrefixLength(authored, unspoken));
+        if (!missing) return [call];
+        authored.push(missing);
+        return [{ type: 'text', text: missing }, call];
+      }
+      // An older in-flight call can explicitly mark an exact replay as new.
+      const flag = part.name === 'request_skill_review' ? 'askNewQuestion' : 'deliverMissing';
+      if (skip > 0 && skip === words.length && part.arguments[flag] === true)
+        return [{ ...part, arguments: { ...part.arguments, [flag]: false } }];
+      return [part];
     });
     stream.push({
       type: 'done',
@@ -1511,7 +1521,7 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   const instruction =
     '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. ' +
     (window.spokenReview
-      ? 'For an already delivered answer or build help request, register it without text. If incomplete, speak only the missing information and set deliverMissing. Preserve the pending review for assistance. '
+      ? 'For assistance, finish the learner’s current request in the recovery tool, keeping the pending review. '
       : 'For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. ') +
     (window.spokenReview
       ? 'For a delivered teaching question, call request_skill_review without text to register the existing closing question. Only if the delivered reply has no question yet, speak the missing question and set askNewQuestion on this recovery call.'
