@@ -253,6 +253,21 @@ describe('createAssetFetcher', () => {
     expect(counter.pulled).toBeLessThanOrEqual(8 * 1024);
   });
 
+  it('refuses a same-origin body whose Content-Length exceeds the limit without reading it', async () => {
+    const { counter, fetchImpl } = streamedBody(1024 * 1024, {
+      'content-length': String(1024 * 1024),
+    });
+    const sameOrigin = (async (...args: Parameters<typeof fetch>) => {
+      const response = await fetchImpl(...args);
+      Object.defineProperty(response, 'type', { value: 'basic' });
+      return response;
+    }) as typeof fetch;
+    const fetchAsset = createAssetFetcher({ fetchImpl: sameOrigin, maxAssetBytes: 4096 });
+
+    expect(await fetchAsset('https://x/declared.bin')).toBeNull();
+    expect(counter.pulled).toBe(0);
+  });
+
   it('accepts a body whose decoded size fits even when Content-Length is larger', async () => {
     // A CORS response can expose Content-Length (encoded bytes) but hide Content-Encoding.
     const fetchImpl = (async () =>
