@@ -436,6 +436,7 @@ export function projectConversation(
       e.boundary ||
       e.omitted ||
       e.parts.length ||
+      e.restingHandoff ||
       // Empty failures belong in the run banner, not in fabricated replies.
       // Retain partial replies, active waiters and cancellation history.
       e.status === 'running' ||
@@ -483,6 +484,14 @@ export function boundConversation(
 ) {
   let remaining = budget;
   for (const entry of entries.toReversed()) {
+    if (entry.restingHandoff) {
+      const size = Buffer.byteLength(JSON.stringify(entry.restingHandoff));
+      if (size <= remaining) remaining -= size;
+      else {
+        entry.omitted = true;
+        delete entry.restingHandoff;
+      }
+    }
     const kept: Part[] = [];
     for (const part of entry.parts.toReversed()) {
       const size = Buffer.byteLength(JSON.stringify(part));

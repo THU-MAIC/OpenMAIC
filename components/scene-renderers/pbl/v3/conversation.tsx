@@ -71,7 +71,6 @@ function AgentTurn({
   const copyText = entry.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])).join('\n\n');
   const parts = entry.parts.filter((part) => part.kind !== 'tool' || !part.recovered);
   if (
-    entry.parts.length &&
     !parts.length &&
     !['running', 'failed', 'cancelled', 'interrupted'].includes(entry.status ?? '')
   )

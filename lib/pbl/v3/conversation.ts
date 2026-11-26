@@ -66,6 +66,8 @@ export interface LearningConversationEntry {
   currentStage?: true;
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   failure?: LearningRunFailure;
+  /** Already delivered words to show in the bubble after a tool-only recovery. */
+  restingHandoff?: string;
   omitted?: boolean;
   speaker: 'user' | AgentRole;
   boundary?: {
@@ -125,8 +127,6 @@ export interface LearningConversationEntry {
         readyForStudentConfirmation?: boolean;
         /** A later successful teaching-control call recovered this failure for the same input. */
         recovered?: boolean;
-        /** At rest, a tool-only retry shows the question already spoken by the prior attempt. */
-        restingReview?: string;
         startedAt?: number;
         endedAt?: number;
         status: 'running' | 'succeeded' | 'failed' | 'interrupted';
@@ -394,23 +394,12 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
         const text = revised.get(part);
         return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
       });
-    // Attach the exact committed words to their tool card when the prior attempt owns the
-    // only speech. The card can show them at rest without creating another narration step.
-    if (!parts.some((part) => part.kind === 'text')) {
-      const closing = entry.parts.findLast(
-        (p) => duplicates.has(p) && p.id.startsWith('question-'),
-      );
-      if (closing?.kind === 'text') {
-        const index = parts.findIndex(
-          (p) =>
-            p.kind === 'tool' &&
-            p.action === 'review' &&
-            p.id === closing.id.replace(/^question-/, 'tool-'),
-        );
-        const card = parts[index];
-        if (card?.kind === 'tool') parts[index] = { ...card, restingReview: closing.text };
-      }
-    }
+    // The durable handoff owns the resting bubble, even when the worker never wrote a tool card.
+    const closing =
+      entry.status === 'succeeded' && !parts.some((part) => part.kind === 'text')
+        ? entry.parts.findLast((part) => duplicates.has(part) && part.id.startsWith('question-'))
+        : undefined;
+    if (closing?.kind === 'text') return [{ ...entry, parts, restingHandoff: closing.text }];
     if (
       entry.parts.length &&
       !parts.length &&

@@ -15,14 +15,21 @@ export function reviewResponse(response: string): { response: string; question: 
   return { response: text, question };
 }
 
-/** Presentation actions can accompany a closing or follow it before registration. */
-function preservesSpokenClosing(name: string) {
-  return name.startsWith('wb_') || ['cue_user', 'point_at_code', 'point_at_preview'].includes(name);
+/** These tools affect presentation or language, without changing the subject of the reply. */
+export function preservesSpokenClosing(name: string) {
+  return (
+    name.startsWith('wb_') ||
+    ['cue_user', 'point_at_code', 'point_at_preview', 'set_response_language'].includes(name)
+  );
 }
-const handoffTools = ['request_skill_review', 'respond_to_learner', 'request_learner_help'];
+
+export function isSpokenHandoff(name: string) {
+  return ['request_skill_review', 'respond_to_learner', 'request_learner_help'].includes(name);
+}
 
 export function spokenHandoffClosing() {
-  let spoken: { question: string; spokenAt: number } | undefined;
+  // message_end feeds this same record from the live stream and from durable history on resume.
+  let source: { frames: { blocks: string[]; spokenAt: number }[]; recovering: boolean } | undefined;
   let hasCurrentSpeech = false;
   let calls: { name: string; id: string; arguments: Record<string, unknown> }[] = [];
   return {
@@ -31,25 +38,27 @@ export function spokenHandoffClosing() {
       calls = [];
       hasCurrentSpeech = false;
       if (message.role !== 'assistant' || ['error', 'aborted'].includes(message.stopReason)) {
-        spoken = undefined;
+        source = undefined;
         return;
       }
       const tools = message.content.filter((part) => part.type === 'toolCall');
-      calls = tools.filter((tool) => handoffTools.includes(tool.name));
-      if (
-        tools.some(
-          (tool) => !handoffTools.includes(tool.name) && !preservesSpokenClosing(tool.name),
-        )
-      ) {
-        calls = [];
-        spoken = undefined;
+      if (tools.some((tool) => !isSpokenHandoff(tool.name) && !preservesSpokenClosing(tool.name))) {
+        source = undefined;
         return;
       }
-      const last = message.content.findLast((part) => part.type === 'text' && part.text.trim());
-      if (last?.type === 'text') {
-        hasCurrentSpeech = true;
-        spoken = { question: reviewResponse(last.text).question, spokenAt: message.timestamp };
-      }
+      calls = tools.filter((tool) => isSpokenHandoff(tool.name));
+      const blocks = message.content.flatMap((part) =>
+        part.type === 'text' && part.text.trim() ? [part.text] : [],
+      );
+      if (!blocks.length) return;
+      hasCurrentSpeech = true;
+      source ??= { frames: [], recovering: false };
+      // A plain stop already delivered words but did not hand control back to the learner.
+      if (!tools.length && message.stopReason === 'stop') source.recovering = true;
+      source.frames.push({ blocks, spokenAt: message.timestamp });
+    },
+    recoverySpeech(): readonly string[] | undefined {
+      return source?.recovering ? source.frames.flatMap((frame) => frame.blocks) : undefined;
     },
     forCall(id: string): { question: string; spokenAt?: number } | undefined {
       const call = calls.find((tool) => tool.id === id);
@@ -63,20 +72,31 @@ export function spokenHandoffClosing() {
       const review = call.name === 'request_skill_review';
       const legacy =
         call.name === 'respond_to_learner' ? call.arguments.response : call.arguments.question;
-      if (
-        (review ? hasCurrentSpeech : !!spoken) &&
-        typeof legacy === 'string' &&
-        legacy.trim() &&
-        legacy.trim() !== spoken?.question
-      )
-        throw new Error(
-          !review
-            ? 'The supplied text differs from the spoken closing. Speak any missing information once, then register it without text.'
-            : 'Two different review texts were supplied. If you already asked the question, register it with an empty call. If you only gave an introduction, speak the missing question once and register it without a question argument.',
-        );
-      if (spoken) return spoken;
+      const supplied = typeof legacy === 'string' ? legacy.trim() : '';
+      const last = source?.frames.at(-1);
+      if (source && last) {
+        const closing = reviewResponse(last.blocks.at(-1)!);
+        const delivery = review ? closing.question : closing.response;
+        if (
+          supplied &&
+          supplied !== delivery &&
+          supplied !== closing.question &&
+          (!review || hasCurrentSpeech)
+        ) {
+          // Old assistance calls copied the entire delivered answer. Match whole paragraphs,
+          // including earlier blocks, without moving that speech to the recovery attempt.
+          const words = source.frames.map((frame) => frame.blocks.join('\n').trim()).join('\n\n');
+          if (call.name !== 'respond_to_learner' || !('\n\n' + words).endsWith('\n\n' + supplied))
+            throw new Error(
+              !review
+                ? 'The supplied text differs from the spoken closing. Speak any missing information once, then register it without text.'
+                : 'Two different review texts were supplied. If you already asked the question, register it with an empty call. If you only gave an introduction, speak the missing question once and register it without a question argument.',
+            );
+        }
+        return { question: delivery, spokenAt: last.spokenAt };
+      }
       // A tool-only call issued under the old schema can still finish after an upgrade.
-      return typeof legacy === 'string' && legacy.trim() ? { question: legacy } : undefined;
+      return typeof legacy === 'string' && supplied ? { question: legacy } : undefined;
     },
   };
 }
@@ -120,13 +140,7 @@ function reviewReceipt(event: { type: string; data: unknown }): ReviewReceipt | 
     isError?: boolean;
     result?: { content?: { type: string; text?: string }[] };
   };
-  if (
-    !['request_skill_review', 'request_learner_help', 'respond_to_learner'].includes(
-      data.toolName ?? '',
-    ) ||
-    data.isError
-  )
-    return null;
+  if (!isSpokenHandoff(data.toolName ?? '') || data.isError) return null;
   for (const block of data.result?.content ?? []) {
     if (block.type !== 'text' || !block.text) continue;
     try {

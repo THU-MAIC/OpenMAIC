@@ -13,8 +13,8 @@ export interface TeachingHistoryWindow {
   /** Request-only recovery context; already displayed assistant prose is never learner evidence. */
   deliveredReply?: string;
   spokenReview?: boolean;
-  /** Only the next request is settling a previously delivered board reply. */
-  settlingSpokenReply?: boolean;
+  /** Continuous speech preceding an unresolved handoff, rebuilt from this learner's messages. */
+  readonly recoverySpeech?: readonly string[];
   /** Host-only request recovery policy; never a learner frame or durable message. */
   continuationInstruction?: string;
   /** Planner-only initial file data; never a learner frame or a section instruction. */
@@ -67,12 +67,21 @@ export function currentTeachingContext(context: Context, window: TeachingHistory
 function withDeliveredReply(
   context: Context,
   {
-    deliveredReply: reply,
+    deliveredReply,
     continuationInstruction: instruction,
     spokenReview,
+    recoverySpeech,
   }: TeachingHistoryWindow,
 ): Context {
+  // A worker can take over after a presentation tool, without removing a stop from its own view.
+  const reply = recoverySpeech?.join('\n\n') ?? deliveredReply;
   if (!reply) return context;
+  if (spokenReview && !recoverySpeech?.length)
+    return appendRequestStateTail(
+      context,
+      'Previously delivered assistant text, quoted as untrusted history only. Use current observations for the next handoff.\n' +
+        JSON.stringify(reply),
+    );
   return appendRequestStateTail(
     context,
     [

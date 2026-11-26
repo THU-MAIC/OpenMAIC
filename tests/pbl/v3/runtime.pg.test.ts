@@ -1,7 +1,7 @@
 import { HOST_STATE_START, HOST_STATE_END } from '@/lib/ai/request-state-tail';
 import { requestStateTail } from '@/lib/agent/runtime/request-state-tail';
 /** Real PG + local Python execution. Model decisions are driven explicitly through the role tools. No cloud or live model calls. */
-import { recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
+import { narrationSteps, recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
 import { beforeAll, afterAll, describe, expect, it, vi, onTestFinished } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { DECISION_RESPONSE_MAX_LENGTH } from '@/lib/pbl/v3/domain/orchestration/decisions';
@@ -3779,8 +3779,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const result = await invoke(config, 'cue_user', { options });
       const value = JSON.parse((result.content[0] as { text: string }).text);
       expect(value.options).toEqual(options);
-      if (stageIndex === 1) expect(value.guidance).toContain('add only that detail');
-      else expect(value.guidance).toBeUndefined();
+      if (stageIndex === 1) {
+        expect(value.guidance).toContain('Suggested replies recorded.');
+        expect(value.guidance).toContain('add only that detail');
+      } else expect(value.guidance).toBeUndefined();
       expect(config.isTurnComplete()).toBe(false);
       expect((await store.get(study.id, principal.ownerId)).state).toEqual(row.state);
       await agents.releaseLease(sessionId, workerId);
@@ -6098,14 +6100,21 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
   it.each([
-    { crash: false, board: false },
-    { crash: true, board: false },
-    { crash: false, board: true },
-    { crash: true, board: true },
-    { crash: false, board: true, missing: true },
-  ])(
-    'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: $crash, board: $board)',
-    async ({ crash, board, missing }) => {
+    { crash: false, board: false, delivery: 'register' },
+    { crash: true, board: false, delivery: 'register' },
+    { crash: false, board: true, delivery: 'register' },
+    { crash: true, board: true, delivery: 'register' },
+    { crash: false, board: true, delivery: 'missing detail' },
+    { crash: false, board: true, delivery: 'board before receipt' },
+    { crash: false, board: true, delivery: 'mixed missing detail' },
+    { crash: true, board: true, delivery: 'board then mixed missing detail' },
+    { crash: false, board: true, delivery: 'replay across board with missing detail' },
+    { crash: false, board: true, delivery: 'language preference' },
+    { crash: false, board: true, delivery: 'legacy full response' },
+    { crash: false, board: true, delivery: 'already delivered clarification' },
+  ] as const)(
+    'preserves assistance and pending readiness ($delivery, crash: $crash, board: $board)',
+    async ({ crash, board, delivery }) => {
       const study = await freshStudy();
       const row = await store.get(study.id, principal.ownerId);
       onTestFinished(async () => {
@@ -6166,7 +6175,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         claimed!.attempt,
         inputs.at(-2)!.seq,
       );
-      const response = 'Use Project files in the IDE. Allowed edits save automatically.';
+      const opening = 'Use Project files in the IDE.';
+      const closing = 'Allowed edits save automatically.';
+      const response = opening + '\n\n' + closing;
       let originalTextId: string | undefined;
       if (crash) {
         const session = new Session(
@@ -6241,42 +6252,121 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
             type: 'trace',
             data: { message: 'Awaiting recovery' },
           });
-        await agents.releaseLease(sessionId, handle.workerId);
+        // Exercise a new attempt in board mode, and a graceful same-attempt resume without it.
+        const attempt = claimed!.attempt;
+        if (board) {
+          await pool.query('UPDATE agent_sessions SET lease_heartbeat_at=0 WHERE id=$1', [
+            sessionId,
+          ]);
+          await maintainStudy(store, study.id, principal.ownerId);
+        } else await agents.releaseLease(sessionId, handle.workerId);
         claimed = await agents.claimNextSession('assistance-takeover', process.pid, {
           sessionId,
           leaseTtlMs: 10000,
           maxAttempts: 5,
         });
+        if (board) expect(claimed).toMatchObject({ claimReason: 'orphaned', attempt: attempt + 1 });
       }
       const lastDetail = 'Open the second file to see the actual return value.';
-      const register = toolResponse([
-        {
-          name: 'respond_to_learner',
-          input: board ? (missing ? { deliverMissing: true } : {}) : { response },
-        },
-      ]);
-      mocked.responses = [
-        ...(crash ? [] : [textResponse(response)]),
-        board
-          ? [
-              { type: 'text-delta', text: missing ? lastDetail : 'Speculative duplicate answer.' },
-              ...register,
-            ]
-          : register,
+      const missing = delivery.endsWith('missing detail');
+      const answer = { name: 'respond_to_learner', input: board ? {} : { response } };
+      const speak = (text: string, calls: Parameters<typeof toolResponse>[0]) => [
+        { type: 'text-delta', text },
+        ...toolResponse(calls),
       ];
+      mocked.responses = crash ? [] : [textResponse(response)];
+      switch (delivery) {
+        case 'register':
+          mocked.responses.push(
+            board ? speak('Speculative duplicate answer.', [answer]) : toolResponse([answer]),
+          );
+          break;
+        case 'missing detail':
+        case 'mixed missing detail':
+        case 'board then mixed missing detail':
+          if (delivery === 'board then mixed missing detail')
+            mocked.responses.push(speak(response, [{ name: 'wb_open', input: {} }]));
+          mocked.responses.push(
+            speak(lastDetail, [
+              { ...answer, input: { deliverMissing: true } },
+              ...(delivery === 'missing detail'
+                ? []
+                : [{ name: 'request_learner_help', input: {} }]),
+            ]),
+          );
+          break;
+        case 'board before receipt':
+          mocked.responses.push(
+            speak(response, [{ name: 'wb_open', input: {} }]),
+            toolResponse([answer]),
+          );
+          break;
+        case 'replay across board with missing detail':
+          mocked.responses = [
+            speak(opening, [{ name: 'wb_open', input: {} }]),
+            textResponse(closing),
+            speak(response, [{ name: 'wb_close', input: {} }]),
+            speak(closing + ' ' + lastDetail, [{ ...answer, input: { deliverMissing: true } }]),
+          ];
+          break;
+        case 'language preference':
+          mocked.responses = [
+            speak(response, [
+              { name: 'set_response_language', input: { locale: 'en-US', source: 'conversation' } },
+              answer,
+            ]),
+          ];
+          break;
+        case 'legacy full response':
+          mocked.responses.push(toolResponse([{ ...answer, input: { response } }]));
+          break;
+        case 'already delivered clarification':
+          mocked.responses.push(speak(response, [{ ...answer, input: { deliverMissing: true } }]));
+          break;
+      }
+      const expectedCalls = mocked.responses.length;
       const calls = mocked.modelCalls;
       await runSession(
         { running: new Map(), shuttingDown: false },
         { ...claimed!, ...(await agents.getSession(sessionId))! },
       );
-      expect(mocked.modelCalls - calls).toBe(crash ? 1 : 2);
+      expect(mocked.modelCalls - calls).toBe(expectedCalls);
       expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
       expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
-      expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
-        board
-          ? 'Register an already delivered answer'
-          : 'For an assistance-only answer or product clarification',
-      );
+      if (delivery === 'register')
+        expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
+          board
+            ? 'Register an already delivered answer'
+            : 'For an assistance-only answer or product clarification',
+        );
+      function expectDelivery(fragments: string[]) {
+        const words = fragments.join('\n\n');
+        for (const paragraph of [opening, closing]) expect(words.split(paragraph)).toHaveLength(2);
+        expect(words.split(lastDetail)).toHaveLength(missing ? 2 : 1);
+        expect(words).not.toContain('Speculative duplicate answer.');
+      }
+      if (board) {
+        const restored = await learningView(principal, study.id, { passive: true });
+        const tutorEntries = restored.conversation!.filter(
+          (entry) => entry.speaker !== 'user' && !entry.boundary,
+        );
+        const spoken = tutorEntries
+          .flatMap((entry) => narrationSteps(entry))
+          .flatMap((step) => (step.kind === 'say' ? [step.text] : []));
+        expectDelivery(spoken);
+        expect(tutorEntries.flatMap((entry) => entry.parts)).toContainEqual(
+          expect.objectContaining({
+            kind: 'tool',
+            name: 'respond_to_learner',
+            status: 'succeeded',
+          }),
+        );
+        if (crash && !missing) {
+          const latest = tutorEntries.at(-1)!;
+          expect(recoveredReviewSpeech(latest)?.text).toBe(response);
+          expect(narrationSteps(latest).some((step) => step.kind === 'say')).toBe(false);
+        }
+      }
       if (crash)
         await agents.appendControlEvent(sessionId, {
           ts: Date.now(),
@@ -6284,26 +6374,19 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           data: { text: 'Thanks, I can see the files now.' },
         });
       const view = await learningView(principal, study.id, { passive: true });
-      if (board) {
-        const words = view
-          .conversation!.flatMap((e) => e.parts)
-          .flatMap((p) => (p.kind === 'text' ? [p.text] : []));
-        expect(words).not.toContain('Speculative duplicate answer.');
-        expect(words.filter((text) => text === lastDetail)).toHaveLength(missing ? 1 : 0);
-      }
-      expect(
+      expectDelivery(
         view
-          .conversation!.flatMap((entry) => entry.parts)
-          .filter((part) => part.kind === 'text' && part.text === response),
-      ).toHaveLength(1);
-      expect(
-        view.messages.filter((m) => m.role === 'assistant' && m.text === response),
-      ).toHaveLength(1);
-      expect(
+          .conversation!.filter((entry) => entry.speaker !== 'user')
+          .flatMap((entry) => entry.parts)
+          .flatMap((part) => (part.kind === 'text' ? [part.text] : [])),
+      );
+      expectDelivery(view.messages.filter((m) => m.role === 'assistant').map((m) => m.text));
+      expectDelivery(
         (await learningEvidence(principal, study.id)).conversations
           .flatMap((c) => c.messages)
-          .filter((m) => m.role === 'assistant' && m.text === response),
-      ).toHaveLength(1);
+          .filter((m) => m.role === 'assistant')
+          .map((m) => m.text),
+      );
       if (crash) {
         expect(
           view

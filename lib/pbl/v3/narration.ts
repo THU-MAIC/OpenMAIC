@@ -229,17 +229,15 @@ export function pointerAt(steps: readonly NarrationStep[], index: number) {
   return undefined;
 }
 
-/** A successful tool-only retry rests on the original question without queuing speech again. */
+/** A successful tool-only retry displays the committed handoff without queuing speech again. */
 export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
   if (!entry || (entry.status !== undefined && entry.status !== 'succeeded')) return;
-  const closing = entry.parts.findLast(
-    (part) =>
-      (part.kind === 'text' && part.text.trim()) || (part.kind === 'tool' && part.restingReview),
-  );
-  if (closing?.kind === 'text' && isSpokenReceipt(closing))
-    return { id: closing.id, text: spokenText(closing.text) };
-  if (closing?.kind === 'tool' && closing.restingReview)
-    return { id: closing.id, text: spokenText(closing.restingReview) };
+  const closing = entry.parts.findLast((part) => part.kind === 'text' && part.text.trim());
+  if (closing?.kind === 'text') {
+    if (isSpokenReceipt(closing)) return { id: closing.id, text: spokenText(closing.text) };
+  } else if (entry.restingHandoff) {
+    return { id: entry.id, text: spokenText(entry.restingHandoff) };
+  }
 }
 
 /**

@@ -68,7 +68,9 @@ import {
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { abortable } from '@/lib/server/agent-runtime/abortable';
 import {
+  isSpokenHandoff,
   LEARNER_HANDOFF_EVENT,
+  preservesSpokenClosing,
   reviewResponse,
   spokenHandoffClosing,
   supportTurnSequences,
@@ -997,7 +999,7 @@ export async function teachingRunnerConfig(input: {
             ...(!guided
               ? {
                   guidance:
-                    'The replies are visible. End the turn if the explanation is complete. If a detail is still missing, add only that detail; do not repeat a form instruction already given.',
+                    'Suggested replies recorded. End the turn if the explanation is complete. If a detail is still missing, add only that detail; do not repeat a form instruction already given.',
                 }
               : {}),
           },
@@ -1162,6 +1164,9 @@ export async function teachingRunnerConfig(input: {
     stageKey: bound.stage_key,
     initialContext,
     spokenReview: boardTeaching,
+    get recoverySpeech() {
+      return guided ? spokenClosing?.recoverySpeech() : undefined;
+    },
     studentTurns: bound.feedback_seq,
     automaticEntry: latest?.pblOpening === true,
     ...(stage.kind === 'produce' && stage.writes === 'plan' && planText !== undefined
@@ -1257,9 +1262,35 @@ export async function teachingRunnerConfig(input: {
   };
 }
 
-/** Only this recovery request settles already delivered speech. Wait for its choice of tool
- * before publishing a reply, so bookkeeping cannot voice a speculative second question. */
-async function settleSpokenReply(streamFn: StreamFn, ...request: Parameters<StreamFn>) {
+/** A replay starts at a paragraph in the delivered speech and includes its whole remaining
+ * tail. A matching example elsewhere in that speech can still be a new question. */
+function replayedPrefixLength(delivered: readonly string[], text: string): number {
+  const source = delivered.map((block) => block.trim()).join('\n\n');
+  const reply = text.trimStart();
+  for (const boundary of source.matchAll(/^|\r?\n[ \t]*\r?\n/g)) {
+    const start = boundary.index + boundary[0].length;
+    const length = source.length - start;
+    if (!length || length > reply.length || !reply.startsWith(source.slice(start))) continue;
+    const rest = reply.slice(length);
+    if (!rest.trim()) return text.length;
+    // A complete sentence or paragraph may be followed by a missing detail. A shared
+    // fragment ("4" before "42", or "save" before "saved") is not a delivery boundary.
+    const paragraph = /^[ \t]*\r?\n(?:[ \t]*\r?\n)+/.exec(rest);
+    const sentence = /[。！？]$/.test(source) || (/[.!?]$/.test(source) && /^\s/.test(rest));
+    if (paragraph || sentence) {
+      const gap = paragraph?.[0] ?? /^[ \t]*(?:\r?\n)?/.exec(rest)![0];
+      return text.length - reply.length + length + gap.length;
+    }
+  }
+  return 0;
+}
+
+/** Keep presentation in place and publish only the missing speech while settling this stop. */
+async function settleSpokenReply(
+  delivered: readonly string[],
+  streamFn: StreamFn,
+  ...request: Parameters<StreamFn>
+) {
   const [model, context, options] = request;
   const tools = context.tools?.map((tool) => {
     if (tool.name === 'request_skill_review')
@@ -1304,21 +1335,45 @@ async function settleSpokenReply(streamFn: StreamFn, ...request: Parameters<Stre
     });
   } else {
     const calls = reply.content.filter((part) => part.type === 'toolCall');
-    const review = calls.find((call) => call.name === 'request_skill_review');
+    const handoffs = calls.filter((call) => isSpokenHandoff(call.name));
+    const missingFlag = (name: string) =>
+      name === 'request_skill_review' ? 'askNewQuestion' : 'deliverMissing';
+    // Registration alone delivers no prose. An explicit new closing in the same batch takes
+    // precedence: each tool validates its own call after the learner receives those words.
     const registerExisting =
-      !calls.length ||
-      (review && review.arguments.askNewQuestion !== true) ||
-      calls.some(
-        (call) =>
-          (call.name === 'respond_to_learner' || call.name === 'request_learner_help') &&
-          call.arguments.deliverMissing !== true,
-      );
+      handoffs.length > 0 &&
+      calls.every((call) => isSpokenHandoff(call.name) || preservesSpokenClosing(call.name)) &&
+      handoffs.every((call) => call.arguments[missingFlag(call.name)] !== true);
+    const words = reply.content
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n\n');
+    const skip = replayedPrefixLength(delivered, words);
+    let offset = 0;
+    const content = reply.content.flatMap<(typeof reply.content)[number]>((part) => {
+      if (
+        part.type === 'toolCall' &&
+        skip > 0 &&
+        skip === words.length &&
+        isSpokenHandoff(part.name)
+      ) {
+        // The model supplied these exact words on this call. Register their original delivery.
+        const flag = missingFlag(part.name);
+        if (part.arguments[flag] === true)
+          return [{ ...part, arguments: { ...part.arguments, [flag]: false } }];
+      }
+      if (part.type !== 'text') return [part];
+      if (registerExisting) return [];
+      const cut = skip - offset;
+      offset += part.text.length + 2; // The two newlines between text blocks in the comparison.
+      if (cut <= 0) return [part];
+      const text = part.text.slice(cut);
+      return text.trim() ? [{ ...part, text }] : [];
+    });
     stream.push({
       type: 'done',
       reason: reply.stopReason,
-      message: registerExisting
-        ? { ...reply, content: reply.content.filter((part) => part.type !== 'text') }
-        : reply,
+      message: { ...reply, content },
     });
   }
   return stream;
@@ -1390,9 +1445,10 @@ export function withTeachingTurnBoundary(
       }
       options?.signal?.throwIfAborted();
       if (!isComplete()) {
-        if (!historyWindow?.settlingSpokenReply) return streamFn(model, projected, options);
-        historyWindow.settlingSpokenReply = false;
-        return settleSpokenReply(streamFn, model, projected, options);
+        const delivered = historyWindow?.recoverySpeech;
+        return delivered?.length
+          ? settleSpokenReply(delivered, streamFn, model, projected, options)
+          : streamFn(model, projected, options);
       }
     }
     const stream = createAssistantMessageEventStream();
@@ -1451,7 +1507,6 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   const reply = delivered.join('\n\n');
   if (!reply.trim()) return false;
   window.deliveredReply = [window.deliveredReply, reply].filter(Boolean).join('\n\n');
-  window.settlingSpokenReply = window.spokenReview;
   agent.state.messages = messages;
   const instruction =
     '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. ' +

@@ -14,7 +14,7 @@ import {
   markRecoveredTeachingTools,
   type LearningConversationEntry,
 } from '@/lib/pbl/v3/conversation';
-import { recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
+import { narrationSteps, recoveredReviewSpeech } from '@/lib/pbl/v3/narration';
 import { stageSkill, interactionRules } from '@/lib/server/pbl-v3/skills';
 import { installedProject } from '@/lib/server/pbl-v3/catalog';
 import {
@@ -1174,6 +1174,22 @@ it('protects the current reply independently of a later pending question fallbac
   expect(entries[0]!.parts).toMatchObject([{ text }]);
 });
 
+it('counts recovered bubble text against the same newest-first history budget as tool cards', () => {
+  const entries: LearningConversationEntry[] = ['Older prompt.', 'Latest prompt.'].map(
+    (restingHandoff, index) => ({
+      id: String(index),
+      speaker: 'planner',
+      status: 'succeeded',
+      parts: [],
+      restingHandoff,
+    }),
+  );
+  boundConversation(entries, Buffer.byteLength(JSON.stringify(entries[1].restingHandoff)));
+  expect(recoveredReviewSpeech(entries[1])?.text).toBe('Latest prompt.');
+  expect(recoveredReviewSpeech(entries[0])).toBeUndefined();
+  expect(entries[0].omitted).toBe(true);
+});
+
 it('bounds earlier model messages in a single long Agent turn without limiting the latest message', () => {
   const events = [event(1, 'user_message', { text: 'Please implement this.' })];
   const old = 'Older explanation. '.repeat(40_000);
@@ -1522,56 +1538,82 @@ it('keeps instructions unique to either delivery of an old board review in live 
   }
 });
 
-it('uses the registered source across retry, refresh and page boundaries, even with an identical earlier quote', () => {
-  const question = '请说说你会先核对哪一步。';
-  const start = [
-    event(1, 'user_message', { pblOpening: true }),
-    event(2, 'message_end', {
-      message: { ...message('An example: ' + question).message, timestamp: 12 },
-    }),
-  ];
-  const source = event(3, 'message_end', {
-    message: { ...message('先读 PLAN.md。\n\n' + question).message, timestamp: 18 },
-    pblInputId: 1,
-  });
-  const recovery = [
-    event(4, 'session_interrupted', { pblInputId: 1 }),
-    event(5, 'session_resumed', { pblInputId: 1 }, 2),
-    event(
-      6,
-      'pbl_learner_handoff',
-      { toolCallId: 'recovered', question, spokenAt: 18, pblInputId: 1 },
-      2,
-    ),
-    event(
-      7,
-      'tool_execution_end',
-      {
-        toolCallId: 'recovered',
-        toolName: 'request_skill_review',
-        pblInputId: 1,
-        result: { content: [{ type: 'text', text: JSON.stringify({ question, spokenAt: 18 }) }] },
+describe.each(['request_skill_review', 'respond_to_learner', 'request_learner_help'])(
+  '%s recovery',
+  (toolName) => {
+    it.each([true, false])(
+      'restores the source across attempts and pages without replay (SDK: %s)',
+      (sdk) => {
+        const question = '请说说你会先核对哪一步。';
+        const block = '先读 PLAN.md。\n\n' + question;
+        const delivery = toolName === 'request_skill_review' ? question : block;
+        const start = [
+          event(1, 'user_message', { pblOpening: true }),
+          event(2, 'message_end', {
+            message: { ...message('An example: ' + question).message, timestamp: 12 },
+          }),
+        ];
+        const source = event(3, 'message_end', {
+          message: { ...message(block).message, timestamp: 18 },
+          pblInputId: 1,
+        });
+        const recovery = [
+          event(4, 'session_interrupted', { pblInputId: 1 }),
+          event(5, 'session_resumed', { pblInputId: 1 }, 2),
+          event(
+            6,
+            'pbl_learner_handoff',
+            { toolCallId: 'recovered', question: delivery, spokenAt: 18, pblInputId: 1 },
+            2,
+          ),
+          ...(sdk
+            ? [
+                event(
+                  7,
+                  'tool_execution_end',
+                  {
+                    toolCallId: 'recovered',
+                    toolName,
+                    pblInputId: 1,
+                    result: {
+                      content: [
+                        {
+                          type: 'text',
+                          text: JSON.stringify({
+                            [toolName === 'respond_to_learner' ? 'response' : 'question']: delivery,
+                            spokenAt: 18,
+                          }),
+                        },
+                      ],
+                    },
+                  },
+                  2,
+                ),
+              ]
+            : []),
+          event(8, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+        ];
+        const texts = (view: LearningConversationEntry[]) =>
+          view.flatMap((e) => e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])));
+        const project = (page: typeof start) =>
+          projectConversation(page, 'planner', false, undefined, true);
+        const withoutSource = mergeConversationHistory([project(start), project(recovery)]);
+        expect(recoveredReviewSpeech(withoutSource.at(-1))?.text).toBe(delivery);
+        expect(texts(withoutSource)).toEqual(['An example: ' + question, delivery]);
+        for (const view of [
+          projectConversation([...start, source, ...recovery], 'planner', false),
+          mergeConversationHistory([project(start), project([source]), project(recovery)]),
+        ]) {
+          expect(texts(view)).toEqual(['An example: ' + question, block]);
+          const settled = view.at(-1)!;
+          expect(recoveredReviewSpeech(settled)?.text).toBe(delivery);
+          expect(narrationSteps(settled).some((step) => step.kind === 'say')).toBe(false);
+          expect(recoveredReviewSpeech({ ...settled, status: 'running' })).toBeUndefined();
+        }
       },
-      2,
-    ),
-    event(8, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
-  ];
-  const texts = (view: LearningConversationEntry[]) =>
-    view.flatMap((e) => e.parts.flatMap((p) => (p.kind === 'text' ? [p.text] : [])));
-  const project = (page: typeof start) =>
-    projectConversation(page, 'planner', false, undefined, true);
-  expect(texts(mergeConversationHistory([project(start), project(recovery)]))).toEqual([
-    'An example: ' + question,
-    question,
-  ]);
-  for (const view of [
-    projectConversation([...start, source, ...recovery], 'planner', false),
-    mergeConversationHistory([project(start), project([source]), project(recovery)]),
-  ]) {
-    expect(texts(view)).toEqual(['An example: ' + question, '先读 PLAN.md。\n\n' + question]);
-    expect(recoveredReviewSpeech(view.at(-1))?.text).toBe(question);
-  }
-});
+    );
+  },
+);
 
 it('pairs an old tool-only recovery with its completed stop across pages, but never across a file operation', () => {
   const speech = 'Open the plan. Which branch will you check?';
