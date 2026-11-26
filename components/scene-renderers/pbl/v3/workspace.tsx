@@ -745,9 +745,28 @@ function PBLV3WorkspaceContent({
             <ArrowLeft size={14} />
           </button>
         )}
-        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {view?.title ?? t('pblV3.title')}
-        </h2>
+        <div className="pbl-project-heading @container/heading flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+          <h2 className="truncate text-sm font-semibold">{view?.title ?? t('pblV3.title')}</h2>
+          {view?.reportAvailable && (
+            <span
+              role="status"
+              data-testid="pbl-project-completed"
+              title={t(
+                view.busy ? 'pblV3.reportCopy.finalizing' : 'pblV3.reportCopy.completionHint',
+              )}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-accent px-1.5 py-0.5 text-xs font-medium text-accent-foreground"
+            >
+              {view.busy ? (
+                <LoaderCircle size={13} className="motion-safe:animate-spin" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={13} aria-hidden="true" />
+              )}
+              <span className="sr-only @3xs/heading:not-sr-only">
+                {t(view.busy ? 'pblV3.ide.saving' : 'pblV3.reportCopy.completedTitle')}
+              </span>
+            </span>
+          )}
+        </div>
         <PendingAction action={pendingAction ?? (refreshing ? 'refresh' : null)} />
         {view && stream.status !== 'connected' && (
           <span role="status" className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -782,7 +801,7 @@ function PBLV3WorkspaceContent({
             {view.reportAvailable && (
               <button
                 data-pbl-tour="report"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500"
+                className="pbl-report-action inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold"
                 onClick={() => setReportEntry('workspace')}
                 disabled={view.busy}
                 aria-label={t('pblV3.report')}
@@ -1039,20 +1058,6 @@ function PBLV3WorkspaceContent({
             >
               {t('pblV3.restoredProgress')}
             </p>
-          )}
-          {view.reportAvailable && (
-            <div
-              data-testid="pbl-project-completed"
-              className="flex shrink-0 flex-wrap items-center gap-3 border-b border-violet-500/20 bg-violet-500/10 px-4 py-3"
-            >
-              <CheckCircle2 size={22} className="shrink-0 text-violet-500" />
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold">{t('pblV3.reportCopy.completedTitle')}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t(view.busy ? 'pblV3.reportCopy.finalizing' : 'pblV3.reportCopy.completionHint')}
-                </p>
-              </div>
-            </div>
           )}
           <WorkbenchSplit
             application={

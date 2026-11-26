@@ -51,6 +51,14 @@
   background: var(--pbl-chrome);
 }
 
+.pbl-report-action {
+  background-color: var(--pbl-guidance);
+  color: var(--pbl-guidance-foreground);
+}
+.pbl-report-action:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--pbl-guidance) 90%, var(--foreground));
+}
+
 /* Every pane in the workbench shares one chrome height, so their headers line up
    across columns and stay the same height when a pane narrows or stacks. */
 .pbl-pane-header {
@@ -521,7 +529,7 @@
     flex-wrap: wrap;
     gap: 4px;
   }
-  .pbl-workbench .pbl-topbar h2 {
+  .pbl-workbench .pbl-project-heading {
     flex-basis: 100%;
   }
 }

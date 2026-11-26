@@ -132,7 +132,7 @@ export function ProjectCompletionDialog({
         >
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-linear-to-b from-violet-400/15 to-transparent"
+            className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-linear-to-b from-(--pbl-guidance)/10 to-transparent"
           />
           <button
             type="button"
@@ -142,7 +142,7 @@ export function ProjectCompletionDialog({
           >
             <X size={16} aria-hidden="true" />
           </button>
-          <div className="relative mx-auto mb-5 grid size-14 place-items-center rounded-2xl border border-violet-400/35 bg-popover text-[var(--pbl-guidance)] shadow-sm ring-4 ring-violet-400/10">
+          <div className="relative mx-auto mb-5 grid size-14 place-items-center rounded-2xl border border-(--pbl-guidance)/30 bg-popover text-(--pbl-guidance) shadow-sm ring-4 ring-(--pbl-guidance)/10">
             <BookOpenCheck size={26} strokeWidth={1.6} aria-hidden="true" />
           </div>
           <Dialog.Title className="relative text-xl leading-snug font-semibold text-balance">
@@ -154,7 +154,7 @@ export function ProjectCompletionDialog({
           <button
             ref={primary}
             type="button"
-            className="mx-auto mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-700"
+            className="pbl-report-action mx-auto mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm"
             onClick={() => !dismissing.current && onOpenReport()}
           >
             {t('pblV3.completion.openReport')}

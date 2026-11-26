@@ -314,12 +314,20 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
   }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const mode = layout === 'scrolled dock' || layout === 'open history' ? 'docked' : layout;
+    const theme = layout === 'window' ? 'light' : layout === 'docked' ? 'dark' : null;
+    if (theme) await page.emulateMedia({ colorScheme: theme === 'light' ? 'dark' : 'light' });
     if (mode === 'bubble') await page.emulateMedia({ reducedMotion: 'reduce' });
     const { view, publish, calls } = await project(page, learningEvents, {
       started: true,
       explanationBoard: true,
     });
     await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    if (theme) {
+      await page.getByRole('button', { name: 'Switch color theme' }).click();
+      await expect
+        .poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
+        .toBe(theme === 'dark');
+    }
     await useAssistantMode(page, mode);
     view.state.position.stageIndex = 6;
     view.role = 'mentor';
@@ -337,9 +345,17 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
         speaker: 'mentor',
         currentStage: true,
         status: 'running',
-        parts: [
-          { kind: 'text', id: 'reflection', text: 'You tested your greeting.', streaming: true },
-        ],
+        parts:
+          layout === 'open history'
+            ? []
+            : [
+                {
+                  kind: 'text',
+                  id: 'reflection',
+                  text: 'You tested your greeting.',
+                  streaming: true,
+                },
+              ],
       },
     ];
     view.busy = true;
@@ -378,22 +394,20 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
     await expect(header).toBeDisabled();
     await expect(dialog).toHaveCount(0);
 
-    turn.parts = [
-      { kind: 'text', id: 'reflection', text: 'You tested your greeting.' },
-      {
-        kind: 'tool',
-        id: 'finish',
-        action: 'complete',
-        status: 'succeeded',
-        projectCompleted: true,
-      },
-    ];
+    if (turn.parts[0]?.kind === 'text') turn.parts[0].streaming = false;
+    turn.parts.push({
+      kind: 'tool',
+      id: 'finish',
+      action: 'complete',
+      status: 'succeeded',
+      projectCompleted: true,
+    });
     turn.status = 'succeeded';
     view.busy = false;
     view.revision++;
     await publish();
     if (layout === 'open history') {
-      await expect(chat).toBeAttached();
+      await expect(header).toBeEnabled();
       const history = page.getByRole('dialog', { name: 'Conversation history' });
       await expect(dialog).toHaveCount(0);
       await page.keyboard.press('Tab');
@@ -406,16 +420,30 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
     await expect(dialog).toBeVisible({ timeout: 15000 });
     await expect(dialog.getByRole('button', { name: /report/i })).toBeFocused();
     expect(calls.some((call) => call.includes('/report'))).toBe(false);
-    if (mode === 'window')
-      await page.screenshot({ path: testInfo.outputPath('completion-dialog.png') });
+    if (theme)
+      await page.screenshot({ path: testInfo.outputPath(`completion-dialog-${theme}.png`) });
     if (mode === 'window')
       await dialog.getByRole('button', { name: 'Stay in the workbench' }).click();
     else await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     const target = mode === 'bubble' || layout === 'scrolled dock' ? header : chat;
     await expect(target).toBeFocused();
-    if (mode === 'window')
-      await page.screenshot({ path: testInfo.outputPath('returned-to-report.png') });
+    if (theme) {
+      const toolbar = page.getByTestId('pbl-v3-workspace').locator(':scope > header');
+      const status = toolbar.getByTestId('pbl-project-completed');
+      await expect(status).toBeVisible();
+      expect(
+        await status.evaluate((el) => {
+          const header = el.closest('header')!;
+          const height = header.getBoundingClientRect().height;
+          el.style.display = 'none';
+          const withoutMark = header.getBoundingClientRect().height;
+          el.style.removeProperty('display');
+          return height - withoutMark;
+        }),
+      ).toBe(0);
+      await page.screenshot({ path: testInfo.outputPath(`returned-to-report-${theme}.png`) });
+    }
     view.revision++;
     await publish();
     await expect(target).toBeFocused();
