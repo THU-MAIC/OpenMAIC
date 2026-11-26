@@ -2553,7 +2553,13 @@ it('list_course_issues and read_stage / patch_stage work with a plain nanoid sce
   const patchResult = await patch.execute('patch-nano', {
     target: scenePath,
     intent: 'add speech action',
-    ops: [{ op: 'set', path: '/actions/0', value: { id: 'speech-new', type: 'speech', text: 'Hi', audioId: 'x' } }],
+    ops: [
+      {
+        op: 'set',
+        path: '/actions/0',
+        value: { id: 'speech-new', type: 'speech', text: 'Hi', audioId: 'x' },
+      },
+    ],
   });
   expect(patchResult).not.toHaveProperty('isError');
   expect(current.putScene).toHaveBeenCalledTimes(1);
@@ -2562,9 +2568,8 @@ it('list_course_issues and read_stage / patch_stage work with a plain nanoid sce
 // ── Point 4: list_course_issues marks generating media ────────────────────
 
 it('list_course_issues marks media-not-generated as generating while a job is running', async () => {
-  const { registerPendingMedia, clearPendingMediaTasks } = await import(
-    '@/lib/server/agent-runtime/pending-media'
-  );
+  const { registerPendingMedia, clearPendingMediaTasks } =
+    await import('@/lib/server/agent-runtime/pending-media');
   const ref = 'gen_vid_test123';
   const elemId = 'el-video';
   const videoScene: Scene = {
@@ -2581,7 +2586,17 @@ it('list_course_issues marks media-not-generated as generating while a job is ru
         viewportRatio: 0.5625,
         theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
         elements: [
-          { id: elemId, type: 'video', left: 0, top: 0, width: 100, height: 100, rotate: 0, src: ref, fixedRatio: true },
+          {
+            id: elemId,
+            type: 'video',
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 100,
+            rotate: 0,
+            src: ref,
+            fixedRatio: true,
+          },
         ],
       },
     },

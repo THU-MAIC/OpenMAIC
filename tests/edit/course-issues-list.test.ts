@@ -152,7 +152,9 @@ const listed = () =>
     (item) => {
       // In the 2C layout the Go to button is on the page row (a sibling of the
       // issue row's parent), not inside the item itself.
-      const pageRow = item.closest<HTMLElement>('[data-testid="course-issues-popover"] > div > div');
+      const pageRow = item.closest<HTMLElement>(
+        '[data-testid="course-issues-popover"] > div > div',
+      );
       const goTo = pageRow?.querySelector<HTMLElement>('[data-testid^="course-issue-goto-"]');
       const sceneId = goTo?.dataset.testid?.slice('course-issue-goto-'.length);
       return `${sceneId}:${item.dataset.kind}`;
