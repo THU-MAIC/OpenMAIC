@@ -364,6 +364,9 @@ ${
       if (immediateFrames > 0 && rafs.size) {
         await drawFrame(frameOrigin + sceneTime, includeUntimedFrames, skipTimedThrough);
         immediateFrames--;
+        // Render loops queued before freezing may need more passes to show the
+        // change. Frames the change requested continue on the scene clock.
+        skipTimedThrough = Infinity;
       }
       await waitForVisualAssets();
       var timer = nextTimer();

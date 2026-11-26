@@ -358,7 +358,10 @@ function initializeOpenMaicInteractiveStaticFrames(timeline) {
       var end = start + Math.round(Number(host.getAttribute('data-duration')) * 1000000);
       var actions = JSON.parse(host.getAttribute('data-widget-actions'));
       var loaded = false;
-      var failed = false;
+      // Scene ms from which the current failure applies. Startup failures
+      // happen at position -1, so they cover the whole scene.
+      var failedAt = Infinity;
+      var reported = new Set();
       var runtimeErrors = [];
       var pending;
       var timer;
@@ -375,15 +378,17 @@ function initializeOpenMaicInteractiveStaticFrames(timeline) {
       }
 
       function fail(code, detail) {
-        if (failed) return;
-        failed = true;
+        if (failedAt !== Infinity) return;
+        failedAt = position;
         window.removeEventListener('message', onMessage);
         var message = messageFor(code, detail);
         fallback.style.display = 'block';
         if (reason) reason.textContent = message;
         host.setAttribute('data-interactive-static-state', 'fallback');
         host.setAttribute('data-interactive-diagnostic', code);
-        record(sceneId, code, message);
+        // A replay after a backward seek repeats the same failure. Record it once.
+        if (!reported.has(code + message)) record(sceneId, code, message);
+        reported.add(code + message);
         iframe.remove();
         complete(false);
       }
@@ -413,7 +418,6 @@ function initializeOpenMaicInteractiveStaticFrames(timeline) {
         }
       }
 
-      window.addEventListener('message', onMessage);
       function exchange(kind, id, send) {
         return new Promise(function (resolve) {
           pending = { kind: kind, id: id, resolve: resolve };
@@ -426,6 +430,8 @@ function initializeOpenMaicInteractiveStaticFrames(timeline) {
       }
 
       function load() {
+        window.addEventListener('message', onMessage);
+        failedAt = Infinity;
         loaded = false;
         needsTime = false;
         runtimeErrors = [];
@@ -442,25 +448,33 @@ function initializeOpenMaicInteractiveStaticFrames(timeline) {
       }
 
       async function seek(time) {
-        if (failed || time < start || time >= end || actions.length === 0) return;
+        if (time < start || time >= end || actions.length === 0) return;
         var next = (time - start) / 1000;
-        if (next === position) return;
-        if (next < position && cursor > 0) {
+        if (next === position || next >= failedAt) return;
+        // A failure removes the iframe, so replaying always starts from a reload.
+        if (failedAt !== Infinity || (next < position && cursor > 0)) {
           var frame = iframe.cloneNode(false);
           frame.removeAttribute('src');
           frame.style.visibility = 'hidden';
-          iframe.replaceWith(frame);
+          iframe.remove();
+          fallback.after(frame);
           iframe = frame;
           if (!await load()) return;
         }
-        var first = cursor;
-        while (cursor < actions.length && actions[cursor].at <= next) cursor++;
-        if (first === cursor && !needsTime) return;
-        position = next;
+        // A renderer can start mid-scene. Each earlier action gets its own deadline.
+        while (cursor < actions.length && actions[cursor].at <= next) {
+          var action = actions[cursor++];
+          if (!await step(action.at, [action])) return;
+        }
+        if (needsTime && position !== next) await step(next, []);
+      }
+
+      function step(time, due) {
+        position = time;
         var id = ++requestId;
-        await exchange('sought', id, function () {
+        return exchange('sought', id, function () {
           iframe.contentWindow.postMessage({ [${flag}]: true, kind: 'seek', requestId: id,
-            time: next, actions: actions.slice(first, cursor) }, '*');
+            time: time, actions: due }, '*');
         });
       }
 

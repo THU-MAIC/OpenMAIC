@@ -59,6 +59,22 @@ async function load(page: Page, fixture: { index: string; child: string }): Prom
   await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'load' });
 }
 
+async function widgetActionTimes(page: Page): Promise<number[]> {
+  return page
+    .locator('[data-widget-actions]')
+    .evaluate((host) =>
+      JSON.parse(host.getAttribute('data-widget-actions')!).map(({ at }: { at: number }) => at),
+    );
+}
+
+async function seekTo(page: Page, ms: number): Promise<void> {
+  await page.evaluate(async (time) => {
+    await Reflect.get(window, '__openmaicInteractiveReady');
+    Reflect.get(window, '__timelines').openmaic.time(time / 1000, true);
+    await Reflect.get(window, '__hfWaitForSeekCompletion')();
+  }, ms);
+}
+
 function codeMirrorFixture() {
   const prompt = readFileSync(
     join(process.cwd(), 'packages/@openmaic/generation/templates/code-content/system.md'),
@@ -634,6 +650,165 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
       child = await seek(second);
       expect(await child.locator('#second').isVisible()).toBe(true);
       expect(await page.evaluate(() => Reflect.get(window, '__openmaicOriginalWaited'))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('gives each earlier action its own settle deadline when a render starts mid-scene', async () => {
+    const page = await browser.newPage();
+    try {
+      const fixture = await emittedFixture(
+        `<output>0</output><script>
+        window.addEventListener('message', ({data}) => {
+          if (data.type !== 'SET_WIDGET_STATE') return;
+          const until = Performance.prototype.now.call(performance) + 1000;
+          while (Performance.prototype.now.call(performance) < until);
+          document.querySelector('output').textContent = data.state.step;
+        });
+      </script>`,
+        undefined,
+        [1, 2, 3, 4].flatMap((step) => [
+          { id: `speech-${step}`, type: 'speech' as const, text: `Now we reach step ${step}.` },
+          { id: `state-${step}`, type: 'widget_setState' as const, state: { step } },
+        ]),
+      );
+      // Readiness takes about 1 s, and the four actions take 4 s together.
+      const index = fixture.index.replace(
+        'data-ready-timeout-ms="8000"',
+        'data-ready-timeout-ms="3000"',
+      );
+      expect(index).toContain('data-ready-timeout-ms="3000"');
+      await load(page, { ...fixture, index });
+      const times = await widgetActionTimes(page);
+      expect(times).toHaveLength(4);
+
+      await seekTo(page, times[3] + 50);
+
+      const host = page.locator('[data-interactive-static-host]');
+      expect(
+        await host.getAttribute('data-interactive-static-state'),
+        (await host.locator('[data-interactive-fallback]').textContent()) ?? undefined,
+      ).toBe('frozen');
+      expect(await page.frames()[1].locator('output').textContent()).toBe('4');
+    } finally {
+      await page.close();
+    }
+  }, 15_000);
+
+  it('shows the widget again after seeking back before a later action failure', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<div id="a" hidden>A</div><script>
+          window.addEventListener('message', ({data, source}) => {
+            if (source !== window.parent) return;
+            if (data.type === 'REVEAL_ELEMENT') document.querySelector(data.target).hidden = false;
+            if (data.type === 'SET_WIDGET_STATE') throw new Error('state boom');
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'First look at the diagram.' },
+            { id: 'reveal', type: 'widget_reveal', target: '#a' },
+            { id: 'middle', type: 'speech', text: 'Now we change the state of the widget.' },
+            { id: 'state', type: 'widget_setState', state: { broken: true } },
+          ],
+        ),
+      );
+      const [revealAt, failAt] = await widgetActionTimes(page);
+      expect(revealAt).toBeLessThan(failAt);
+      const host = page.locator('[data-interactive-static-host]');
+      const fallback = host.locator('[data-interactive-fallback]');
+      const diagnostics = () =>
+        page.evaluate(() => Reflect.get(window, '__openmaicVideoDiagnostics').length);
+
+      await seekTo(page, failAt + 10);
+      expect(await host.getAttribute('data-interactive-static-state')).toBe('fallback');
+      expect(await fallback.textContent()).toContain('state boom');
+
+      await seekTo(page, (revealAt + failAt) / 2);
+      expect(await host.getAttribute('data-interactive-static-state')).toBe('frozen');
+      expect(await fallback.evaluate((element) => getComputedStyle(element).display)).toBe('none');
+      expect(await page.frames()[1].locator('#a').isVisible()).toBe(true);
+
+      await seekTo(page, failAt + 10);
+      expect(await host.getAttribute('data-interactive-static-state')).toBe('fallback');
+      expect(await diagnostics()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('draws one frame of an action-started animation at the action time, then follows the 60 Hz scene clock', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<output>0</output><script>
+          window.addEventListener('message', ({data}) => {
+            if (data.type !== 'SET_WIDGET_STATE') return;
+            let n = 0;
+            function tick() {
+              n++;
+              document.querySelector('output').textContent = n;
+              if (n < 100) requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'Watch the counter start.' },
+            { id: 'start', type: 'widget_setState', state: {} },
+          ],
+        ),
+      );
+      const [startAt] = await widgetActionTimes(page);
+
+      await seekTo(page, startAt);
+      expect(await page.frames()[1].locator('output').textContent()).toBe('1');
+      // Frames then land every 1000/60 ms after the action, so 100 ms adds six.
+      await seekTo(page, startAt + 100);
+      expect(await page.frames()[1].locator('output').textContent()).toBe('7');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('lets a render loop started before freezing show an action that needs two redraws', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<output>0</output><script>
+          let requested = 0;
+          let laidOut = 0;
+          function loop() {
+            document.querySelector('output').textContent = laidOut;
+            laidOut = requested;
+            requestAnimationFrame(loop);
+          }
+          requestAnimationFrame(loop);
+          window.addEventListener('message', ({data}) => {
+            if (data.type === 'SET_WIDGET_STATE') requested = data.state.value;
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'Watch the value change.' },
+            { id: 'set', type: 'widget_setState', state: { value: 5 } },
+          ],
+        ),
+      );
+      const [setAt] = await widgetActionTimes(page);
+
+      await seekTo(page, setAt);
+      expect(await page.frames()[1].locator('output').textContent()).toBe('5');
     } finally {
       await page.close();
     }
