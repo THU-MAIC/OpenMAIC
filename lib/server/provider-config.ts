@@ -228,18 +228,41 @@ type YamlData = Partial<{
   'web-search': Record<string, Partial<ServerProviderEntry>>;
 }>;
 
-function loadYamlFile(filename: string): YamlData {
+function loadYamlFile(filename: string, warnOnFailure = true): YamlData | undefined {
   try {
     const filePath = path.join(process.cwd(), filename);
     if (!fs.existsSync(filePath)) return {};
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = yaml.load(raw) as Record<string, unknown> | null;
-    if (!parsed || typeof parsed !== 'object') return {};
+    if (parsed == null) return {};
+    if (!isYamlMapping(parsed)) return undefined;
     return parsed as YamlData;
   } catch {
-    log.warn(`[ServerProviderConfig] Failed to read force-off settings from ${filename}`);
-    return {};
+    if (warnOnFailure) {
+      log.warn(`[ServerProviderConfig] Failed to read force-off settings from ${filename}`);
+    }
+    return undefined;
   }
+}
+
+function isYamlMapping(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function hasDeprecatedYamlProviderSettings(): boolean {
+  const data = loadYamlFile(DEFAULT_FILENAME, false);
+  if (!data) return true;
+  const forceOffSections: ReadonlySet<string> = new Set(Object.values(YAML_SECTION_KEY));
+  return Object.entries(data).some(([section, entries]) => {
+    if (!isYamlMapping(entries)) return true;
+    return Object.values(entries).some(
+      (entry) =>
+        !forceOffSections.has(section) ||
+        !isYamlMapping(entry) ||
+        entry.enabled !== false ||
+        Object.keys(entry).length !== 1,
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +351,7 @@ export function deprecatedProviderSettings(
   const detected = [...new Set(names)].filter(
     (name) => env[name]?.trim() && !referencedEnv.has(name),
   );
-  if (fs.existsSync(path.join(process.cwd(), DEFAULT_FILENAME))) detected.push(DEFAULT_FILENAME);
+  if (hasDeprecatedYamlProviderSettings()) detected.push(DEFAULT_FILENAME);
   return detected.sort();
 }
 /**
@@ -378,7 +401,7 @@ function getConfig(): ServerConfig {
     image: {},
     video: {},
     webSearch: {},
-    disabled: collectDisabledProviders(loadYamlFile(DEFAULT_FILENAME)),
+    disabled: collectDisabledProviders(loadYamlFile(DEFAULT_FILENAME) ?? {}),
   });
 }
 

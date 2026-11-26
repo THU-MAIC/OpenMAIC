@@ -268,13 +268,13 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他�
 
 启动时会记录检测到的旧设置名称和迁移链接。服务继续启动，尚未配置模型的工作区可使用首次设置向导。
 
-| 旧配置 | 转换结果 |
+| 旧配置 | `openmaic.yml` |
 | --- | --- |
 | 服务商变量（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` 等）和 `server-providers.yml` | 部署服务商（在模型设置中只读）。服务商 ID 就是预设 ID，与旧的 provider ID 相同，只有联网搜索的 MiniMax（`minimax-search`）、联网搜索的豆包（`doubao-search`）和 Lemonade 图像（`lemonade-image`）例外 |
 | `<PREFIX>_MODELS` | 服务商的 `models` |
-| `DEFAULT_MODEL` | `llm` 的分配，作为工作区可以覆盖的默认值（不锁定）。`agent` 槽位和以前一样保持关闭 |
-| `MODEL_FALLBACK` | `DEFAULT_MODEL` 的回退模型。没有 `DEFAULT_MODEL` 时会被丢弃并给出提示 |
-| 第一个配置的 TTS、ASR、图像、视频和文档服务商，以及按旧优先级选出的联网搜索服务商 | 该能力的默认分配（图像服务商由 `DEFAULT_IMAGE_PROVIDER` 指定） |
+| `DEFAULT_MODEL` | 在 `slots.llm` 设置工作区可覆盖的默认模型。若要保持智能体关闭，请设为 `slots.agent: null`。 |
+| `MODEL_FALLBACK` | 在 `slots.llm.model` 指定主模型，并在 `slots.llm.fallback` 指定回退模型。 |
+| 第一个配置的 TTS、ASR、图像、视频和文档服务商，以及按旧优先级选出的联网搜索服务商 | 在 `slots` 中显式分配各服务商。原由 `DEFAULT_IMAGE_PROVIDER` 选择的服务商填入 `slots.image`。 |
 | `MODEL_ROUTES` | 把各阶段模型分配到对应槽位。 |
 | `<CAP>_<VENDOR>_ENABLED=false` | 仍然生效：无论谁分配，该服务商都保持关闭 |
 
@@ -757,7 +757,7 @@ Brave 和 SearXNG 不需要 API key。联网搜索没有逐次生成的开关：
 
 ### server-providers.yml
 
-升级前的配置示例，仅供迁移参考。
+从 1.6.0 起，服务端只从此文件读取受支持能力分组中的强制关闭条目（`enabled: false`）。服务商及槽位分配请迁至 `openmaic.yml`。以下旧格式示例供迁移时参考。
 
 
 ```yaml title="server-providers.yml"
@@ -822,8 +822,6 @@ providers:
 slots:
   llm: openai:gpt-5.4-mini
 ```
-
-旧版等价写法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒体能力使用能力前缀，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
 
 ### DeepSeek 联网搜索与网页抓取
 

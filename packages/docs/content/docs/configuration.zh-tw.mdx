@@ -268,13 +268,13 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 
 啟動時會記錄偵測到的舊設定名稱及遷移連結。服務會繼續啟動，尚未設定模型的工作區可使用首次設定精靈。
 
-| 舊設定 | 轉換結果 |
+| 舊設定 | `openmaic.yml` |
 | --- | --- |
 | 供應商變數（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` 等）和 `server-providers.yml` | 部署供應商（在模型設定中唯讀）。供應商 ID 就是範本 ID，與舊的 provider ID 相同，只有網路搜尋的 MiniMax（`minimax-search`）、網路搜尋的豆包（`doubao-search`）和 Lemonade 圖像（`lemonade-image`）例外 |
 | `<PREFIX>_MODELS` | 供應商的 `models` |
-| `DEFAULT_MODEL` | `llm` 的指派，作為工作區可以覆寫的預設值（不鎖定）。`agent` 插槽和以前一樣維持關閉 |
-| `MODEL_FALLBACK` | `DEFAULT_MODEL` 的備援模型。沒有 `DEFAULT_MODEL` 時會被捨棄並給出提示 |
-| 第一個設定的 TTS、ASR、圖像、影片和文件供應商，以及依舊優先順序選出的網路搜尋供應商 | 該能力的預設指派（圖像供應商由 `DEFAULT_IMAGE_PROVIDER` 指定） |
+| `DEFAULT_MODEL` | 在 `slots.llm` 設定工作區可覆寫的預設模型。若要維持代理停用，請設為 `slots.agent: null`。 |
+| `MODEL_FALLBACK` | 在 `slots.llm.model` 指定主要模型，並在 `slots.llm.fallback` 指定備援模型。 |
+| 第一個設定的 TTS、ASR、圖像、影片和文件供應商，以及依舊優先順序選出的網路搜尋供應商 | 在 `slots` 中明確指派各供應商。原由 `DEFAULT_IMAGE_PROVIDER` 選擇的供應商填入 `slots.image`。 |
 | `MODEL_ROUTES` | 將各階段的模型指派給對應插槽。 |
 | `<CAP>_<VENDOR>_ENABLED=false` | 仍然有效：無論誰指派，該供應商都維持關閉 |
 
@@ -751,7 +751,7 @@ Brave 和 SearXNG 不需要 API key。網路搜尋沒有逐次生成的開關：
 
 ### server-providers.yml
 
-升級前的設定範例，僅供遷移參考。
+從 1.6.0 起，伺服器只從此檔案讀取支援的能力區段中的強制停用項目（`enabled: false`）。請將供應商及插槽指派遷移至 `openmaic.yml`。以下舊格式範例供遷移時參考。
 
 
 ```yaml title="server-providers.yml"
@@ -816,8 +816,6 @@ providers:
 slots:
   llm: openai:gpt-5.4-mini
 ```
-
-舊版等價寫法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒體能力使用能力字首，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
 
 ### DeepSeek 網路搜尋與網頁擷取
 

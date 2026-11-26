@@ -138,7 +138,7 @@ The slots you write are the server's defaults; users can change them, or connect
 | Slots, presets, fallbacks, `lock`, `allowUserKeys`, `OPENMAIC_SECRET_KEY` | [Configuration](packages/docs/content/docs/configuration.mdx) |
 | Every provider preset and model ID | [Supported models](packages/docs/content/docs/supported-models.mdx) |
 | Upgrading: migrate provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings | [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration) |
-| Which models users may pick: a provider whose key the server holds and that selects an upstream model offers only the models in its `models` list (`*_MODELS`), plus the slot, default and fallback models | [Model authorization](packages/docs/content/docs/configuration.mdx#model-authorization-for-server-managed-providers) |
+| Which models users may pick: a provider whose key the server holds and that selects an upstream model offers only the models in its `models` list, plus the slot, default and fallback models | [Model authorization](packages/docs/content/docs/configuration.mdx#model-authorization-for-server-managed-providers) |
 
 **Providers:** OpenAI, Azure OpenAI, Anthropic, Amazon Bedrock, Google Gemini, DeepSeek, Qwen, Kimi, MiniMax, Grok (xAI), OpenRouter, TokenDance, Doubao, Tencent Hunyuan/TokenHub, Xiaomi MiMo, GLM (Zhipu), Ollama, [Lemonade](#lemonade-local-ai) and [FunASR](#funasr-local-asr) (local), and any OpenAI-compatible API.
 
@@ -426,8 +426,6 @@ slots:
   image: lemonade-image
 ```
 
-With the legacy variables, the same is `LEMONADE_BASE_URL`, `TTS_LEMONADE_BASE_URL`, `ASR_LEMONADE_BASE_URL` and `IMAGE_LEMONADE_BASE_URL`.
-
 <a id="funasr-local-asr"></a>
 
 ### Optional: FunASR (Local Speech Recognition)
@@ -453,8 +451,6 @@ providers:
 slots:
   asr: funasr
 ```
-
-(Legacy variable: `ASR_FUNASR_BASE_URL=http://localhost:8000/v1`.)
 
 Use `funasr-server --device cpu --model sensevoice` for a CPU-only setup. See the [FunASR deployment guide](https://github.com/modelscope/FunASR#deploy) for production options.
 

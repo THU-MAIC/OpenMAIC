@@ -61,6 +61,7 @@ beforeEach(async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(process, 'once').mockReturnValue(process);
   vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+  vi.stubEnv('ANTHROPIC_BASE_URL', '');
   vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
   vi.stubEnv('DATABASE_URL', 'postgres://boot/openmaic');
 });

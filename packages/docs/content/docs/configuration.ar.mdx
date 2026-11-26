@@ -268,13 +268,13 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # اختياري: مسار آخر �
 
 يسجّل الخادم أسماء الإعدادات القديمة المكتشفة ورابط تعليمات الانتقال ثم يتابع بدء التشغيل. يمكن لمساحات العمل التي لم تضبط نموذجًا استخدام معالج الإعداد الأولي.
 
-| الإعداد القديم | يصبح |
+| الإعداد القديم | `openmaic.yml` |
 | --- | --- |
 | متغيرات المزودين (`OPENAI_API_KEY` و`TTS_MINIMAX_API_KEY` و…) و`server-providers.yml` | مزودي النشر (للقراءة فقط في إعدادات النماذج). معرّف المزود هو معرّف الإعداد المسبق، وهو معرّف المزود القديم باستثناء بحث MiniMax على الويب (`minimax-search`) وبحث Doubao على الويب (`doubao-search`) وصور Lemonade (`lemonade-image`) |
 | `<PREFIX>_MODELS` | `models` الخاصة بالمزود |
-| `DEFAULT_MODEL` | تعيين `llm` كقيمة افتراضية يمكن لمساحة العمل تجاوزها (غير مقفلة). تبقى خانة `agent` موقوفة كما كانت |
-| `MODEL_FALLBACK` | النموذج الاحتياطي لـ `DEFAULT_MODEL`. بدون `DEFAULT_MODEL` يُسقط مع إشعار |
-| أول مزود مُعد للـ TTS والـ ASR والصور والفيديو والمستندات، والبحث على الويب بترتيب الأولوية القديم | التعيين الافتراضي لتلك القدرة (يختار `DEFAULT_IMAGE_PROVIDER` مزود الصور) |
+| `DEFAULT_MODEL` | اضبط نموذجًا افتراضيًا في `slots.llm` يمكن لمساحة العمل تغييره. لإبقاء الوكيل معطّلًا، اضبط `slots.agent: null`. |
+| `MODEL_FALLBACK` | حدّد النموذج الأساسي في `slots.llm.model` والنموذج الاحتياطي في `slots.llm.fallback`. |
+| أول مزود مُعد للـ TTS والـ ASR والصور والفيديو والمستندات، والبحث على الويب بترتيب الأولوية القديم | أسند كل مزوّد صراحةً في `slots`. استخدم `slots.image` للمزوّد الذي كان يحدده `DEFAULT_IMAGE_PROVIDER`. |
 | `MODEL_ROUTES` | أسند نماذج المراحل إلى الخانات المقابلة. |
 | `<CAP>_<VENDOR>_ENABLED=false` | ما زال ساريًا: يبقى المزود موقوفًا أيًا كان من يعيّنه |
 
@@ -749,7 +749,7 @@ WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # تجاوز اختيار�
 
 ### server-providers.yml
 
-أمثلة من الإعدادات السابقة للترقية، للرجوع إليها عند الانتقال.
+بدءًا من 1.6.0، يقرأ الخادم من هذا الملف إعدادات التعطيل الإجباري فقط (`enabled: false` في الأقسام المدعومة). انقل المزوّدين وتعيينات الخانات إلى `openmaic.yml`. يوضّح المثال أدناه التنسيق القديم للرجوع إليه أثناء الانتقال.
 
 
 ```yaml title="server-providers.yml"
@@ -814,8 +814,6 @@ providers:
 slots:
   llm: openai:gpt-5.4-mini
 ```
-
-المكافئ في الإعدادات القديمة: `OPENAI_API_KEY=...` و`OPENAI_MODELS=gpt-5.4-mini`. للوسائط استخدم بادئة القدرة، مثل `IMAGE_SEEDREAM_MODELS` و`VIDEO_SEEDANCE_MODELS` و`TTS_OPENAI_MODELS` و`ASR_OPENAI_MODELS` و`WEB_SEARCH_CLAUDE_MODELS`.
 
 ### البحث وجلب الصفحات باستخدام DeepSeek
 

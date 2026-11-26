@@ -318,13 +318,13 @@ Starting in 1.6.0, requests with deprecated provider headers such as `x-model` o
 
 Starting in 1.6.0, startup logs the names of detected legacy provider settings and continues. A workspace with no saved configuration or configured model can use first-run setup. To migrate operator-managed providers, declare them and their assignments in `openmaic.yml` as follows.
 
-| Legacy setting | Becomes |
+| Legacy setting | `openmaic.yml` |
 | --- | --- |
 | Provider variables (`OPENAI_API_KEY`, `TTS_MINIMAX_API_KEY`, …) and `server-providers.yml` | Deployment providers (read-only in the model settings). The provider id is the preset id, which is the legacy provider id except for web search MiniMax (`minimax-search`), web search Doubao (`doubao-search`) and Lemonade images (`lemonade-image`) |
 | `<PREFIX>_MODELS` | The provider's `models` |
-| `DEFAULT_MODEL` | The `llm` assignment, as a default a workspace can override (not locked). The `agent` slot stays off, as before |
-| `MODEL_FALLBACK` | The fallback of `DEFAULT_MODEL`. Without `DEFAULT_MODEL` it is dropped with a notice |
-| The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | The default assignment of that capability (`DEFAULT_IMAGE_PROVIDER` picks the image provider) |
+| `DEFAULT_MODEL` | Set a workspace-overridable default in `slots.llm`. Set `slots.agent: null` to keep the agent off. |
+| `MODEL_FALLBACK` | Set `slots.llm.fallback` when declaring the primary model in `slots.llm.model`. |
+| The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | Assign each provider explicitly under `slots`. Use `slots.image` for the provider previously chosen by `DEFAULT_IMAGE_PROVIDER`. |
 | `MODEL_ROUTES` | Rewrite the per-stage selections as slots (see below) |
 | `<CAP>_<VENDOR>_ENABLED=false` | Still honoured: the provider stays off whatever assigns it |
 
@@ -808,7 +808,7 @@ Brave and SearXNG do not require an API key. Web search has no per-generation sw
 
 ### server-providers.yml
 
-Before 1.6.0, this file held provider configuration. Use the following example to identify old entries when migrating them to providers and slots in `openmaic.yml`.
+Starting in 1.6.0, the server reads this file only for operator force-off entries (`enabled: false` in supported capability sections). Move providers and slot assignments to `openmaic.yml`. The example below shows the old file for migration reference.
 
 ```yaml title="server-providers.yml"
 providers:
@@ -874,8 +874,6 @@ providers:
 slots:
   llm: openai:gpt-5.4-mini
 ```
-
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
 
 ### DeepSeek web search and fetch
 

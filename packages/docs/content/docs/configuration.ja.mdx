@@ -268,13 +268,13 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 任意：openmaic.yml の別の�
 
 起動時に検出した旧設定名と移行手順へのリンクをログに記録し、起動を続行します。モデルが未設定のワークスペースでは初期設定を利用できます。
 
-| 旧設定 | 変換後 |
+| 旧設定 | `openmaic.yml` |
 | --- | --- |
 | プロバイダー変数（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` など）と `server-providers.yml` | デプロイのプロバイダー（モデル設定では読み取り専用）。プロバイダー ID はプリセット ID で、Web 検索の MiniMax（`minimax-search`）、Web 検索の Doubao（`doubao-search`）、Lemonade の画像（`lemonade-image`）を除き旧来のプロバイダー ID と同じです |
 | `<PREFIX>_MODELS` | プロバイダーの `models` |
-| `DEFAULT_MODEL` | `llm` の割り当て。ワークスペースが上書きできる既定値として扱われます（ロックされません）。`agent` スロットはこれまでどおり無効のままです |
-| `MODEL_FALLBACK` | `DEFAULT_MODEL` のフォールバック。`DEFAULT_MODEL` がない場合は通知付きで破棄されます |
-| 最初に設定された TTS、ASR、画像、動画、ドキュメントのプロバイダーと、旧来の優先順で選ばれた Web 検索 | その機能の既定の割り当て（画像プロバイダーは `DEFAULT_IMAGE_PROVIDER` で指定） |
+| `DEFAULT_MODEL` | `slots.llm` にワークスペースが上書きできる既定のモデルを指定します。エージェントを無効のままにするには `slots.agent: null` を指定します。 |
+| `MODEL_FALLBACK` | `slots.llm.model` でメインモデルを指定し、`slots.llm.fallback` でフォールバックモデルを指定します。 |
+| 最初に設定された TTS、ASR、画像、動画、ドキュメントのプロバイダーと、旧来の優先順で選ばれた Web 検索 | 各プロバイダーを `slots` に明示的に割り当てます。`DEFAULT_IMAGE_PROVIDER` で選んでいたプロバイダーは `slots.image` に指定します。 |
 | `MODEL_ROUTES` | 各ステージのモデルを対応するスロットに割り当てます。 |
 | `<CAP>_<VENDOR>_ENABLED=false` | 引き続き有効。誰が割り当てても、そのプロバイダーは無効のままです |
 
@@ -749,7 +749,7 @@ Brave と SearXNG は API key 不要です。Web 検索には生成ごとのス�
 
 ### server-providers.yml
 
-以下は移行の参考にするための旧形式の例です。
+1.6.0 以降、このファイルから読み込まれるのは、対応する機能の強制無効化設定（`enabled: false`）だけです。プロバイダーとスロットの割り当ては `openmaic.yml` に移行してください。以下は移行用の旧形式の例です。
 
 
 ```yaml title="server-providers.yml"
@@ -814,8 +814,6 @@ providers:
 slots:
   llm: openai:gpt-5.4-mini
 ```
-
-旧設定での同等の書き方：`OPENAI_API_KEY=...` と `OPENAI_MODELS=gpt-5.4-mini`。メディアでは機能プレフィックスを使います。例：`IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS`、`WEB_SEARCH_CLAUDE_MODELS`。
 
 ### DeepSeek の Web 検索と取得
 

@@ -13,6 +13,7 @@ beforeEach(() => {
   vi.spyOn(process, 'cwd').mockReturnValue(dir);
   for (const name of [
     'OPENMAIC_CONFIG',
+    'ANTHROPIC_BASE_URL',
     'DEFAULT_MODEL',
     'MODEL_ROUTES',
     'MODEL_FALLBACK',
@@ -56,6 +57,30 @@ describe('loadDeploymentLayer', () => {
     );
     expect(notices[0]).toContain('#migrating-from-the-legacy-configuration');
     expect(notices[0]).not.toMatch(/operator-secret|legacy-routes|legacy-fallback/);
+  });
+
+  it('does not warn about a force-off-only server-providers.yml', () => {
+    fs.writeFileSync(
+      path.join(dir, 'server-providers.yml'),
+      'tts:\n  qwen-tts: { enabled: false }\nweb-search:\n  searxng: { enabled: false }\n',
+    );
+    const { layer, notices } = loadDeploymentLayer();
+    expect(layer).toBeNull();
+    expect(notices).toEqual([]);
+  });
+
+  it.each([
+    'tts:\n  qwen-tts: { enabled: false, apiKey: example-key }\n',
+    'providers:\n  openai: { enabled: false }\n',
+    'web-search:\n  searxng: { enabled: true }\n',
+  ])('warns when server-providers.yml contains ignored settings (%s)', (yaml) => {
+    fs.writeFileSync(path.join(dir, 'server-providers.yml'), yaml);
+    const { layer, notices } = loadDeploymentLayer();
+    expect(layer).toBeNull();
+    expect(notices.join(' ')).toContain(
+      'Deprecated provider settings detected: server-providers.yml.',
+    );
+    expect(notices.join(' ')).not.toContain('example-key');
   });
 
   it('accepts an env variable referenced by openmaic.yml and warns about unused legacy settings', () => {

@@ -138,7 +138,7 @@ slots:
 | 槽位、预设、回退模型、`lock`、`allowUserKeys`、`OPENMAIC_SECRET_KEY` | [配置说明](packages/docs/content/docs/configuration.zh-cn.mdx) |
 | 所有服务商预设与模型 ID | [支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx) |
 | 升级：将旧服务商配置和模型路由迁移到 `openmaic.yml` 或模型设置 | [从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移) |
-| 用户可选哪些模型：由服务端持有 key、并选择上游模型的服务商只提供其 `models` 列表（`*_MODELS`）中的模型，以及槽位、默认和回退模型 | [模型授权](packages/docs/content/docs/configuration.zh-cn.mdx#服务端托管服务商的模型授权) |
+| 用户可选哪些模型：由服务端持有 key、并选择上游模型的服务商只提供其 `models` 列表中的模型，以及槽位、默认和回退模型 | [模型授权](packages/docs/content/docs/configuration.zh-cn.mdx#服务端托管服务商的模型授权) |
 
 **支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
 
@@ -384,8 +384,6 @@ slots:
   image: lemonade-image
 ```
 
-旧版环境变量的等价写法是 `LEMONADE_BASE_URL`、`TTS_LEMONADE_BASE_URL`、`ASR_LEMONADE_BASE_URL` 和 `IMAGE_LEMONADE_BASE_URL`。
-
 <a id="funasr-local-asr"></a>
 
 ### 可选：FunASR（本地语音识别）
@@ -411,8 +409,6 @@ providers:
 slots:
   asr: funasr
 ```
-
-（旧版环境变量写法：`ASR_FUNASR_BASE_URL=http://localhost:8000/v1`。）
 
 纯 CPU 环境可运行 `funasr-server --device cpu --model sensevoice`。生产部署方式参见 [FunASR 部署指南](https://github.com/modelscope/FunASR#deploy)。
 
