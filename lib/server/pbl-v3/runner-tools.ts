@@ -982,14 +982,26 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'cue_user',
-        "Offer the learner replies they could give to your closing question, as the classroom does. Call it just before you record the closing, and only when that question can be answered by one of two to four clear, mutually exclusive short replies in the learner's own voice; leave it out for a question that needs their own reasoning. The learner may pick one or write their own.",
+        guided
+          ? "Offer the learner replies they could give to your closing question, as the classroom does. Call it just before you record the closing, and only when that question can be answered by one of two to four clear, mutually exclusive short replies in the learner's own voice; leave it out for a question that needs their own reasoning. The learner may pick one or write their own."
+          : "Offer two to four short replies in the learner's voice only after explaining the choices and their consequences. Give any required form instruction once. Offering replies is the last planned action; it does not submit the learner's choice.",
         Type.Object({
           options: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
             minItems: 2,
             maxItems: 4,
           }),
         }),
-        async (_current, p) => ({ value: { options: normalizeCueUserOptions(p.options) ?? [] } }),
+        async (_current, p) => ({
+          value: {
+            options: normalizeCueUserOptions(p.options) ?? [],
+            ...(!guided
+              ? {
+                  guidance:
+                    'The replies are visible. End the turn if the explanation is complete. If a detail is still missing, add only that detail; do not repeat a form instruction already given.',
+                }
+              : {}),
+          },
+        }),
       ),
     );
   // Pointing needs what only reading gives: current line numbers and the page's own names.

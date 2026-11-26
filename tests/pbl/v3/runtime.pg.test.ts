@@ -3744,6 +3744,49 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
+  it.each([0, 1])(
+    'offers replies without submitting a choice or cutting off speech in stage %s',
+    async (stageIndex) => {
+      const study = await freshStudy();
+      const row = await store.get(study.id, principal.ownerId);
+      const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+      process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+      onTestFinished(async () => {
+        if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+        else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
+        await pool.query("UPDATE sandbox_environments SET state='destroyed' WHERE id=$1", [
+          row.environment_id,
+        ]);
+      });
+      row.state.position.stageIndex = stageIndex;
+      row.state.milestones[0]!.stageIndex = stageIndex;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const { sessionId } = (await study.send('begin')) as { sessionId: string };
+      const workerId = 'suggest-replies';
+      const claim = await agents.claimNextSession(workerId, process.pid, {
+        sessionId,
+        leaseTtlMs: 10000,
+        maxAttempts: 5,
+      });
+      const config = await teachingRunnerConfig({
+        sessionId,
+        ownerId: principal.ownerId,
+        workerId,
+        attempt: claim!.attempt,
+        signal: new AbortController().signal,
+      });
+      const options = ['Explain the first option', 'Explain the second option'];
+      const result = await invoke(config, 'cue_user', { options });
+      const value = JSON.parse((result.content[0] as { text: string }).text);
+      expect(value.options).toEqual(options);
+      if (stageIndex === 1) expect(value.guidance).toContain('add only that detail');
+      else expect(value.guidance).toBeUndefined();
+      expect(config.isTurnComplete()).toBe(false);
+      expect((await store.get(study.id, principal.ownerId)).state).toEqual(row.state);
+      await agents.releaseLease(sessionId, workerId);
+    },
+  );
+
   it.each([4, 5])(
     'rejects chat in ordinary assessment step %s and exposes its real control actions',
     async (stageIndex) => {
