@@ -62,7 +62,12 @@ if [ "${RENDER_EGRESS_LOCKDOWN:-true}" = "true" ]; then
     exit 1
   fi
   echo "[render-service] egress lockdown active (outbound blocked except loopback)"
+  # Internal marker, not an operator setting: tells the service the rules are
+  # in place, so chunk planning answers Google Fonts lookups locally instead of
+  # waiting on connections the lockdown drops (see src/font-lookup.ts).
+  export RENDER_EGRESS_LOCKDOWN_ACTIVE=true
 else
+  unset RENDER_EGRESS_LOCKDOWN_ACTIVE
   echo "[render-service] WARNING: egress lockdown DISABLED (RENDER_EGRESS_LOCKDOWN=false). Chromium can reach the Docker network — only safe on a network you have isolated yourself." >&2
 fi
 

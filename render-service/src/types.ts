@@ -118,6 +118,11 @@ export interface RenderFailedFailure {
 
 export type RenderFailure = RenderCancelledFailure | RenderFailedFailure;
 
+/** Font families the plan could not resolve; Chromium uses the rest of each stack. */
+export interface FontFallback {
+  families: string[];
+}
+
 /** Everything an executor needs to run one render without knowing about HTTP jobs. */
 export interface RenderExecutionRequest {
   projectDir: string;
@@ -128,6 +133,7 @@ export interface RenderExecutionRequest {
   /** Wall-clock budget starting when execution begins. */
   deadlineMs: number;
   onProgress: (progress: RenderProgress) => void | Promise<void>;
+  onFontFallback?: (fallback: FontFallback) => void;
   /** Optional bounded local chunk execution requested by an internal caller. */
   chunkExecution?: {
     chunkCount?: number;

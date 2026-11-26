@@ -20,8 +20,9 @@ import {
   type DistributedRenderConfig,
   type PlanResult,
 } from '@hyperframes/producer/distributed';
-import type { RenderOptions, RenderProgress } from './types.js';
+import type { FontFallback, RenderOptions, RenderProgress } from './types.js';
 import { config } from './config.js';
+import { egressLockdownActive, unembeddedFamilies, withOfflineFontLookup } from './font-lookup.js';
 
 export const CHUNK_PLAN_SCHEMA_VERSION = 1 as const;
 export const DEFAULT_CHUNK_COUNT = 1;
@@ -63,6 +64,7 @@ export interface RenderPlanInput {
   /** Plan output root. Defaults to a sibling of the final output. */
   planDir?: string;
   signal?: AbortSignal;
+  onFontFallback?: (fallback: FontFallback) => void;
   runtimeVersions?: { node: string; chromium: string };
 }
 
@@ -135,6 +137,7 @@ export interface ChunkExecutionRequest {
   planDir?: string;
   signal?: AbortSignal;
   onProgress?: (progress: RenderProgress) => void | Promise<void>;
+  onFontFallback?: (fallback: FontFallback) => void;
   runtimeVersions?: { node: string; chromium: string };
 }
 
@@ -484,7 +487,10 @@ function toDistributedConfig(
     targetChunkFrames: input.targetChunkFrames,
     hdrMode: 'force-sdr',
     rejectOnSystemFonts: true,
-    failClosedFontFetch: true,
+    // Every chunk replays this one compiled plan on the same host, so a family
+    // that cannot be resolved falls back through its authored stack instead
+    // of failing the export, as it does on the in-process render path.
+    failClosedFontFetch: false,
   };
 }
 
@@ -627,20 +633,32 @@ export async function createRenderPlan(
     process.env.PRODUCER_MIN_PARALLEL_FRAMES = SERIAL_CAPTURE_MIN_PARALLEL_FRAMES;
   }
   let result: PlanResult;
+  let fontLookups: string[] = [];
   try {
-    result = await (dependencies.plan ?? defaultDeps.plan)(
-      projectDir,
-      {
-        ...toDistributedConfig(request.options, dimensions, {
-          chunkSizeFrames: request.chunkSizeFrames,
+    const compile = () =>
+      (dependencies.plan ?? defaultDeps.plan)(
+        projectDir,
+        {
+          ...toDistributedConfig(request.options, dimensions, {
+            chunkSizeFrames: request.chunkSizeFrames,
+            maxParallelChunks: chunkCount,
+            targetChunkFrames: request.targetChunkFrames,
+          }),
           maxParallelChunks: chunkCount,
-          targetChunkFrames: request.targetChunkFrames,
-        }),
-        maxParallelChunks: chunkCount,
-        abortSignal: request.signal,
-      },
-      planDir,
-    );
+          abortSignal: request.signal,
+        },
+        planDir,
+      );
+    // Behind the egress lockdown, answer Producer's Google Fonts lookups
+    // locally instead of waiting on dropped connections. With egress open,
+    // Producer downloads fonts as on the in-process render path.
+    if (egressLockdownActive()) {
+      const compiled = await withOfflineFontLookup(compile);
+      result = compiled.result;
+      fontLookups = compiled.requestedFamilies;
+    } else {
+      result = await compile();
+    }
   } finally {
     if (previousWorkers === undefined) delete process.env.PRODUCER_MAX_WORKERS;
     else process.env.PRODUCER_MAX_WORKERS = previousWorkers;
@@ -666,6 +684,11 @@ export async function createRenderPlan(
     outputPath: chunkPath(planDir, slice.index, result.format),
     status: 'pending' as const,
   }));
+  if (fontLookups.length) {
+    const compiledHtml = await readFile(join(planDir, 'compiled', 'index.html'), 'utf8');
+    const families = unembeddedFamilies(compiledHtml, fontLookups);
+    if (families.length) request.onFontFallback?.({ families });
+  }
   const assets = await collectPlanAssets(planDir);
   const fonts = assets.filter((asset) =>
     /(?:fonts?|\.woff2?|\.ttf|\.otf)(?:\/|$)/i.test(asset.path),

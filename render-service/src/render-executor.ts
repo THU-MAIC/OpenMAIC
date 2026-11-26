@@ -220,6 +220,7 @@ export class InProcessExecutor implements RenderExecutor {
           options: request.options,
           signal: abort.signal,
           onProgress: request.onProgress,
+          onFontFallback: request.onFontFallback,
           runtimeVersions: {
             node: this.runtimeVersions.node,
             chromium: this.runtimeVersions.chromium,

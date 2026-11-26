@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ChunkExecutorError,
   createRenderPlan,
@@ -19,6 +19,7 @@ const scratch: string[] = [];
 const options = { fps: 30, quality: 'draft', format: 'mp4' } as const;
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(scratch.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
@@ -131,6 +132,63 @@ function deps(overrides: Partial<ChunkExecutorDependencies> = {}): ChunkExecutor
 }
 
 describe('local bounded chunk executor', () => {
+  it('answers Producer font lookups offline under the egress lockdown', async () => {
+    vi.stubEnv('RENDER_EGRESS_LOCKDOWN_ACTIVE', 'true');
+    const request = { ...setup(), options };
+    await materializeProject(request.projectDir);
+    const authored = await readFile(join(request.projectDir, 'index.html'), 'utf8');
+    const seen: unknown[] = [];
+    const lookups: number[] = [];
+    const google = 'https://fonts.googleapis.com/css2?family=';
+    await createRenderPlan(
+      { ...request, onFontFallback: (fallback) => seen.push(fallback) },
+      {
+        plan: async (dir, config, planDir) => {
+          expect(config).toMatchObject({ failClosedFontFetch: false, rejectOnSystemFonts: true });
+          for (const family of ['LXGW%20WenKai', 'Calibri', 'MissingFace']) {
+            lookups.push((await fetch(`${google}${family}:ital,wght@0,400`)).status);
+          }
+          lookups.push((await fetch('https://fonts.gstatic.com/s/inter/v1/face.woff2')).status);
+          expect(await readFile(join(dir, 'index.html'), 'utf8')).toBe(authored);
+          const result = await fakePlan(dir, config, planDir);
+          // Producer embeds a bundled face under an alias such as Calibri.
+          await writeFile(
+            join(planDir, 'compiled', 'index.html'),
+            '<style>@font-face { font-family: "Calibri"; src: url("data:,") }</style>',
+          );
+          return result;
+        },
+      },
+    );
+    expect(lookups).toEqual([404, 404, 404, 404]);
+    expect(seen).toEqual([{ families: ['LXGW WenKai', 'MissingFace'] }]);
+  });
+
+  it('leaves font lookups to Producer when egress is open', async () => {
+    const request = { ...setup(), options };
+    await materializeProject(request.projectDir);
+    const seen: unknown[] = [];
+    const online = vi.fn(async () => new Response('css', { status: 200 }));
+    vi.stubGlobal('fetch', online);
+    try {
+      await createRenderPlan(
+        { ...request, onFontFallback: (fallback) => seen.push(fallback) },
+        {
+          plan: async (dir, config, planDir) => {
+            expect(config).toMatchObject({ failClosedFontFetch: false });
+            const response = await fetch('https://fonts.googleapis.com/css2?family=Kanit');
+            expect(response.status).toBe(200);
+            return fakePlan(dir, config, planDir);
+          },
+        },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(online).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([]);
+  });
+
   it.each(['audio.m4a', 'audio.aac', null])(
     'passes the plan audio artifact %s to assembly',
     async (filename) => {
