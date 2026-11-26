@@ -17,7 +17,9 @@
  * directory names, no scene content, and no raw error strings — a render works
  * on untrusted, model-authored input, and none of it belongs in an operational
  * log. Failed jobs additionally carry a bounded, sanitized diagnostic reason.
- * `errorCode` remains a fixed vocabulary, not a message.
+ * `errorCode` remains a fixed vocabulary, not a message. The one exception is
+ * `fontFallbackFamilies`: font names authored in the uploaded page, bounded in
+ * count and length by the coordinator, and JSON-escaped like every other field.
  */
 import { sanitizeFailureReason } from './failure-reason.js';
 
@@ -26,6 +28,7 @@ export type RenderEventName =
   | 'render_job_submitted'
   | 'render_job_started'
   | 'render_job_finished'
+  | 'render_font_fallback'
   | 'render_admission_rejected'
   | 'preview_request';
 
@@ -64,6 +67,9 @@ export interface RenderEvent {
   errorCode?: string;
   /** Sanitized operational diagnostic, only for failed render jobs. */
   failureReason?: string;
+  /** Number of font families the plan could not resolve, with a bounded sample of names. */
+  fontFallbackCount?: number;
+  fontFallbackFamilies?: string[];
   /** Which admission cap rejected the caller, or which route served it. */
   reason?: string;
   route?: string;
@@ -139,6 +145,8 @@ const SERIALIZED_FIELDS = [
   'queued',
   'running',
   'errorCode',
+  'fontFallbackCount',
+  'fontFallbackFamilies',
   'reason',
   'route',
   'status',
@@ -173,6 +181,8 @@ function summarize(event: RenderEvent): string {
       return `render job started after ${event.queueWaitMs ?? 0}ms in queue`;
     case 'render_job_finished':
       return `render job ${event.outcome ?? 'finished'} in ${event.durationMs ?? 0}ms`;
+    case 'render_font_fallback':
+      return `${event.fontFallbackCount ?? 0} font families unavailable; using fallback stacks`;
     case 'render_admission_rejected':
       return `admission rejected (${event.reason ?? 'unknown'}) on ${event.route ?? 'unknown'}`;
     case 'preview_request':
@@ -184,19 +194,22 @@ function summarize(event: RenderEvent): string {
  * Default sink: one JSON line per event on stdout.
  *
  * `console.error` for a failed render or a 5xx preview so a pipeline that only
- * forwards stderr still sees failures; everything else goes to stdout.
+ * forwards stderr still sees failures, `console.warn` for a font fallback, and
+ * everything else goes to stdout.
  */
 export const emitRenderEvent: RenderEventSink = (event) => {
   const failed =
     event.outcome === 'failed' || (event.event === 'preview_request' && (event.status ?? 0) >= 500);
+  const warning = event.event === 'render_font_fallback';
   const line = JSON.stringify({
     timestamp: new Date().toISOString(),
-    level: failed ? 'ERROR' : 'INFO',
+    level: failed ? 'ERROR' : warning ? 'WARN' : 'INFO',
     service: 'render-service',
     component: event.event === 'preview_request' ? 'preview' : 'render',
     message: summarize(event),
     ...nonEmpty(event),
   });
   if (failed) console.error(line);
+  else if (warning) console.warn(line);
   else console.log(line);
 };

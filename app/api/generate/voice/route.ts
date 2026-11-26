@@ -25,6 +25,10 @@ import {
   type MediaConnection,
 } from '@/lib/server/model-config/media';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
+import {
+  listAccountVoicesForConnection,
+  personalVoiceAccount,
+} from '@/lib/server/audio/account-voices';
 import { NextRequest } from 'next/server';
 import {
   isServerConfiguredProvider,
@@ -49,6 +53,90 @@ const log = createLogger('Voice Registration API');
 
 const ROUTE_DEADLINE_MS = 29_000;
 const EXISTS_LOOKUP_SLICE_MS = 5_000;
+
+/** Account management uses the resolved workspace service; no credential is sent by the browser. */
+async function withVoiceService(
+  req: NextRequest,
+  expectedProviderId: unknown,
+  expectedServiceId: unknown,
+  expectedRevision: number | undefined,
+  action: (connection: MediaConnection, signal: AbortSignal) => Promise<Response>,
+): Promise<Response> {
+  if (typeof expectedProviderId !== 'string' || !expectedProviderId) {
+    return apiError('MISSING_REQUIRED_FIELD', 400, 'providerId is required');
+  }
+  try {
+    const connection = await resolveMediaSlot('tts', {
+      workspaceId: await requestWorkspaceId(req),
+      expectedRevision,
+    });
+    if (
+      connection.providerId !== expectedProviderId ||
+      (expectedServiceId != null && expectedServiceId !== connection.serviceId)
+    ) {
+      return apiError('INVALID_REQUEST', 409, 'The active speech service has changed.');
+    }
+    const signal = AbortSignal.any([req.signal, AbortSignal.timeout(ROUTE_DEADLINE_MS)]);
+    return await action(connection, signal);
+  } catch (error) {
+    const refused = mediaResolutionResponse(error, 'Text to speech');
+    if (refused) return refused;
+    const blocked = findUnsafeNetworkTargetError(error);
+    if (blocked) return apiError('INVALID_URL', 403, blocked.message);
+    return apiError(
+      'UPSTREAM_ERROR',
+      502,
+      'The speech provider could not complete the voice request.',
+    );
+  }
+}
+
+export async function GET(req: NextRequest) {
+  const revision = req.nextUrl.searchParams.get('expectedRevision');
+  const response = await withVoiceService(
+    req,
+    req.nextUrl.searchParams.get('providerId'),
+    req.nextUrl.searchParams.get('expectedServiceId'),
+    revision === null ? undefined : Number(revision),
+    async (connection, signal) => {
+      const voices = await listAccountVoicesForConnection(connection, signal);
+      return apiSuccess({
+        voices,
+        canDeleteRemote: Boolean(personalVoiceAccount(connection)?.remove),
+      });
+    },
+  );
+  response.headers.set('Cache-Control', 'private, no-store');
+  return response;
+}
+
+/** Explicit remote deletion. Removing a saved profile is a separate, local operation. */
+export async function DELETE(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  const voiceId = typeof body?.voiceId === 'string' ? body.voiceId.trim() : '';
+  const kind = body?.kind;
+  if (!voiceId || (kind !== 'clone' && kind !== 'designed')) {
+    return apiError('INVALID_REQUEST', 400, 'A custom voice ID and kind are required.');
+  }
+  return withVoiceService(
+    req,
+    body?.providerId,
+    body?.expectedServiceId,
+    body?.expectedRevision,
+    async (connection, signal) => {
+      const account = personalVoiceAccount(connection);
+      if (!account?.remove) {
+        return apiError(
+          'INVALID_REQUEST',
+          403,
+          'Deleting a provider voice requires your own speech service account.',
+        );
+      }
+      await account.remove(account.config, voiceId, signal, kind);
+      return apiSuccess({ voiceId, vendorDeleted: true });
+    },
+  );
+}
 
 function childSignal(
   parent: AbortSignal,
@@ -85,6 +173,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       providerId?: string;
+      expectedProviderId?: string;
+      expectedServiceId?: string;
+      expectedRevision?: number;
       voiceId?: string;
       descriptor?: unknown;
       language?: string;
@@ -95,6 +186,7 @@ export async function POST(req: NextRequest) {
       ttsBaseUrl?: string;
       ttsModelId?: string;
       action?: 'register' | 'delete';
+      kind?: 'clone' | 'designed';
     };
     providerId = typeof body.providerId === 'string' ? body.providerId : undefined;
     voiceId = typeof body.voiceId === 'string' ? body.voiceId.trim() : undefined;
@@ -104,6 +196,13 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'voiceId is required');
     }
     const deleting = body.action === 'delete';
+    if (
+      !deleting &&
+      body.referenceAudioBase64 !== undefined &&
+      typeof body.referenceAudioBase64 !== 'string'
+    ) {
+      return apiError('INVALID_REQUEST', 400, 'referenceAudioBase64 must be a string');
+    }
     if (!deleting && !design && !body.referenceAudioBase64) {
       return apiError(
         'MISSING_REQUIRED_FIELD',
@@ -119,6 +218,7 @@ export async function POST(req: NextRequest) {
     try {
       connection = await resolveMediaSlot('tts', {
         workspaceId: await requestWorkspaceId(req),
+        expectedRevision: body.expectedRevision,
         legacyRequest: async () =>
           requestedProviderId
             ? requestedTTSProvider(requestedProviderId, body.ttsApiKey, body.ttsBaseUrl)
@@ -128,6 +228,12 @@ export async function POST(req: NextRequest) {
       const refused = mediaResolutionResponse(error, 'Text to speech');
       if (refused) return refused;
       throw error;
+    }
+    if (
+      (body.expectedProviderId && body.expectedProviderId !== connection.providerId) ||
+      (body.expectedServiceId !== undefined && body.expectedServiceId !== connection.serviceId)
+    ) {
+      return apiError('INVALID_REQUEST', 409, 'The active speech service has changed.');
     }
     if (requestedProviderId && requestedProviderId !== connection.providerId) {
       return apiError(
@@ -205,7 +311,10 @@ export async function POST(req: NextRequest) {
             'The local voice profile can be removed, but the provider voice was not deleted.',
         });
       }
-      await adapter.deleteVoice(cfg, voiceId, deadline.signal);
+      if (adapter.listVoices && body.kind !== 'clone' && body.kind !== 'designed') {
+        return apiError('INVALID_REQUEST', 400, 'A custom voice kind is required.');
+      }
+      await adapter.deleteVoice(cfg, voiceId, deadline.signal, body.kind);
       return apiSuccess({ voiceId, deleted: true, vendorDeleted: true, localOnly: false });
     }
 

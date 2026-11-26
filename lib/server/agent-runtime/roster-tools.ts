@@ -15,6 +15,8 @@
  *  - presets of every served, keyed provider, excluding providers flagged
  *    `excludeFromAgentVoiceCatalog` (paid showcase presets must never reach
  *    the agent, even when configured);
+ *  - voices discovered with the run owner's own service credential, when
+ *    that provider supports listing and has no explicit catalogue;
  *  - voices registered THIS session by `register_voice` (voice cloning is an
  *    in-session loop; the roster keeps the durable record), visible when the
  *    deployment has a registration backend.
@@ -33,6 +35,7 @@ import type { GeneratedAgentConfig, Stage } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import type { AccountVoice } from '@/lib/audio/types';
 import {
   buildVoiceCatalog,
   type CatalogVoice,
@@ -41,6 +44,7 @@ import {
 } from '@/lib/audio/voice-catalog';
 import { supportsVoiceRegistration } from '@/lib/audio/voice-registration';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import { listAccountVoicesForConnection } from '@/lib/server/audio/account-voices';
 import type { MediaConnection } from '@/lib/server/model-config/media';
 import type { CheckpointInfo } from './course-tools';
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
@@ -85,7 +89,8 @@ export function parseVoiceConfig(
  * The agent-facing voice catalog for this deployment: presets of every served,
  * keyed provider (excluding providers flagged off the agent catalog and
  * keyless providers synthesis would silently skip), plus voices registered
- * this session by `register_voice`.
+ * this session by `register_voice`. An eligible account adds its discovered
+ * voices to the presets, preserving existing bindings.
  *
  * A served provider whose presets are excluded from the agent catalog still
  * contributes its session-registered clones: its preset list is offered empty
@@ -100,6 +105,7 @@ export function parseVoiceConfig(
 export function agentVoiceCatalog(
   registeredVoices: RegisteredVoiceInfo[] = [],
   tts?: MediaConnection | 'off' | null,
+  accountVoices: AccountVoice[] = [],
 ): CatalogVoice[] {
   const providers: VoiceCatalogProvider[] = [];
   // The provider narration synthesizes with: the tts slot's, and only it.
@@ -124,7 +130,7 @@ export function agentVoiceCatalog(
       continue;
     }
 
-    providers.push(config);
+    providers.push({ ...config, voices: [...config.voices, ...accountVoices] });
   }
   // A registration backend means clone-kind registered voices are
   // synthesizable and therefore bindable (the session loop is live).
@@ -222,6 +228,20 @@ const SET_ROSTER_PARAMS = Type.Object({
 /** Build the typed classroom-roster tools for the session runner. */
 export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[] {
   const hasVoiceRegistration = hasConfiguredVoiceRegistrationCapability(deps.ttsConnection);
+  // The two tools share a successful lookup for this run's credential. Read
+  // the live session registrations on every call: a clone may just have landed.
+  let accountList: Promise<AccountVoice[]> | undefined;
+  async function catalogForRun(signal?: AbortSignal) {
+    const connection = deps.ttsConnection;
+    if (connection && connection !== 'off') {
+      accountList ??= listAccountVoicesForConnection(connection, signal).catch((error) => {
+        accountList = undefined;
+        if (signal?.aborted) throw error;
+        return [];
+      });
+    }
+    return agentVoiceCatalog(deps.registeredVoices, connection, await accountList);
+  }
   const listVoices: AgentTool<typeof LIST_VOICES_PARAMS, unknown> = {
     name: 'list_voices',
     label: 'List available voices',
@@ -232,8 +252,8 @@ export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[
         ? 'A cloned voice registered this session with register_voice appears here too.'
         : 'register_voice must not be attempted without a configured backend.'),
     parameters: LIST_VOICES_PARAMS,
-    async execute() {
-      const catalog = agentVoiceCatalog(deps.registeredVoices, deps.ttsConnection);
+    async execute(_id, _params, signal) {
+      const catalog = await catalogForRun(signal);
       const voices = catalog.map((voice) => ({
         binding: voice.binding,
         providerId: voice.providerId,
@@ -310,17 +330,9 @@ export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[
         };
       }
 
-      // A binding is only worth persisting when synthesis can actually honour
-      // it. It must be one of the voices list_voices reports — the deployment's
-      // served, keyed providers' presets plus voices registered this session —
-      // so the agent binds only what it was shown (or just registered).
-      // `agentVoiceCatalog` already excludes unserved providers, keyless
-      // providers (whose bindings synthesis would silently drop) and paid
-      // showcase presets, so a binding that passes here is guaranteed
-      // synthesizable. A voice registered in an earlier session is NOT in the
-      // catalog (registration is session-scoped by design): re-register it,
-      // bind a catalog voice, or omit `voice`.
-      const catalog = agentVoiceCatalog(deps.registeredVoices, deps.ttsConnection);
+      // Validate against exactly what list_voices offers, including a voice
+      // registered since listing. An unvoiced roster needs no provider lookup.
+      const catalog = params.agents.some((agent) => agent.voice) ? await catalogForRun(signal) : [];
       const catalogBindings = new Set(catalog.map((voice) => voice.binding));
       const unusableBinding = params.agents
         .map((agent) => parseVoiceConfig(agent.voice))
@@ -334,7 +346,7 @@ export function buildRosterTools(deps: RosterToolDeps): AgentTool<never, never>[
               type: 'text',
               text:
                 `set_roster got voice "${unusableBinding.providerId}::${unusableBinding.voiceId}", which is not in this deployment's available voice catalog. ` +
-                `Call list_voices for the exact bindable pairs (a cloned voice appears there only after register_voice returns it), or omit \`voice\` to leave the agent unbound.`,
+                `Call list_voices for the exact bindable pairs, or omit \`voice\` to leave the agent unbound.`,
             },
           ],
           details: {
@@ -413,6 +425,6 @@ export const ROSTER_TOOLS_PROMPT = [
   'The classroom roster is written with set_roster: pass every agent (exactly ONE teacher, at least 2 agents total) with name/role/persona and optional avatar/color/priority/voiceDesign. It persists stage.generatedAgentConfigs and drives scene/discussion generation; re-calling replaces the roster.',
   'When writing voiceDesign, always set gender to "male" or "female" (those English words only, matching identity). voiceDesign.gender is language-independent; without it a non-English identity cannot keep gender-aware voice binding after set_roster rewrites the roster.',
   'To bind a roster voice, call list_voices first and use exactly one returned `providerId::voiceId` pair; never invent a voice id.',
-  'A cloned voice registered this session with register_voice appears in list_voices and can be bound with the exact pair register_voice returned; a voice from an earlier session is not enumerable — re-register it if voice registration is available, bind a catalog voice, or omit voice. register_voice must not be attempted without a configured backend.',
+  'A cloned voice registered this session with register_voice appears in list_voices and can be bound with the exact pair register_voice returned. For an earlier clone, check list_voices. If absent, re-register it if voice registration is available, bind a catalog voice, or omit voice. register_voice must not be attempted without a configured backend.',
   'Omit `voice` when no usable voice exists: narration falls back to the provider default.',
 ].join(' ');

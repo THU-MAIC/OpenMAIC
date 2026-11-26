@@ -8,6 +8,7 @@ import {
   withRenderOwnerResponseHeaders,
 } from '@/lib/server/render-service';
 import { withRequestOwner } from '@/lib/server/identity/with-owner';
+import { isRenderDurableQueueEnabled } from '@/lib/server/render-queue/config';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ExportVideo Job API');
@@ -23,6 +24,10 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
     const resolved = resolveRenderServiceUrl();
     if ('error' in resolved) {
       return answer(apiError('PROVIDER_DISABLED', 501, 'Render service is not configured'));
+    }
+    if (isRenderDurableQueueEnabled()) {
+      const { readQueuedRender } = await import('@/lib/server/render-queue/routes');
+      return answer(await readQueuedRender(jobId, ownerId));
     }
 
     try {
@@ -61,6 +66,10 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ jobI
     const resolved = resolveRenderServiceUrl();
     if ('error' in resolved) {
       return answer(apiError('PROVIDER_DISABLED', 501, 'Render service is not configured'));
+    }
+    if (isRenderDurableQueueEnabled()) {
+      const { cancelQueuedRender } = await import('@/lib/server/render-queue/routes');
+      return answer(await cancelQueuedRender(jobId, ownerId));
     }
 
     try {

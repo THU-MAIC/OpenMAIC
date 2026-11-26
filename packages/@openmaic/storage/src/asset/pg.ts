@@ -277,10 +277,27 @@ const ASSET_PG_STAGES: readonly string[] = [
      ON asset_blob_stages (expires_at)`,
 ];
 
+/**
+ * `asset_prefixed_bytes` holds the bytes of the isolated namespaces
+ * `PgAssetByteStore.withPrefix` hands out, keyed by `(prefix, key)`. It
+ * is outside the course registry on purpose: nothing references these rows
+ * from `asset_entries`, the collector never reads the table, and a namespace's
+ * consumer records its own keys and deletes them itself.
+ */
+const ASSET_PG_PREFIXED_BYTES: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS asset_prefixed_bytes (
+     prefix TEXT NOT NULL,
+     key TEXT NOT NULL,
+     bytes BYTEA NOT NULL,
+     PRIMARY KEY (prefix, key)
+   )`,
+];
+
 export const ASSET_PG_SCHEMA: readonly string[] = [
   ...ASSET_PG_BASELINE,
   ...ASSET_PG_ROOTS,
   ...ASSET_PG_STAGES,
+  ...ASSET_PG_PREFIXED_BYTES,
 ];
 
 /** The asset backend's migrations, recorded under the store `asset`. */
@@ -297,6 +314,12 @@ export const ASSET_PG_MIGRATIONS: SchemaMigrationSet = {
       up: `ALTER TABLE document_asset_refs DROP CONSTRAINT document_asset_refs_scope_check;
 ALTER TABLE document_asset_refs ADD CONSTRAINT document_asset_refs_scope_check
  CHECK (scope IN ('stage', 'scene', 'retained'));`,
+    },
+    {
+      version: 5,
+      name: 'prefixed_bytes',
+      up: ASSET_PG_PREFIXED_BYTES.join(';\n'),
+      transaction: true,
     },
   ],
 };

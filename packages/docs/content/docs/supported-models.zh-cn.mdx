@@ -90,12 +90,12 @@ description: 开源版 OpenMAIC 的内置模型与 provider 列表。
 
 | 提供方        | Provider ID     | 内置模型                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | ------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Seedance      | `seedance`      | Seedance 2.0 (`doubao-seedance-2-0-260128`)<br />Seedance 2.0 Fast (`doubao-seedance-2-0-fast-260128`)<br />Seedance 2.0 Mini (`doubao-seedance-2-0-mini-260615`)<br />Seedance 1.0 Pro (`doubao-seedance-1-0-pro-250528`)<br />Seedance 1.0 Pro Fast (`doubao-seedance-1-0-pro-fast-251015`)<br />Seedance 1.0 Lite T2V (`doubao-seedance-1-0-lite-t2v-250428`) |
+| Seedance      | `seedance`      | Seedance 2.0 (`doubao-seedance-2-0-260128`)<br />Seedance 2.0 Fast (`doubao-seedance-2-0-fast-260128`)<br />Seedance 2.0 Mini (`doubao-seedance-2-0-mini-260615`) |
 | Kling         | `kling`         | Kling V2.6 (`kling-v2-6`)<br />Kling V1.6 (`kling-v1-6`)                                                                                                                                                                                                                                                                                                                                                                  |
 | MiniMax Video | `minimax-video` | Hailuo 2.3 (`MiniMax-Hailuo-2.3`)<br />Hailuo 02 (`MiniMax-Hailuo-02`)<br />T2V-01 Director (`T2V-01-Director`)<br />T2V-01 (`T2V-01`)                                                                                                                                                                                                                                                                                    |
 | Grok Video    | `grok-video`    | Grok Imagine Video (`grok-imagine-video`)                                                                                                                                                                                                                                                                                                                                                                                 |
 | HappyHorse    | `happyhorse`    | HappyHorse 1.0 T2V (`happyhorse-1.0-t2v`)                                                                                                                                                                                                                                                                                                                                                                                 |
-| OpenRouter Video | `openrouter-video` | Veo 3.1 (`google/veo-3.1`)<br />Kling v3.0 Pro (`kwaivgi/kling-v3.0-pro`)<br />Seedance 2.5 (`bytedance/seedance-2.5`) |
+| OpenRouter Video | `openrouter-video` | Veo 3.1 (`google/veo-3.1`)<br />Seedance 2.5 (`bytedance/seedance-2.5`) |
 
 ## TTS 模型与后端
 
@@ -130,6 +130,12 @@ Google TTS 默认使用 `gemini-3.8-flash-lite-tts`，已显式选择的模型�
 托管部署需在 `openmaic.yml` 的服务商 `models` 允许列表中保留 `qwen3-tts-flash` 和克隆目标（例如 `cosyvoice-v3.5-plus`）。只设置克隆目标会替换原本隐式的目录模型授权，导致目录音色返回 HTTP 403。已使用的其他模型也应继续保留授权。
 
 旧音色资料及其参考样本会保留，但没有一键复用样本的迁移界面。需要重建不兼容音色时，请在音色设置中重新上传原始参考音频并创建新音色。样本应清晰且包含至少五秒语音；不足五秒的旧样本需要更换为更长的录音。资料中存有样本不代表系统会自动重新注册。
+
+### MiniMax 自定义音色
+
+在语音设置中上传 10–60 秒的参考录音并给音色命名，保存后即可在智能体音色选择器中使用。首次合成后，MiniMax 才会在账号音色库中列出这个新音色，并可能收取激活费用。
+
+使用自己的 MiniMax 密钥时，可以查看账号里的音色。显式配置的 `voices` 清单优先。使用部署者的公用密钥时，可以看到配置的音色（未配置时显示内置预设）和自己在本地保存的音色。从本地移除只影响当前浏览器。要从 MiniMax 账号删除音色，需使用自己的密钥并单独确认。
 
 ## ASR 模型
 

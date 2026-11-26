@@ -90,12 +90,12 @@ In `openmaic.yml` a chat slot names `<provider id>:<model id>`, where the provid
 
 | Provider      | Provider ID     | Built-in models                                                                                                                                                                                                                                    |
 | ------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Seedance      | `seedance`      | Seedance 2.0 (`doubao-seedance-2-0-260128`)<br />Seedance 2.0 Fast (`doubao-seedance-2-0-fast-260128`)<br />Seedance 2.0 Mini (`doubao-seedance-2-0-mini-260615`)<br />Seedance 1.0 Pro (`doubao-seedance-1-0-pro-250528`)<br />Seedance 1.0 Pro Fast (`doubao-seedance-1-0-pro-fast-251015`)<br />Seedance 1.0 Lite T2V (`doubao-seedance-1-0-lite-t2v-250428`) |
+| Seedance      | `seedance`      | Seedance 2.0 (`doubao-seedance-2-0-260128`)<br />Seedance 2.0 Fast (`doubao-seedance-2-0-fast-260128`)<br />Seedance 2.0 Mini (`doubao-seedance-2-0-mini-260615`) |
 | Kling         | `kling`         | Kling V2.6 (`kling-v2-6`)<br />Kling V1.6 (`kling-v1-6`)                                                                                                                                                                                           |
 | MiniMax Video | `minimax-video` | Hailuo 2.3 (`MiniMax-Hailuo-2.3`)<br />Hailuo 02 (`MiniMax-Hailuo-02`)<br />T2V-01 Director (`T2V-01-Director`)<br />T2V-01 (`T2V-01`) |
 | Grok Video    | `grok-video`    | Grok Imagine Video (`grok-imagine-video`)                                                                                                                                                                                                          |
 | HappyHorse    | `happyhorse`    | HappyHorse 1.0 T2V (`happyhorse-1.0-t2v`) |
-| OpenRouter Video | `openrouter-video` | Veo 3.1 (`google/veo-3.1`)<br />Kling v3.0 Pro (`kwaivgi/kling-v3.0-pro`)<br />Seedance 2.5 (`bytedance/seedance-2.5`) |
+| OpenRouter Video | `openrouter-video` | Veo 3.1 (`google/veo-3.1`)<br />Seedance 2.5 (`bytedance/seedance-2.5`) |
 
 ## TTS models and backends
 
@@ -130,6 +130,12 @@ Managed deployments must list both `qwen3-tts-flash` and the clone target (for e
 Voice registration uses the audio sample and does not require a transcript.
 
 Saved legacy profiles and their reference samples are retained, but there is no one-click sample migration. To recreate an incompatible voice, upload its original reference audio again through voice settings and create a new clone. Use a clean sample with at least five seconds of speech; older samples shorter than five seconds must be replaced with a longer recording. Keeping a sample in a profile does not automatically re-enroll it.
+
+### MiniMax custom voices
+
+In voice settings, upload a 10–60 second reference clip and give the voice a name. The saved voice is available in the agent voice picker immediately. MiniMax lists a new clone after its first synthesis, which can incur an activation fee.
+
+With your own MiniMax key, the picker also shows your account’s voices. An explicit `voices` list takes precedence. On a shared key, the picker shows the configured voices (or built-in presets) and your locally saved voices. Removing a saved entry only affects this browser. Deleting the voice at MiniMax is a separate action that requires your own key.
 
 ## ASR models
 

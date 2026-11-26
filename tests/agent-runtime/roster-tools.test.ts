@@ -33,6 +33,11 @@ import { withOwnerStageAuthorization } from '@/lib/server/agent-runtime/course-t
 const mocks = vi.hoisted(() => ({
   enabledServerTTSProviderIds: vi.fn(),
   resolveTTSApiKey: vi.fn(),
+  listAccountVoices: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('@/lib/server/audio/account-voices', () => ({
+  listAccountVoicesForConnection: mocks.listAccountVoices,
 }));
 
 vi.mock('@/lib/server/provider-config', async (importOriginal) => {
@@ -733,6 +738,71 @@ describe('roster tool registry', () => {
     expect(names).toContain('list_voices');
     expect(names).not.toContain('generate_roster');
   });
+});
+
+it('shares a successful account lookup only within its runner and binds newly registered voices', async () => {
+  const connection = {
+    providerId: 'minimax-tts',
+    managed: false,
+    apiKey: 'test-workspace-key',
+    userEndpoint: false,
+    origin: 'configuration',
+  };
+  const store = makeStore(makeDoc());
+  const registeredVoices: Array<{
+    providerId: string;
+    voiceId: string;
+    name: string;
+    kind: 'clone';
+  }> = [];
+  const tools = buildTools({ store, ttsConnection: connection, registeredVoices });
+  const list = tools.find((tool) => tool.name === 'list_voices')!;
+  const set = tools.find((tool) => tool.name === 'set_roster')!;
+  const listBindings = async () => {
+    const { details } = (await list.execute('list', {} as never)) as ToolResultShape;
+    return (details?.voices as Array<{ binding: string }>).map((v) => v.binding);
+  };
+  mocks.listAccountVoices
+    .mockRejectedValueOnce(new Error('Account listing unavailable'))
+    .mockResolvedValueOnce([
+      { id: 'female-yujie', name: 'Duplicate', kind: 'system' },
+      { id: 'remote-voice', name: 'Studio', kind: 'designed' },
+    ])
+    .mockResolvedValueOnce([{ id: 'second-account', name: 'Second', kind: 'clone' }]);
+  expect(await listBindings()).toContain('minimax-tts::female-yujie');
+  const second = await listBindings();
+  expect(second).toContain('minimax-tts::remote-voice');
+  expect(second.filter((id) => id === 'minimax-tts::female-yujie')).toHaveLength(1);
+  registeredVoices.push({
+    providerId: 'minimax-tts',
+    voiceId: 'session-voice',
+    name: 'Fresh',
+    kind: 'clone',
+  });
+  await set.execute('bind', {
+    stageId: 'stage-test',
+    agents: [
+      llmAgent({ voice: 'minimax-tts::remote-voice' }),
+      llmAgent({ name: 'Student', role: 'student', voice: 'minimax-tts::session-voice' }),
+    ],
+  } as never);
+  const agents = (await store.loadDocument('stage-test'))?.stage.generatedAgentConfigs;
+  expect(agents?.map((agent) => agent.voiceConfig?.voiceId)).toEqual([
+    'remote-voice',
+    'session-voice',
+  ]);
+
+  const other = await runTool(
+    makeStore(makeDoc()),
+    'list_voices',
+    {},
+    {
+      ttsConnection: { ...connection, apiKey: 'other-workspace-key' },
+    },
+  );
+  const otherIds = (other.details?.voices as Array<{ voiceId: string }>).map((v) => v.voiceId);
+  expect(otherIds).toContain('second-account');
+  expect(otherIds).not.toContain('remote-voice');
 });
 
 it.each(['openai-tts'])(

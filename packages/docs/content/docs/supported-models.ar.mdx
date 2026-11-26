@@ -90,12 +90,12 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 
 | المزود         | معرف المزود     | النماذج المدمجة                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | -------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Seedance      | `seedance`      | Seedance 2.0 (`doubao-seedance-2-0-260128`)<br />Seedance 2.0 Fast (`doubao-seedance-2-0-fast-260128`)<br />Seedance 2.0 Mini (`doubao-seedance-2-0-mini-260615`)<br />Seedance 1.0 Pro (`doubao-seedance-1-0-pro-250528`)<br />Seedance 1.0 Pro Fast (`doubao-seedance-1-0-pro-fast-251015`)<br />Seedance 1.0 Lite T2V (`doubao-seedance-1-0-lite-t2v-250428`) |
+| Seedance      | `seedance`      | Seedance 2.0 (`doubao-seedance-2-0-260128`)<br />Seedance 2.0 Fast (`doubao-seedance-2-0-fast-260128`)<br />Seedance 2.0 Mini (`doubao-seedance-2-0-mini-260615`) |
 | Kling         | `kling`         | Kling V2.6 (`kling-v2-6`)<br />Kling V1.6 (`kling-v1-6`)                                                                                                                                                                                           |
 | MiniMax Video | `minimax-video` | Hailuo 2.3 (`MiniMax-Hailuo-2.3`)<br />Hailuo 02 (`MiniMax-Hailuo-02`)<br />T2V-01 Director (`T2V-01-Director`)<br />T2V-01 (`T2V-01`) |
 | Grok Video    | `grok-video`    | Grok Imagine Video (`grok-imagine-video`)                                                                                                                                                                                                          |
 | HappyHorse    | `happyhorse`    | HappyHorse 1.0 T2V (`happyhorse-1.0-t2v`) |
-| OpenRouter Video | `openrouter-video` | Veo 3.1 (`google/veo-3.1`)<br />Kling v3.0 Pro (`kwaivgi/kling-v3.0-pro`)<br />Seedance 2.5 (`bytedance/seedance-2.5`) |
+| OpenRouter Video | `openrouter-video` | Veo 3.1 (`google/veo-3.1`)<br />Seedance 2.5 (`bytedance/seedance-2.5`) |
 
 ## نماذج TTS والخوادم الخلفية
 
@@ -120,6 +120,12 @@ description: قائمة النماذج المدمجة ومزودي الخدمة 
 النموذج الافتراضي لـ Google TTS هو `gemini-3.8-flash-lite-tts`، وتبقى اختيارات النماذج الصريحة كما هي. تحدد Google **17 نوفمبر 2026** بوصفه [أقرب موعد محتمل للإيقاف](https://ai.google.dev/gemini-api/docs/deprecations) لنماذج المعاينة الثلاثة أعلاه. اختر نموذج 3.8 قبل إيقافها؛ وعند استخدام بيانات اعتماد تديرها بيئة النشر، حدّث أيضًا خانة `tts` أو قائمة `models` المسموح بها للمزوّد في `openmaic.yml`. تُحفظ استجابات WAV من Gemini 3.8 كما هي، بينما تستمر استجابات PCM القديمة بالتحويل إلى WAV للتشغيل.
 
 في عمليات النشر المُدارة، أدرج `qwen3-tts-flash` ونموذج الاستنساخ المستهدف (مثل `cosyvoice-v3.5-plus`) في قائمة `models` للمزوّد في `openmaic.yml`. تحديد نموذج الاستنساخ وحده يستبدل التفويض الضمني لنموذج الأصوات الجاهزة، فتُرجع طلباتها HTTP 403. احتفظ أيضًا بتفويض أي نماذج أخرى مستخدمة.
+
+### الأصوات المخصصة في MiniMax
+
+ارفع تسجيلاً مرجعياً مدته من 10 إلى 60 ثانية في إعدادات الصوت وسمِّ الصوت. يمكنك اختياره للوكيل فور حفظه. يظهر الصوت المستنسخ في قائمة حساب MiniMax بعد أول عملية توليد للكلام، وقد تُحتسب رسوم تفعيل عندها.
+
+عند استخدام مفتاح MiniMax الشخصي، تظهر أيضاً أصوات حسابك. إذا ضُبطت قائمة `voices` صراحةً فلها الأولوية. عند استخدام مفتاح مشترك، تظهر الأصوات المحددة في الإعدادات (أو الأصوات المدمجة إن لم تُحدد قائمة) والأصوات التي حفظتها محلياً. تؤثر إزالة السجل المحلي في هذا المتصفح فقط. يتطلب حذف الصوت من MiniMax مفتاحك الشخصي وتأكيداً منفصلاً.
 
 ## نماذج ASR
 

@@ -5,7 +5,7 @@
  * its leases and event log, the owner-bound document store, the asset pool
  * and the run API routes.
  */
-import { AudioProviderError } from '@/lib/audio/provider-error';
+import { AudioProviderError, TTSVoiceUnavailableError } from '@/lib/audio/provider-error';
 import { QwenVoiceCloneError } from '@/lib/audio/qwen-voice-clone';
 import { createOpenAI } from '@ai-sdk/openai';
 import { NextRequest } from 'next/server';
@@ -1568,6 +1568,38 @@ describe.skipIf(!contractUrl)('generation runs on PostgreSQL', () => {
     expect(await drive(bound.id, qwen.services)).toBe('completed');
     // The clone failed once; that clip and every later one used the slot voice.
     expect(voices).toEqual([clone, 'Cherry', 'Cherry', 'Cherry']);
+  });
+
+  it('narrates the failed line and following lines with a preset when the selected account voice is gone', async () => {
+    const providerId = 'minimax-tts' as const;
+    const preference = { providerId, voiceId: 'studio-narrator' };
+    const base = fakeServices();
+    const voices: string[] = [];
+    const { services } = fakeServices({
+      research: async () => null,
+      agentProfiles: async () => [
+        { ...GENERATED_AGENTS[0]!, voiceConfig: preference },
+        GENERATED_AGENTS[1]!,
+      ],
+      narrationTarget: async () => ({
+        providerId,
+        connection: {
+          providerId,
+          managed: false,
+          userEndpoint: true,
+          origin: 'configuration',
+          apiKey: 'test-key',
+        },
+      }),
+      narrateClip: async (owner, input, ctx) => {
+        voices.push(input.voice);
+        if (input.voice === preference.voiceId) throw new TTSVoiceUnavailableError();
+        return base.services.narrateClip(owner, input, ctx);
+      },
+    });
+    const run = await start(runInput({ voice: preference, outlineReview: 'auto' }));
+    expect(await drive(run.id, services)).toBe('completed');
+    expect(voices).toEqual([preference.voiceId, 'female-yujie', 'female-yujie', 'female-yujie']);
   });
 
   it.each([

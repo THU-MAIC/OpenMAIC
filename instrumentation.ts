@@ -98,6 +98,9 @@ export async function register(): Promise<void> {
   let generationRunner:
     | import('@/lib/server/generation/run/runner').GenerationRunnerHandle
     | undefined;
+  let renderQueueRunner:
+    | import('@/lib/server/render-queue/runner').RenderQueueRunnerHandle
+    | undefined;
   let materialExtractor:
     | import('@/lib/server/materials/extractor-wake').OwnerMaterialExtractorHandle
     | undefined;
@@ -113,6 +116,7 @@ export async function register(): Promise<void> {
         ['Material extractor', materialExtractor],
         ['Agent runner', runner],
         ['Generation runner', generationRunner],
+        ['Render queue runner', renderQueueRunner],
       ] as const;
       await Promise.all([
         ...workers.map(async ([name, worker]) => {
@@ -212,6 +216,18 @@ export async function register(): Promise<void> {
     generationRunner = startGenerationRunner();
   } catch (error) {
     console.error('[instrumentation] Generation runner startup failed', error);
+  }
+  try {
+    // The durable video export queue (RENDER_DURABLE_QUEUE=true): this
+    // process sends queued exports to the render service and follows them.
+    // Off, the export routes relay to the render service as before.
+    const { isRenderDurableQueueEnabled } = await import('@/lib/server/render-queue/config');
+    if (isRenderDurableQueueEnabled()) {
+      const { startRenderQueueRunner } = await import('@/lib/server/render-queue/runner');
+      renderQueueRunner = startRenderQueueRunner();
+    }
+  } catch (error) {
+    console.error('[instrumentation] Render queue runner startup failed', error);
   }
   try {
     // Uploaded materials are extracted in the background from their upload

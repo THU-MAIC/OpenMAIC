@@ -69,6 +69,8 @@ JSON body `{ error, reason }` where `reason` is one of:
   `RENDER_MAX_JOBS_PER_USER` active renders.
 - `resource_unavailable` — the opt-in resource owner is unavailable or admission
   is closed; operator investigation is required before resuming submissions.
+- `shutting_down` — the process received `SIGTERM` and admits no more renders;
+  send the render to another instance or retry after the restart.
 
 `POST /preview` also answers `429` with `{ error, reason }`, where `reason` is
 one of:
@@ -98,6 +100,37 @@ aggregate-only: no queue depths or occupancy counts, and never any per-identity
 data. Identity keys are client IPs when the service runs behind
 `TRUST_PROXY_HEADERS=true`, so exposing the per-identity map would publish the
 IP address of everyone currently rendering.
+
+On `SIGTERM` the service stops admitting renders: `/health` reports
+`accepting: false` from then on and new submissions get `shutting_down`. The
+process exits once nothing is reserved, queued or running, no upload is still
+being answered, and every finished render's MP4 has been downloaded once in
+full (the whole response written while the connection stayed open; a client
+that disconnects mid-download does not count): right away when that is already
+so, else as soon as it is. Jobs and their MP4s live only in this process, so a
+caller that fetches the output after polling for it (the app's durable export
+queue) gets a render that finished during the grace period. An MP4 nobody
+fetches keeps the process up until the grace period ends, or until the job
+expires (`RENDER_JOB_TTL_MS`). Nothing extends that period: a render still
+running when it ends is killed with the process, so a caller that resubmits
+lost renders sends it again elsewhere.
+
+Give the platform's termination grace period (Kubernetes
+`terminationGracePeriodSeconds`, Compose `stop_grace_period`) room for the
+longest render (`RENDER_JOB_DEADLINE_MS`, 45 minutes by default), one poll
+interval of the durable queue (5 s) and the MP4 download: with the defaults,
+`terminationGracePeriodSeconds: 2760` (46 minutes). A shorter period is still
+correct, only wasteful: a render it cuts off is rendered again.
+
+Known limitations of the exit condition:
+
+- One complete download counts for the job. If two downloads of the same job
+  run at once, the process can exit when the first completes and cut the
+  other off.
+- A download counts once its response is written. If the caller then fails to
+  store the MP4 (for the durable queue, a failed database or object-store
+  write after a complete fetch), its retry finds the process gone and the job
+  is rendered again.
 
 Previews have their own execution budget, defaulting to one concurrent preview,
 independent of the video render queue. Once a preview has passed its body and
@@ -392,6 +425,19 @@ adding a queue or changing the HTTP contract. It freezes the producer plan and
 runtime versions, bounds chunk fan-out and nested producer workers, verifies
 chunk bytes and sidecar hashes before ordered assembly, and reuses only a valid
 result for an idempotent retry. The default remains the in-process executor.
+
+Chunk planning resolves fonts the same way for every chunk, so a font missing
+from the export ZIP never fails the render. Families with an `@font-face` in
+the ZIP use it, families that Producer bundles or aliases (Inter, Roboto,
+Calibri and the rest of its alias map) are embedded from the bundled faces,
+and any other family falls back through the authored font stack in Chromium.
+Producer looks families up on Google Fonts. Once the entrypoint has installed
+the egress lockdown, the service answers those lookups locally instead of
+waiting on dropped connections, and logs the families left without a face once
+per job as a `render_font_fallback` warning. The entrypoint signals the
+lockdown by exporting `RENDER_EGRESS_LOCKDOWN_ACTIVE`; it is internal, not an
+operator setting. With egress open, Producer downloads fonts as it does on the
+in-process render path.
 
 [`@hyperframes/producer`]: https://www.npmjs.com/package/@hyperframes/producer
 

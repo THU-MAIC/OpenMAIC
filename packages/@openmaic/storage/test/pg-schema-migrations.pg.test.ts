@@ -148,7 +148,7 @@ describe.skipIf(!contractUrl)('schema migrations (PostgreSQL)', () => {
       expect(recorded.rows).toEqual([
         { store: 'agent-session', versions: [1, 2, 3, 4] },
         { store: 'agent-session-material', versions: [1, 2] },
-        { store: 'asset', versions: [1, 2, 3, 4] },
+        { store: 'asset', versions: [1, 2, 3, 4, 5] },
         { store: 'document', versions: [1, 2] },
         { store: 'runtime', versions: [1] },
         { store: 'user-skill', versions: [1] },

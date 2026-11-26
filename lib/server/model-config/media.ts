@@ -40,6 +40,7 @@ import {
   requestProvidersAllowed,
   SlotDisabledError,
   SlotUnassignedError,
+  StaleWorkspaceSettingsError,
 } from './runtime';
 
 export { adapterOptions } from './adapter-options';
@@ -78,6 +79,8 @@ export type MediaSlot = Extract<
 export interface MediaConnection {
   /** The capability's registry id (e.g. `minimax-tts`, `tavily`). */
   providerId: string;
+  /** The configured service ID, distinguishing two accounts using the same preset. */
+  serviceId?: string;
   /** The deployment provider supplying the credential, when resolved by slot. */
   deploymentProviderId?: string;
   /** Absent: the provider's default model. */
@@ -185,6 +188,7 @@ async function fromTarget(
   }
   return {
     providerId: target.registryId,
+    serviceId: target.providerId,
     ...(managed ? { deploymentProviderId: target.providerId } : {}),
     ...(target.modelId !== undefined ? { modelId: target.modelId } : {}),
     ...(target.apiKey !== undefined ? { apiKey: target.apiKey } : {}),
@@ -216,6 +220,8 @@ export function mediaConnectionFor(
 
 export interface MediaSlotOptions {
   workspaceId: string | null;
+  /** Fence account management operations to the workspace settings the caller saw. */
+  expectedRevision?: number;
   /**
    * The provider the request names the old way, or undefined when it names
    * none. Consulted only where requestMayChoose says so.
@@ -226,9 +232,9 @@ export interface MediaSlotOptions {
 /** The connection for a media slot; throws when it is turned off or unassigned. */
 export async function resolveMediaSlot(
   slot: MediaSlot,
-  { workspaceId, legacyRequest }: MediaSlotOptions,
+  { workspaceId, legacyRequest, expectedRevision }: MediaSlotOptions,
 ): Promise<MediaConnection> {
-  const resolution = await lookupSlot(slot, workspaceId);
+  const resolution = await lookupSlot(slot, workspaceId, expectedRevision);
   // Under `allowUserKeys: false` the provider a request names is ignored:
   // only the configuration decides.
   if (requestMayChoose(resolution) && requestProvidersAllowed()) {
@@ -270,6 +276,8 @@ export class RequestedProviderRefusedError extends Error {
 export function mediaResolutionResponse(error: unknown, what: string): Response | undefined {
   const authorization = modelAuthorizationResponse(error);
   if (authorization) return authorization;
+  if (error instanceof StaleWorkspaceSettingsError)
+    return apiError('INVALID_REQUEST', 409, error.message);
   if (error instanceof SlotDisabledError) {
     return apiError('PROVIDER_DISABLED', 403, `${what} is turned off on this server`);
   }

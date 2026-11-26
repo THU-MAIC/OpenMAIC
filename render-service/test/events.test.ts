@@ -61,6 +61,24 @@ describe('emitRenderEvent', () => {
     expect(lines[0]).not.toContain('null');
   });
 
+  it('logs the fallback job and unavailable families at WARN', () => {
+    const logger = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    emitRenderEvent({
+      event: 'render_font_fallback',
+      jobId: 'job-font',
+      fontFallbackCount: 2,
+      fontFallbackFamilies: ['LXGW WenKai', 'MissingFace'],
+    });
+    expect(logger).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(logger.mock.calls[0]?.[0]))).toMatchObject({
+      level: 'WARN',
+      event: 'render_font_fallback',
+      jobId: 'job-font',
+      fontFallbackCount: 2,
+      fontFallbackFamilies: ['LXGW WenKai', 'MissingFace'],
+    });
+  });
+
   it('reports a failed render at ERROR on stderr so stderr-only pipelines see it', () => {
     const { lines } = captureStdout();
     const errors: string[] = [];

@@ -240,4 +240,64 @@ describe('RenderCoordinator admission control', () => {
     );
     expect(m.accepting).toBe(true);
   });
+
+  it('closeAdmission stops accepting for good while admitted renders keep running', async () => {
+    const { executor, releaseRenders } = parkingExecutor();
+    const jobs = createMemoryJobStore();
+    const m = new RenderCoordinator(executor, jobs, createMemoryArtifactStore().store, {
+      maxQueue: 5,
+      maxConcurrency: 1,
+      maxJobsPerUser: 0,
+    });
+    const held = m.reserve(admission('alice'));
+    const jobId = await m.submit({
+      reservation: held,
+      ownerId: owner('alice'),
+      projectDir: '/tmp/whatever',
+      options: { fps: 30, quality: 'draft', format: 'mp4' },
+    });
+    // A reservation taken before the close cannot become a job after it.
+    const late = m.reserve(admission('bob'));
+
+    let idleCalls = 0;
+    m.closeAdmission(() => {
+      idleCalls += 1;
+    });
+    expect(m.accepting).toBe(false);
+    // A render is running: not idle.
+    expect(idleCalls).toBe(0);
+    await expect(captureRejection(() => m.reserve(admission('carol')))).resolves.toMatchObject({
+      reason: 'shutting_down',
+    });
+    await expect(
+      captureRejection(() =>
+        m.submit({
+          reservation: late,
+          ownerId: owner('bob'),
+          projectDir: '/tmp/wherever',
+          options: { fps: 30, quality: 'draft', format: 'mp4' },
+        }),
+      ),
+    ).resolves.toMatchObject({ reason: 'shutting_down' });
+    // Releasing the refused reservation leaves the running render: not idle yet.
+    expect(idleCalls).toBe(0);
+
+    releaseRenders();
+    // The process exits here (main.ts passes process.exit as onIdle).
+    await waitUntil(async () => (idleCalls > 0 ? true : null), 'onIdle after the render ends');
+    expect((await jobs.get(jobId))?.status).toBe('succeeded');
+    expect(m.accepting).toBe(false);
+    // Once.
+    expect(idleCalls).toBe(1);
+  });
+
+  it('closeAdmission on an idle coordinator calls onIdle at once', () => {
+    const m = newCoordinator();
+    let idleCalls = 0;
+    m.closeAdmission(() => {
+      idleCalls += 1;
+    });
+    expect(idleCalls).toBe(1);
+    expect(m.accepting).toBe(false);
+  });
 });
