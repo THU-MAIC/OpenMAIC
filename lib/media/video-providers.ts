@@ -47,15 +47,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
         id: 'doubao-seedance-2-0-mini-260615',
         name: 'Seedance 2.0 Mini',
       },
-      { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro' },
-      {
-        id: 'doubao-seedance-1-0-pro-fast-251015',
-        name: 'Seedance 1.0 Pro Fast',
-      },
-      {
-        id: 'doubao-seedance-1-0-lite-t2v-250428',
-        name: 'Seedance 1.0 Lite T2V',
-      },
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '21:9'],
     supportedDurations: [5, 10],
@@ -123,7 +114,6 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     // catalog; this seed keeps the picker usable offline.
     models: [
       { id: 'google/veo-3.1', name: 'Veo 3.1' },
-      { id: 'kwaivgi/kling-v3.0-pro', name: 'Kling v3.0 Pro' },
       { id: 'bytedance/seedance-2.5', name: 'Seedance 2.5' },
     ],
     supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],

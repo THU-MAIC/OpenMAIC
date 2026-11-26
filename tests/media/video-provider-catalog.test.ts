@@ -44,11 +44,16 @@ vi.mock('@/lib/media/adapters/openrouter-video-adapter', () => ({
 const CATALOG_IDS = Object.keys(VIDEO_PROVIDERS) as VideoProviderId[];
 
 describe('video provider catalog', () => {
-  it('keeps the retiring Seedance Lite T2V model selectable until shutdown', () => {
-    expect(VIDEO_PROVIDERS.seedance.models).toContainEqual({
-      id: 'doubao-seedance-1-0-lite-t2v-250428',
-      name: 'Seedance 1.0 Lite T2V',
-    });
+  it.each([
+    ['seedance', 'doubao-seedance-1-0-pro-250528'],
+    ['seedance', 'doubao-seedance-1-0-pro-fast-251015'],
+    ['seedance', 'doubao-seedance-1-0-lite-t2v-250428'],
+    ['openrouter-video', 'kwaivgi/kling-v3.0-pro'],
+  ] as const)('does not list the retired %s model %s', (providerId, modelId) => {
+    // Ark shut the Seedance 1.0 models down; OpenRouter no longer has an
+    // endpoint serving Kling v3.0 Pro. A model that cannot generate is not
+    // offered.
+    expect(VIDEO_PROVIDERS[providerId].models.map((model) => model.id)).not.toContain(modelId);
   });
 
   it('does not list a selectable provider that has no adapter (sora)', () => {
