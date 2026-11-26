@@ -796,6 +796,8 @@
       "summary_other": "{{count}} vấn đề",
       "empty": "Không tìm thấy vấn đề nào trong bài học này.",
       "goTo": "Đi tới",
+      "goToPage": "Đi tới {{page}}",
+      "fixPageWithAgent": "Fix issues on {{page}} with AI",
       "fixWithAgent": "Sửa lỗi bằng AI",
       "pageLabel": "Trang {{index}} · {{title}}",
       "untitledPage": "Trang chưa có tiêu đề",

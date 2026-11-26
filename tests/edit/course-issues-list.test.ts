@@ -146,18 +146,22 @@ const listedKinds = () =>
   [...(container?.querySelectorAll<HTMLElement>('[data-testid="course-issue-item"]') ?? [])].map(
     (item) => item.dataset.kind,
   );
-/** Listed issues as `sceneId:kind`, the scene read from each row's "Go to". */
+/** Listed issues as `sceneId:kind`, the scene read from the nearest page Go to above each row. */
 const listed = () =>
   [...(container?.querySelectorAll<HTMLElement>('[data-testid="course-issue-item"]') ?? [])].map(
     (item) => {
-      const goTo = item.querySelector<HTMLElement>('[data-testid^="course-issue-goto-"]');
-      return `${goTo?.dataset.testid?.slice('course-issue-goto-'.length)}:${item.dataset.kind}`;
+      // In the 2C layout the Go to button is on the page row (a sibling of the
+      // issue row's parent), not inside the item itself.
+      const pageRow = item.closest<HTMLElement>('[data-testid="course-issues-popover"] > div > div');
+      const goTo = pageRow?.querySelector<HTMLElement>('[data-testid^="course-issue-goto-"]');
+      const sceneId = goTo?.dataset.testid?.slice('course-issue-goto-'.length);
+      return `${sceneId}:${item.dataset.kind}`;
     },
   );
 const itemOn = (sceneId: string) =>
   container
     ?.querySelector(`[data-testid="course-issue-goto-${sceneId}"]`)
-    ?.closest<HTMLElement>('[data-testid="course-issue-item"]');
+    ?.closest<HTMLElement>('[data-testid="course-issues-popover"] > div > div');
 
 /**
  * Narration issues wait on the device cache's first answer, which can take a
@@ -272,12 +276,15 @@ describe('CourseIssuesButton', () => {
     expect(testId('course-issues-popover')).toBeNull();
 
     await act(async () => testId('edit-course-issues')?.click());
+    // In the 2C layout the page row is itself the Go to button; issue rows are
+    // non-interactive text. The Fix button is per-page, keyed by scene id.
     const fixCue = container?.querySelector<HTMLElement>(
-      '[data-testid^="course-issue-fix-"][data-testid*="dangling-cue"]',
+      '[data-testid="course-issue-fix-page-scene-b"]',
     );
     await act(async () => fixCue?.click());
     expect(handOff).toHaveBeenLastCalledWith({
       courseId: 'course-1',
+      // The first issue on scene-b is dangling-cue with actionId cue-b.
       prefill: 'Fix edit.issues.kind.danglingCue on Page 2 · Title 2 (cue-b)',
     });
 
@@ -424,7 +431,7 @@ describe('CourseIssuesButton', () => {
     await settle(() => testId('edit-course-issues-count')?.textContent === '2');
     await act(async () => testId('edit-course-issues')?.click());
     expect(container?.querySelectorAll('[data-testid="course-issue-item"]')).toHaveLength(2);
-    expect(container?.querySelector('[data-testid^="course-issue-fix-"]')).toBeNull();
+    expect(container?.querySelector('[data-testid^="course-issue-fix-page-"]')).toBeNull();
     expect(testId('course-issues-fix-all')).toBeNull();
   });
 

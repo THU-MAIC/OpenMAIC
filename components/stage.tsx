@@ -368,7 +368,10 @@ export function Stage({
   // could change the course: its owner, with the Pro runtime on and no
   // generation run holding the course.
   const handOffToWorkspace = useCallback(
-    (request: AgentFixRequest) => {
+    async (request: AgentFixRequest) => {
+      // Flush any pending save before opening the conversation so the agent
+      // reads the same document state the owner sees in the issues list.
+      await settlePendingStageSave();
       stageAgentFixForWorkspace(request);
       handleEnterWorkbench();
     },

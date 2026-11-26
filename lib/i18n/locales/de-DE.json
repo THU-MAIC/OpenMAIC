@@ -796,6 +796,8 @@
       "summary_other": "{{count}} Probleme",
       "empty": "In diesem Kurs wurden keine Probleme gefunden.",
       "goTo": "Anzeigen",
+      "goToPage": "Anzeigen {{page}}",
+      "fixPageWithAgent": "Fix issues on {{page}} with AI",
       "fixWithAgent": "Mit KI beheben",
       "pageLabel": "Seite {{index}} · {{title}}",
       "untitledPage": "Unbenannte Seite",

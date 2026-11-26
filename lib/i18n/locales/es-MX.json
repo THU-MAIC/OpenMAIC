@@ -796,6 +796,8 @@
       "summary_other": "{{count}} problemas",
       "empty": "No se encontraron problemas en este curso.",
       "goTo": "Ver",
+      "goToPage": "Ver {{page}}",
+      "fixPageWithAgent": "Fix issues on {{page}} with AI",
       "fixWithAgent": "Corregir con IA",
       "pageLabel": "Página {{index}} · {{title}}",
       "untitledPage": "Página sin título",

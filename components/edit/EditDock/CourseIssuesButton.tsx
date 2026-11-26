@@ -1,10 +1,11 @@
 'use client';
 
 /**
- * The course's one issues list — the phase-2 surface of `collectCourseIssues`
- * (RFC #1899 / issue #2329). The thumbnails mark each page; this popover in the
- * dock's global edit bar is where the whole course's problems are seen at once,
- * each with "Go to" and the single "Fix with agent" hand-off.
+ * The course's issues list — the phase-2 surface of `collectCourseIssues`
+ * (RFC #1899 / issue #2329). The list appears in the workspace pane and
+ * standalone classroom headers and groups problems by page: the page name is
+ * itself a "Go to" button, each issue is a non-interactive text row, and one
+ * "Fix with AI" appears per page (and one for the whole course in the header).
  *
  * It shows what the current document says, so an entry disappears the moment
  * its cause is fixed — the same derivation, never bookkeeping. Narration
@@ -14,7 +15,7 @@
  * reported to the agent by the tool that wrote the page.
  */
 import { useMemo, useState } from 'react';
-import { TriangleAlert } from 'lucide-react';
+import { CheckCircle, TriangleAlert } from 'lucide-react';
 import type { CourseIssue, CourseIssueKind } from '@openmaic/dsl';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -61,8 +62,11 @@ export function CourseIssuesButton() {
     for (const issue of issues) byScene.get(issue.sceneId)?.issues.push(issue);
     return [...byScene.values()].filter((group) => group.issues.length > 0);
   }, [scenes, issues, t]);
-  const fixIssue = (issue: CourseIssue, page: string) => {
+  const fixPage = (pageIssues: CourseIssue[], page: string) => {
     if (!handOff || !courseId) return;
+    // Fix the first issue on the page; if there are multiple, the agent can
+    // call list_course_issues to find the rest.
+    const issue = pageIssues[0]!;
     const kindText = t(KIND_LABEL_KEY[issue.kind]);
     let prefill = t('edit.issues.fixPrefillIssue', { page, issue: kindText });
     const target = issue.actionId ?? issue.elementId;
@@ -143,22 +147,45 @@ export function CourseIssuesButton() {
         </div>
         <div className="max-h-80 overflow-y-auto p-1.5">
           {groups.length === 0 ? (
-            <p className="px-2 py-3 text-xs text-gray-400 dark:text-gray-500">
-              {t('edit.issues.empty')}
-            </p>
+            <div className="flex flex-col items-center gap-1 px-2 py-4 text-xs text-gray-400 dark:text-gray-500">
+              <CheckCircle className="size-4" aria-hidden />
+              <p>{t('edit.issues.empty')}</p>
+            </div>
           ) : (
             groups.map((group) => (
               <div key={group.sceneId} className="mb-1 last:mb-0">
-                <p className="truncate px-2 pt-1.5 pb-1 text-[11px] font-medium text-gray-400 dark:text-gray-500">
-                  {group.page}
-                </p>
+                {/* Page row: clicking goes to the page. */}
+                <div className="flex items-center justify-between gap-1 rounded-md px-1 py-0.5 hover:bg-gray-100/70 dark:hover:bg-gray-800/60">
+                  <button
+                    type="button"
+                    data-testid={`course-issue-goto-${group.sceneId}`}
+                    onClick={() => goTo(group.sceneId)}
+                    className="min-w-0 flex-1 truncate text-left text-[11px] font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    aria-label={t('edit.issues.goToPage', { page: group.page })}
+                  >
+                    {group.page}
+                  </button>
+                  {fixEnabled ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      data-testid={`course-issue-fix-page-${group.sceneId}`}
+                      onClick={() => fixPage(group.issues, group.page)}
+                      aria-label={t('edit.issues.fixPageWithAgent', { page: group.page })}
+                    >
+                      {t('edit.issues.fixWithAgent')}
+                    </Button>
+                  ) : null}
+                </div>
+                {/* Issue rows: non-interactive text lines with severity dot. */}
                 {group.issues.map((issue) => (
                   <div
                     key={issue.id}
                     data-testid="course-issue-item"
                     data-kind={issue.kind}
                     data-severity={issue.severity}
-                    className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-gray-100/70 dark:hover:bg-gray-800/60"
+                    className="flex items-start gap-2 px-2 py-1"
                   >
                     <span
                       aria-hidden
@@ -169,33 +196,9 @@ export function CourseIssuesButton() {
                           : 'bg-amber-400 dark:bg-amber-500',
                       )}
                     />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs text-gray-700 dark:text-gray-200">
-                        {t(KIND_LABEL_KEY[issue.kind])}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        data-testid={`course-issue-goto-${issue.sceneId}`}
-                        onClick={() => goTo(issue.sceneId)}
-                      >
-                        {t('edit.issues.goTo')}
-                      </Button>
-                      {fixEnabled ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          data-testid={`course-issue-fix-${issue.id}`}
-                          onClick={() => fixIssue(issue, group.page)}
-                        >
-                          {t('edit.issues.fixWithAgent')}
-                        </Button>
-                      ) : null}
-                    </div>
+                    <p className="text-xs text-gray-600 dark:text-gray-300">
+                      {t(KIND_LABEL_KEY[issue.kind])}
+                    </p>
                   </div>
                 ))}
               </div>

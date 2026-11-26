@@ -4,8 +4,14 @@
  *
  * The tool call returns immediately with a `gen_vid_<id>` placeholder and the
  * provider submit → poll → download → persist cycle runs detached; this map is
- * the server's local view of those jobs, keyed by the placeholder ref, for
- * diagnostics and tests.
+ * the server's local view of those jobs, keyed by the placeholder ref.
+ *
+ * Production use: `list_course_issues` reads this registry to mark a
+ * media-not-generated issue as `note: 'generating'` while its job is running,
+ * so the agent knows not to submit a duplicate generate request. The lookup is
+ * process-local, so the note may be absent in a multi-instance deploy when the
+ * list call lands on a different instance from the generate call; that is safe
+ * to miss.
  *
  * V1 LIMITATION, accepted on purpose: the registry is process-local and holds
  * no recovery information. A restart loses every pending entry — the provider

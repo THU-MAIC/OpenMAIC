@@ -796,6 +796,8 @@
       "summary_other": "Проблем: {{count}}",
       "empty": "В этом курсе проблем не найдено.",
       "goTo": "Перейти",
+      "goToPage": "Перейти {{page}}",
+      "fixPageWithAgent": "Fix issues on {{page}} with AI",
       "fixWithAgent": "Исправить с ИИ",
       "pageLabel": "Страница {{index}} · {{title}}",
       "untitledPage": "Безымянная страница",

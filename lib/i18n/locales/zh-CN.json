@@ -796,6 +796,8 @@
       "summary_other": "{{count}} 个问题",
       "empty": "这门课程暂未发现问题。",
       "goTo": "前往",
+      "goToPage": "前往 {{page}}",
+      "fixPageWithAgent": "Fix AI: {{page}}",
       "fixWithAgent": "用 AI 修复",
       "pageLabel": "第 {{index}} 页 · {{title}}",
       "untitledPage": "未命名页面",

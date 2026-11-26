@@ -29,6 +29,7 @@ import {
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { validateSlideCanvas } from './course-edit/element-schema';
 import { interactiveRuntimeFeedback } from './interactive-runtime';
+import { getPendingMediaTask } from './pending-media';
 
 const READ_PAGE_CHARS = 12_000;
 const SEARCH_CONTEXT_CHARS = 200;
@@ -209,10 +210,12 @@ function resolveCoursePath(doc: CourseDocument, rawPath?: string): ResolvedPath 
   let scene: Scene | undefined;
   if (/^[1-9]\d*$/.test(token)) {
     scene = doc.scenes.find((item) => item.order === Number(token));
-  } else if (/^scene[-_]/.test(token)) {
-    scene = doc.scenes.find((item) => item.id === token);
   } else {
-    return `Scene selector ${JSON.stringify(token)} must be a 1-based order or scene_/scene- id. ${LEGAL_PATHS}`;
+    // Accept any existing scene id directly — a scene added in the editor
+    // can carry a plain nanoid that does not start with scene_/scene-.
+    // The existing promise in LEGAL_PATHS and skill docs already says
+    // "/scenes/<scene_id>" works; this makes the resolver match it.
+    scene = doc.scenes.find((item) => item.id === token);
   }
   if (!scene) return `Scene ${JSON.stringify(token)} was not found. ${LEGAL_PATHS}`;
   return match[2] ? { kind: 'actions', path, scene } : { kind: 'scene', path, scene };
@@ -1406,7 +1409,7 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
     name: LIST_COURSE_ISSUES_TOOL_NAME,
     label: 'List course issues',
     description:
-      "List what is currently wrong in a stage, page by page, at most 50: speech-without-audio (narration text with no generated audio; generate_tts), media-not-generated (an image or video slot still holding a generation placeholder; generate_image or generate_video), dangling-cue (a spotlight, laser or play_video cue bound to an element that is gone, or play_video bound to a non-video; rebind or remove with patch_stage), empty-actions (a page with no playback actions; generate_actions), and empty-speech, unbound-cue, empty-discussion (an action missing its text, element or topic; patch_stage). Each issue carries its page's 1-based `page` (matching the editor's issues list) plus its `scenePath` (pass it as read_stage's path or patch_stage's target), and the actionId or elementId it is about. An issue marked 'possibly local audio' may still play from the owner's device. Interactive runtime errors are not listed: where the deployment checks interactive pages, generate_scene and patch_stage report them when they write one. Call it again after fixing to confirm the issue is gone.",
+      "List what is currently wrong in a stage, page by page, at most 50: speech-without-audio (narration text with no generated audio; generate_tts), media-not-generated (an image or video slot still holding a generation placeholder; generate_image or generate_video — do not regenerate media whose note is 'generating', as a job is already running), dangling-cue (a spotlight, laser or play_video cue bound to an element that is gone, or play_video bound to a non-video; rebind or remove with patch_stage), empty-actions (a page with no playback actions; generate_actions), and empty-speech, unbound-cue, empty-discussion (an action missing its text, element or topic; patch_stage). Each issue carries its page's 1-based `page` (matching the editor's issues list) plus its `scenePath` (pass it as read_stage's path or patch_stage's target), and the actionId or elementId it is about. An issue marked 'possibly local audio' may still play from the owner's device. An issue marked 'generating' has an in-progress generation job; wait for it to finish before acting. Interactive runtime errors are not listed: where the deployment checks interactive pages, generate_scene and patch_stage report them when they write one. Call it again after fixing to confirm the issue is gone.",
     parameters: LIST_COURSE_ISSUES_SCHEMA,
     async execute(_id, params: ListIssuesParams) {
       const loaded = await loadCourse(deps, params.stageId);
@@ -1430,6 +1433,25 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
         // can say "page 3" and match what the editor's list shows, independent
         // of non-contiguous `order` values after deletions.
         const page = scenes.indexOf(scene) + 1;
+        // For media-not-generated issues, check whether the generation job is
+        // still running in this process. If so, mark it 'generating' so the
+        // agent knows not to submit another generate request (which could start
+        // a duplicate job and cost money). The registry is process-local, so
+        // this only fires when list_course_issues runs on the same instance as
+        // the generate_video / generate_image call; in multi-instance deploys
+        // the note may be absent for a short window, which is safe to miss.
+        let note: string | undefined;
+        if (issue.kind === 'media-not-generated' && issue.elementId) {
+          const canvas = scene.content.type === 'slide' ? scene.content.canvas : null;
+          const el = canvas?.elements.find((e) => e.id === issue.elementId) as
+            | { src?: string; mediaRef?: string }
+            | undefined;
+          const ref = el?.mediaRef ?? el?.src;
+          if (ref && getPendingMediaTask(ref)?.status === 'generating') {
+            note = 'generating';
+          }
+        }
+        if (!note && issue.evidence === 'local-audio-unchecked') note = 'possibly local audio';
         return {
           kind: issue.kind,
           severity: issue.severity,
@@ -1439,7 +1461,7 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
           title: scene.title,
           ...(issue.actionId ? { actionId: issue.actionId } : {}),
           ...(issue.elementId ? { elementId: issue.elementId } : {}),
-          ...(issue.evidence === 'local-audio-unchecked' ? { note: 'possibly local audio' } : {}),
+          ...(note ? { note } : {}),
         };
       });
       const details = {

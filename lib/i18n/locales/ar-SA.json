@@ -796,6 +796,8 @@
       "summary_other": "عدد المشكلات: {{count}}",
       "empty": "لم يتم العثور على مشكلات في هذه الدورة.",
       "goTo": "انتقال",
+      "goToPage": "انتقال {{page}}",
+      "fixPageWithAgent": "Fix AI: {{page}}",
       "fixWithAgent": "الإصلاح باستخدام الذكاء الاصطناعي",
       "pageLabel": "الصفحة {{index}} · {{title}}",
       "untitledPage": "صفحة بدون عنوان",

@@ -2506,3 +2506,100 @@ it('allows unrelated text edits on a slide with imported chart formatting', asyn
   expect(result).not.toHaveProperty('isError');
   expect(current.putScene).toHaveBeenCalledTimes(1);
 });
+
+// ── Point 3: resolveCoursePath accepts any exact scene id ──────────────────
+
+it('list_course_issues and read_stage / patch_stage work with a plain nanoid scene', async () => {
+  // Simulate a scene whose id was assigned by the editor (not scene-/scene_).
+  const nanoidSceneId = 'V7q4bPxK2m'; // plausible nanoid, no scene-/scene_ prefix
+  const nanoidScene: Scene = {
+    id: nanoidSceneId,
+    stageId: 'stage-test',
+    type: 'slide',
+    title: 'Nano scene',
+    order: 1,
+    content: {
+      type: 'slide',
+      canvas: {
+        id: 'c-nano',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
+        elements: [],
+      },
+    },
+    actions: [], // empty-actions issue
+    createdAt: 0,
+    updatedAt: 0,
+  } as unknown as Scene;
+  const initial = course([nanoidScene]);
+  const current = state(initial);
+  const list = tool(dslTools(current.store), 'list_course_issues');
+  const listResult = await list.execute('list-nano', {});
+  expect(listResult).not.toHaveProperty('isError');
+  const listed = JSON.parse((listResult as { content: Array<{ text: string }> }).content[0]!.text);
+  expect(listed.issues).toHaveLength(1);
+  expect(listed.issues[0].kind).toBe('empty-actions');
+  const scenePath = listed.issues[0].scenePath as string;
+  expect(scenePath).toBe(`/scenes/${nanoidSceneId}`);
+
+  // read_stage with the returned scenePath must succeed.
+  const read = tool(dslTools(current.store), 'read_stage');
+  const readResult = await read.execute('read-nano', { path: scenePath });
+  expect(readResult).not.toHaveProperty('isError');
+
+  // patch_stage with the same path must succeed.
+  const patch = tool(dslTools(current.store), 'patch_stage');
+  const patchResult = await patch.execute('patch-nano', {
+    target: scenePath,
+    intent: 'add speech action',
+    ops: [{ op: 'set', path: '/actions/0', value: { id: 'speech-new', type: 'speech', text: 'Hi', audioId: 'x' } }],
+  });
+  expect(patchResult).not.toHaveProperty('isError');
+  expect(current.putScene).toHaveBeenCalledTimes(1);
+});
+
+// ── Point 4: list_course_issues marks generating media ────────────────────
+
+it('list_course_issues marks media-not-generated as generating while a job is running', async () => {
+  const { registerPendingMedia, clearPendingMediaTasks } = await import(
+    '@/lib/server/agent-runtime/pending-media'
+  );
+  const ref = 'gen_vid_test123';
+  const elemId = 'el-video';
+  const videoScene: Scene = {
+    id: 'scene_vid',
+    stageId: 'stage-test',
+    type: 'slide',
+    title: 'Video page',
+    order: 1,
+    content: {
+      type: 'slide',
+      canvas: {
+        id: 'c-vid',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
+        elements: [
+          { id: elemId, type: 'video', left: 0, top: 0, width: 100, height: 100, rotate: 0, src: ref, fixedRatio: true },
+        ],
+      },
+    },
+    actions: [{ id: 's1', type: 'speech', text: 'Hi', audioId: 'x' }],
+    createdAt: 0,
+    updatedAt: 0,
+  } as unknown as Scene;
+  registerPendingMedia({ ref, type: 'video', stageId: 'stage-test' });
+  try {
+    const current = state(course([videoScene]));
+    const list = tool(dslTools(current.store), 'list_course_issues');
+    const result = await list.execute('list-vid', {});
+    expect(result).not.toHaveProperty('isError');
+    const listed = JSON.parse((result as { content: Array<{ text: string }> }).content[0]!.text);
+    expect(listed.issues).toHaveLength(1);
+    expect(listed.issues[0].kind).toBe('media-not-generated');
+    expect(listed.issues[0].note).toBe('generating');
+  } finally {
+    clearPendingMediaTasks();
+  }
+});

@@ -796,6 +796,8 @@
       "summary_other": "문제 {{count}}개",
       "empty": "이 코스에서 발견된 문제가 없습니다.",
       "goTo": "이동",
+      "goToPage": "이동 {{page}}",
+      "fixPageWithAgent": "Fix AI: {{page}}",
       "fixWithAgent": "AI로 수정",
       "pageLabel": "{{index}}페이지 · {{title}}",
       "untitledPage": "제목 없는 페이지",

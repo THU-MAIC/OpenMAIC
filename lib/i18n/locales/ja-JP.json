@@ -796,6 +796,8 @@
       "summary_other": "{{count}} 件の問題",
       "empty": "このコースに問題は見つかりませんでした。",
       "goTo": "移動",
+      "goToPage": "移動 {{page}}",
+      "fixPageWithAgent": "Fix AI: {{page}}",
       "fixWithAgent": "AIで修正",
       "pageLabel": "ページ {{index}} · {{title}}",
       "untitledPage": "無題のページ",
