@@ -35,7 +35,7 @@ import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator.js';
 import { postProcessInteractiveHtml } from './interactive-post-processor.js';
 import { findInteractiveScriptSyntaxFailure } from './interactive-script-validator.js';
 import { parseActionsFromStructuredOutput } from './action-parser.js';
-import { parseJsonResponse } from './json-repair.js';
+import { parseJsonResponse, parseJsonResponseWithCandidate } from './json-repair.js';
 import {
   buildCourseContext,
   formatAgentsForPrompt,
@@ -779,14 +779,17 @@ async function generateSlideContent(
     // channel course-generation uses), and `resolveImageIds` resolves the ids
     // back to real srcs after generation. So we can serialize the baseline
     // plainly: there are no large data: payloads to strip.
-    const baselineBlock = baselineContent
+    const baselineForPrompt = baselineContent
+      ? repairLatexControlCharactersInBaseline(baselineContent)
+      : undefined;
+    const baselineBlock = baselineForPrompt
       ? `\nThe current slide content (JSON), to use as the editing baseline:\n${JSON.stringify({
-          elements: baselineContent.elements,
-          background: baselineContent.background,
+          elements: baselineForPrompt.elements,
+          background: baselineForPrompt.background,
         })}`
       : '';
     const hasBaselineImages = !!baselineContent?.elements?.some(
-      (el) => (el as { type?: string }).type === 'image',
+      (el) => el && typeof el === 'object' && (el as { type?: string }).type === 'image',
     );
     const imageRule = hasBaselineImages
       ? ` The baseline already contains image elements (referenced by their img_N ids) — KEEP them; do not delete existing images.`
@@ -803,7 +806,8 @@ async function generateSlideContent(
   }
 
   const response = await aiCall(prompts.system, userPrompt, visionImages);
-  const generatedData = parseJsonResponse<GeneratedSlideData>(response);
+  const parsed = parseJsonResponseWithCandidate<GeneratedSlideData>(response);
+  const generatedData = parsed?.data;
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
     log.error(`Failed to parse AI response for: ${outline.title}`);
@@ -815,6 +819,13 @@ async function generateSlideContent(
   if (invalidRotation) {
     log.error(invalidRotation);
     onFailure?.({ code: 'invalid-model-output', message: invalidRotation });
+    return null;
+  }
+
+  const malformedLatex = findMalformedLatex(generatedData.elements, parsed.candidate);
+  if (malformedLatex) {
+    log.error(malformedLatex);
+    onFailure?.({ code: 'invalid-model-output', message: malformedLatex });
     return null;
   }
 
@@ -894,6 +905,54 @@ async function generateSlideContent(
   };
 }
 
+function repairLatexControlCharactersInBaseline(
+  baseline: GeneratedSlideContent,
+): GeneratedSlideContent {
+  if (!baseline || !Array.isArray(baseline.elements)) {
+    return baseline;
+  }
+
+  let hasChanges = false;
+  const repairedElements = baseline.elements.map((element) => {
+    if (!element || typeof element !== 'object') {
+      return element;
+    }
+
+    if ((element as { type?: unknown }).type !== 'latex') {
+      return element;
+    }
+
+    const rawLatex = (element as { latex?: unknown }).latex;
+    if (typeof rawLatex !== 'string') {
+      return element;
+    }
+
+    const latex = rawLatex.replace(/[\x08\x09\x0c\x0d]/g, (character) => {
+      switch (character) {
+        case '\x08':
+          return '\\b';
+        case '\x09':
+          return '\\t';
+        case '\x0c':
+          return '\\f';
+        case '\x0d':
+          return '\\r';
+        default:
+          return character;
+      }
+    });
+
+    if (latex !== rawLatex) {
+      hasChanges = true;
+      return { ...element, latex };
+    }
+
+    return element;
+  });
+
+  return hasChanges ? { ...baseline, elements: repairedElements } : baseline;
+}
+
 function findInvalidShapeRotation(elements: GeneratedSlideData['elements']): string | undefined {
   for (const [index, element] of elements.entries()) {
     if (!element || typeof element !== 'object') {
@@ -911,6 +970,117 @@ function findInvalidShapeRotation(elements: GeneratedSlideData['elements']): str
     const received = typeof rotate === 'number' ? String(rotate) : JSON.stringify(rotate);
     return `Invalid shape rotation at shape[${index}].rotate: expected a finite number in degrees or null, received ${received}`;
   }
+  return undefined;
+}
+
+/**
+ * Detect malformed LaTeX in generated slide elements or raw JSON response.
+ *
+ * Plain `JSON.parse` silently decodes raw LaTeX backslashes as valid JSON escapes:
+ * - `\frac` -> `\f` (ASCII 0x0c, Form Feed) + `rac`
+ * - `\times` -> `\t` (ASCII 0x09, Tab) + `imes`
+ * - `\nu` -> `\n` (ASCII 0x0a, Newline) + `u`
+ * - `\beta` -> `\b` (ASCII 0x08, Backspace) + `eta`
+ * - `\rho` -> `\r` (ASCII 0x0d, Carriage Return) + `ho`
+ *
+ * This function validates that LaTeX output was not corrupted by raw JSON escapes,
+ * rejecting suspicious malformed LaTeX so generation can be retried.
+ */
+export function findMalformedLatex(
+  elements: GeneratedSlideData['elements'],
+  rawResponse?: string,
+): string | undefined {
+  if (rawResponse) {
+    const latexPropertyRegex = /"latex"\s*:\s*"((?:[^"\\]|\\[\s\S])*?)"/g;
+    for (const match of rawResponse.matchAll(latexPropertyRegex)) {
+      const rawContent = match[1];
+      let i = 0;
+      while (i < rawContent.length) {
+        if (rawContent[i] === '\\') {
+          let slashCount = 0;
+          while (i + slashCount < rawContent.length && rawContent[i + slashCount] === '\\') {
+            slashCount++;
+          }
+          // Escaped pairs (\\) decode to literal single backslashes in JSON
+          if (slashCount % 2 === 0) {
+            i += slashCount;
+            continue;
+          }
+          // The last backslash is an unescaped single backslash in JSON
+          const slashIndex = i + slashCount - 1;
+          const nextIndex = slashIndex + 1;
+          if (nextIndex >= rawContent.length) {
+            i = nextIndex;
+            break;
+          }
+          const nextChar = rawContent[nextIndex];
+          if (nextChar === 'u' || nextChar === 'U') {
+            const hexDigits = rawContent.slice(nextIndex + 1, nextIndex + 5);
+            if (/^[0-9a-fA-F]{4}$/.test(hexDigits)) {
+              // Valid \uXXXX JSON Unicode escape; consume the escape sequence
+              i = nextIndex + 5;
+              continue;
+            }
+            // Not 4 hex digits: raw unescaped LaTeX command (e.g. \upsilon, \underline)
+            const cmdMatch = rawContent.slice(nextIndex).match(/^[a-zA-Z]+/);
+            const cmd = cmdMatch ? cmdMatch[0] : nextChar;
+            return `Malformed LaTeX in JSON: raw unescaped LaTeX command \\${cmd} in "latex" property`;
+          }
+          if (
+            nextChar === 'n' ||
+            nextChar === 't' ||
+            nextChar === 'r' ||
+            nextChar === 'f' ||
+            nextChar === 'b'
+          ) {
+            const afterChar = rawContent[nextIndex + 1];
+            if (afterChar && /^[a-zA-Z]$/.test(afterChar)) {
+              // Genuine LaTeX command starting with JSON escape letter (e.g. \frac, \times, \nu, \beta, \rho)
+              const cmdMatch = rawContent.slice(nextIndex).match(/^[a-zA-Z]+/);
+              const cmd = cmdMatch ? cmdMatch[0] : nextChar;
+              return `Malformed LaTeX in JSON: raw unescaped LaTeX command \\${cmd} in "latex" property`;
+            }
+            // Legitimate JSON whitespace escape (\n, \t, etc.) followed by non-letter
+            i = nextIndex + 1;
+            continue;
+          }
+          if (nextChar === '"' || nextChar === '/') {
+            // Valid JSON escape: \" or \/
+            i = nextIndex + 1;
+            continue;
+          }
+          // Any other character after an unescaped backslash is invalid JSON (e.g. \alpha, \sum, \int, \{, \%, \,)
+          const cmdMatch = rawContent.slice(nextIndex).match(/^[a-zA-Z]+/);
+          const cmd = cmdMatch ? cmdMatch[0] : nextChar;
+          return `Malformed LaTeX in JSON: raw unescaped LaTeX command \\${cmd} in "latex" property`;
+        } else {
+          i++;
+        }
+      }
+    }
+  }
+
+  for (const [index, element] of elements.entries()) {
+    if (!element || typeof element !== 'object' || element.type !== 'latex') {
+      continue;
+    }
+
+    const latex = element.latex;
+    if (typeof latex !== 'string') {
+      return `Invalid latex element at latex[${index}]: expected string, received ${typeof latex}`;
+    }
+
+    if (!rawResponse) {
+      if (/[\x08\x0c]/.test(latex)) {
+        return `Malformed LaTeX at latex[${index}]: contains control characters decoded from unescaped LaTeX backslash`;
+      }
+
+      if (/\t[a-zA-Z]/.test(latex)) {
+        return `Malformed LaTeX at latex[${index}]: contains tab character decoded from unescaped LaTeX \\t command`;
+      }
+    }
+  }
+
   return undefined;
 }
 
