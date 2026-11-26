@@ -1,4 +1,8 @@
-import { PROVIDER_MIGRATION_URL } from '@/lib/config/provider-migration';
+import {
+  LEGACY_BEARER_TOKEN_ENV,
+  PROVIDER_MIGRATION_NOTICE,
+  PROVIDER_MIGRATION_URL,
+} from '@/lib/config/provider-migration';
 import { deprecatedProviderSettings } from '@/lib/server/provider-config';
 import type { ModelConfigFile } from './openmaic-yml';
 import {
@@ -69,16 +73,17 @@ export function loadDeploymentLayer(): DeploymentLayer {
     },
   });
   const loaded = loadModelConfigFile(env);
-  // A declared Bedrock provider reads its region directly from the environment.
+  // A declared Bedrock provider can read its region and bearer token from the environment.
   if (Object.values(loaded?.providers ?? {}).some((provider) => provider.preset === 'bedrock')) {
     referencedEnv.add('BEDROCK_REGION');
+    referencedEnv.add(LEGACY_BEARER_TOKEN_ENV);
   }
   const deprecated = deprecatedProviderSettings(process.env, referencedEnv);
   const notices = [
     ...retiredVariableNotices(),
     ...(deprecated.length
       ? [
-          `Deprecated provider settings detected: ${deprecated.join(', ')}. Provider configuration comes from openmaic.yml or Model Settings. Migration: ${PROVIDER_MIGRATION_URL}`,
+          `${PROVIDER_MIGRATION_NOTICE} ${deprecated.join(', ')}. Provider configuration comes from openmaic.yml or Model Settings. Migration: ${PROVIDER_MIGRATION_URL}`,
         ]
       : []),
   ];

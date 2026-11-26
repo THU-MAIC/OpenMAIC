@@ -117,7 +117,7 @@ it('Bedrock credential chain is guarded in slots, request-body models and picker
   });
   const { resolveRequestedModel } = await import('@/lib/server/resolve-model');
   await expect(resolveRequestedModel({ modelString: 'bedrock:unlisted' })).rejects.toThrow(
-    'Amazon Bedrock must be enabled by the server operator',
+    /not authorized/,
   );
   const { modelSettingsView } = await import('@/lib/server/model-config/settings');
   expect(modelSettingsView(null).providers[0].capabilities.chat?.models.map((m) => m.id)).toEqual([

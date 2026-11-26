@@ -262,7 +262,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 選填：openmaic.yml 的其他�
 
 生成請求不再需要攜帶 key 或模型選擇：`/api/generate-classroom` 等無瀏覽器 API 呼叫會依呼叫端所在的工作區，透過與 Web 端相同的插槽解析模型。
 
-帶有已棄用標頭（例如 `x-model` 或 `x-api-key`）的請求會收到 HTTP 400 和遷移說明。請移除這些標頭。
+帶有已棄用標頭（例如 `x-model` 或 `x-api-key`）的請求會收到 HTTP 400 和遷移說明。請移除這些標頭。`/api/health` 會忽略這些舊標頭，健康檢查可繼續執行。
 
 ### 從舊設定遷移
 
@@ -287,7 +287,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -301,9 +307,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -312,11 +331,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-之後刪除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持工作台智慧體關閉，請寫 `agent: null`。
+此範例沿用舊版 OpenAI 圖像備援行為，讓對話與圖像生成共用 `OPENAI_API_KEY`。若圖像有獨立金鑰或端點，請在 `openai-image` 中透過 `IMAGE_OPENAI_API_KEY` 或 `IMAGE_OPENAI_BASE_URL` 設定。對於會選擇模型的媒體插槽，請在插槽參照中填入舊部署實際使用的模型。
+
+將模型清單寫入 YAML 後，移除舊的 `*_MODELS` 環境變數，以及 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。供應商變數可以保留，作為 `${VAR}` 引用的來源。`<PREFIX>_BASE_URL` 對應供應商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接寫 URL，或在變數仍然設定時寫 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 對應它的 `models` 清單。與轉換得到的 `DEFAULT_MODEL` 一樣，這裡寫出的 `llm` 是工作區可以修改的伺服器端預設值；如需對所有人固定，請加上 `lock: [llm]`。與轉換結果不同，`agent` 現在會沿用 `llm`：如需維持工作台智慧體關閉，請寫 `agent: null`。
 
 **server-providers.yml。** 遷移前：
 

@@ -262,7 +262,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # необязательно: др�
 
 Запросам на генерацию больше не нужно передавать ключи или выбор модели: безбраузерные вызовы API, например `/api/generate-classroom`, разрешаются через те же слоты, что и веб-приложение, для рабочего пространства вызывающего.
 
-Запросы с устаревшими заголовками, например `x-model` или `x-api-key`, получают HTTP 400 с инструкциями по миграции. Удалите эти заголовки.
+Запросы с устаревшими заголовками, например `x-model` или `x-api-key`, получают HTTP 400 с инструкциями по миграции. Удалите эти заголовки. Эндпоинт `/api/health` игнорирует устаревшие заголовки провайдера, чтобы проверки работоспособности продолжали работать.
 
 ### Миграция со старой конфигурации
 
@@ -287,7 +287,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -301,9 +307,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -312,11 +331,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-Затем удалите `DEFAULT_MODEL` и `MODEL_FALLBACK`. Переменные провайдеров можно оставить как источник ссылок `${VAR}`. `<PREFIX>_BASE_URL` становится `baseUrl` провайдера (`OPENAI_BASE_URL` → `baseUrl` у `openai`; укажите URL или `${OPENAI_BASE_URL}`, пока переменная задана), а `<PREFIX>_MODELS` — его списком `models`. Как и преобразованный `DEFAULT_MODEL`, записанный здесь `llm` — значение сервера по умолчанию, которое рабочие пространства могут изменить; добавьте `lock: [llm]`, чтобы закрепить его для всех. В отличие от преобразования, `agent` теперь следует за `llm`: чтобы агент workbench оставался выключенным, запишите `agent: null`.
+В примере чат и генерация изображений используют общий `OPENAI_API_KEY`, как и в старой конфигурации OpenAI. Если для изображений использовался отдельный ключ или адрес, укажите их в `openai-image` через `IMAGE_OPENAI_API_KEY` или `IMAGE_OPENAI_BASE_URL`. В каждом медиаслоте с выбором модели укажите модель, которую использовало старое развёртывание.
+
+После переноса списков моделей в YAML удалите старые переменные окружения `*_MODELS`, а также `DEFAULT_MODEL` и `MODEL_FALLBACK`. Переменные провайдеров можно оставить как источник ссылок `${VAR}`. `<PREFIX>_BASE_URL` становится `baseUrl` провайдера (`OPENAI_BASE_URL` → `baseUrl` у `openai`; укажите URL или `${OPENAI_BASE_URL}`, пока переменная задана), а `<PREFIX>_MODELS` — его списком `models`. Как и преобразованный `DEFAULT_MODEL`, записанный здесь `llm` — значение сервера по умолчанию, которое рабочие пространства могут изменить; добавьте `lock: [llm]`, чтобы закрепить его для всех. В отличие от преобразования, `agent` теперь следует за `llm`: чтобы агент workbench оставался выключенным, запишите `agent: null`.
 
 **server-providers.yml.** До:
 

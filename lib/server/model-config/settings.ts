@@ -51,6 +51,7 @@ import {
 import { acceptsWorkspaceToolBaseUrl, isForceDisabled, isLocalEndpoint } from './media';
 import {
   checkModelConfigShape,
+  parseModelRef,
   thinkingEffortIssue,
   type ModelConfigFile,
   type SlotAssignment,
@@ -60,6 +61,8 @@ import {
   findAssignment,
   lockingNode,
   resolveSlot,
+  retiredProviderIds,
+  withoutAssignmentsNaming,
   SlotResolutionError,
   type ModelConfigLayer,
   type ResolvedModelTarget,
@@ -751,9 +754,31 @@ export async function applyModelSettingsChange(
   const { layer: deployment } = deploymentConfig();
   const deploymentProviders = deployment?.config.providers ?? {};
   const allowProviders = userKeysAllowed(deployment);
+  const currentLayers: ModelConfigLayer[] = [];
+  if (deployment) currentLayers.push(deployment);
+  if (current) currentLayers.push({ source: 'workspace', config: current });
+  const stale = retiredProviderIds(currentLayers);
+  // Deployment ids from pre-upgrade settings may no longer be declared.
+  // Repair the stored references before applying the edit, then validate any
+  // new assignment normally.
+  for (const assignment of Object.values(current?.slots ?? {})) {
+    const refs =
+      typeof assignment === 'string' ? [assignment] : [assignment?.model, assignment?.fallback];
+    for (const ref of refs) {
+      if (!ref) continue;
+      const { providerId } = parseModelRef(ref);
+      if (
+        !Object.hasOwn(deploymentProviders, providerId) &&
+        !Object.hasOwn(current?.providers ?? {}, providerId) &&
+        providerId !== defaultWebFetchProviderId(currentLayers)
+      ) {
+        stale.add(providerId);
+      }
+    }
+  }
   const next: ModelConfigFile = {
     ...(current?.providers ? { providers: { ...current.providers } } : {}),
-    ...(current?.slots ? { slots: { ...current.slots } } : {}),
+    ...(current?.slots ? { slots: withoutAssignmentsNaming(current.slots, stale) } : {}),
   };
   const slots = (next.slots ??= {}) as Record<string, SlotAssignment>;
   const providers = (next.providers ??= {});

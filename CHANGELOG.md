@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking Changes
 
-- Provider configuration (1.6.0): migrate provider environment variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings. Startup logs the names of detected legacy settings and continues so a workspace without a model can open first-run setup. Existing `${VAR}` references and operator force-off settings still work.
-- API clients: remove deprecated provider headers such as `x-api-key` and `x-model`. The server returns HTTP 400 with migration instructions. Replace `/api/server-providers` with `/api/generate-classroom/capabilities` for generation capabilities or `/api/health` for scene concurrency. [Migration guide](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration)
+- Provider configuration (1.6.0): migrate provider environment variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings. Startup logs the names of detected legacy settings at error level and continues so a workspace without a model can open first-run setup. Existing `${VAR}` references and operator force-off settings still work.
+- API clients: remove deprecated provider headers such as `x-api-key` and `x-model`. The server returns HTTP 400 with migration instructions. `/api/health` ignores deprecated provider headers. Replace `/api/server-providers` with `/api/generate-classroom/capabilities` for generation capabilities or `/api/health` for scene concurrency. [Migration guide](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration)
 
 ### Other Changes
 

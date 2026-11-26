@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const bedrockMock = vi.hoisted(() => ({
   languageModel: vi.fn((modelId: string) => ({ endpoint: 'bedrock', modelId })),
@@ -16,6 +16,60 @@ vi.mock('@aws-sdk/credential-providers', () => ({
 }));
 
 import { getModel, getModelInfo, getProvider, isProviderKeyRequired } from '@/lib/ai/providers';
+
+import { resolveModel } from '@/lib/server/resolve-model';
+import { setDeploymentConfigForTests } from '@/lib/server/model-config/runtime';
+
+describe('Bedrock body requests', () => {
+  afterEach(() => setDeploymentConfigForTests());
+
+  it('uses the declared deployment provider while enforcing its model allowlist', async () => {
+    const modelId = 'us.anthropic.claude-sonnet-5';
+    setDeploymentConfigForTests({
+      layer: null,
+      legacy: false,
+      notices: [],
+    });
+    await expect(resolveModel({ modelString: `bedrock:${modelId}` })).rejects.toThrow(
+      'must be enabled by the server operator',
+    );
+
+    bedrockMock.createAmazonBedrock.mockReturnValue(bedrockMock.languageModel);
+    setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          providers: {
+            bedrock: {
+              preset: 'bedrock',
+              apiKey: 'example-server-token',
+              baseUrl: 'https://example.com',
+              models: [modelId],
+            },
+          },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
+    await expect(
+      resolveModel({
+        modelString: `bedrock:${modelId}`,
+        apiKey: 'example-client-token',
+        baseUrl: 'https://example.org',
+      }),
+    ).resolves.toMatchObject({ providerId: 'bedrock', modelId, serverManaged: true });
+    expect(bedrockMock.createAmazonBedrock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        apiKey: 'example-server-token',
+        baseURL: 'https://example.com',
+      }),
+    );
+    await expect(resolveModel({ modelString: 'bedrock:unlisted' })).rejects.toThrow(
+      /not authorized/,
+    );
+  });
+});
 
 describe('Bedrock provider defaults', () => {
   beforeEach(() => {

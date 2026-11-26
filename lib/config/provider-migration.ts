@@ -1,6 +1,9 @@
 export const PROVIDER_MIGRATION_URL =
   'https://github.com/THU-MAIC/OpenMAIC/blob/main/packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration';
 
+export const PROVIDER_MIGRATION_NOTICE = 'Deprecated provider settings detected:';
+export const LEGACY_BEARER_TOKEN_ENV = 'AWS_BEARER_TOKEN_BEDROCK';
+
 export const DEPRECATED_PROVIDER_HEADERS = [
   'x-api-key',
   'x-base-url',

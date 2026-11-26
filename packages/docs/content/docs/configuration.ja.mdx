@@ -262,7 +262,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 任意：openmaic.yml の別の�
 
 生成リクエストでキーやモデルの選択を送る必要はなくなりました。`/api/generate-classroom` のようなブラウザーを使わない API 呼び出しも、呼び出し元のワークスペースについて Web アプリと同じスロットで解決されます。
 
-非推奨のヘッダー（`x-model` や `x-api-key` など）を含むリクエストには、HTTP 400 と移行手順が返ります。これらのヘッダーを削除してください。
+非推奨のヘッダー（`x-model` や `x-api-key` など）を含むリクエストには、HTTP 400 と移行手順が返ります。これらのヘッダーを削除してください。ヘルスチェックが続行できるよう、`/api/health` は非推奨のプロバイダーヘッダーを無視します。
 
 ### 旧設定からの移行
 
@@ -287,7 +287,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -301,9 +307,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -312,11 +331,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-その後 `DEFAULT_MODEL` と `MODEL_FALLBACK` を削除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。`<PREFIX>_BASE_URL` はプロバイダーの `baseUrl` になり（`OPENAI_BASE_URL` → `openai` の `baseUrl`。URL を直接書くか、変数を設定したままなら `${OPENAI_BASE_URL}` と書きます）、`<PREFIX>_MODELS` はその `models` リストになります。変換された `DEFAULT_MODEL` と同じく、ここに書いた `llm` はワークスペースが変更できるサーバーの既定値です。全員に対して固定するには `lock: [llm]` を加えてください。変換結果と異なり、`agent` は `llm` に従うようになります。ワークベンチのエージェントを無効のままにするには `agent: null` と書いてください。
+この例では、従来の OpenAI 画像のフォールバックと同様に、チャットと画像生成で `OPENAI_API_KEY` を共有します。画像専用のキーやエンドポイントを使っていた場合は、`openai-image` に `IMAGE_OPENAI_API_KEY` や `IMAGE_OPENAI_BASE_URL` を設定します。モデルを選ぶメディアスロットには、旧デプロイで実際に使っていたモデルを指定します。
+
+モデル一覧を YAML に転記したら、古い `*_MODELS` 環境変数と `DEFAULT_MODEL`、`MODEL_FALLBACK` の設定を解除します。プロバイダー変数は `${VAR}` 参照の元として残して構いません。`<PREFIX>_BASE_URL` はプロバイダーの `baseUrl` になり（`OPENAI_BASE_URL` → `openai` の `baseUrl`。URL を直接書くか、変数を設定したままなら `${OPENAI_BASE_URL}` と書きます）、`<PREFIX>_MODELS` はその `models` リストになります。変換された `DEFAULT_MODEL` と同じく、ここに書いた `llm` はワークスペースが変更できるサーバーの既定値です。全員に対して固定するには `lock: [llm]` を加えてください。変換結果と異なり、`agent` は `llm` に従うようになります。ワークベンチのエージェントを無効のままにするには `agent: null` と書いてください。
 
 **server-providers.yml。** 移行前：
 

@@ -123,7 +123,7 @@ describe('retired provider request headers', () => {
     },
   );
 
-  it.each(['/api/health', '/api/access-code/verify'])(
+  it.each(['/api/access-code/verify'])(
     'keeps %s public while rejecting deprecated headers with or without an access code',
     async (path) => {
       for (const code of ['', CODE]) {
@@ -137,6 +137,14 @@ describe('retired provider request headers', () => {
       }
     },
   );
+
+  it.each(['', CODE])('ignores legacy provider headers on the health probe (%s)', async (code) => {
+    vi.stubEnv('ACCESS_CODE', code);
+    const request = new NextRequest('http://localhost/api/health', {
+      headers: { 'x-api-key': 'old', 'x-model': 'old' },
+    });
+    expect((await middleware(request)).headers.get('x-middleware-next')).toBe('1');
+  });
 
   it('checks access before reporting deprecated headers on protected routes', async () => {
     vi.stubEnv('ACCESS_CODE', CODE);

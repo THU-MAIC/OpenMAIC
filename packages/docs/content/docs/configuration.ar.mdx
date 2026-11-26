@@ -262,7 +262,7 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # اختياري: مسار آخر �
 
 لم تعد طلبات التوليد بحاجة إلى حمل مفاتيح أو اختيارات نماذج: استدعاءات API التي تعمل بلا متصفح، مثل `/api/generate-classroom`، تُحل عبر الخانات نفسها التي يستخدمها تطبيق الويب، لمساحة عمل المستدعي.
 
-إذا تضمّن الطلب ترويسات قديمة مثل `x-model` أو `x-api-key`، يعيد الخادم HTTP 400 مع تعليمات الانتقال. احذف هذه الترويسات.
+إذا تضمّن الطلب ترويسات قديمة مثل `x-model` أو `x-api-key`، يعيد الخادم HTTP 400 مع تعليمات الانتقال. احذف هذه الترويسات. تتجاهل نقطة النهاية `/api/health` ترويسات المزود القديمة حتى تستمر فحوصات السلامة.
 
 ### الانتقال من الإعدادات القديمة
 
@@ -287,7 +287,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -301,9 +307,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -312,11 +331,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-احذف بعد ذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. ومثل `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا قيمة افتراضية للخادم يمكن لمساحات العمل تغييرها؛ أضف `lock: [llm]` لتثبيته للجميع. وعلى خلاف التحويل، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل workbench موقوفًا.
+يشارك المثال `OPENAI_API_KEY` بين المحادثة وتوليد الصور كما كانت تفعل آلية OpenAI القديمة للصور. إذا كان للصور مفتاح أو عنوان مستقل، فاضبطه في `openai-image` عبر `IMAGE_OPENAI_API_KEY` أو `IMAGE_OPENAI_BASE_URL`. حدّد في كل خانة وسائط تختار نموذجًا النموذج الذي كان يستخدمه النشر السابق.
+
+بعد نقل قوائم النماذج إلى YAML، أزل متغيرات البيئة القديمة `*_MODELS` وكذلك `DEFAULT_MODEL` و`MODEL_FALLBACK`. يمكن إبقاء متغيرات المزودين مصدرًا لإشارات `${VAR}`. يصبح `<PREFIX>_BASE_URL` قيمة `baseUrl` للمزود (`OPENAI_BASE_URL` ← `baseUrl` تحت `openai`؛ اكتب العنوان، أو `${OPENAI_BASE_URL}` ما دام المتغير مضبوطًا)، ويصبح `<PREFIX>_MODELS` قائمة `models` الخاصة به. ومثل `DEFAULT_MODEL` المحوَّل، فإن `llm` المكتوب هنا قيمة افتراضية للخادم يمكن لمساحات العمل تغييرها؛ أضف `lock: [llm]` لتثبيته للجميع. وعلى خلاف التحويل، أصبحت `agent` تتبع `llm`: اكتب `agent: null` لإبقاء وكيل workbench موقوفًا.
 
 **server-providers.yml.** قبل:
 

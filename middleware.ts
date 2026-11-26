@@ -54,7 +54,7 @@ export async function middleware(request: NextRequest) {
 
   // Keep the existing access gate ahead of migration errors.
   const forward = () => {
-    if (pathname.startsWith('/api/')) {
+    if (pathname.startsWith('/api/') && pathname !== '/api/health') {
       const deprecated = DEPRECATED_PROVIDER_HEADERS.filter((name) => request.headers.has(name));
       if (deprecated.length) {
         return NextResponse.json(

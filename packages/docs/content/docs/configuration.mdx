@@ -106,7 +106,7 @@ Each entry under `providers` declares one provider. The key is its id, which slo
 
 Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
 
-Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; `apiKey` is an optional bearer token.
+Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; Use `AWS_BEARER_TOKEN_BEDROCK` for a declared Bedrock provider or set its `apiKey` explicitly. To keep accepting an existing request body that names `bedrock:<model>`, declare the deployment provider as `providers.bedrock` and authorize that model.
 
 ### Slots
 
@@ -312,11 +312,11 @@ A deployment that wants users to reach internal services declares those provider
 
 Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
 
-Starting in 1.6.0, requests with deprecated provider headers such as `x-model` or `x-api-key` return HTTP 400. Remove the headers and configure the provider and slots through Model Settings or `openmaic.yml`. Use `/api/generate-classroom/capabilities` for course-generation capability discovery and `/api/health` for the scene concurrency value previously returned by `/api/server-providers`.
+Starting in 1.6.0, requests with deprecated provider headers such as `x-model` or `x-api-key` return HTTP 400. Remove the headers and configure the provider and slots through Model Settings or `openmaic.yml`. Use `/api/generate-classroom/capabilities` for course-generation capability discovery and `/api/health` for the scene concurrency value previously returned by `/api/server-providers`. The `/api/health` endpoint ignores deprecated provider headers so health probes keep working.
 
 ### Migrating from the legacy configuration
 
-Starting in 1.6.0, startup logs the names of detected legacy provider settings and continues. A workspace with no saved configuration or configured model can use first-run setup. To migrate operator-managed providers, declare them and their assignments in `openmaic.yml` as follows.
+Starting in 1.6.0, startup logs the names of detected legacy provider settings at error level and continues. A workspace with no saved configuration or configured model can use first-run setup. To migrate operator-managed providers, declare them and their assignments in `openmaic.yml` as follows.
 
 | Legacy setting | `openmaic.yml` |
 | --- | --- |
@@ -337,7 +337,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -351,9 +357,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -362,11 +381,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the workbench agent off.
+The example reuses `OPENAI_API_KEY` for chat and image generation, as the legacy OpenAI image fallback did. If images had their own key or endpoint, set them on `openai-image` using `IMAGE_OPENAI_API_KEY` or `IMAGE_OPENAI_BASE_URL`. For each media slot that selects a model, copy the exact model the old deployment used into the slot reference.
+
+After copying the model lists into YAML, unset the old `*_MODELS` variables along with `DEFAULT_MODEL` and `MODEL_FALLBACK`. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the workbench agent off.
 
 **server-providers.yml.** Before:
 

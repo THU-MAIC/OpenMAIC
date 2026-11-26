@@ -104,17 +104,18 @@ describe('model configuration at boot', () => {
     expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
   });
 
-  it('warns and completes startup with MODEL_ROUTES and no configuration file', async () => {
+  it('reports MODEL_ROUTES at error level and completes startup without a config file', async () => {
     vi.stubEnv('OPENMAIC_CONFIG', '');
     vi.spyOn(process, 'cwd').mockReturnValue(dir);
     vi.stubEnv('MODEL_ROUTES', '{"scene-content":"openai:gpt-5.6"}');
     const { register } = await import('@/instrumentation');
 
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv('LOG_LEVEL', 'error');
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
     await expect(register()).resolves.toBeUndefined();
 
     expect(exit).not.toHaveBeenCalled();
-    expect(warn.mock.calls.flat().join(' ')).toContain(
+    expect(logError.mock.calls.flat().join(' ')).toContain(
       'Deprecated provider settings detected: MODEL_ROUTES',
     );
     expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();

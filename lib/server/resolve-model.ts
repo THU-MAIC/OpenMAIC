@@ -186,8 +186,25 @@ export async function resolveRequestedModel(
   const effectiveProviderType = (clientProviderType || registeredProviderType) as
     | ProviderType
     | undefined;
-  if (effectiveProviderType === 'bedrock' && (providerId !== 'bedrock' || !managed)) {
-    throw new Error('Amazon Bedrock must be enabled by the server operator before it can be used.');
+  if (effectiveProviderType === 'bedrock') {
+    const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
+    const deployment = deploymentConfig().layer;
+    if (
+      providerId !== 'bedrock' ||
+      !deployment ||
+      deployment.config.providers?.[providerId]?.preset !== effectiveProviderType
+    ) {
+      throw new Error(
+        'Amazon Bedrock must be enabled by the server operator before it can be used.',
+      );
+    }
+    // Resolve only the operator's provider and enforce its model allowlist.
+    const { resolveModelReference } = await import('@/lib/server/model-config/resolve-slot');
+    const { languageModelFor } = await import('@/lib/server/model-config/llm');
+    return languageModelFor(
+      resolveModelReference(`${providerId}:${modelId}`, 'chat', [deployment]),
+      params.thinkingConfig,
+    );
   }
   const clientBaseUrl = managed ? undefined : clientBaseUrlParam || undefined;
   // The caller picked this model, so an unmanaged provider's endpoint is the

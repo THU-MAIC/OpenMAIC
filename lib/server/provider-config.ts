@@ -1,4 +1,7 @@
-import { ALIDOCMIND_LEGACY_SETTINGS } from '@/lib/config/provider-migration';
+import {
+  ALIDOCMIND_LEGACY_SETTINGS,
+  LEGACY_BEARER_TOKEN_ENV,
+} from '@/lib/config/provider-migration';
 import { presetIdFor } from '@/lib/config/preset-ids';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import {
@@ -337,6 +340,7 @@ export function deprecatedProviderSettings(
       ['API_KEY', 'BASE_URL', 'MODELS'].map((suffix) => `${prefix}_${suffix}`),
     ),
     ...ALIDOCMIND_LEGACY_SETTINGS,
+    LEGACY_BEARER_TOKEN_ENV,
     'BEDROCK_REGION',
     'DEFAULT_IMAGE_PROVIDER',
     'DEFAULT_MODEL',

@@ -106,6 +106,17 @@ describe('loadDeploymentLayer', () => {
     expect(notices[0]).not.toMatch(/DEEPSEEK_API_KEY|operator-secret/);
   });
 
+  it('reports token-only Bedrock config until a Bedrock provider is declared', () => {
+    vi.stubEnv('AWS_BEARER_TOKEN_BEDROCK', 'example-token');
+    const legacy = loadDeploymentLayer();
+    expect(legacy.layer).toBeNull();
+    expect(legacy.notices.join(' ')).toContain('AWS_BEARER_TOKEN_BEDROCK');
+    expect(legacy.notices.join(' ')).not.toContain('example-token');
+
+    fs.writeFileSync(path.join(dir, 'openmaic.yml'), 'providers:\n  aws:\n    preset: bedrock\n');
+    expect(loadDeploymentLayer().notices.join(' ')).not.toContain('AWS_BEARER_TOKEN_BEDROCK');
+  });
+
   it('uses BEDROCK_REGION for a declared Bedrock provider without a migration warning', () => {
     vi.stubEnv('BEDROCK_REGION', 'us-west-2');
     expect(loadDeploymentLayer().notices.join(' ')).toContain('BEDROCK_REGION');
