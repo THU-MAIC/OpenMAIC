@@ -3170,6 +3170,7 @@
       "currentMilestone": "目前階段",
       "milestoneGoal": "目標：",
       "milestoneResult": "成果：",
+      "acceptedResponse": "謝謝，這一步需要確認的內容已經說清楚了。",
       "completionHandoff": "本環節已完成。",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

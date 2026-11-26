@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import {
+  acknowledgeSilentCompletion,
   boardAt,
   boardWrites,
   narrationSegments,
@@ -59,9 +61,15 @@ export function useNarration(
   },
 ) {
   const entry = conversation.findLast((item) => !item.boundary && item.speaker !== 'user');
-  const steps = useMemo(
+  const projectedSteps = useMemo(
     () => (entry ? narrationSteps(entry, nextInstruction) : []),
     [entry, nextInstruction],
+  );
+  const { t } = useI18n();
+  const acknowledgement = t('pblV3.journey.acceptedResponse');
+  const steps = useMemo(
+    () => acknowledgeSilentCompletion(projectedSteps, acknowledgement),
+    [projectedSteps, acknowledgement],
   );
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);

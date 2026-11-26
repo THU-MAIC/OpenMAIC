@@ -3170,6 +3170,7 @@
       "currentMilestone": "Etapa actual",
       "milestoneGoal": "Objetivo:",
       "milestoneResult": "Resultado:",
+      "acceptedResponse": "Gracias, ya aclaramos lo que hacía falta para este paso.",
       "completionHandoff": "This step is complete.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

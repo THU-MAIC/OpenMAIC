@@ -44,6 +44,35 @@ const message = (text: string) => ({
   },
 });
 describe('student conversation projection', () => {
+  it('recognizes a tool-only completion after a learner reply in live and paginated history', () => {
+    const events = [
+      event(1, 'user_message', { text: 'The label uses the stored value.' }),
+      event(2, 'message_end', {
+        message: {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: 'Check the label.' }],
+        },
+      }),
+      event(3, 'tool_execution_end', {
+        toolName: 'complete_stage',
+        toolCallId: 'finish',
+        pblInputId: 1,
+        result: { content: [{ type: 'text', text: '{"readyForStudentConfirmation":true}' }] },
+      }),
+    ];
+    const live = projectConversation(events, 'discussion', false);
+    const page = (slice: typeof events) =>
+      projectConversation(slice, 'discussion', false, undefined, true);
+    const receipt = (entries: LearningConversationEntry[]) =>
+      entries.flatMap((entry) => entry.parts).find((part) => part.kind === 'tool');
+    expect(receipt(live)).toMatchObject({ acknowledgeResponse: true });
+    const recent = page(events.slice(2));
+    expect(receipt(mergeConversationHistory([recent]))).not.toHaveProperty('acknowledgeResponse');
+    expect(receipt(mergeConversationHistory([page(events.slice(0, 2)), recent]))).toMatchObject({
+      acknowledgeResponse: true,
+    });
+  });
+
   it('resolves separate active-turn and generic capacity guidance in every locale and fallback', async () => {
     const resources = Object.fromEntries(
       supportedLocales.map(({ code }) => [
