@@ -209,7 +209,7 @@ Configure providers and slots in `openmaic.yml` or Model Settings. The wizard re
 
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; every other base uses `/tools/search_pro`. Custom proxies configured in `openmaic.yml` must preserve that path layout.
 
-When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.
+To configure Kimi search for a deployment, declare `providers.<id>: { preset: kimi }` in `openmaic.yml` and set `slots.webSearch: <id>`. `WEB_SEARCH_KIMI_ENABLED=false` still force-disables Kimi search.
 
 ## Web fetch
 

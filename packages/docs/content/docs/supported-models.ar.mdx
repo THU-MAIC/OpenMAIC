@@ -199,7 +199,7 @@ slots:
 
 يُختار مسار الطلب وفق مسار عنوان URL الأساسي: بعد إزالة الشرطات المائلة النهائية، يُستخدم `/search` إذا انتهى المسار بـ `/coding/v1`، ويُستخدم `/tools/search_pro` في الحالات الأخرى. يجب أن تحافظ خدمات الوكيل المخصصة المضبوطة في `openmaic.yml` على بنية المسار هذه.
 
-عند وجود `openmaic.yml`، يجب تعريف `providers.<id>: { preset: kimi }` وتعيين `slots.webSearch: <id>`؛ فمتغير الإعدادات القديمة `WEB_SEARCH_KIMI_ENABLED` لا يعيّن هذه الخانة.
+لإعداد بحث Kimi في النشر، عرّف `providers.<id>: { preset: kimi }` في `openmaic.yml` واضبط `slots.webSearch: <id>`. يظل `WEB_SEARCH_KIMI_ENABLED=false` يعطّل بحث Kimi إجباريًا.
 
 ## جلب صفحات الويب
 
