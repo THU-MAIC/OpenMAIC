@@ -8,7 +8,7 @@ import {
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
-import { continueActionLabel } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel, nextLearningStep } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { Companion } from './companion';
 import { ExplainBoard } from './explain-board';
@@ -105,7 +105,7 @@ export function CompanionLayer({
       onBoard={onBoard}
       onPoint={onPoint}
       onTold={onTold}
-      nextActionLabel={nextAction === t('pblV3.next') ? undefined : nextAction}
+      nextActionLabel={nextLearningStep(view) ? nextAction : undefined}
       completionConfirmation={t('pblV3.journey.completionHandoff')}
       nextInstruction={
         'studentActions' in view.stage &&

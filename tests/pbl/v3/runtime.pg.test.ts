@@ -3744,13 +3744,21 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     },
   );
 
-  it.each([0, 1])(
-    'offers replies without submitting a choice or cutting off speech in stage %s',
-    async (stageIndex) => {
+  it.each([
+    { stageIndex: 0, mode: 'teaching', offersReplies: true },
+    { stageIndex: 1, mode: 'decision', offersReplies: true },
+    { stageIndex: 3, mode: 'code', offersReplies: true },
+    { stageIndex: 3, mode: 'classic', offersReplies: false },
+    { stageIndex: 4, mode: 'tests', offersReplies: false },
+    { stageIndex: 4, mode: 'repair', offersReplies: true },
+    { stageIndex: 5, mode: 'quiz', offersReplies: false },
+  ])(
+    'offers replies only for available learner chat and preserves the $mode handoff',
+    async ({ stageIndex, mode, offersReplies }) => {
       const study = await freshStudy();
       const row = await store.get(study.id, principal.ownerId);
       const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
-      process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+      process.env.OPENMAIC_PBL_V3_WHITEBOARD = String(mode !== 'classic');
       onTestFinished(async () => {
         if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
         else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
@@ -3760,6 +3768,16 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       });
       row.state.position.stageIndex = stageIndex;
       row.state.milestones[0]!.stageIndex = stageIndex;
+      if (mode === 'repair') {
+        row.state.collected.greeting!.remediation = {
+          id: randomUUID(),
+          kind: 'implementation_repair',
+          target: 'coder',
+          reason: 'tests',
+          attempt: 1,
+          evaluationId: randomUUID(),
+        };
+      }
       await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
       const { sessionId } = (await study.send('begin')) as { sessionId: string };
       const workerId = 'suggest-replies';
@@ -3775,14 +3793,29 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         attempt: claim!.attempt,
         signal: new AbortController().signal,
       });
-      const options = ['Explain the first option', 'Explain the second option'];
-      const result = await invoke(config, 'cue_user', { options });
-      const value = JSON.parse((result.content[0] as { text: string }).text);
-      expect(value.options).toEqual(options);
-      if (stageIndex === 1) {
-        expect(value.guidance).toContain('Suggested replies recorded.');
-        expect(value.guidance).toContain('add only that detail');
-      } else expect(value.guidance).toBeUndefined();
+      const cue = config.tools.find((tool) => tool.name === 'cue_user');
+      expect(!!cue).toBe(offersReplies);
+      if (cue) {
+        expect(cue.description).toContain("the learner's own reasoning or an assessment answer");
+        const options = ['Explain the first option', 'Explain the second option'];
+        const result = await invoke(config, 'cue_user', { options });
+        const value = JSON.parse((result.content[0] as { text: string }).text);
+        expect(value.options).toEqual(options);
+        if (mode === 'decision') expect(value.guidance).toContain('add only that detail');
+        else expect(value.guidance).toBeUndefined();
+      }
+      if (stageIndex === 3) {
+        for (const [name, field] of [
+          ['respond_to_learner', 'response'],
+          ['request_learner_help', 'question'],
+        ]) {
+          const handoff = config.tools.find((tool) => tool.name === name)!;
+          expect(handoff.parameters).toHaveProperty(
+            'properties',
+            mode === 'classic' ? { [field]: expect.objectContaining({ type: 'string' }) } : {},
+          );
+        }
+      }
       expect(config.isTurnComplete()).toBe(false);
       expect((await store.get(study.id, principal.ownerId)).state).toEqual(row.state);
       await agents.releaseLease(sessionId, workerId);

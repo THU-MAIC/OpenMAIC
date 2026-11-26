@@ -979,14 +979,18 @@ export async function teachingRunnerConfig(input: {
         async () => ({ value: { open: false } }),
       ),
     );
-  // Replies the learner can pick instead of typing, offered the way the classroom offers them.
-  if (boardTeaching)
+  // Suggested replies are sent as chat, including when the coder helps repair a failed test.
+  if (
+    boardTeaching &&
+    transitions.allowedStudentActions(project.definition, row.state).includes('chat')
+  )
     tools.push(
       tool(
         'cue_user',
-        guided
-          ? "Offer the learner replies they could give to your closing question, as the classroom does. Call it just before you record the closing, and only when that question can be answered by one of two to four clear, mutually exclusive short replies in the learner's own voice; leave it out for a question that needs their own reasoning. The learner may pick one or write their own."
-          : "Offer two to four short replies in the learner's voice only after explaining the choices and their consequences. Give any required form instruction once. Offering replies is the last planned action; it does not submit the learner's choice.",
+        "Offer two to four short, mutually exclusive chat replies in the learner's voice when the question has a few natural answers, such as readiness or clarification. Leave it out for questions that need the learner's own reasoning or an assessment answer. " +
+          (stage.kind === 'dialogue'
+            ? 'Explain the choices and their consequences first. Give any required form instruction once. The learner chooses and submits their own decision in the form.'
+            : 'Offer replies at the end of your explanation, before registering a closing if the stage requires one.'),
         Type.Object({
           options: Type.Array(Type.String({ minLength: 1, maxLength: 60 }), {
             minItems: 2,
@@ -996,7 +1000,7 @@ export async function teachingRunnerConfig(input: {
         async (_current, p) => ({
           value: {
             options: normalizeCueUserOptions(p.options) ?? [],
-            ...(!guided
+            ...(stage.kind === 'dialogue'
               ? {
                   guidance:
                     'Suggested replies recorded. End the turn if the explanation is complete. If a detail is still missing, add only that detail; do not repeat a form instruction already given.',

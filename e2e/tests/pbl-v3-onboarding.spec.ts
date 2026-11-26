@@ -640,6 +640,55 @@ for (const mode of assistantModes) {
   });
 }
 
+test('names the available milestone button when the tutor merely mentioned the next phase', async ({
+  page,
+  learningEvents,
+}) => {
+  const { view, publish, commands } = await project(page, learningEvents, {
+    started: true,
+    explanationBoard: true,
+    locale: 'zh-CN',
+  });
+  const milestone = view.milestones![0];
+  view.milestones = [milestone, { ...milestone, id: 'second' }];
+  view.state.position.stageIndex = milestone.stages.length - 1;
+  view.stage = {
+    kind: 'mentor_say',
+    agent: 'mentor',
+    say: 'Recap',
+    reads: [],
+    studentActions: ['chat', 'next'],
+  };
+  view.role = 'mentor';
+  view.actions = ['chat', 'next'];
+  view.conversation = [
+    {
+      id: 'milestone-recap',
+      speaker: 'mentor',
+      currentStage: true,
+      status: 'succeeded',
+      parts: [
+        { kind: 'text', id: 'closing', text: '完成后就会进入下一阶段。' },
+        {
+          kind: 'tool',
+          id: 'completed',
+          name: 'complete_stage',
+          action: 'complete',
+          status: 'succeeded',
+          readyForStudentConfirmation: true,
+        },
+      ],
+    },
+  ];
+  view.revision++;
+  await publish();
+  await expect(page.getByTestId('pbl-companion-speech')).toContainText('“进入下一阶段”按钮已可用');
+  await expect(
+    page.getByRole('button', { name: '进入下一阶段', exact: true }).first(),
+  ).toBeEnabled();
+  expect(commands).toEqual([]);
+});
+
 for (const sawToolStart of [false, true]) {
   test(`voices a legacy answer's new instruction once (saw tool start: ${sawToolStart})`, async ({
     page,
