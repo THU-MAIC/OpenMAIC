@@ -83,6 +83,27 @@ it('tells a reply as the conversation stream lists it', () => {
   expect(pointerAt(steps, 7)).toBeUndefined();
 });
 
+it('keeps a displaced live draft visible and reveals the retry only when its turn comes', () => {
+  const source = {
+    ...entry([text('receipt', 'Only the formal answer remains.')]),
+    id: 'pbl-role-a:1',
+    inputId: 6,
+  };
+  const retry = { ...source, id: 'pbl-role-a:2' };
+  const another = { ...source, id: 'pbl-role-b:1' };
+  const conversation = [source, retry, another];
+  const [heard, held, differentSession] = toldConversation(conversation, {
+    id: source.id,
+    part: -1,
+    said: 1,
+    displaced: 'Still speaking.',
+  });
+  expect(heard.parts).toMatchObject([{ kind: 'text', text: 'Still speaking.' }]);
+  expect(held.parts).toEqual([]);
+  expect(differentSession).toBe(another);
+  expect(toldConversation(conversation, null)).toBe(conversation);
+});
+
 it('shows the conversation only as far as it has been told', () => {
   const thinking = { kind: 'thinking', id: 't', text: '…' } as Part;
   const reply = entry([
@@ -456,7 +477,13 @@ it('voices the rest of a legacy receipt after the source has played', () => {
   expect(unspokenReceipt('First. Second. A new direction.', ['First.', 'Second.'])).toBe(
     'A new direction.',
   );
+  expect(unspokenReceipt('First. New direction.', ['First. Old direction.'])).toBe(
+    'New direction.',
+  );
   expect(unspokenReceipt('First.', ['First.'])).toBe('');
   expect(unspokenReceipt('42 records returned.', ['4'])).toBe('42 records returned.');
   expect(unspokenReceipt('Open main.ts.', ['Open main.'])).toBe('Open main.ts.');
+  expect(
+    unspokenReceipt('Open the shell. Run `echo "A. C"`.', ['Open the shell. Run `echo "A. B"`.']),
+  ).toBe('Run `echo "A. C"`.');
 });

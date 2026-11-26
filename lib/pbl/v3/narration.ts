@@ -1,5 +1,10 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
-import type { LearningBoardDisplay, LearningConversationEntry } from './conversation';
+import {
+  conversationScope,
+  newLegacyDirections,
+  type LearningBoardDisplay,
+  type LearningConversationEntry,
+} from './conversation';
 import { parseFileReference } from './file-reference';
 
 type Part = LearningConversationEntry['parts'][number];
@@ -17,6 +22,8 @@ export type NarrationStep = { id: string; part: number } & (
   | {
       kind: 'say';
       text: string;
+      /** Preserve code spans and link boundaries when comparing a legacy receipt. */
+      markdown?: string;
       streaming: boolean;
       /** A paragraph of a multi-location explanation, within the original Markdown part. */
       passage?: { from: number; to: number; point: Point | null };
@@ -39,6 +46,11 @@ export type NarrationStep = { id: string; part: number } & (
   | { kind: 'tool'; tool: ToolPart }
 );
 
+/** Attempts can change while the learner is still hearing the same reply. */
+export function narrationTurn(entry: LearningConversationEntry) {
+  return entry.inputId === undefined ? entry.id : `${conversationScope(entry)}:${entry.inputId}`;
+}
+
 /** Speech reads plain words: links keep their label, emphasis and code marks go. */
 export function spokenText(text: string, streaming = false) {
   // The playback buffer only appends. Consume complete links first and withhold a
@@ -58,7 +70,12 @@ export function unspokenReceipt(text: string, delivered: Iterable<string>) {
   let rest = text;
   for (const previous of delivered) {
     if (rest === previous) return '';
-    if (!previous || !rest.startsWith(previous)) continue;
+    if (!previous) continue;
+    if (!rest.startsWith(previous)) {
+      // The old answer and formal receipt can share one complete sentence and then diverge.
+      rest = newLegacyDirections(previous, rest);
+      continue;
+    }
     const suffix = rest.slice(previous.length);
     // A longer number, filename or unfinished word is a different statement.
     if (/^\s/u.test(suffix) || /[。！？]$/u.test(previous)) rest = suffix.trimStart();
@@ -135,7 +152,7 @@ export function narrationSteps(
         pendingPoints = [];
       }
       if (explanationPoints.length < 2)
-        return [{ ...at, kind: 'say', text, streaming: !!part.streaming }];
+        return [{ ...at, kind: 'say', text, markdown: part.text, streaming: !!part.streaming }];
 
       // Each paragraph gets its own voice segment. Its target changes at the same playhead
       // as the words, including when muted or paused. Keep the transcript in source coordinates.
@@ -155,6 +172,7 @@ export function narrationSteps(
           id: `${part.id}:passage-${start}`,
           kind: 'say',
           text: words,
+          markdown: part.text.slice(start, end),
           streaming: false,
           passage: {
             from: start / part.text.length,
@@ -353,6 +371,8 @@ export interface NarrationProgress {
   part: number;
   /** How much of that part's text is out, from 0 to 1. */
   said: number;
+  /** Live draft still playing after a formal receipt replaced it in history. */
+  displaced?: string;
 }
 
 /**
@@ -365,8 +385,21 @@ export function toldConversation(
   told: NarrationProgress | null,
 ): readonly LearningConversationEntry[] {
   if (!told) return conversation;
+  const active = conversation.find((entry) => entry.id === told.id);
+  let afterHead = false;
   return conversation.map((entry) => {
-    if (entry.id !== told.id) return entry;
+    if (entry.id !== told.id) {
+      // A retry can have finished already while its predecessor is still audible.
+      if (
+        afterHead &&
+        active &&
+        entry.speaker !== 'user' &&
+        narrationTurn(entry) === narrationTurn(active)
+      )
+        return { ...entry, parts: [] };
+      return entry;
+    }
+    afterHead = true;
     const parts = entry.parts.slice(0, told.part + 1).map((part, index) =>
       index === told.part && part.kind === 'text'
         ? {
@@ -376,6 +409,8 @@ export function toldConversation(
           }
         : part,
     );
+    if (told.displaced)
+      parts.push({ kind: 'text', id: told.id + ':playing', text: told.displaced, streaming: true });
     return { ...entry, parts };
   });
 }

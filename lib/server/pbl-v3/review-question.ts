@@ -3,6 +3,8 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
+/** Durable assistant-frame metadata, set by the host only after verifying an exact speech replay. */
+export const REPLAYED_HANDOFF_SPEECH = 'pblReplayedHandoffSpeech';
 
 /** One authored message supplies both display text and the question recorded for feedback. */
 export function reviewResponse(response: string): { response: string; question: string } {
@@ -29,33 +31,54 @@ export function isSpokenHandoff(name: string) {
 
 export function spokenHandoffClosing() {
   // message_end feeds this same record from the live stream and from durable history on resume.
-  let source: { frames: { blocks: string[]; spokenAt: number }[]; recovering: boolean } | undefined;
+  type Speech = { blocks: string[]; spokenAt: number };
+  let source: { frames: Speech[]; recovering: boolean } | undefined;
+  let frames: Speech[] = [];
   let hasCurrentSpeech = false;
   let calls: { name: string; id: string; arguments: Record<string, unknown> }[] = [];
   return {
     observe(message: AgentMessage) {
       if (message.role === 'toolResult') return;
       calls = [];
+      frames = [];
       hasCurrentSpeech = false;
       if (message.role !== 'assistant' || ['error', 'aborted'].includes(message.stopReason)) {
         source = undefined;
         return;
       }
       const tools = message.content.filter((part) => part.type === 'toolCall');
-      if (tools.some((tool) => !isSpokenHandoff(tool.name) && !preservesSpokenClosing(tool.name))) {
-        source = undefined;
-        return;
-      }
-      calls = tools.filter((tool) => isSpokenHandoff(tool.name));
       const blocks = message.content.flatMap((part) =>
         part.type === 'text' && part.text.trim() ? [part.text] : [],
       );
-      if (!blocks.length) return;
-      hasCurrentSpeech = true;
-      source ??= { frames: [], recovering: false };
-      // A plain stop already delivered words but did not hand control back to the learner.
-      if (!tools.length && message.stopReason === 'stop') source.recovering = true;
-      source.frames.push({ blocks, spokenAt: message.timestamp });
+      const current = blocks.length ? { blocks, spokenAt: message.timestamp } : undefined;
+      hasCurrentSpeech = !!current;
+      const operations = tools.filter(
+        (tool) => !isSpokenHandoff(tool.name) && !preservesSpokenClosing(tool.name),
+      );
+      if (operations.length) {
+        // A sibling file operation can accompany this message's speech. Its result
+        // invalidates the source for all later messages, including recovery attempts.
+        const previous = source;
+        source = undefined;
+        if (operations.some((op) => op.name !== 'read_file' && op.name !== 'write_file')) return;
+        if (current) frames = [current];
+        else if (
+          previous?.recovering &&
+          REPLAYED_HANDOFF_SPEECH in message &&
+          message[REPLAYED_HANDOFF_SPEECH] === true
+        )
+          frames = previous.frames;
+        else return;
+      } else {
+        if (current) {
+          source ??= { frames: [], recovering: false };
+          // A plain stop delivered words without handing control back to the learner.
+          if (!tools.length && message.stopReason === 'stop') source.recovering = true;
+          source.frames.push(current);
+        }
+        frames = source?.frames ?? [];
+      }
+      calls = tools.filter((tool) => isSpokenHandoff(tool.name));
     },
     recoverySpeech(): readonly string[] | undefined {
       return source?.recovering ? source.frames.flatMap((frame) => frame.blocks) : undefined;
@@ -73,8 +96,8 @@ export function spokenHandoffClosing() {
       const legacy =
         call.name === 'respond_to_learner' ? call.arguments.response : call.arguments.question;
       const supplied = typeof legacy === 'string' ? legacy.trim() : '';
-      const last = source?.frames.at(-1);
-      if (source && last) {
+      const last = frames.at(-1);
+      if (last) {
         const closing = reviewResponse(last.blocks.at(-1)!);
         const delivery = review ? closing.question : closing.response;
         if (
@@ -85,7 +108,7 @@ export function spokenHandoffClosing() {
         ) {
           // Old assistance calls copied the entire delivered answer. Match whole paragraphs,
           // including earlier blocks, without moving that speech to the recovery attempt.
-          const words = source.frames.map((frame) => frame.blocks.join('\n').trim()).join('\n\n');
+          const words = frames.map((frame) => frame.blocks.join('\n').trim()).join('\n\n');
           if (call.name !== 'respond_to_learner' || !('\n\n' + words).endsWith('\n\n' + supplied))
             throw new Error(
               !review

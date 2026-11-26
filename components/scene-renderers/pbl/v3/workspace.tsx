@@ -146,6 +146,7 @@ function PBLV3WorkspaceContent({
   } = useLearnerMessage(view, storageError, savedMessage);
   const [speechActive, setSpeechActive] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [acceptedRetry, setAcceptedRetry] = useState('');
   // Explanation-board mode: the code keeps the whole work area; the board floats over it
   // like the classroom whiteboard, and the role lives at the corner as a companion whose
   // conversation opens as a window or docks into the side panel.
@@ -295,6 +296,7 @@ function PBLV3WorkspaceContent({
         )
           storageError();
         updateView(result.view, baseline);
+        if (request.type === 'retry') setAcceptedRetry(request.id);
         if (result.result?.stale) setError(t('pblV3.testResult.stale'));
         retry.current = null;
         if (request.type === 'chat') finishMessage(request.id, true, latestView.current);
@@ -1061,6 +1063,7 @@ function PBLV3WorkspaceContent({
             overlay={
               boardMode && view.explainBoard ? (
                 <CompanionLayer
+                  acceptedRetry={acceptedRetry}
                   view={view}
                   board={view.explainBoard}
                   // The whiteboard steps aside while the role points at code or the application.

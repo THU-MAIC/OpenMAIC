@@ -7,12 +7,14 @@ import {
   boardWrites,
   narrationSegments,
   narrationSteps,
+  narrationTurn,
   pointerAt,
   recoveredReviewSpeech,
   spokenText,
   unspokenReceipt,
   type NarrationProgress,
   type NarrationTarget,
+  type NarrationStep,
 } from '@/lib/pbl/v3/narration';
 import { PBL_NARRATORS } from '@/lib/pbl/v3/personas';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
@@ -63,8 +65,70 @@ export function useNarration(
     onTold?: (told: NarrationProgress | null) => void;
   },
 ) {
-  const entry = conversation.findLast((item) => !item.boundary && item.speaker !== 'user');
-  const steps = useMemo(
+  const ttsMuted = useSettingsStore((state) => state.ttsMuted);
+  const [audio, setAudio] = useState<AudioIndicatorState>('idle');
+  const tts = useDiscussionTTS({
+    enabled: !ttsMuted,
+    agents: PBL_NARRATORS,
+    onAudioStateChange: (_agent, state) => setAudio(state),
+  });
+  const ttsRef = useRef(tts);
+  // Where the buffer's playhead is: the step being told, how much of its text is out, and
+  // whether the learner has paused the telling.
+  const [stage, setStage] = useState<{
+    id: string;
+    head: string | null;
+    text: string;
+    paused: boolean;
+  } | null>(null);
+  const run = useRef<{
+    id: string;
+    turn: string;
+    entry: LearningConversationEntry;
+    drained: boolean;
+    buffer: StreamBuffer;
+    /** A legacy receipt can replace earlier prose, moving following tools to a new index. */
+    queued: Map<string, NarrationStep>;
+    openText: { id: string; length: number } | null;
+    done: boolean;
+    /** The buffer numbers its text parts; each one belongs to a particular source step. */
+    says: string[];
+    voiced: Map<string, string>;
+    priorSpeech: string[];
+    reading: { id: string; since: number; ms: number } | null;
+  } | null>(null);
+  // A reply the learner stopped is not taken up again while it is still being produced.
+  const [stopped, setStopped] = useState<string | null>(null);
+  const last = conversation.findLast((item) => !item.boundary);
+  const latestReply = last?.speaker !== 'user' ? last : undefined;
+  const input = latestReply && narrationTurn(latestReply);
+  const turn = input && `${stageKey}:${input}`;
+  const previous = run.current;
+  let entry = latestReply;
+  // A worker can finish its replacement attempt before the learner has even heard
+  // the first one. Drain the local playhead before taking up the next attempt.
+  if (previous && previous.turn === turn && previous.id !== latestReply?.id) {
+    const index = conversation.findIndex((item) => item.id === previous.id);
+    if (!previous.drained) entry = conversation[index] ?? previous.entry;
+    else if (index >= 0)
+      entry =
+        conversation
+          .slice(index + 1)
+          .find(
+            (item) => item.speaker !== 'user' && !item.boundary && narrationTurn(item) === input,
+          ) ?? latestReply;
+  }
+  const complete = !!entry && (entry.status !== 'running' || entry.id !== latestReply?.id);
+  const failed = latestReply?.status === 'failed' || latestReply?.status === 'cancelled';
+  const live =
+    turn &&
+    turn !== stopped &&
+    !failed &&
+    (entry?.status === 'running' || (entry && previous?.turn === turn && previous.id !== entry.id))
+      ? entry?.id
+      : undefined;
+  const speaker = entry?.speaker;
+  const projected = useMemo(
     () =>
       entry
         ? narrationSteps(
@@ -77,52 +141,43 @@ export function useNarration(
         : [],
     [entry, nextInstruction, nextActionLabel, completionConfirmation],
   );
+  const active =
+    stage && entry?.id === stage.id && previous?.turn === turn && !failed ? stage : null;
+  // A legacy receipt can replace the text in the transcript while its audio is playing.
+  // Keep already queued steps in playback order; at rest use the canonical transcript.
+  const queued = active ? previous?.queued : undefined;
+  const telling = !!active || !!live;
+  const steps = useMemo(() => {
+    if (!telling) return projected;
+    const priorSpeech =
+      previous?.turn === turn && previous
+        ? previous.id === entry?.id
+          ? previous.priorSpeech
+          : [...previous.priorSpeech, ...previous.voiced.values()]
+        : [];
+    const ordered = new Map(queued);
+    for (const step of projected) {
+      if (step.kind === 'say' && step.id.startsWith('question-')) {
+        if (ordered.has(step.id)) continue;
+        const before = [...ordered.values()].flatMap((item) =>
+          item.kind === 'say' && !item.streaming ? [item.markdown ?? item.text] : [],
+        );
+        const markdown = unspokenReceipt(step.markdown ?? step.text, [...priorSpeech, ...before]);
+        const text = spokenText(markdown);
+        if (text) ordered.set(step.id, { ...step, text, markdown });
+      } else ordered.set(step.id, step);
+    }
+    return [...ordered.values()];
+  }, [projected, queued, telling, previous, turn, entry?.id]);
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);
-  const complete = !!entry && entry.status !== 'running';
-  const ttsMuted = useSettingsStore((state) => state.ttsMuted);
-  const [audio, setAudio] = useState<AudioIndicatorState>('idle');
-  const tts = useDiscussionTTS({
-    enabled: !ttsMuted,
-    agents: PBL_NARRATORS,
-    onAudioStateChange: (_agent, state) => setAudio(state),
-  });
-  const ttsRef = useRef(tts);
-  const stepById = useMemo(() => new Map(steps.map((step) => [step.id, step])), [steps]);
-  const latest = useRef(stepById);
-  useEffect(() => {
+  useLayoutEffect(() => {
     ttsRef.current = tts;
-    latest.current = stepById;
   });
-
-  // Where the buffer's playhead is: the step being told, how much of its text is out, and
-  // whether the learner has paused the telling.
-  const [stage, setStage] = useState<{
-    id: string;
-    head: string | null;
-    text: string;
-    paused: boolean;
-  } | null>(null);
-  const run = useRef<{
-    id: string;
-    buffer: StreamBuffer;
-    /** A legacy receipt can replace earlier prose, moving following tools to a new index. */
-    queued: Set<string>;
-    openText: { id: string; length: number } | null;
-    done: boolean;
-    /** The buffer numbers its text parts; each one belongs to a particular source step. */
-    says: string[];
-    voiced: Map<string, string>;
-    reading: { id: string; since: number; ms: number } | null;
-  } | null>(null);
-  // A reply the learner stopped is not taken up again while it is still being produced.
-  const [stopped, setStopped] = useState<string | null>(null);
-  const running = entry?.status === 'running' ? entry.id : null;
-  const live = running !== stopped ? running : null;
-  const speaker = entry?.speaker;
 
   const stop = () => {
     run.current?.buffer.shutdown();
+    run.current = null;
     ttsRef.current.cleanup();
     setStage(null);
   };
@@ -132,7 +187,11 @@ export function useNarration(
   });
 
   useEffect(() => {
-    if (!live || run.current?.id === live) return;
+    if (run.current && (run.current.turn !== turn || failed)) stopRef.current();
+    if (!live || !turn || !entry || run.current?.id === live) return;
+    const lastRun = run.current;
+    const priorSpeech =
+      lastRun?.turn === turn ? [...lastRun.priorSpeech, ...lastRun.voiced.values()] : [];
     run.current?.buffer.shutdown();
     ttsRef.current.cleanup();
     const id = live;
@@ -144,14 +203,12 @@ export function useNarration(
         onTextReveal(_message, partId, revealed) {
           const state = mine();
           const head = state?.says[Number(partId.slice(1))];
-          const step = head ? latest.current.get(head) : undefined;
+          const step = head ? state?.queued.get(head) : undefined;
           if (!state || !head || step?.kind !== 'say') return;
           // The voice gets a piece of text when the playhead is on it and it is whole.
           if (!step.streaming && !state.voiced.has(head)) {
-            const words = step.id.startsWith('question-')
-              ? unspokenReceipt(step.text, state.voiced.values())
-              : step.text;
-            state.voiced.set(head, words);
+            const words = step.text;
+            state.voiced.set(head, step.markdown ?? words);
             if (words) ttsRef.current.handleSegmentSealed(id, step.id, words, speaker ?? null);
             // Muted, or no voice for this role: the playhead holds for reading time instead.
             state.reading =
@@ -171,8 +228,10 @@ export function useNarration(
           const head = action.actionId;
           setStage((now) => ({ id, head, text: '', paused: now?.paused ?? false }));
           for (;;) {
-            const step = latest.current.get(head);
+            const state = mine();
+            const step = state?.queued.get(head);
             if (signal.aborted || !step || step.kind === 'say') return;
+            if (state?.done && step.tool.status === 'running') return;
             if (step.tool.status !== 'running') {
               if (step.kind === 'board' && step.clear) await wait(SWEEP, signal);
               return;
@@ -185,7 +244,11 @@ export function useNarration(
         onThinking() {},
         onCueUser() {},
         onDone() {
-          if (mine()) setStage(null);
+          const state = mine();
+          if (state) {
+            state.drained = true;
+            setStage(null);
+          }
         },
         onError() {},
         shouldHoldAfterReveal() {
@@ -203,24 +266,31 @@ export function useNarration(
     run.current = {
       id,
       buffer,
-      queued: new Set(),
+      turn,
+      entry,
+      drained: false,
+      queued: new Map(),
       openText: null,
       done: false,
       says: [],
       voiced: new Map(),
+      priorSpeech,
       reading: null,
     };
     buffer.start();
     setStage({ id, head: null, text: '', paused: false });
-  }, [live, speaker]);
+  }, [live, turn, failed, entry, speaker]);
 
   // The stream fills the buffer: new steps are queued, growing text is appended in place.
   useEffect(() => {
     const state = run.current;
     if (!state || state.id !== entry?.id || state.done) return;
     const { buffer } = state;
+    state.entry = entry;
     for (const step of steps) {
-      if (state.queued.has(step.id)) {
+      const known = state.queued.has(step.id);
+      state.queued.set(step.id, step);
+      if (known) {
         if (step.kind === 'say' && state.openText?.id === step.id) {
           const delta = step.text.slice(state.openText.length);
           if (delta) {
@@ -234,7 +304,6 @@ export function useNarration(
         }
         continue;
       }
-      state.queued.add(step.id);
       buffer.sealText(state.id);
       state.openText = null;
       if (step.kind === 'say') {
@@ -256,14 +325,7 @@ export function useNarration(
       buffer.pushDone({ totalActions: 0, totalAgents: 1 });
       state.done = true;
     }
-  }, [steps, complete, entry?.id, speaker, live]);
-
-  const active = stage && entry?.id === stage.id ? stage : null;
-  // A reply that failed or was replaced ends its telling with it.
-  const failed = !!entry && ['failed', 'cancelled', 'interrupted'].includes(entry.status ?? '');
-  useEffect(() => {
-    if (failed) stopRef.current();
-  }, [failed]);
+  }, [steps, complete, entry, speaker, live]);
   useLayoutEffect(
     () => () => {
       const previous = run.current;
@@ -328,23 +390,39 @@ export function useNarration(
   // Reported character by character: the pane shows exactly what the bubble does, so a
   // sentence never rests a few characters short while it is being read out.
   const step = steps[head];
-  const toldPart = playing && step ? step.part : -1;
+  const source = step && projected.find((part) => part.id === step.id);
+  const preceding =
+    !source && playing && head > 0
+      ? steps.slice(0, head).findLast((item) => projected.some((part) => part.id === item.id))
+      : undefined;
+  const toldPart = playing
+    ? (source?.part ?? projected.find((item) => item.id === preceding?.id)?.part ?? -1)
+    : -1;
+  // A canonical legacy receipt may remove the source part before it has finished
+  // playing. Show that actual text wherever the learner has the conversation open.
+  const displaced = playing && !source && step?.kind === 'say' ? active.text : undefined;
   const revealed =
     playing && step?.kind === 'say' && step.text ? active.text.length / step.text.length : 0;
   const passage = step?.kind === 'say' ? step.passage : undefined;
-  const said = passage ? passage.from + revealed * (passage.to - passage.from) : revealed;
+  const said = !source
+    ? 1
+    : passage
+      ? passage.from + revealed * (passage.to - passage.from)
+      : step?.kind === 'say' && source.kind === 'say' && source.text.length > step.text.length
+        ? (source.text.length - step.text.length + active!.text.length) / source.text.length
+        : revealed;
   const told = useRef({ onTold, id: entry?.id });
   useEffect(() => {
     told.current = { onTold, id: entry?.id };
   });
   useEffect(() => {
     const { onTold, id } = told.current;
-    onTold?.(playing && id ? { id, part: toldPart, said } : null);
-  }, [playing, toldPart, said]);
+    onTold?.(playing && id ? { id, part: toldPart, said, displaced } : null);
+  }, [playing, entry?.id, toldPart, said, displaced]);
   useEffect(() => () => told.current.onTold?.(null), []);
 
   const say = segment?.say;
-  const handoff = say && entry?.parts[say.part]?.kind === 'tool';
+  const handoff = say && say.id.endsWith(':continue');
   const restingReview = playing || handoff ? undefined : recoveredReviewSpeech(entry);
   const restingPart = !playing && say?.passage ? entry?.parts[say.part] : undefined;
   let displayedSpeech =
@@ -354,11 +432,19 @@ export function useNarration(
       : say && restingPart?.kind === 'text'
         ? { ...say, text: spokenText(restingPart.text) }
         : say);
+  if (!displayedSpeech && active && previous?.priorSpeech.length) {
+    // A tool-only takeover can still be registering the answer. Its action card
+    // belongs under the words the learner has just heard, until the retry speaks.
+    displayedSpeech = {
+      id: previous.id + ':last-speech',
+      text: spokenText(previous.priorSpeech.at(-1)!),
+    };
+  }
   if (handoff && displayedSpeech) {
     // The host adds a spoken button hint to the tutor's closing words. Keep those
     // words readable while the hint is revealed, without queuing them for speech again.
     const previous = steps.findLast((step) => step.kind === 'say' && step.part < say.part);
-    const closing = previous && entry.parts[previous.part];
+    const closing = previous && entry?.parts[previous.part];
     if (closing?.kind === 'text')
       displayedSpeech = {
         ...displayedSpeech,
@@ -372,7 +458,7 @@ export function useNarration(
     togglePause,
     /** Ends the telling of this reply where it is; what is left of it is not told later. */
     stop: () => {
-      if (entry?.id) setStopped(entry.id);
+      if (turn) setStopped(turn);
       stop();
     },
     speaker,

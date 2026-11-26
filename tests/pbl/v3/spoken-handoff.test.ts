@@ -27,7 +27,7 @@ function stop(timestamp: number, words: string): AssistantMessage {
   } as AssistantMessage;
 }
 
-async function recoverSpeech(given: string, message: AssistantMessage) {
+async function recoverMessage(given: string, message: AssistantMessage) {
   const boundary = withTeachingTurnBoundary(
     () => {
       const response = createAssistantMessageEventStream();
@@ -42,7 +42,7 @@ async function recoverSpeech(given: string, message: AssistantMessage) {
     { stageKey: 'intro:0', studentTurns: 1, spokenReview: true, recoverySpeech: [given] },
   );
   const stream = await boundary({} as Parameters<StreamFn>[0], { messages: [] });
-  return (await stream.result()).content;
+  return stream.result();
 }
 
 it.each([
@@ -68,7 +68,7 @@ it.each([
       frame(2, next, 'respond_to_learner'),
       frame(2, next, 'respond_to_learner', { deliverMissing: true }),
     ]) {
-      expect(await recoverSpeech(given, message)).toEqual([
+      expect((await recoverMessage(given, message)).content).toEqual([
         { type: 'text', text: expected },
         ...message.content.filter((part) => part.type === 'toolCall'),
       ]);
@@ -92,7 +92,10 @@ it.each(['respond_to_learner', 'request_learner_help'])(
       [original + ' ' + hint, hint, hint],
       [original + ' ' + hint, original + ' ' + hint, hint],
     ] as const) {
-      const content = await recoverSpeech(original, frame(2, prose, tool, { remainingSpeech }));
+      const { content } = await recoverMessage(
+        original,
+        frame(2, prose, tool, { remainingSpeech }),
+      );
       expect(content).toEqual([
         ...(expected ? [{ type: 'text', text: expected }] : []),
         { type: 'toolCall', id: '2', name: tool, arguments: {} },
@@ -145,6 +148,84 @@ describe.each(['request_skill_review', 'respond_to_learner', 'request_learner_he
       });
       speech.observe(reply);
       expect(speech.forCall('11')).toEqual({ question: 'Open the project files.', spokenAt: 11 });
+    });
+
+    it.each(['read_file', 'write_file'])(
+      'registers current speech alongside %s without carrying it across the result',
+      (action) => {
+        const speech = spokenHandoffClosing();
+        speech.observe(stop(10, 'An earlier question.'));
+        const reply = frame(11, 'Please check the return value.', tool);
+        reply.content.splice(1, 0, {
+          type: 'toolCall',
+          name: action,
+          id: 'file',
+          arguments: { path: 'PLAN.md' },
+        });
+        speech.observe(reply);
+        speech.observe({
+          role: 'toolResult',
+          toolName: action,
+          toolCallId: 'file',
+          timestamp: 12,
+          content: [{ type: 'text', text: 'ok' }],
+          isError: false,
+        });
+        expect(speech.forCall('11')).toEqual({
+          question: 'Please check the return value.',
+          spokenAt: 11,
+        });
+        expect(speech.recoverySpeech()).toBeUndefined();
+        speech.observe(frame(13, '', tool));
+        expect(speech.forCall('13')).toBeUndefined();
+      },
+    );
+
+    it('pairs an exact recovery replay with its original delivery even when the same message reads a file', async () => {
+      const given = 'Check the return value.';
+      const mixed = (words: string) => {
+        const reply = frame(12, words, tool);
+        reply.content.unshift({
+          type: 'toolCall',
+          name: 'read_file',
+          id: 'file',
+          arguments: { path: 'PLAN.md' },
+        });
+        return reply;
+      };
+      const replay = await recoverMessage(given, mixed(given));
+      expect(replay.content.filter((part) => part.type === 'text')).toEqual([]);
+      const speech = spokenHandoffClosing();
+      speech.observe(stop(11, given));
+      speech.observe(JSON.parse(JSON.stringify(replay)));
+      expect(speech.forCall('12')).toEqual({ question: given, spokenAt: 11 });
+      speech.observe(frame(13, '', tool));
+      expect(speech.forCall('13')).toBeUndefined();
+
+      speech.observe(stop(11, given));
+      speech.observe(await recoverMessage(given, mixed('')));
+      expect(speech.forCall('12')).toBeUndefined();
+      speech.observe(stop(11, given));
+      speech.observe(frame(12, '', 'read_file'));
+      speech.observe(replay);
+      expect(speech.forCall('12')).toBeUndefined();
+      speech.observe(stop(11, given));
+      speech.observe({ role: 'user', content: 'A different request.', timestamp: 12 });
+      speech.observe(replay);
+      expect(speech.forCall('12')).toBeUndefined();
+    });
+
+    it('does not register words alongside a change of teaching section', () => {
+      const speech = spokenHandoffClosing();
+      const reply = frame(11, 'What do you think?', tool);
+      reply.content.unshift({
+        type: 'toolCall',
+        name: 'read_next_skill',
+        id: 'section',
+        arguments: {},
+      });
+      speech.observe(reply);
+      expect(speech.forCall('11')).toBeUndefined();
     });
 
     it('requires new speech after inspecting files or receiving a learner message', () => {

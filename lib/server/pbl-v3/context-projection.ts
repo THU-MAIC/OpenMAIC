@@ -201,8 +201,17 @@ export function createTeachingContextProjection(
         return reusable;
       }
 
-      const base = currentTeachingContext({ ...context, messages: [] }, window);
-      const historyBudget = budget.inputTokens - estimatedRequestTokens(base) - summarySpace - 1024;
+      // Recovery quotes the current learner request in the host tail. Budget that
+      // quotation here; the user frame itself is counted with the active history below.
+      const base = currentTeachingContext(
+        { ...context, messages: latestInput >= 0 ? [context.messages[latestInput]!] : [] },
+        window,
+      );
+      const historyBudget =
+        budget.inputTokens -
+        estimatedRequestTokens({ ...base, messages: [] }) -
+        summarySpace -
+        1024;
       let used = size(context.messages.slice(activeStart));
       if (
         historyBudget > 0 &&
@@ -288,8 +297,7 @@ export function createTeachingContextProjection(
         offset = end;
       }
       const projected = withSummary(
-        // The empty-message budget base cannot resolve a retained file receipt.
-        // Recheck the actual compacted history before deciding snapshot vs reference.
+        // The budget base does not include any retained file receipts.
         withPlanToolContext(
           { ...base, messages: recentMessages(context, covered) },
           window.initialPlan,

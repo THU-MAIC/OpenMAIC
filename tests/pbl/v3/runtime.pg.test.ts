@@ -1927,7 +1927,24 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       }),
     ).rejects.toThrow('Use response');
     expect((await store.binding(opening.sessionId))?.guided?.pending).toBeUndefined();
-    const result = await tool.execute(randomUUID(), { response });
+    const draft = 'Shall we start with the project background?';
+    const callId = randomUUID();
+    await agents.appendControlEvent(opening.sessionId, {
+      ts: Date.now(),
+      type: 'message_end',
+      data: {
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          timestamp: Date.now(),
+          content: [
+            { type: 'text', text: draft },
+            { type: 'toolCall', name: tool.name, id: callId, arguments: { response } },
+          ],
+        },
+      },
+    });
+    const result = await tool.execute(callId, { response });
     expect(JSON.stringify(result)).toContain('canonical');
     const guided = (await store.binding(opening.sessionId))!.guided!;
     expect(guided.pending).toMatchObject({ question: `**${closing}**`, displayText: response });
@@ -1942,6 +1959,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       .flatMap((part) => (part.kind === 'text' ? [part.text] : []))
       .join('\n');
     expect(text.split(closing)).toHaveLength(2);
+    expect(text).not.toContain(draft);
     expect(text).not.toContain('还有背景问题吗？');
     expect(view.actions).not.toContain('next');
     expect(view.state.position.stageIndex).toBe(0);
@@ -3524,9 +3542,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
     };
+    const request = 'Which file should I open? How do I test it?';
+    const partial = 'Open greeting.py.';
     const raw: import('@earendil-works/pi-ai').Message[] = [
       { role: 'user', content: 'Historical learning evidence. '.repeat(6000), timestamp: 0 },
-      { role: 'user', content: 'Please explain the current work.', timestamp: 1 },
+      { role: 'user', content: request, timestamp: 1 },
+      { ...summaryMessage, content: [{ type: 'text', text: partial }], timestamp: 2 },
     ];
     for (const message of raw) await session.appendMessage(message);
     const before = (await store.get(study.id, principal.ownerId)).state;
@@ -3557,10 +3578,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       contextWindow: 32000,
       maxTokens: 4096,
     } as import('@earendil-works/pi-ai').Model<import('@earendil-works/pi-ai').Api>;
-    await projection.prepare(
+    const fresh = await projection.prepare(
       { systemPrompt: 'Current host state is incomplete.', messages: raw },
-      config.historyWindow,
+      { ...config.historyWindow, spokenReview: true, recoverySpeech: [partial] },
       model,
+    );
+    expect(requestStateTail(fresh)).toContain('Original learner input: ' + JSON.stringify(request));
+    expect(requestStateTail(fresh)).toContain(
+      'Already delivered to the learner: ' + JSON.stringify(partial),
     );
     projection.dispose();
     const history = await loadSessionEntryHistory(session, {
@@ -3592,7 +3617,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         attempt: second!.attempt,
       }),
     );
-    const next = { role: 'user' as const, content: 'Do not change my current plan.', timestamp: 2 };
+    const next = { role: 'user' as const, content: 'Do not change my current plan.', timestamp: 3 };
     await restored.appendMessage(next);
     const forbidden = vi.fn(() => {
       throw new Error('Old history must not be summarized again');
@@ -5463,6 +5488,109 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
     }
   });
+  it.each([
+    ['request_skill_review', 'write_file', false],
+    ['respond_to_learner', 'read_file', false],
+    ['request_learner_help', 'read_file', false],
+    ['respond_to_learner', 'read_file', true],
+  ] as const)(
+    'registers %s alongside %s in the same SDK reply (replayed: %s)',
+    async (handoff, fileTool, replayed) => {
+      const stage = project.definition.milestones[0]!.stages[3]!;
+      if (stage.kind !== 'produce') throw new Error('Expected code stage');
+      const previousBuild = stage.compileBeforeReview;
+      const previousBoard = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+      stage.compileBeforeReview = handoff === 'request_learner_help';
+      onTestFinished(() => {
+        stage.compileBeforeReview = previousBuild;
+        if (previousBoard === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+        else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previousBoard;
+      });
+      const study = await freshStudy();
+      onTestFinished(() => releasePreparationFixtures([study.id]));
+      const row = await store.get(study.id, principal.ownerId);
+      row.state.position.stageIndex = 3;
+      row.state.milestones[0]!.stageIndex = 3;
+      await store.transaction((db) => store.commit(db, row, { state: row.state, events: [] }));
+      const { sessionId } = (await study.send('chat')) as { sessionId: string };
+      const worker = startAgentRunner();
+      await worker.stop();
+      const claim = () =>
+        agents.claimNextSession(worker.workerId, process.pid, {
+          sessionId,
+          leaseTtlMs: 10000,
+          maxAttempts: 5,
+        });
+      const run = async () => {
+        const lease = await claim();
+        await runSession(
+          { running: new Map(), shuttingDown: false },
+          { ...lease!, ...(await agents.getSession(sessionId))! },
+        );
+        expect((await agents.getSession(sessionId))?.status).toBe('succeeded');
+      };
+      const original = 'Which function returns the greeting?';
+      if (handoff === 'respond_to_learner') {
+        process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'false';
+        mocked.responses = [
+          toolResponse([{ name: 'read_next_skill', input: {} }]),
+          toolResponse([{ name: 'request_skill_review', input: { question: original } }]),
+        ];
+        await run();
+        await study.send('chat');
+      }
+      process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+      const path = 'greeting.py';
+      const service = await SandboxService.forOwner(principal);
+      const before = await service.readText(row.environment_id!, path);
+      const text = before + '\n# new implementation detail\n';
+      const words =
+        handoff === 'request_learner_help'
+          ? 'Which build requirement should we check?'
+          : handoff === 'respond_to_learner'
+            ? 'Open greeting.py to see its return value.'
+            : 'Which line returns the greeting?';
+      mocked.responses = [
+        ...(handoff === 'respond_to_learner'
+          ? []
+          : [toolResponse([{ name: 'read_next_skill', input: {} }])]),
+        ...(replayed ? [textResponse(words)] : []),
+        [
+          { type: 'text-delta', text: words },
+          ...toolResponse([
+            {
+              name: fileTool,
+              input:
+                fileTool === 'read_file' ? { path } : { path, text, expectedHash: digest(before) },
+            },
+            { name: handoff, input: {} },
+          ]),
+        ],
+      ];
+      const expectedCalls = mocked.responses.length;
+      const calls = mocked.modelCalls;
+      await run();
+      expect(mocked.modelCalls - calls).toBe(expectedCalls);
+      const view = await learningView(principal, study.id, { passive: true });
+      const parts = view.conversation!.flatMap((entry) => entry.parts);
+      for (const name of [fileTool, handoff])
+        expect(parts).toContainEqual(
+          expect.objectContaining({ kind: 'tool', name, status: 'succeeded' }),
+        );
+      expect(parts.filter((part) => part.kind === 'text' && part.text === words)).toHaveLength(1);
+      const guided = (await store.binding(sessionId))!.guided!;
+      expect(handoff === 'request_skill_review' ? guided.pending : guided.handoff).toMatchObject({
+        question: words,
+        spokenAt: expect.any(Number),
+      });
+      if (handoff === 'respond_to_learner') expect(guided.pending?.question).toBe(original);
+      if (fileTool === 'write_file')
+        expect(await service.readText(row.environment_id!, path)).toBe(text);
+      expect(guided.approval).toBeUndefined();
+      expect(view.state.position).toEqual(row.state.position);
+      expect(view.actions).not.toContain('next');
+    },
+  );
   it('rejects feedback for an unopened section instead of silently reopening the first lesson', async () => {
     const study = await freshStudy(),
       opening = (await study.send('begin')) as { sessionId: string };

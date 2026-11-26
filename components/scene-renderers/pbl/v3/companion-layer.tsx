@@ -27,6 +27,7 @@ export type AssistantMode = 'closed' | 'window' | 'docked';
  */
 export function CompanionLayer({
   view,
+  acceptedRetry,
   board,
   boardOpen,
   onBoard,
@@ -52,6 +53,7 @@ export function CompanionLayer({
   command,
 }: {
   view: LearningView;
+  acceptedRetry: string;
   board: NonNullable<LearningView['explainBoard']>;
   /** The whiteboard window is in view. */
   boardOpen: boolean;
@@ -101,7 +103,8 @@ export function CompanionLayer({
   return (
     <Narrated
       conversation={conversation}
-      stageKey={stageKey}
+      // An accepted learner retry reopens a stopped input. A background takeover does not.
+      stageKey={`${stageKey}:${acceptedRetry}`}
       onBoard={onBoard}
       onPoint={onPoint}
       onTold={onTold}

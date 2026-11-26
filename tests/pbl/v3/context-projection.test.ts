@@ -145,6 +145,33 @@ describe('model-aware teaching context projection', () => {
       }
     },
   );
+  it('keeps the original learner request alongside the partial answer on first compaction and reuse', async () => {
+    const source = longContext();
+    const learner = 'Which file should I open? How do I test it?';
+    source.messages[source.messages.length - 1] = { role: 'user', content: learner, timestamp: 20 };
+    const scope = { ...window, spokenReview: true, recoverySpeech: ['Open PLAN.md.'] };
+    const stream = summarizer();
+    const runtime = createTeachingContextProjection(stream);
+    try {
+      const fresh = await runtime.prepare(source, scope, model);
+      expect(stream).toHaveBeenCalled();
+      const calls = stream.mock.calls.length;
+      const reused = await runtime.prepare(source, scope, model);
+      expect(stream).toHaveBeenCalledTimes(calls);
+      for (const projected of [fresh, reused]) {
+        expect(
+          requestStateTail(projected).split('Original learner input: ' + JSON.stringify(learner)),
+        ).toHaveLength(2);
+        expect(requestStateTail(projected)).toContain(
+          'Already delivered to the learner: "Open PLAN.md."',
+        );
+        expect(projected.messages.at(-1)).toEqual(source.messages.at(-1));
+      }
+    } finally {
+      runtime.dispose();
+    }
+  });
+
   it('never summarizes or saves the wire-only host state as learner history', async () => {
     const marker = 'EPHEMERAL_HOST_FACTS: approved=false revision=7';
     const source = withRequestStateTail(longContext(), marker);

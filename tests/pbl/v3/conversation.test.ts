@@ -1212,6 +1212,12 @@ it.each([false, true])(
   'presents one canonical full review across ordinary paraphrases and crash recovery (SDK receipt: %s)',
   (sdk) => {
     const response = 'The plan follows your saved choice.\n\nAny changes to this version?';
+    const call = {
+      type: 'toolCall',
+      id: 'one',
+      name: 'request_skill_review',
+      arguments: { response },
+    };
     const events = [
       event(1, 'user_message', { text: 'Review my plan.' }),
       event(2, 'message_end', {
@@ -1220,10 +1226,16 @@ it.each([false, true])(
           content: [
             { type: 'thinking', thinking: 'Private reasoning remains expandable.' },
             { type: 'text', text: 'The plan is ready. Do you want to change anything?' },
+            call,
           ],
         },
       }),
-      event(3, 'pbl_learner_handoff', { canonical: true, question: response, toolCallId: 'one' }),
+      event(3, 'pbl_learner_handoff', {
+        canonical: true,
+        question: response,
+        toolCallId: 'one',
+        pblInputId: 1,
+      }),
       ...(sdk
         ? [
             event(4, 'tool_execution_end', {
@@ -1246,6 +1258,17 @@ it.each([false, true])(
         : []),
       event(5, 'session_end', { status: 'succeeded' }),
     ];
+    // A classic review can speak a draft and submit the formal response in the same frame.
+    const pages = [events.slice(0, 2), events.slice(2)].map((page) =>
+      projectConversation(page, 'planner', false, undefined, true),
+    );
+    expect(
+      mergeConversationHistory(pages).flatMap((entry) =>
+        entry.speaker === 'user'
+          ? []
+          : entry.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])),
+      ),
+    ).toEqual([response]);
     const before = structuredClone(events);
     const parts = projectConversation(events, 'planner', false)
       .filter((entry) => entry.speaker !== 'user')
@@ -1331,13 +1354,13 @@ it('reconciles canonical delivery across pages without hiding another role sessi
 });
 
 it.each([
-  ['**浏览器**发送问题。', '浏览器发送问题。', true],
-  ['Read [the file](#pbl-file=a.py).', 'Read [the file](#pbl-file=b.py).', false],
-  ['Run `test_a`.', 'Run `testa`.', false],
-])('only folds legacy emphasis when the instructions match: %s', (original, receipt, same) => {
+  ['wb_open', '**浏览器**发送问题。', '浏览器发送问题。', true],
+  ['wb_open', 'Read [the file](#pbl-file=a.py).', 'Read [the file](#pbl-file=b.py).', false],
+  ['cue_user', 'Run `test_a`.', 'Run `testa`.', false],
+])('only folds matching legacy instructions after %s: %s', (toolName, original, receipt, same) => {
   const events = [
     event(1, 'user_message', { pblOpening: true }),
-    event(2, 'tool_execution_end', { toolCallId: 'board', toolName: 'wb_open' }),
+    event(2, 'tool_execution_end', { toolCallId: 'board', toolName }),
     event(3, 'message_end', message(original)),
     event(4, 'pbl_learner_handoff', { toolCallId: 'answer', question: receipt, canonical: true }),
   ];

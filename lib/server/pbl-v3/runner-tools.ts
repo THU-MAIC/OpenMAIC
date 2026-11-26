@@ -71,6 +71,7 @@ import {
   isSpokenHandoff,
   LEARNER_HANDOFF_EVENT,
   preservesSpokenClosing,
+  REPLAYED_HANDOFF_SPEECH,
   reviewResponse,
   spokenHandoffClosing,
   supportTurnSequences,
@@ -1387,7 +1388,13 @@ async function settleSpokenReply(
     stream.push({
       type: 'done',
       reason: reply.stopReason,
-      message: { ...reply, content },
+      message: {
+        ...reply,
+        content,
+        ...(handoffs.length && skip > 0 && skip === words.length && !authored.length
+          ? { [REPLAYED_HANDOFF_SPEECH]: true }
+          : {}),
+      },
     });
   }
   return stream;

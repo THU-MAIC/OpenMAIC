@@ -135,7 +135,7 @@ export interface LearningConversationEntry {
   )[];
 }
 
-function conversationScope(entry: LearningConversationEntry): string {
+export function conversationScope(entry: LearningConversationEntry): string {
   return entry.id.startsWith('pbl-role-') && entry.id.includes(':')
     ? entry.id.slice(0, entry.id.indexOf(':'))
     : entry.speaker;
@@ -201,7 +201,7 @@ function closingQuestion(text: string) {
 }
 
 /** Only cut at a shared sentence or block boundary, never inside a reference or code span. */
-function newLegacyDirections(previous: string, recorded: string) {
+export function newLegacyDirections(previous: string, recorded: string) {
   let shared = 0;
   while (shared < recorded.length && previous[shared] === recorded[shared]) shared++;
   if (!shared) return recorded;
@@ -357,7 +357,9 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       .filter(
         (entry) =>
           entry.inputId !== undefined &&
-          entry.parts.some((part) => part.kind === 'tool' && part.action === 'board'),
+          entry.parts.some(
+            (part) => part.kind === 'tool' && (part.action === 'board' || part.name === 'cue_user'),
+          ),
       )
       .map((entry) => `${conversationScope(entry)}:${entry.inputId}`),
   );
@@ -406,7 +408,9 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
     if (receipt.inputId === undefined) continue;
     const source = legacySources.get(`${receipt.scope}:${receipt.inputId}:${receipt.part.id}`);
     if (!receipt.canonical && !source) continue;
-    if (source) spoken.add(source);
+    // A classic review also pairs a response argument with text from the same frame.
+    // Its canonical receipt replaces that draft; only old spoken reviews need this fallback.
+    if (source && !receipt.canonical) spoken.add(source);
     const speech = replies.filter(
       (reply) =>
         spoken.has(reply.part) &&
