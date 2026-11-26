@@ -1633,69 +1633,134 @@ it.each([
   },
 );
 
-it('keeps the added hint and original pending question at rest without voicing the question again', () => {
-  const question = 'Which file should we inspect?';
-  const hints = ['Open the network tab.', 'Check the response first.'];
-  const before = [
-    event(1, 'user_message', { text: 'I am ready.' }),
-    event(2, 'message_end', {
-      message: { ...message(question).message, stopReason: 'stop', timestamp: 10 },
-      pblInputId: 1,
-    }),
-    event(3, 'session_interrupted', { pblInputId: 1 }),
-  ];
-  const after = [
-    event(4, 'session_resumed', { pblInputId: 1 }, 2),
-    event(
-      5,
-      'message_end',
-      {
+it.each(['same attempt', 'retry', 'legacy retry'] as const)(
+  'keeps the added hint and pending question at rest after %s without voicing the question again',
+  (mode) => {
+    const question = 'Which file should we inspect?';
+    const hints = ['Open the network tab.', 'Check the response first.'];
+    const before = [
+      event(1, 'user_message', { text: 'I am ready.' }),
+      event(2, 'message_end', {
+        message: { ...message(question).message, stopReason: 'stop', timestamp: 10 },
         pblInputId: 1,
-        message: {
-          role: 'assistant',
-          timestamp: 20,
-          stopReason: 'toolUse',
-          pblRetainedReview: true,
-          content: [
-            ...hints.map((text) => ({ type: 'text', text })),
-            { type: 'toolCall', name: 'request_skill_review', id: 'register', arguments: {} },
-          ],
+      }),
+      event(3, 'session_interrupted', { pblInputId: 1 }),
+    ];
+    const after = [
+      event(4, 'session_resumed', { pblInputId: 1 }, 2),
+      event(
+        5,
+        'message_end',
+        {
+          pblInputId: 1,
+          message: {
+            role: 'assistant',
+            timestamp: 20,
+            stopReason: 'toolUse',
+            pblRetainedReview: true,
+            ...(mode === 'legacy retry' ? {} : { pblReviewSourceAt: 10 }),
+            content: [
+              ...hints.map((text) => ({ type: 'text', text })),
+              { type: 'toolCall', name: 'request_skill_review', id: 'register', arguments: {} },
+            ],
+          },
         },
-      },
-      2,
-    ),
-    event(
-      6,
-      'pbl_learner_handoff',
-      {
-        toolCallId: 'register',
-        question,
-        spokenAt: 10,
-        pblInputId: 1,
-      },
-      2,
-    ),
-    event(7, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
-  ];
-  const page = (events: typeof before) =>
-    projectConversation(events, 'planner', false, undefined, true);
-  for (const view of [
-    projectConversation([...before, ...after], 'planner', false),
-    mergeConversationHistory([page(after)]),
-    mergeConversationHistory([page(before), page(after)]),
-    mergeConversationHistory([page(before), page(after.slice(0, 2)), page(after.slice(2))]),
+        2,
+      ),
+      ...(mode === 'same attempt'
+        ? []
+        : [
+            event(6, 'session_interrupted', { pblInputId: 1 }, 2),
+            event(7, 'session_resumed', { pblInputId: 1 }, 3),
+          ]),
+      event(
+        8,
+        'pbl_learner_handoff',
+        {
+          toolCallId: mode === 'same attempt' ? 'register' : 'register-again',
+          question,
+          spokenAt: 10,
+          pblInputId: 1,
+        },
+        mode === 'same attempt' ? 2 : 3,
+      ),
+      event(
+        9,
+        'session_end',
+        { status: 'succeeded', pblInputId: 1 },
+        mode === 'same attempt' ? 2 : 3,
+      ),
+    ];
+    const page = (events: typeof before) =>
+      projectConversation(events, 'planner', false, undefined, true);
+    if (mode === 'legacy retry') {
+      const partial = mergeConversationHistory([page(after)]);
+      // The old attempt's hint is still readable, but a page lacking its source
+      // cannot prove that it belongs to the later registration.
+      expect(recoveredReviewSpeech(partial.at(-1))?.text).toBe(question);
+      expect(
+        partial
+          .flatMap((entry) => entry.parts)
+          .filter((part) => part.kind === 'text')
+          .map((part) => part.text),
+      ).toEqual([...hints, question]);
+    }
+    for (const view of [
+      projectConversation([...before, ...after], 'planner', false),
+      ...(mode !== 'legacy retry' ? [mergeConversationHistory([page(after)])] : []),
+      mergeConversationHistory([page(before), page(after)]),
+      mergeConversationHistory([page(before), page(after.slice(0, 2)), page(after.slice(2))]),
+    ]) {
+      const settled = view.at(-1)!;
+      expect(recoveredReviewSpeech(settled)?.text).toBe([...hints, question].join('\n\n'));
+      expect(recoveredReviewSpeech({ ...settled, status: 'running' })).toBeUndefined();
+      const played = view.flatMap((entry) =>
+        entry.speaker !== 'user'
+          ? narrationSteps(entry).flatMap((step) => (step.kind === 'say' ? [step.text] : []))
+          : [],
+      );
+      expect(played.slice(-hints.length)).toEqual(hints);
+      for (const hint of hints) expect(played.filter((text) => text === hint)).toHaveLength(1);
+    }
+  },
+);
+
+it('attaches a recovered hint only to the same role session, learner input and original question', () => {
+  const entry = (
+    scope: string,
+    inputId: number,
+    part: LearningConversationEntry['parts'][number],
+  ): LearningConversationEntry => ({
+    id: `pbl-role-${scope}:${part.id}`,
+    inputId,
+    speaker: 'planner',
+    status: 'succeeded',
+    parts: [part],
+  });
+  const hint = entry('first', 1, {
+    kind: 'text',
+    id: 'hint',
+    messageId: 20,
+    spokenAt: 20,
+    supplementsReview: 10,
+    text: 'Look at the response.',
+  });
+  const receipt = (scope: string, input: number, at: number) =>
+    entry(scope, input, {
+      kind: 'text',
+      id: 'question-3-register',
+      spokenAt: at,
+      text: 'Which file?',
+    });
+  for (const other of [
+    receipt('second', 1, 10),
+    receipt('first', 2, 10),
+    receipt('first', 1, 30),
   ]) {
-    const settled = view.at(-1)!;
-    expect(recoveredReviewSpeech(settled)?.text).toBe([...hints, question].join('\n\n'));
-    expect(recoveredReviewSpeech({ ...settled, status: 'running' })).toBeUndefined();
-    const played = view.flatMap((entry) =>
-      entry.speaker !== 'user'
-        ? narrationSteps(entry).flatMap((step) => (step.kind === 'say' ? [step.text] : []))
-        : [],
-    );
-    expect(played.slice(-hints.length)).toEqual(hints);
-    for (const hint of hints) expect(played.filter((text) => text === hint)).toHaveLength(1);
+    expect(mergeConversationHistory([[hint], [other]]).at(-1)?.restingHandoff).toBeUndefined();
   }
+  const actual = mergeConversationHistory([[hint], [receipt('first', 1, 10)]]).at(-1);
+  expect(actual?.restingHandoff).toBe('Look at the response.\n\nWhich file?');
 });
 
 describe.each(['request_skill_review', 'respond_to_learner', 'request_learner_help'])(

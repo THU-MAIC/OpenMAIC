@@ -233,6 +233,7 @@ function ConversationEntry({
 }
 export function LearningConversation({
   view,
+  actionsDisabled,
   sent,
   requesting = false,
   modalActive = false,
@@ -244,6 +245,7 @@ export function LearningConversation({
   overview,
 }: {
   view: LearningView;
+  actionsDisabled: boolean;
   onOpenReport?: () => void;
   onOpenFile?: (reference: FileReference) => void;
   onOpenTask?: () => void;
@@ -287,7 +289,7 @@ export function LearningConversation({
   };
   // Where the role is a companion it is shown as one here too: the same face and name.
   const persona = !!view.explainBoard;
-  const completion = stageCompletionCopy(view, t);
+  const completion = stageCompletionCopy(view, t, actionsDisabled);
   const placeholder = (requesting || view.busy) && !entries.some((e) => e.status === 'running');
   if (waitingToStart) {
     // An ordinary reading pane: no tail observer runs before the learner starts.

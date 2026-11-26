@@ -46,7 +46,7 @@ function recoveryBoundary(given: string, replies: AssistantMessage[], live?: () 
       studentTurns: 1,
       spokenReview: true,
       recoverySpeech: [given],
-      recoveryQuestion: given.split('\n\n').at(-1),
+      recoveryQuestion: { question: given.split('\n\n').at(-1)!, spokenAt: 10 },
     },
     live,
   );
@@ -125,7 +125,7 @@ describe('an unfinished review with a different closing', () => {
     expect(() => speech.forCall('20')).toThrow(
       'Speak only the missing hint. Keep the original question pending.',
     );
-    expect(speech.recoveryQuestion()).toBe(given);
+    expect(speech.recoveryQuestion()).toEqual({ question: given, spokenAt: 10 });
   });
 
   it('keeps assistance available without registering advice as a question in a mixed handoff', async () => {
@@ -141,7 +141,7 @@ describe('an unfinished review with a different closing', () => {
     speech.observe(await recoverMessage(given, supplied));
     expect(speech.forCall('20')).toBeUndefined();
     expect(speech.forCall('support')).toEqual({ question: draft, spokenAt: 20 });
-    expect(speech.recoveryQuestion()).toBe(given);
+    expect(speech.recoveryQuestion()).toEqual({ question: given, spokenAt: 10 });
   });
 
   it.each(['hint then question', 'question then hint', 'question around hint'])(
@@ -164,7 +164,46 @@ describe('an unfinished review with a different closing', () => {
         hint,
       ]);
       expect(speech.forCall('20')).toEqual({ question, spokenAt: 10 });
-      expect(speech.recoveryQuestion()).toBe(question);
+      expect(speech.recoveryQuestion()).toEqual({ question, spokenAt: 10 });
+    },
+  );
+
+  it.each(['', '\n', '\r\n', '\n\n'])(
+    'removes a repeated closing after a hint with gap %j',
+    async (gap) => {
+      const question = '你会先检查哪个文件？';
+      const hint = '先看网络响应。';
+      const result = await recoverMessage(
+        question,
+        frame(20, hint + gap + question, tool, { reviewDelivery: 'add_hint' }),
+      );
+      expect(result.content.filter((p) => p.type === 'text')).toEqual([
+        { type: 'text', text: hint },
+      ]);
+    },
+  );
+
+  it.each([
+    ['Which file?', 'First open the network tab. Which file?', 'First open the network tab.'],
+    ['Which file?', 'Search for “Which file?” in the log.'],
+    ['Which file?', 'Read the original wording:\nWhich file?'],
+    ['你会先检查哪个文件？', '在网页输入框原样输入下面这句\n你会先检查哪个文件？'],
+    ['你会先检查哪个文件？', '**先看网络响应。**你会先检查哪个文件？', '**先看网络响应。**'],
+    ['Which file?', 'Copy the literal `response.` Which file?'],
+    ['Which file?', '> Which file?'],
+    ['Which file?', 'Use the file docs/Which file?'],
+    ['Which file?', 'Copy this snippet:\n\n```text\nWhich file?'],
+    ['Which file?', 'Consider the other branch. Which file changed?'],
+  ])(
+    'keeps literal examples and distinct guidance in %j / %j',
+    async (question, draft, expected = draft) => {
+      const result = await recoverMessage(
+        question,
+        frame(20, draft, tool, { reviewDelivery: 'add_hint' }),
+      );
+      expect(result.content.filter((p) => p.type === 'text')).toEqual([
+        { type: 'text', text: expected },
+      ]);
     },
   );
 

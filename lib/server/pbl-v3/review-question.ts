@@ -1,4 +1,5 @@
 import 'server-only';
+import { fromMarkdown } from 'mdast-util-from-markdown';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { Queryable } from '@openmaic/storage/agent-session/pg';
 
@@ -7,6 +8,9 @@ export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
 export const REPLAYED_HANDOFF_SPEECH = 'pblReplayedHandoffSpeech';
 /** The host settled this recovery against its earlier spoken question, with or without a new hint. */
 export const RETAINED_REVIEW = 'pblRetainedReview';
+/** Original speech frame kept by a recovered review, independent of the registering attempt. */
+export const REVIEW_SOURCE_AT = 'pblReviewSourceAt';
+export type SpokenReview = { question: string; spokenAt: number };
 
 /** One authored message supplies both display text and the question recorded for feedback. */
 export function reviewResponse(response: string): { response: string; question: string } {
@@ -17,6 +21,37 @@ export function reviewResponse(response: string): { response: string; question: 
     .at(-1)!
     .trim();
   return { response: text, question };
+}
+
+/** In an add_hint delivery only a standalone, verbatim closing belongs to the original question. */
+export function reviewHintEnd(words: string, question: string) {
+  const text = words.trimEnd();
+  if (!text.endsWith(question)) return words.length;
+  const start = text.length - question.length;
+  const before = text.slice(0, start);
+  const paragraph = fromMarkdown(text).children.at(-1);
+  // Examples in blockquotes, code, links and literal paths remain part of the hint.
+  if (paragraph?.type !== 'paragraph' || /[:：]\s*$/u.test(before)) return words.length;
+  const atProse = paragraph.children.some((node) => {
+    const position = node.position!;
+    return (
+      position.start.offset === start ||
+      (node.type === 'text' && position.start.offset! < start && start < position.end.offset!)
+    );
+  });
+  if (!atProse) return words.length;
+  if (start === paragraph.position!.start.offset) return before.trimEnd().length;
+  // Within the paragraph an actual spoken sentence must end. A soft line wrap can
+  // introduce the very text the learner needs to enter. Emphasis is still prose;
+  // punctuation inside a code span, link address or other literal is not.
+  const hint = before.trimEnd();
+  const ending = fromMarkdown(hint).children.at(-1);
+  let last = ending?.type === 'paragraph' ? ending.children.at(-1) : undefined;
+  while (last?.type === 'strong' || last?.type === 'emphasis') last = last.children.at(-1);
+  const sentenceEnded =
+    last?.type === 'text' &&
+    (/[。！？]$/u.test(last.value) || (/[.!?]$/u.test(last.value) && hint.length < before.length));
+  return sentenceEnded ? hint.length : words.length;
 }
 
 /** These tools affect presentation or language, without changing the subject of the reply. */
@@ -101,10 +136,14 @@ export function spokenHandoffClosing() {
     recoverySpeech(): readonly string[] | undefined {
       return source?.recovering ? source.frames.flatMap((frame) => frame.blocks) : undefined;
     },
-    recoveryQuestion(): string | undefined {
-      const closing =
-        source?.recovering && source.frames.findLast((frame) => !frame.guidanceOnly)?.blocks.at(-1);
-      return closing ? reviewResponse(closing).question : undefined;
+    recoveryQuestion(): SpokenReview | undefined {
+      if (!source?.recovering) return;
+      const frame = source.frames.findLast((item) => !item.guidanceOnly);
+      if (frame)
+        return {
+          question: reviewResponse(frame.blocks.at(-1)!).question,
+          spokenAt: frame.spokenAt,
+        };
     },
     forCall(id: string): { question: string; spokenAt?: number } | undefined {
       const call = calls.find((tool) => tool.id === id);

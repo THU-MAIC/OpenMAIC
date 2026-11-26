@@ -7,7 +7,12 @@ import type {
   LearningBoardDisplay,
 } from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { LEARNER_HANDOFF_EVENT, RETAINED_REVIEW, reviewQuestions } from './review-question';
+import {
+  LEARNER_HANDOFF_EVENT,
+  RETAINED_REVIEW,
+  REVIEW_SOURCE_AT,
+  reviewQuestions,
+} from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   executionFailureCode,
@@ -348,7 +353,9 @@ export function projectConversation(
         if (part.kind === 'text' && typeof reviewCall?.id === 'string') {
           const receiptId = `question-${event.attempt}-${reviewCall.id}`;
           if (index === closingIndex) part.reviewReceiptId = receiptId;
-          if (message[RETAINED_REVIEW] === true) part.supplementsReview = receiptId;
+          if (message[RETAINED_REVIEW] === true)
+            part.supplementsReview =
+              typeof message[REVIEW_SOURCE_AT] === 'number' ? message[REVIEW_SOURCE_AT] : receiptId;
         }
         part.text = text;
         part.streaming =

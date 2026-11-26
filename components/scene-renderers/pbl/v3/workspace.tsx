@@ -1257,6 +1257,7 @@ function PBLV3WorkspaceContent({
 
                   <div className="pbl-task-area flex min-h-0 flex-1 flex-col">
                     <LearningConversation
+                      actionsDisabled={disabled}
                       waitingToStart={waitingToStart}
                       overview={overview}
                       modalActive={onboarding.active || entryLoading}

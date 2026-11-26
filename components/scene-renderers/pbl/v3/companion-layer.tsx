@@ -99,7 +99,7 @@ export function CompanionLayer({
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
   const opening = pendingAction === 'begin' || (blockedReason === 'opening' && !view.roleRun);
   const role = view.role ?? 'mentor';
-  const completion = stageCompletionCopy(view, t);
+  const completion = stageCompletionCopy(view, t, disabled);
   return (
     <Narrated
       conversation={conversation}

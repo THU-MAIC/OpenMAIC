@@ -1,6 +1,7 @@
 import type { Context } from '@earendil-works/pi-ai';
 import { appendRequestStateTail } from '@/lib/agent/runtime/request-state-tail';
 import { withPlanToolContext, type InitialPlanContext } from './plan-tool-context';
+import type { SpokenReview } from './review-question';
 
 export interface TeachingHistoryWindow {
   stageKey: string;
@@ -16,7 +17,7 @@ export interface TeachingHistoryWindow {
   /** Continuous speech preceding an unresolved handoff, rebuilt from this learner's messages. */
   readonly recoverySpeech?: readonly string[];
   /** The closing before any hints that deliberately kept its review. */
-  readonly recoveryQuestion?: string;
+  readonly recoveryQuestion?: SpokenReview;
   /** Host-only request recovery policy; never a learner frame or durable message. */
   continuationInstruction?: string;
   /** Planner-only initial file data; never a learner frame or a section instruction. */

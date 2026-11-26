@@ -5315,6 +5315,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     'takeover',
     'takeover with a missing question',
     'takeover with an extra hint',
+    'takeover after delivering the hint',
     'missing closing',
     'missing closing without intent',
     'unconfirmed closing',
@@ -5401,18 +5402,55 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           claim!.attempt,
           input.seq,
         );
-        await agents.appendRunEvent(sessionId, worker.workerId, {
-          ts: Date.now(),
-          attempt: claim!.attempt,
-          type: 'session_interrupted',
-          data: { reason: 'runner shutdown' },
-        });
-        await agents.releaseLease(sessionId, worker.workerId);
-        claim = await agents.claimNextSession('board-review-takeover', process.pid, {
-          sessionId,
-          leaseTtlMs: 10000,
-          maxAttempts: 5,
-        });
+        const takeOver = async (from: string, to: string) => {
+          await agents.appendRunEvent(sessionId, from, {
+            ts: Date.now(),
+            attempt: claim!.attempt,
+            type: 'session_interrupted',
+            data: { reason: 'runner shutdown' },
+          });
+          await agents.releaseLease(sessionId, from);
+          return agents.claimNextSession(to, process.pid, {
+            sessionId,
+            leaseTtlMs: 10000,
+            maxAttempts: 5,
+          });
+        };
+        claim = await takeOver(worker.workerId, 'board-review-takeover');
+        if (mode === 'takeover after delivering the hint') {
+          // The previous worker durably spoke the hint, but lost its lease before running the tool.
+          const recoveredSession = new Session(
+            await AgentSessionEntryStorage.open({
+              sessionId,
+              workerId: 'board-review-takeover',
+              attempt: claim!.attempt,
+            }),
+          );
+          const hint = {
+            ...delivered,
+            timestamp: delivered.timestamp + 1,
+            stopReason: 'toolUse' as const,
+            pblRetainedReview: true,
+            pblReviewSourceAt: delivered.timestamp,
+            content: [
+              { type: 'text' as const, text: summary },
+              {
+                type: 'toolCall' as const,
+                name: 'request_skill_review',
+                id: 'orphaned-registration',
+                arguments: { reviewDelivery: 'add_hint' },
+              },
+            ],
+          };
+          await recoveredSession.appendMessage(hint);
+          await agents.appendRunEvent(sessionId, 'board-review-takeover', {
+            ts: hint.timestamp,
+            attempt: claim!.attempt,
+            type: 'message_end',
+            data: { message: hint },
+          });
+          claim = await takeOver('board-review-takeover', 'board-review-second-takeover');
+        }
       }
       switch (mode) {
         case 'takeover':
@@ -5423,9 +5461,12 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           break;
         case 'takeover with an extra hint':
           mocked.responses = [
-            speakAndCall(summary + '\n\n' + question, register),
+            speakAndCall(summary + ' ' + question, register),
             callOnly({ ...register, input: { reviewDelivery: 'add_hint' } }),
           ];
+          break;
+        case 'takeover after delivering the hint':
+          mocked.responses = [callOnly(register)];
           break;
         case 'unconfirmed closing':
           mocked.responses = [
@@ -5526,16 +5567,23 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       if (mode === 'takeover')
         expect(recoveredReviewSpeech(refreshed.conversation!.at(-1))?.text).toBe(question);
       const parts = view.conversation!.flatMap((entry) => entry.parts);
-      if (mode === 'takeover with an extra hint') {
+      const deliveredHint =
+        mode === 'takeover with an extra hint' || mode === 'takeover after delivering the hint';
+      if (deliveredHint) {
         const original = parts.find((p) => p.kind === 'text' && p.text === speech);
         expect(original).toMatchObject({ spokenAt: committed.pending?.spokenAt });
+        const hint = parts.find((p) => p.kind === 'text' && p.text === summary);
+        expect(hint).toMatchObject({ supplementsReview: committed.pending?.spokenAt });
         const replay = view.conversation!.flatMap((entry) => narrationSteps(entry));
         const spoken = replay.flatMap((step) => (step.kind === 'say' ? [step.text] : []));
         expect(spoken.join(' ')).toContain(summary);
         expect(spoken.join(' ').split(question)).toHaveLength(2);
+        expect(recoveredReviewSpeech(refreshed.conversation!.at(-1))?.text).toBe(
+          summary + '\n\n' + question,
+        );
       }
       expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
-        mode === 'takeover with an extra hint'
+        deliveredHint
           ? [speech, summary]
           : [
                 'new question',

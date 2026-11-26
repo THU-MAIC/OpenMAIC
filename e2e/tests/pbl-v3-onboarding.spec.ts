@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test';
 import { test } from '../fixtures/pbl-learning-events';
 import { MockApi } from '../fixtures/mock-api';
 import { seedServerDocument, uniqueStageId } from '../fixtures/server-seed';
+import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import type { LearningSnapshot } from '@/lib/pbl/v3/event-stream';
 
@@ -1022,14 +1023,29 @@ test('accepts a silent reply once when next arrives late or is withdrawn before 
     ],
   };
   const bubble = page.getByTestId('pbl-companion-speech');
-  view.actions = ['chat'];
+  // The completion authorizes the next step before the running tutor releases the controls.
+  view.actions = ['chat', 'next'];
+  view.busy = true;
   await show([learner, receipt]);
   await expect.poll(() => requested).toEqual([acceptance]);
+  const next = page.getByTestId('pbl-companion-continue');
+  await expect(next).toBeDisabled();
+  const buttonLabel = await next.innerText();
+  await expect(bubble).toContainText(acceptance);
+  await expect(bubble).not.toContainText('This step is ready');
+  await useAssistantMode(page, 'window');
+  const pane = page.getByTestId('pbl-assistant');
+  await expect(pane.getByRole('button', { name: buttonLabel, exact: true })).toBeDisabled();
+  await expect(pane.getByText(acceptance, { exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('pbl-completion-handoff')).not.toContainText('This step is ready');
+  await page.getByTestId('pbl-assistant-close').click();
   receipt.status = 'succeeded';
   await show([learner, receipt]);
   await expect.poll(() => playback).toEqual(['start', 'end']);
-  view.actions.push('next');
+  expect(requested).toEqual([acceptance]);
+  view.busy = false;
   await show([learner, receipt]);
+  await expect(next).toBeEnabled();
   await expect.poll(() => requested).toHaveLength(2);
   expect(requested[1]).toContain('This step is ready');
   expect(requested[1]).not.toContain(acceptance);
@@ -1076,6 +1092,8 @@ test('accepts a silent reply once when next arrives late or is withdrawn before 
   await expect.poll(() => requested, { timeout: 15000 }).toHaveLength(4);
   expect(requested[3]).toBe(requested[1]);
   expect(commands).toEqual([]);
+  await next.click();
+  await expect.poll(() => commands).toEqual(['next']);
 });
 
 for (const sawToolStart of [false, true]) {
@@ -1148,7 +1166,7 @@ for (const sawToolStart of [false, true]) {
   });
 }
 
-test('speaks a recovered hint once and keeps the original question readable in the avatar', async ({
+test('speaks a recovered hint once and keeps it with the original question after a second takeover', async ({
   page,
   learningEvents,
 }) => {
@@ -1166,19 +1184,31 @@ test('speaks a recovered hint once and keeps the original question readable in t
   await show([original]);
   await expect.poll(() => playback).toEqual(['start']);
 
-  // The committed projection supplies resting copy separately from the newly spoken hint.
-  const recovered: NarratedEntry = {
+  // The hint reaches the classroom before this worker can register the question.
+  const supplement: NarratedEntry = {
     ...original,
-    id: 'recovered-review',
-    status: 'succeeded',
-    parts: [{ kind: 'text', id: 'text-91-0', text: hint, spokenAt: 20 }],
-    restingHandoff: hint + '\n\n' + question,
+    id: 'hint-attempt',
+    parts: [{ kind: 'text', id: 'text-91-0', text: hint, spokenAt: 20, supplementsReview: 10 }],
   };
-  await show([{ ...original, status: 'interrupted' }, recovered]);
+  const interrupted = { ...original, status: 'interrupted' as const };
+  await show(deduplicateHandoffs([interrupted, supplement]));
+  await expect.poll(() => requested, { timeout: 15000 }).toEqual([question, hint]);
+
+  // A new worker registers the original question without speaking it again.
+  const receipt: NarratedEntry = {
+    ...original,
+    id: 'registration-attempt',
+    status: 'succeeded',
+    parts: [{ kind: 'text', id: 'question-3-register', text: question, spokenAt: 10 }],
+  };
+  await show(deduplicateHandoffs([interrupted, { ...supplement, status: 'interrupted' }, receipt]));
   await expect.poll(() => playback, { timeout: 15000 }).toEqual(['start', 'end', 'start', 'end']);
   const bubble = page.getByTestId('pbl-companion-speech');
+  await expect(bubble.locator('[data-playing="true"]')).toHaveCount(0);
   await expect(bubble).toContainText(hint);
   await expect(bubble).toContainText(question);
+  await expect(page.getByTestId('pbl-companion-input').getByRole('textbox')).toBeEditable();
+  await expect(page.getByTestId('pbl-companion-continue')).toHaveCount(0);
   expect(requested).toEqual([question, hint]);
   expect(commands).toEqual([]);
 });

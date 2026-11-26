@@ -89,8 +89,8 @@ export interface LearningConversationEntry {
         canonical?: true;
         /** The legacy review receipt requested in the very same assistant message. */
         reviewReceiptId?: string;
-        /** New guidance delivered while the receipt keeps the previously spoken question. */
-        supplementsReview?: string;
+        /** Original question's speech timestamp; early recordings only carry the attempted receipt ID. */
+        supplementsReview?: number | string;
         /** A finished prose-only stop can be registered by the next legacy tool-only call. */
         reviewStop?: true;
         /** Original assistant frame, also referenced by a spoken review receipt. */
@@ -394,11 +394,17 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
     const turn = `${conversationScope(entry)}:${entry.inputId}`;
     for (const part of entry.parts) {
       if (part.kind === 'text' && !part.id.startsWith('question-')) {
-        if (part.supplementsReview) {
+        if (part.supplementsReview !== undefined) {
           const key = `${turn}:${part.supplementsReview}`;
-          const hints = reviewHints.get(key);
-          if (hints) hints.push(part.text);
-          else reviewHints.set(key, [part.text]);
+          // A legacy hint identified only its own call. Link it across retries only if the
+          // preceding uninterrupted stop is visible, including after history pages are folded.
+          const prior =
+            typeof part.supplementsReview === 'string' ? stops.get(turn)?.spokenAt : undefined;
+          const source = prior !== undefined ? `${turn}:${prior}` : key;
+          const hints = reviewHints.get(source) ?? reviewHints.get(key) ?? [];
+          hints.push(part.text);
+          reviewHints.set(key, hints);
+          if (source !== key) reviewHints.set(source, hints);
         }
         if (part.reviewReceiptId) legacySources.set(`${turn}:${part.reviewReceiptId}`, part);
         if (part.reviewStop) stops.set(turn, part);
@@ -487,9 +493,13 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
         return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
       });
     const latestText = entry.parts.findLast((p) => p.kind === 'text');
+    const turn = `${conversationScope(entry)}:${entry.inputId}`;
     const hints =
-      latestText?.spokenAt !== undefined && entry.inputId !== undefined
-        ? reviewHints.get(`${conversationScope(entry)}:${entry.inputId}:${latestText.id}`)
+      latestText?.spokenAt !== undefined &&
+      latestText.id.startsWith('question-') &&
+      entry.inputId !== undefined
+        ? (reviewHints.get(`${turn}:${latestText.spokenAt}`) ??
+          reviewHints.get(`${turn}:${latestText.id}`))
         : undefined;
     const restingHandoff =
       hints && latestText

@@ -79,9 +79,12 @@ import {
   preservesSpokenClosing,
   REPLAYED_HANDOFF_SPEECH,
   RETAINED_REVIEW,
+  REVIEW_SOURCE_AT,
+  reviewHintEnd,
   reviewResponse,
   spokenHandoffClosing,
   supportTurnSequences,
+  type SpokenReview,
 } from './review-question';
 
 const spokenReviewParameters = Type.Object({ approval: Type.Optional(Type.Boolean()) });
@@ -1367,7 +1370,7 @@ async function settleSpokenReply(
   delivered: readonly string[],
   streamFn: StreamFn,
   checkAuthority: () => Promise<void>,
-  previousQuestion: string | undefined,
+  previousQuestion: SpokenReview | undefined,
   ...request: Parameters<StreamFn>
 ) {
   const [model, context, options] = request;
@@ -1448,16 +1451,10 @@ async function settleSpokenReply(
         );
       }
     }
-    // A hint can be followed by a verbatim reminder of the original question.
-    // Keep the hint in place; only omit a whole closing paragraph paired to that question.
-    let end = words.length;
-    if (
-      delivery === 'add_hint' &&
-      previousQuestion &&
-      draft &&
-      reviewResponse(draft).question === previousQuestion
-    )
-      end = words.trimEnd().slice(0, -previousQuestion.length).trimEnd().length;
+    const end =
+      delivery === 'add_hint' && previousQuestion
+        ? reviewHintEnd(words, previousQuestion.question)
+        : words.length;
     let offset = 0;
     const speech = reply.content.flatMap<(typeof reply.content)[number]>((part) => {
       if (part.type !== 'text') return [part];
@@ -1505,7 +1502,7 @@ async function settleSpokenReply(
         ...reply,
         content,
         ...(delivery === 'keep_question' || delivery === 'add_hint'
-          ? { [RETAINED_REVIEW]: true }
+          ? { [RETAINED_REVIEW]: true, [REVIEW_SOURCE_AT]: previousQuestion?.spokenAt }
           : {}),
         ...(handoffs.length && skip > 0 && skip === words.length && !authored.length
           ? { [REPLAYED_HANDOFF_SPEECH]: true }

@@ -78,13 +78,17 @@ describe('learner-facing actions', () => {
       };
       const action = continueActionLabel(view, i18n.t);
       expect(action).toBe(expected[index]);
-      expect(stageCompletionCopy({ ...view, actions: [] }, i18n.t).instruction).toBeUndefined();
-      const classic = stageCompletionCopy(view, i18n.t);
+      expect(
+        stageCompletionCopy({ ...view, actions: [] }, i18n.t, false).instruction,
+      ).toBeUndefined();
+      expect(stageCompletionCopy(view, i18n.t, true).instruction).toBeUndefined();
+      const classic = stageCompletionCopy(view, i18n.t, false);
       expect(classic.instruction).toContain(`“${action}”`);
       expect(classic.afterMention).toBeUndefined();
       const onBoard = stageCompletionCopy(
         { ...view, explainBoard: { whiteboard: null, lastSeq: null, pages: [] } },
         i18n.t,
+        false,
       );
       expect(onBoard.instruction).toBe(classic.instruction);
       expect(onBoard.afterMention?.label).toBe(index < expected.length - 1 ? action : undefined);
