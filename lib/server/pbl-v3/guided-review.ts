@@ -25,6 +25,7 @@ export const guidedSkillStateSchema = z
         runId: z.string(),
         question: z.string().min(1),
         kind: z.literal('support').optional(),
+        spokenAt: z.number().optional(),
       })
       .optional(),
     welcome: z.enum(['pending', 'ready']).optional(),
@@ -120,21 +121,21 @@ export class GuidedSkillReview {
   }
 
   /** A blocked build can return control without creating review/approval evidence. */
-  handoff(question: string): void {
+  handoff(question: string, spokenAt?: number): void {
     if (!question.trim()) throw new Error('A concrete learner question is required.');
     this.assertWritable();
     delete this.state.pending;
     delete this.state.coverage;
-    this.state.handoff = { runId: this.runId, question };
+    this.state.handoff = { runId: this.runId, question, spokenAt };
     this.finishRun();
   }
 
   /** Answer a help-only turn without replacing a pending review or creating learner evidence. */
-  support(response: string): void {
+  support(response: string, spokenAt?: number): void {
     if (!response.trim()) throw new Error('A learner-facing response is required.');
     if (this.ended || this.advanced)
       throw new Error('Answer assistance before opening/advancing a section and end this turn.');
-    this.state.handoff = { runId: this.runId, question: response, kind: 'support' };
+    this.state.handoff = { runId: this.runId, question: response, kind: 'support', spokenAt };
     this.finishRun();
   }
 

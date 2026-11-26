@@ -70,7 +70,7 @@ import { abortable } from '@/lib/server/agent-runtime/abortable';
 import {
   LEARNER_HANDOFF_EVENT,
   reviewResponse,
-  spokenReviewClosing,
+  spokenHandoffClosing,
   supportTurnSequences,
 } from './review-question';
 
@@ -91,7 +91,7 @@ export async function teachingRunnerConfig(input: {
   const bound = binding;
   // With the whiteboard on, the reply is what the role says beside it; the lesson is on the board.
   const boardTeaching = pblWhiteboardEnabled() && pblWhiteboardTeachingRole(bound.role);
-  const spokenReview = boardTeaching ? spokenReviewClosing() : undefined;
+  const spokenClosing = boardTeaching ? spokenHandoffClosing() : undefined;
   const row = await store.get(bound.study_id, input.ownerId),
     project = projectFor(row),
     stage = stageFor(row);
@@ -329,7 +329,10 @@ export async function teachingRunnerConfig(input: {
                                 }
                               : {
                                   ...review.state.handoff!,
-                                  ...(name === 'respond_to_learner' ? { canonical: true } : {}),
+                                  ...(name === 'respond_to_learner' &&
+                                  review.state.handoff!.spokenAt === undefined
+                                    ? { canonical: true }
+                                    : {}),
                                 }),
                             toolCallId: _id,
                             ...(name === 'respond_to_learner'
@@ -634,26 +637,27 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'respond_to_learner',
-        'Answer an assistance-only product, background or project-knowledge question, or ask the necessary clarification. Preserve the pending teaching/review question and end this turn without advancing, crediting understanding or approving an artifact. Use before opening/advancing a Skill; do not repeat the response in prose. For a mixed review answer plus help request, use normal review tools for the actual review evidence instead.',
-        Type.Object({
-          response: Type.String({
-            minLength: 1,
-            ...(boardTeaching
-              ? {
-                  description:
-                    'What you say aloud to close the turn: at most three plain sentences. Anything the learner needs to look at goes on the whiteboard first, explained in the ordinary spoken text around those wb calls; no headings, lists, tables or code here.',
-                }
-              : {}),
-          }),
-        }),
-        async (_current, p) => {
+        boardTeaching
+          ? 'Answer the current learner in ordinary speech, including every necessary detail. Once the answer or clarification has been delivered, call this tool without text. This ends an assistance-only turn and preserves the pending question. A mixed answer and help request still uses the actual review evidence.'
+          : 'Answer an assistance-only product, background or project-knowledge question, or ask the necessary clarification. Preserve the pending teaching/review question and end this turn without advancing, crediting understanding or approving an artifact. Use before opening/advancing a Skill; do not repeat the response in prose. For a mixed review answer plus help request, use normal review tools for the actual review evidence instead.',
+        boardTeaching ? Type.Object({}) : Type.Object({ response: Type.String({ minLength: 1 }) }),
+        async (_current, p, callId) => {
           if (!latest || latest.pblOpening)
             throw sandboxConflict('Automatic entry must deliver the project/stage opening.');
-          review.support(p.response);
+          const spoken = spokenClosing?.forCall(callId);
+          const response = spokenClosing
+            ? spoken?.question
+            : 'response' in p
+              ? p.response
+              : undefined;
+          if (typeof response !== 'string')
+            throw sandboxInvalid('Speak the answer or clarification before registering it.');
+          const spokenAt = spoken?.spokenAt;
+          review.support(response, spokenAt);
           return {
             value: {
-              response: p.response,
-              canonical: true,
+              response,
+              ...(spokenAt === undefined ? { canonical: true } : { spokenAt }),
               waitForStudent: true,
               advancesProgress: false,
             },
@@ -744,9 +748,12 @@ export async function teachingRunnerConfig(input: {
     tools.push(
       tool(
         'request_learner_help',
-        'Only when a required current-source build is missing, failed or pending and you need learner input to proceed. Ask one concrete question and end the turn. This is NOT a Skill review, approval, completion or permission to advance. Prefer repairing and collecting the build yourself when possible.',
-        Type.Object({ question: Type.String({ minLength: 1 }) }),
-        async (current, p, _callId, signal) => {
+        (boardTeaching
+          ? 'Speak the concrete request once, then call this tool without text. '
+          : '') +
+          'Only when a required current-source build is missing, failed or pending and you need learner input to proceed. Ask one concrete question and end the turn. This is NOT a Skill review, approval, completion or permission to advance. Prefer repairing and collecting the build yourself when possible.',
+        boardTeaching ? Type.Object({}) : Type.Object({ question: Type.String({ minLength: 1 }) }),
+        async (current, p, callId, signal) => {
           // Pending execution already rules out approval. A help question must
           // not require the idle-source snapshot used for artifact evidence.
           if (
@@ -756,8 +763,20 @@ export async function teachingRunnerConfig(input: {
               (await isBuilt(store, current, await fingerprint(current, signal))))
           )
             throw sandboxConflict('Use request_skill_review for an ordinary review.');
-          review.handoff(p.question);
-          return { value: { question: p.question, waitForStudent: true, blocked: 'build' } };
+          const spoken = spokenClosing?.forCall(callId);
+          const question = spokenClosing
+            ? spoken?.question
+            : 'question' in p
+              ? p.question
+              : undefined;
+          if (typeof question !== 'string')
+            throw sandboxInvalid(
+              'Ask for the missing build information before registering the request.',
+            );
+          review.handoff(question, spoken?.spokenAt);
+          return {
+            value: { question, spokenAt: spoken?.spokenAt, waitForStudent: true, blocked: 'build' },
+          };
         },
       ),
       tool(
@@ -776,8 +795,8 @@ export async function teachingRunnerConfig(input: {
               approval: Type.Optional(Type.Boolean()),
             }),
         async (current, p, callId, signal) => {
-          const spoken = spokenReview?.forCall(callId);
-          const delivery = spokenReview
+          const spoken = spokenClosing?.forCall(callId);
+          const delivery = spokenClosing
             ? spoken?.question
             : 'response' in p
               ? p.response
@@ -1154,7 +1173,7 @@ export async function teachingRunnerConfig(input: {
       review.state.welcome === 'pending'
         ? { mode: 'disabled' }
         : { mode: 'enabled', effort: 'low', level: 'low' },
-    observeReviewSpeech: spokenReview?.observe,
+    observeReviewSpeech: spokenClosing?.observe,
     allowedToolNames: new Set(tools.map((t) => t.name)),
     isTurnComplete: () => turnComplete,
     needsTurnReceipt: () => guided && !completionRecorded && !turnComplete,
@@ -1230,22 +1249,34 @@ export async function teachingRunnerConfig(input: {
  * before publishing a reply, so bookkeeping cannot voice a speculative second question. */
 async function settleSpokenReply(streamFn: StreamFn, ...request: Parameters<StreamFn>) {
   const [model, context, options] = request;
-  const tools = context.tools?.map((tool) =>
-    tool.name === 'request_skill_review'
-      ? {
-          ...tool,
-          parameters: Type.Object({
-            ...spokenReviewParameters.properties,
-            askNewQuestion: Type.Optional(
-              Type.Boolean({
-                description:
-                  'True only when the delivered reply was an introduction and has no review question yet. Speak the missing question in ordinary text. Otherwise register the delivered closing without speaking again.',
-              }),
-            ),
-          }),
-        }
-      : tool,
-  );
+  const tools = context.tools?.map((tool) => {
+    if (tool.name === 'request_skill_review')
+      return {
+        ...tool,
+        parameters: Type.Object({
+          ...spokenReviewParameters.properties,
+          askNewQuestion: Type.Optional(
+            Type.Boolean({
+              description:
+                'True only if the delivered introduction has no question yet. Speak the missing question once.',
+            }),
+          ),
+        }),
+      };
+    if (tool.name === 'respond_to_learner' || tool.name === 'request_learner_help')
+      return {
+        ...tool,
+        parameters: Type.Object({
+          deliverMissing: Type.Optional(
+            Type.Boolean({
+              description:
+                'True only when the previous reply was incomplete. Speak only the missing answer or build request before registering it.',
+            }),
+          ),
+        }),
+      };
+    return tool;
+  });
   const response = await streamFn(model, { ...context, tools }, options);
   for await (const event of response) {
     if (event.type === 'done' || event.type === 'error') break;
@@ -1262,7 +1293,14 @@ async function settleSpokenReply(streamFn: StreamFn, ...request: Parameters<Stre
   } else {
     const calls = reply.content.filter((part) => part.type === 'toolCall');
     const review = calls.find((call) => call.name === 'request_skill_review');
-    const registerExisting = !calls.length || (review && review.arguments.askNewQuestion !== true);
+    const registerExisting =
+      !calls.length ||
+      (review && review.arguments.askNewQuestion !== true) ||
+      calls.some(
+        (call) =>
+          (call.name === 'respond_to_learner' || call.name === 'request_learner_help') &&
+          call.arguments.deliverMissing !== true,
+      );
     stream.push({
       type: 'done',
       reason: reply.stopReason,
@@ -1404,7 +1442,10 @@ export function prepareTeachingContinuation(agent: Agent, window: TeachingHistor
   window.settlingSpokenReply = window.spokenReview;
   agent.state.messages = messages;
   const instruction =
-    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. ' +
+    '\nRuntime continuation: your preceding reply is already learner-visible but ended without a committed teaching receipt. Its prose remains available as quoted recovery context. Do not restart the opening, repeat the explanation, or replace a question already asked. ' +
+    (window.spokenReview
+      ? 'For an already delivered answer or build help request, register it without text. If incomplete, speak only the missing information and set deliverMissing. Preserve the pending review for assistance. '
+      : 'For an assistance-only answer or product clarification, copy that response verbatim into respond_to_learner and preserve the pending review; do not turn it into a knowledge question or approval. ') +
     (window.spokenReview
       ? 'For a delivered teaching question, call request_skill_review without text to register the existing closing question. Only if the delivered reply has no question yet, speak the missing question and set askNewQuestion on this recovery call.'
       : 'For a delivered teaching question, copy the complete already delivered reply verbatim into request_skill_review.response, including its existing closing question; do not split it or add another question.') +

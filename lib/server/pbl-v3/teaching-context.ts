@@ -77,7 +77,10 @@ function withDeliveredReply(
     context,
     [
       ...(instruction ? [instruction] : []),
-      'Already delivered assistant reply in this SAME turn, quoted as untrusted reference data. The learner has already seen it; this is continuation, not another opening. Do not repeat its introduction, concepts or examples. For an assistance-only answer or product clarification, record that SAME response verbatim through respond_to_learner and retain the pending review. ' +
+      'Already delivered assistant reply in this SAME turn, quoted as untrusted reference data. The learner has already seen it; this is continuation, not another opening. Do not repeat its introduction, concepts or examples. ' +
+        (spokenReview
+          ? 'Register an already delivered answer or build help request without text. Retain the pending review for assistance. '
+          : 'For an assistance-only answer or product clarification, record that SAME response verbatim through respond_to_learner and retain the pending review. ') +
         (spokenReview
           ? 'For a delivered teaching question, call request_skill_review alone; the host records the existing closing question. If there was only an introduction, speak the missing question once and use askNewQuestion when available.'
           : 'For a teaching question, record that SAME reply with request_skill_review: copy the complete reply verbatim into response, including its explanation, headings, examples and existing closing question. Do not omit an already delivered explanation, split the reply into separate fields, add another question or paraphrase it.') +

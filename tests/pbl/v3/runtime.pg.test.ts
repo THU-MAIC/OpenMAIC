@@ -6054,9 +6054,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(view.state.position.stageIndex).toBe(0);
     },
   );
-  it.each([false, true])(
-    'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: %s)',
-    async (crash) => {
+  it.each([
+    { crash: false, board: false },
+    { crash: true, board: false },
+    { crash: false, board: true },
+    { crash: true, board: true },
+    { crash: false, board: true, missing: true },
+  ])(
+    'repairs a prose-only assistance reply without replacing readiness or duplicating its answer (crash: $crash, board: $board)',
+    async ({ crash, board, missing }) => {
       const study = await freshStudy();
       const row = await store.get(study.id, principal.ownerId);
       onTestFinished(async () => {
@@ -6085,6 +6091,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         status: 'succeeded',
         expectedAttempt: first!.attempt,
       });
+      if (board) {
+        const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+        process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
+        onTestFinished(() => {
+          if (previous === undefined) delete process.env.OPENMAIC_PBL_V3_WHITEBOARD;
+          else process.env.OPENMAIC_PBL_V3_WHITEBOARD = previous;
+        });
+      }
       const chatCommandId = randomUUID();
       await commandStudy(principal, study.id, {
         id: chatCommandId,
@@ -6191,9 +6205,21 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           maxAttempts: 5,
         });
       }
+      const lastDetail = 'Open the second file to see the actual return value.';
+      const register = toolResponse([
+        {
+          name: 'respond_to_learner',
+          input: board ? (missing ? { deliverMissing: true } : {}) : { response },
+        },
+      ]);
       mocked.responses = [
         ...(crash ? [] : [textResponse(response)]),
-        toolResponse([{ name: 'respond_to_learner', input: { response } }]),
+        board
+          ? [
+              { type: 'text-delta', text: missing ? lastDetail : 'Speculative duplicate answer.' },
+              ...register,
+            ]
+          : register,
       ];
       const calls = mocked.modelCalls;
       await runSession(
@@ -6204,7 +6230,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect((await agents.getSession(sessionId))!.status).toBe('succeeded');
       expect((await store.binding(sessionId))!.guided!.pending).toEqual(pending);
       expect(requestHostState(mocked.modelRequests.at(-1)!)).toContain(
-        'For an assistance-only answer or product clarification',
+        board
+          ? 'Register an already delivered answer'
+          : 'For an assistance-only answer or product clarification',
       );
       if (crash)
         await agents.appendControlEvent(sessionId, {
@@ -6213,6 +6241,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           data: { text: 'Thanks, I can see the files now.' },
         });
       const view = await learningView(principal, study.id, { passive: true });
+      if (board) {
+        const words = view
+          .conversation!.flatMap((e) => e.parts)
+          .flatMap((p) => (p.kind === 'text' ? [p.text] : []));
+        expect(words).not.toContain('Speculative duplicate answer.');
+        expect(words.filter((text) => text === lastDetail)).toHaveLength(missing ? 1 : 0);
+      }
       expect(
         view
           .conversation!.flatMap((entry) => entry.parts)

@@ -19,10 +19,12 @@ export function reviewResponse(response: string): { response: string; question: 
 function preservesSpokenClosing(name: string) {
   return name.startsWith('wb_') || ['cue_user', 'point_at_code', 'point_at_preview'].includes(name);
 }
-export function spokenReviewClosing() {
+const handoffTools = ['request_skill_review', 'respond_to_learner', 'request_learner_help'];
+
+export function spokenHandoffClosing() {
   let spoken: { question: string; spokenAt: number } | undefined;
   let hasCurrentSpeech = false;
-  let calls: { id: string; arguments: Record<string, unknown> }[] = [];
+  let calls: { name: string; id: string; arguments: Record<string, unknown> }[] = [];
   return {
     observe(message: AgentMessage) {
       if (message.role === 'toolResult') return;
@@ -33,10 +35,10 @@ export function spokenReviewClosing() {
         return;
       }
       const tools = message.content.filter((part) => part.type === 'toolCall');
-      calls = tools.filter((tool) => tool.name === 'request_skill_review');
+      calls = tools.filter((tool) => handoffTools.includes(tool.name));
       if (
         tools.some(
-          (tool) => tool.name !== 'request_skill_review' && !preservesSpokenClosing(tool.name),
+          (tool) => !handoffTools.includes(tool.name) && !preservesSpokenClosing(tool.name),
         )
       ) {
         calls = [];
@@ -49,22 +51,28 @@ export function spokenReviewClosing() {
         spoken = { question: reviewResponse(last.text).question, spokenAt: message.timestamp };
       }
     },
-    forCall(id: string) {
+    forCall(id: string): { question: string; spokenAt?: number } | undefined {
       const call = calls.find((tool) => tool.id === id);
       if (!call) return undefined;
       // Older in-flight calls could supply both prose and a different question. Only the
       // author can distinguish an introduction from a closing invitation in arbitrary prose.
       if (call.arguments.askNewQuestion === true && !hasCurrentSpeech)
         throw new Error('Speak the missing review question before registering it.');
-      const legacy = call.arguments.question;
+      if (call.arguments.deliverMissing === true && !hasCurrentSpeech)
+        throw new Error('Speak the missing information before registering it.');
+      const review = call.name === 'request_skill_review';
+      const legacy =
+        call.name === 'respond_to_learner' ? call.arguments.response : call.arguments.question;
       if (
-        hasCurrentSpeech &&
+        (review ? hasCurrentSpeech : !!spoken) &&
         typeof legacy === 'string' &&
         legacy.trim() &&
         legacy.trim() !== spoken?.question
       )
         throw new Error(
-          'Two different review texts were supplied. If you already asked the question, register it with an empty call. If you only gave an introduction, speak the missing question once and register it without a question argument.',
+          !review
+            ? 'The supplied text differs from the spoken closing. Speak any missing information once, then register it without text.'
+            : 'Two different review texts were supplied. If you already asked the question, register it with an empty call. If you only gave an introduction, speak the missing question once and register it without a question argument.',
         );
       if (spoken) return spoken;
       // A tool-only call issued under the old schema can still finish after an upgrade.
@@ -130,7 +138,11 @@ function reviewReceipt(event: { type: string; data: unknown }): ReviewReceipt | 
       )
         return { text: receipt.response, canonical: true };
       if (data.toolName === 'respond_to_learner' && typeof receipt.response === 'string')
-        return { text: receipt.response, canonical: false };
+        return {
+          text: receipt.response,
+          canonical: false,
+          spokenAt: typeof receipt.spokenAt === 'number' ? receipt.spokenAt : undefined,
+        };
       if (typeof receipt.question === 'string')
         return {
           text: receipt.question,
