@@ -546,7 +546,11 @@ Show and hide such an element only through the attribute: \`element.removeAttrib
 
 For a 2D canvas, set \`canvas.width\` and \`canvas.height\` to the container's \`clientWidth\` and \`clientHeight\` times \`devicePixelRatio\`, only when they changed, then call \`ctx.setTransform(dpr, 0, 0, dpr, 0, 0)\`. Do all drawing and layout math in the container's CSS size, never in \`canvas.width\` or \`canvas.height\`, which are device pixels and would place objects and margins off by the pixel ratio.
 
-**One render path from state to screen.** Keep one render function (\`render()\`, or the one the template names, such as \`renderStep()\`) that writes every readout, label, button text and enabled state, and redraws, from the current state. Initialization, every update, presets, \`SET_WIDGET_STATE\` and reset all call it. Reset stops the timers and animation loops that advance the activity, rebuilds the state from the same initial values used at startup, then calls the render function. A loop that only redraws, such as a 3D scene's render loop, keeps running. Resetting the state without rendering leaves readouts showing the previous run.",
+**One render path from state to screen.** Keep one render function (\`render()\`, or the one the template names, such as \`renderStep()\`) that writes every readout, label, button text and enabled state, and redraws, from the current state. Initialization, every update, presets, \`SET_WIDGET_STATE\` and reset all call it. Reset stops the timers and animation loops that advance the activity, rebuilds the state from the same initial values used at startup, then calls the render function. A loop that only redraws, such as a 3D scene's render loop, keeps running. Resetting the state without rendering leaves readouts showing the previous run.
+
+**Make the initial view and teaching actions work offline.** Use embedded data or fixed, versioned assets referenced by HTML, CSS, or static imports. Keep these paths independent of live requests, workers, and nested frames.
+
+**Report readiness after drawing.** When available, pass the promise for asynchronous initialization or a teaching action to \`window.__openmaicWaitForStaticRuntime\`. Resolve it after the visible update, including any required canvas or WebGL draw. Keep ongoing loops and waits for learner input outside the promise.",
     "user": "Create a simulation widget for: Energy transfer
 
 ## Concept Overview

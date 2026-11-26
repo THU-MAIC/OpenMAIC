@@ -48,6 +48,9 @@ import {
   prepareInteractiveHtmlScenes,
   type PreparedInteractiveHtmlSet,
 } from './prepare-interactive-html';
+import { createAssetFetcher } from '@/lib/export/inline-assets';
+import { MAX_VIDEO_CAPTURE_ASSET_BYTES } from './prepare-capture-assets';
+import { createProxiedFetch } from '@/lib/export/proxied-fetch';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { resolveVideoMediaForElement } from '@/lib/media/media-task-resolution';
 import { resolveAudioBlob } from '@/lib/media/resolve-audio-bytes';
@@ -207,7 +210,12 @@ export async function createVideoTimelineDeps(input: {
 
   const interactiveHtml = skipInteractiveHtml
     ? emptyPreparedInteractiveHtmlSet()
-    : await prepareInteractiveHtmlScenes(scenes);
+    : await prepareInteractiveHtmlScenes(scenes, {
+        fetcher: createAssetFetcher({
+          fetchImpl: createProxiedFetch({ crossOriginOnly: true, directFirst: true }),
+          maxAssetBytes: MAX_VIDEO_CAPTURE_ASSET_BYTES,
+        }),
+      });
 
   // The standardized asset manifest names exactly the media references this
   // document holds. Video compilation consumes audio only through speech

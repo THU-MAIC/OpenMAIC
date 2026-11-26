@@ -1,5 +1,5 @@
 /**
- * SHA-256 of a string, hex-encoded, synchronously.
+ * SHA-256 of UTF-8 text or raw bytes, hex-encoded, synchronously.
  *
  * `crypto.subtle` exists only in secure contexts, and a self-hosted OpenMAIC
  * is often served over plain HTTP on a LAN address, where the importer must
@@ -23,8 +23,8 @@ function rotr(value: number, bits: number): number {
   return (value >>> bits) | (value << (32 - bits));
 }
 
-export function sha256Hex(text: string): string {
-  const message = new TextEncoder().encode(text);
+export function sha256Hex(input: string | Uint8Array): string {
+  const message = typeof input === 'string' ? new TextEncoder().encode(input) : input;
   const bitLength = message.length * 8;
   const padded = new Uint8Array(Math.ceil((message.length + 9) / 64) * 64);
   padded.set(message);
@@ -72,6 +72,14 @@ export function sha256Hex(text: string): string {
     hash[7] = (hash[7]! + h!) >>> 0;
   }
   return Array.from(hash, (word) => word.toString(16).padStart(8, '0')).join('');
+}
+
+/** Uses native SHA-256 when available, including for large capture assets. */
+export async function sha256BytesHex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) return sha256Hex(bytes);
+  const digest = await subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /** A random 128-bit hex string (`getRandomValues` works outside secure contexts too). */

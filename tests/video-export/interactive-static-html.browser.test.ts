@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import { prepareInteractiveHtmlScenes } from '@/lib/video-export-app/prepare-interactive-html';
+import type { FetchAsset } from '@/lib/export/inline-assets-shared';
 import type { Scene } from '@/lib/types/stage';
 import { NO_ASSETS, NO_PROBE } from './helpers';
 
@@ -24,9 +25,13 @@ function interactiveScene(html: string): Scene {
   } as Scene;
 }
 
-async function emittedFixture(html: string): Promise<{ index: string; child: string }> {
-  const scene = interactiveScene(html);
-  const prepared = await prepareInteractiveHtmlScenes([scene]);
+async function emittedFixture(
+  html: string,
+  fetcher?: FetchAsset,
+  actions: Scene['actions'] = [],
+): Promise<{ index: string; child: string }> {
+  const scene = { ...interactiveScene(html), actions };
+  const prepared = await prepareInteractiveHtmlScenes([scene], { fetcher });
   const ir = compileVideoTimeline(
     { stage: { id: 'stage', name: 'Interactive smoke' }, scenes: [scene] },
     { timing: NO_PROBE, assets: NO_ASSETS, interactive: prepared },
@@ -54,6 +59,61 @@ async function load(page: Page, fixture: { index: string; child: string }): Prom
   await page.goto(`${BASE_URL}/index.html`, { waitUntil: 'load' });
 }
 
+async function widgetActionTimes(page: Page): Promise<number[]> {
+  return page
+    .locator('[data-widget-actions]')
+    .evaluate((host) =>
+      JSON.parse(host.getAttribute('data-widget-actions')!).map(({ at }: { at: number }) => at),
+    );
+}
+
+async function seekTo(page: Page, ms: number): Promise<void> {
+  await page.evaluate(async (time) => {
+    await Reflect.get(window, '__openmaicInteractiveReady');
+    Reflect.get(window, '__timelines').openmaic.time(time / 1000, true);
+    await Reflect.get(window, '__hfWaitForSeekCompletion')();
+  }, ms);
+}
+
+function codeMirrorFixture() {
+  const prompt = readFileSync(
+    join(process.cwd(), 'packages/@openmaic/generation/templates/code-content/system.md'),
+    'utf8',
+  );
+  const editor = [...prompt.matchAll(/```html\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .find((example) => example.includes('CodeMirror.fromTextArea'));
+  const listener = [...prompt.matchAll(/```javascript\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .find((example) => example.includes("addEventListener('message'"));
+  expect(editor).toBeDefined();
+  expect(listener).toBeDefined();
+
+  const packageRoot = join(process.cwd(), 'node_modules/codemirror');
+  const { version } = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
+  const assetRoot = `https://cdn.jsdelivr.net/npm/codemirror@${version}/`;
+  const assets = new Map(
+    [
+      ['lib/codemirror.css', 'text/css'],
+      ['lib/codemirror.js', 'text/javascript'],
+      ['mode/python/python.js', 'text/javascript'],
+    ].map(([path, contentType]) => [
+      assetRoot + path,
+      { bytes: readFileSync(join(packageRoot, path)), contentType },
+    ]),
+  );
+  const html = `<!doctype html>${editor!.replace(
+    '</body>',
+    `<output id="output"></output><script>
+      async function runCode() {
+        document.getElementById('output').textContent = editor?.getValue() ?? codeInput.value;
+      }
+      ${listener}
+    </script></body>`,
+  )}`;
+  return { html, assets, assetRoot };
+}
+
 describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
   let browser: Browser;
 
@@ -68,6 +128,90 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
   afterAll(async () => {
     await browser?.close();
   });
+
+  it('exports the prompted CodeMirror editor and replays its teaching actions offline', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      const { html, assets } = codeMirrorFixture();
+      const replacement = 'def double(value):\n    return value * 2';
+      const externalRequests: string[] = [];
+      const pageErrors: string[] = [];
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+      await page.route(/^https?:\/\//, (route) => {
+        externalRequests.push(route.request().url());
+        return route.abort();
+      });
+      await load(
+        page,
+        await emittedFixture(html, async (url) => assets.get(url) ?? null, [
+          { id: 'intro', type: 'speech', text: 'Look at the initial code.' },
+          { id: 'code', type: 'widget_setState', state: { code: replacement, run: true } },
+          { id: 'highlight', type: 'widget_highlight', target: '#code-editor-region' },
+          { id: 'outro', type: 'speech', text: 'Now the code doubles its input.' },
+        ]),
+      );
+
+      await page.locator('[data-interactive-static-state="frozen"]').waitFor({ state: 'attached' });
+      const child = page.frames()[1];
+      const editor = child.locator('.CodeMirror');
+      expect(await editor.isVisible()).toBe(true);
+      expect(await editor.evaluate((element) => getComputedStyle(element).position)).toBe(
+        'relative',
+      );
+      expect(await child.locator('.CodeMirror-code .cm-keyword').allTextContents()).toEqual([
+        'def',
+        'return',
+      ]);
+      expect(await child.locator('#code-input').isVisible()).toBe(false);
+
+      await page.evaluate(async () => {
+        const host = document.querySelector('[data-widget-actions]')!;
+        const [state, highlight] = JSON.parse(host.getAttribute('data-widget-actions')!);
+        await Reflect.get(window, '__openmaicInteractiveReady');
+        const timeline = Reflect.get(window, '__timelines').openmaic;
+        timeline.time((Math.max(state.at, highlight.at) + 50) / 1000, true);
+        await Reflect.get(window, '__hfWaitForSeekCompletion')();
+      });
+
+      expect(await child.locator('#output').textContent()).toBe(replacement);
+      expect(await child.locator('.CodeMirror-code .cm-def').allTextContents()).toContain('double');
+      expect(
+        await child
+          .locator('#code-editor-region')
+          .evaluate((element) => element.style.outlineWidth),
+      ).toBe('3px');
+      expect(externalRequests).toEqual([]);
+      expect(pageErrors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.each(['lib/codemirror.css', 'lib/codemirror.js', 'mode/python/python.js'])(
+    'keeps the prompted textarea usable when %s fails to load',
+    async (missingPath) => {
+      const page = await browser.newPage();
+      try {
+        const { html, assets, assetRoot } = codeMirrorFixture();
+        await page.route(`${assetRoot}**`, (route) => {
+          const url = route.request().url();
+          const asset = assets.get(url);
+          if (!asset || url === assetRoot + missingPath) return route.abort();
+          return route.fulfill({ body: asset.bytes, contentType: asset.contentType });
+        });
+        await page.setContent(html);
+        expect(await page.locator('.CodeMirror').count()).toBe(0);
+        expect(await page.locator('#code-input').isVisible()).toBe(true);
+        await page.evaluate(() => {
+          window.postMessage({ type: 'SET_WIDGET_STATE', state: { code: 'print(42)', run: true } });
+        });
+        await page.locator('#output', { hasText: 'print(42)' }).waitFor();
+        expect(await page.locator('#code-input').inputValue()).toBe('print(42)');
+      } finally {
+        await page.close();
+      }
+    },
+  );
 
   it('freezes the settled initial state before exposing the Hyperframes timeline', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -145,6 +289,815 @@ describe.skipIf(!REQUIRED)('frozen interactive HTML in Chromium', () => {
       await page.close();
     }
   });
+
+  it('draws a queued initial canvas frame when the renderer suspends animation frames', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await page.addInitScript(() => {
+        if (window.parent === window) return;
+        let id = 0;
+        window.requestAnimationFrame = () => ++id;
+        window.cancelAnimationFrame = () => {};
+        Object.defineProperty(performance, 'now', { configurable: true, value: () => 0 });
+        Reflect.set(window, '__HF_VIRTUAL_TIME__', {});
+        Reflect.set(
+          window,
+          'Date',
+          new Proxy(Date, {
+            construct: (target, args, subclass) =>
+              Reflect.construct(target, args.length ? args : [0], subclass),
+          }),
+        );
+      });
+      await load(
+        page,
+        await emittedFixture(`
+          <canvas width="10" height="10"></canvas>
+          <script>
+            const canvas = document.querySelector('canvas');
+            const context = canvas.getContext('2d');
+            function frame() {
+              context.fillStyle = new Date().getFullYear() > 2000 ? 'red' : 'black';
+              context.fillRect(0, 0, 10, 10);
+              requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(() => requestAnimationFrame(frame));
+          </script>`),
+      );
+
+      await page.waitForFunction(() => {
+        const host = document.querySelector('[data-interactive-static-host]');
+        return host?.getAttribute('data-interactive-static-state') === 'frozen';
+      });
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      const pixel = await child.evaluate(() => [
+        ...document.querySelector('canvas')!.getContext('2d')!.getImageData(0, 0, 1, 1).data,
+      ]);
+
+      expect(pixel).toEqual([255, 0, 0, 255]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits for an older widget to draw after a delayed startup timer', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`<output>Loading</output><script>
+        setTimeout(() => document.querySelector('output').textContent = 'Ready', 650);
+      </script>`),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(await page.frames()[1].locator('output').textContent()).toBe('Ready');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('keeps a working offline preview after a handled optional request fails', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`<output>Loading</output><script>
+        window.__openmaicWaitForStaticRuntime(fetch('https://optional-data.test/example.json')
+          .catch(() => { document.querySelector('output').textContent = 'Offline preview'; }));
+      </script>`),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-interactive-static-host]')
+            .getAttribute('data-interactive-static-state'),
+        )
+        .toBe('frozen');
+      expect(await page.frames()[1].locator('output').textContent()).toBe('Offline preview');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits for a draw registered by a late lazy image load', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`<output>Loading</output><script>
+        setTimeout(() => {
+          const image = new Image();
+          image.loading = 'lazy';
+          image.style.cssText = 'position:absolute;top:12000px';
+          image.onload = () => {
+            window.__openmaicWaitForStaticRuntime(new Promise(resolve => {
+              requestAnimationFrame(() => {
+                document.querySelector('output').textContent = 'Drawn';
+                resolve();
+              });
+            }));
+          };
+          image.src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>';
+          document.body.append(image);
+        }, 30);
+      </script>`),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(await page.frames()[1].locator('output').textContent()).toBe('Drawn');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.each(['timer', 'animation frame'])(
+    'advances teaching work scheduled for a later %s',
+    async (kind) => {
+      const page = await browser.newPage();
+      try {
+        await load(
+          page,
+          await emittedFixture(
+            `<output>Before</output><script>
+        window.addEventListener('message', ({data}) => {
+          if (data.type !== 'SET_WIDGET_STATE') return;
+          const pending = new Promise(resolve => {
+            function paint() { document.querySelector('output').textContent = 'After'; resolve(); }
+            if (data.state.kind === 'timer') setTimeout(paint, 200);
+            else {
+              const end = performance.now() + 200;
+              function tick(now) { if (now >= end) paint(); else requestAnimationFrame(tick); }
+              requestAnimationFrame(tick);
+            }
+          });
+          window.__openmaicWaitForStaticRuntime(pending);
+        });
+      </script>`,
+            undefined,
+            [
+              { id: 'change', type: 'widget_setState', state: { kind } },
+              {
+                id: 'speech',
+                type: 'speech',
+                text: 'The new state is shown during this narration.',
+              },
+            ],
+          ),
+        );
+        await page.evaluate(() =>
+          Promise.race([
+            Reflect.get(window, '__openmaicInteractiveReady'),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Initial seek did not acknowledge')), 1500),
+            ),
+          ]),
+        );
+        const child = page.frames()[1];
+        expect(await child.locator('output').textContent()).toBe('Before');
+        await page.evaluate(async () => {
+          Reflect.get(window, '__timelines').openmaic.time(0.2, true);
+          await Reflect.get(window, '__hfWaitForSeekCompletion')();
+        });
+        expect(await child.locator('output').textContent()).toBe('After');
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it('loads declared dynamic script and data offline and reports undeclared network access', async () => {
+    const page = await browser.newPage();
+    try {
+      const root = 'https://offline-assets.test';
+      const requests: string[] = [];
+      page.on('request', (request) => {
+        if (request.url().startsWith(root)) requests.push(request.url());
+      });
+      await load(
+        page,
+        await emittedFixture(
+          `
+        <script type="application/json" data-openmaic-offline-assets>["${root}/lib.js","${root}/data.json"]</script>
+        <output>Loading</output><script>
+          const root = '${root}';
+          window.__openmaicWaitForStaticRuntime((async () => {
+            await new Promise((resolve, reject) => {
+              const script = document.createElement('script');
+              script.src = window.__openmaicOfflineAsset(root + '/lib.js');
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.append(script);
+            });
+            const response = await window.__openmaicFetchOfflineAsset(root + '/data.json');
+            document.querySelector('output').textContent = window.convert(await response.json());
+          })());
+        </script>`,
+          async (url) => ({
+            bytes: new TextEncoder().encode(
+              url.endsWith('.js') ? 'window.convert = value => value.answer;' : '{"answer":42}',
+            ),
+            contentType: url.endsWith('.js') ? 'text/javascript' : 'application/json',
+          }),
+        ),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(await page.frames()[1].locator('output').textContent()).toBe('42');
+      expect(requests).toEqual([]);
+    } finally {
+      await page.close();
+    }
+
+    const blockedPage = await browser.newPage();
+    try {
+      await load(
+        blockedPage,
+        await emittedFixture(`<script>
+        const root = 'https://offline-assets.test';
+        const script = document.createElement('script');
+        script.src = root + '/lib.js';
+        document.head.append(script);
+      </script>`),
+      );
+      await blockedPage.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      expect(
+        await blockedPage.locator('[data-interactive-fallback-reason]').textContent(),
+      ).toContain('Offline capture blocked script-src-elem: https://offline-assets.test/lib.js');
+    } finally {
+      await blockedPage.close();
+    }
+  });
+
+  it('settles native work beside scene timers and preserves their task order', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<output id="ready">Before</output><output id="timer"></output><script>
+        window.addEventListener('message', ({data}) => {
+          if (data.type !== 'SET_WIDGET_STATE') return;
+          const started = Date.now();
+          let firstFinished = false;
+          setTimeout(() => Promise.resolve().then(() => { firstFinished = true; }), 100);
+          setTimeout(() => { document.querySelector('#timer').textContent = firstFinished + ':' + (Date.now() - started); }, 100);
+          window.__openmaicWaitForStaticRuntime(scheduler.postTask(() => {
+            document.querySelector('#ready').textContent = 'Native work done';
+          }, { delay: 200 }));
+        });
+      </script>`,
+          undefined,
+          [
+            { id: 'change', type: 'widget_setState', state: {} },
+            { id: 'speech', type: 'speech', text: 'Now we show the result.' },
+          ],
+        ),
+      );
+      await page.evaluate(() => Reflect.get(window, '__openmaicInteractiveReady'));
+      const child = page.frames()[1];
+      expect(await child.locator('#ready').textContent()).toBe('Native work done');
+      expect(await child.locator('#timer').textContent()).toBe('');
+      await page.evaluate(async () => {
+        Reflect.get(window, '__timelines').openmaic.time(0.1, true);
+        await Reflect.get(window, '__hfWaitForSeekCompletion')();
+      });
+      expect(await child.locator('#timer').textContent()).toBe('true:100');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('renders state and reveal actions by narration time, including backward seeks and effect expiry', async () => {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    try {
+      await page.addInitScript(() => {
+        Reflect.set(window, '__hfWaitForSeekCompletion', () => {
+          Reflect.set(window, '__openmaicOriginalWaited', true);
+        });
+      });
+      await load(
+        page,
+        await emittedFixture(
+          `
+        <div id="first" hidden>First</div><div id="second" hidden>Second</div><output>0</output>
+        <script>
+          window.addEventListener('message', ({data, source}) => {
+            if (source !== window.parent) return;
+            if (data.type === 'REVEAL_ELEMENT') document.querySelector(data.target).hidden = false;
+            if (data.type === 'SET_WIDGET_STATE') {
+              window.__openmaicWaitForStaticRuntime(new Promise((resolve) => {
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                  document.querySelector('output').textContent = data.state.completedSteps.length;
+                  resolve();
+                }));
+              }));
+            }
+            if (data.type === 'ANNOTATE_ELEMENT') {
+              const note = document.createElement('aside');
+              note.textContent = data.content;
+              document.body.append(note);
+              setTimeout(() => note.remove(), 300);
+            }
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'First look at the starting diagram.' },
+            { id: 'reveal-1', type: 'widget_reveal', target: '#first' },
+            {
+              id: 'middle',
+              type: 'speech',
+              text: 'Now we have completed the first step in the lesson.',
+            },
+            { id: 'state', type: 'widget_setState', state: { completedSteps: ['first'] } },
+            { id: 'reveal-2', type: 'widget_reveal', target: '#second' },
+            {
+              id: 'note',
+              type: 'widget_annotation',
+              target: '#second',
+              content: '"Second" </script>',
+            },
+            { id: 'ending', type: 'speech', text: 'Notice the second part of the diagram.' },
+          ],
+        ),
+      );
+      const [first, second, note] = await page.locator('[data-widget-actions]').evaluate((host) => {
+        const actions = JSON.parse(host.getAttribute('data-widget-actions')!);
+        return [actions[0].at, actions[2].at, actions[3].at] as number[];
+      });
+      async function seek(ms: number) {
+        await page.evaluate(async (time) => {
+          await Reflect.get(window, '__openmaicInteractiveReady');
+          Reflect.get(window, '__timelines').openmaic.time(time / 1000, true);
+          await Reflect.get(window, '__hfWaitForSeekCompletion')();
+        }, ms);
+        return page.frames()[1];
+      }
+
+      let child = await seek(note + 40);
+      expect(await child.locator('#first').isVisible()).toBe(true);
+      expect(await child.locator('#second').isVisible()).toBe(true);
+      expect(await child.locator('output').textContent()).toBe('1');
+      expect(await child.locator('aside').textContent()).toBe('"Second" </script>');
+      child = await seek(note + 350);
+      expect(await child.locator('aside').count()).toBe(0);
+      child = await seek(first - 1);
+      expect(await child.locator('#first').isVisible()).toBe(false);
+      expect(await child.locator('#second').isVisible()).toBe(false);
+      expect(await child.locator('output').textContent()).toBe('0');
+      child = await seek(first);
+      expect(await child.locator('#first').isVisible()).toBe(true);
+      expect(await child.locator('#second').isVisible()).toBe(false);
+      child = await seek(second);
+      expect(await child.locator('#second').isVisible()).toBe(true);
+      expect(await page.evaluate(() => Reflect.get(window, '__openmaicOriginalWaited'))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('gives each earlier action its own settle deadline when a render starts mid-scene', async () => {
+    const page = await browser.newPage();
+    try {
+      const fixture = await emittedFixture(
+        `<output>0</output><script>
+        window.addEventListener('message', ({data}) => {
+          if (data.type !== 'SET_WIDGET_STATE') return;
+          const until = Performance.prototype.now.call(performance) + 1000;
+          while (Performance.prototype.now.call(performance) < until);
+          document.querySelector('output').textContent = data.state.step;
+        });
+      </script>`,
+        undefined,
+        [1, 2, 3, 4].flatMap((step) => [
+          { id: `speech-${step}`, type: 'speech' as const, text: `Now we reach step ${step}.` },
+          { id: `state-${step}`, type: 'widget_setState' as const, state: { step } },
+        ]),
+      );
+      // Readiness takes about 1 s, and the four actions take 4 s together.
+      const index = fixture.index.replace(
+        'data-ready-timeout-ms="8000"',
+        'data-ready-timeout-ms="3000"',
+      );
+      expect(index).toContain('data-ready-timeout-ms="3000"');
+      await load(page, { ...fixture, index });
+      const times = await widgetActionTimes(page);
+      expect(times).toHaveLength(4);
+
+      await seekTo(page, times[3] + 50);
+
+      const host = page.locator('[data-interactive-static-host]');
+      expect(
+        await host.getAttribute('data-interactive-static-state'),
+        (await host.locator('[data-interactive-fallback]').textContent()) ?? undefined,
+      ).toBe('frozen');
+      expect(await page.frames()[1].locator('output').textContent()).toBe('4');
+    } finally {
+      await page.close();
+    }
+  }, 15_000);
+
+  it('shows the widget again after seeking back before a later action failure', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<div id="a" hidden>A</div><script>
+          window.addEventListener('message', ({data, source}) => {
+            if (source !== window.parent) return;
+            if (data.type === 'REVEAL_ELEMENT') document.querySelector(data.target).hidden = false;
+            if (data.type === 'SET_WIDGET_STATE') throw new Error('state boom');
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'First look at the diagram.' },
+            { id: 'reveal', type: 'widget_reveal', target: '#a' },
+            { id: 'middle', type: 'speech', text: 'Now we change the state of the widget.' },
+            { id: 'state', type: 'widget_setState', state: { broken: true } },
+          ],
+        ),
+      );
+      const [revealAt, failAt] = await widgetActionTimes(page);
+      expect(revealAt).toBeLessThan(failAt);
+      const host = page.locator('[data-interactive-static-host]');
+      const fallback = host.locator('[data-interactive-fallback]');
+      const diagnostics = () =>
+        page.evaluate(() => Reflect.get(window, '__openmaicVideoDiagnostics').length);
+
+      await seekTo(page, failAt + 10);
+      expect(await host.getAttribute('data-interactive-static-state')).toBe('fallback');
+      expect(await fallback.textContent()).toContain('state boom');
+
+      await seekTo(page, (revealAt + failAt) / 2);
+      expect(await host.getAttribute('data-interactive-static-state')).toBe('frozen');
+      expect(await fallback.evaluate((element) => getComputedStyle(element).display)).toBe('none');
+      expect(await page.frames()[1].locator('#a').isVisible()).toBe(true);
+
+      await seekTo(page, failAt + 10);
+      expect(await host.getAttribute('data-interactive-static-state')).toBe('fallback');
+      expect(await diagnostics()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('draws one frame of an action-started animation at the action time, then follows the 60 Hz scene clock', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<output>0</output><script>
+          window.addEventListener('message', ({data}) => {
+            if (data.type !== 'SET_WIDGET_STATE') return;
+            let n = 0;
+            function tick() {
+              n++;
+              document.querySelector('output').textContent = n;
+              if (n < 100) requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'Watch the counter start.' },
+            { id: 'start', type: 'widget_setState', state: {} },
+          ],
+        ),
+      );
+      const [startAt] = await widgetActionTimes(page);
+
+      await seekTo(page, startAt);
+      expect(await page.frames()[1].locator('output').textContent()).toBe('1');
+      // Frames then land every 1000/60 ms after the action, so 100 ms adds six.
+      await seekTo(page, startAt + 100);
+      expect(await page.frames()[1].locator('output').textContent()).toBe('7');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('lets a render loop started before freezing show an action that needs two redraws', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(
+          `<output>0</output><script>
+          let requested = 0;
+          let laidOut = 0;
+          function loop() {
+            document.querySelector('output').textContent = laidOut;
+            laidOut = requested;
+            requestAnimationFrame(loop);
+          }
+          requestAnimationFrame(loop);
+          window.addEventListener('message', ({data}) => {
+            if (data.type === 'SET_WIDGET_STATE') requested = data.state.value;
+          });
+        </script>`,
+          undefined,
+          [
+            { id: 'intro', type: 'speech', text: 'Watch the value change.' },
+            { id: 'set', type: 'widget_setState', state: { value: 5 } },
+          ],
+        ),
+      );
+      const [setAt] = await widgetActionTimes(page);
+
+      await seekTo(page, setAt);
+      expect(await page.frames()[1].locator('output').textContent()).toBe('5');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits for a runtime started during the scene settling window', async () => {
+    const page = await browser.newPage();
+    try {
+      await load(
+        page,
+        await emittedFixture(`
+          <output>Loading</output>
+          <script>
+            window.addEventListener('load', () => {
+              setTimeout(() => {
+                const ready = new Promise((resolve) => setTimeout(resolve, 400));
+                window.__openmaicWaitForStaticRuntime(ready).then(() => setTimeout(() => {
+                  document.querySelector('output').textContent = 'Ready';
+                }, 0));
+              }, 100);
+            });
+          </script>`),
+      );
+
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-interactive-static-host]')
+            ?.getAttribute('data-interactive-static-state') === 'frozen',
+      );
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      expect(await child.locator('output').textContent()).toBe('Ready');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('runs an authored Pyodide load handler and serves its explicit core URL offline', async () => {
+    const page = await browser.newPage();
+    try {
+      const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+      await load(
+        page,
+        await emittedFixture(
+          `<script defer src="${root}pyodide.js"
+             onload="loadPyodide({lockFileURL: '${root}pyodide-lock.json'}).then((value) => { document.querySelector('output').textContent = value; })">
+           </script><output>Loading</output>`,
+          async (url) => ({
+            bytes: new TextEncoder().encode(
+              url.endsWith('/pyodide.js')
+                ? 'globalThis.loadPyodide = async (options) => (await fetch(options.lockFileURL)).text();'
+                : url.endsWith('/pyodide-lock.json')
+                  ? '{"packages":{}}'
+                  : '42',
+            ),
+            contentType: 'text/javascript',
+          }),
+        ),
+      );
+
+      await page.waitForFunction(
+        () =>
+          document
+            .querySelector('[data-interactive-static-host]')
+            ?.getAttribute('data-interactive-static-state') === 'frozen',
+      );
+      const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+      expect(await child.locator('output').textContent()).toBe('{"packages":{}}');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.each([
+    { distribution: 'full', missingAtStartup: 'unused' },
+    { distribution: 'npm', missingAtStartup: 'unused' },
+    { distribution: 'full', missingAtStartup: 'unhandled' },
+    { distribution: 'full', missingAtStartup: 'handled' },
+  ])(
+    'captures Pyodide packages offline ($distribution, unavailable package: $missingAtStartup)',
+    async ({ distribution, missingAtStartup }) => {
+      const page = await browser.newPage();
+      try {
+        const packageRoot = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+        const root =
+          distribution === 'npm' ? 'https://cdn.jsdelivr.net/npm/pyodide@0.26.2/' : packageRoot;
+        const fetched = new Set<string>();
+        const lockfile = {
+          packages: {
+            numpy: { file_name: 'numpy.whl', depends: [] },
+            micropip: { file_name: 'micropip.whl', depends: ['packaging'] },
+            packaging: { file_name: 'packaging.whl', depends: [] },
+            unused: { file_name: 'unused.whl', depends: [] },
+            optional: { file_name: 'optional.whl', depends: ['optional-runtime'] },
+            'optional-runtime': { file_name: 'optional-runtime.whl', depends: [] },
+          },
+        };
+        const entry = `globalThis.loadPyodide = async ({ indexURL }) => {
+        const { packages } = await (await fetch(indexURL + 'pyodide-lock.json')).json();
+        async function install(name) {
+          const { file_name, depends } = packages[name];
+          const dependencies = await Promise.all(depends.map(install));
+          const wheel = await (await fetch(indexURL + file_name)).text();
+          return [wheel, ...dependencies].join(' ');
+        }
+        return { async loadPackage(names, options) {
+          try {
+            const wheels = await Promise.all([names].flat().map(install));
+            await new Promise(resolve => setTimeout(resolve, 400));
+            return wheels.join(' ');
+          } catch (error) {
+            if (!options?.errorCallback) throw error;
+            options.errorCallback(error.message);
+          }
+        } };
+      };`;
+        const optionalLoad =
+          missingAtStartup === 'handled'
+            ? "await python.loadPackage('optional', { errorCallback: () => { document.querySelector('button').textContent = 'Handled'; } });"
+            : missingAtStartup === 'unhandled'
+              ? "await python.loadPackage('optional');"
+              : '';
+        await load(
+          page,
+          await emittedFixture(
+            `<script src="${root}pyodide.js"></script><output>Loading</output><button>Run</button>
+          <script nomodule>python.loadPackage(['unused']);</script>
+          <script>
+            async function init() {
+              const python = await loadPyodide();
+              const numpy = await python.loadPackage(['numpy']);
+              const micropip = await python.loadPackage('micropip');
+              document.querySelector('button').onclick = () => python.loadPackage('optional');
+              ${optionalLoad}
+              document.querySelector('output').textContent = numpy + ' ' + micropip;
+            }
+            init();
+          </script>`,
+            async (url) => {
+              const filename = new URL(url).pathname.split('/').at(-1)!;
+              if (filename.endsWith('.whl') && !url.startsWith(packageRoot)) return null;
+              fetched.add(filename);
+              if (filename === 'optional-runtime.whl') return null;
+              const content =
+                filename === 'pyodide.js'
+                  ? entry
+                  : filename === 'pyodide-lock.json'
+                    ? JSON.stringify(lockfile)
+                    : filename === 'pyodide.asm.js'
+                      ? '/* mock WebAssembly factory */'
+                      : filename;
+              return { bytes: new TextEncoder().encode(content), contentType: 'text/plain' };
+            },
+          ),
+        );
+
+        const host = page.locator('[data-interactive-static-host]');
+        await page
+          .locator(
+            '[data-interactive-static-state="frozen"], [data-interactive-static-state="fallback"]',
+          )
+          .waitFor({ state: 'attached' });
+        const diagnostic = await host.locator('[data-interactive-fallback]').textContent();
+        const expectsFallback = missingAtStartup === 'unhandled';
+        expect(
+          await host.getAttribute('data-interactive-static-state'),
+          diagnostic ?? undefined,
+        ).toBe(expectsFallback ? 'fallback' : 'frozen');
+        expect(fetched.has('unused.whl')).toBe(false);
+        if (expectsFallback) {
+          expect(diagnostic).toContain('Pyodide package unavailable offline: optional-runtime');
+          return;
+        }
+        const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+        expect(await child.locator('output').textContent()).toBe(
+          'numpy.whl micropip.whl packaging.whl',
+        );
+        if (missingAtStartup === 'handled') {
+          expect(await child.locator('button').textContent()).toBe('Handled');
+        }
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    'rejects a delayed micropip network install before capture (handled: %s)',
+    async (handled) => {
+      const page = await browser.newPage();
+      const remoteRequests: string[] = [];
+      await page.route('https://**', (route) => {
+        remoteRequests.push(route.request().url());
+        return route.abort();
+      });
+      try {
+        const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+        await load(
+          page,
+          await emittedFixture(
+            `<script src="${root}pyodide.js"></script><output>Loading</output>
+        <script>
+          async function init() {
+            const pyodide = await loadPyodide();
+            await pyodide.runPythonAsync("import micropip; await micropip.install('widget-package')");
+            document.querySelector('output').textContent = 'Ready';
+          }
+          ${handled ? "init().catch(() => { document.querySelector('output').textContent = 'Offline preview'; });" : 'init();'}
+        </script>`,
+            async (url) => ({
+              bytes: new TextEncoder().encode(
+                url.endsWith('/pyodide.js')
+                  ? `
+          window.loadPyodide = async () => ({
+            async runPythonAsync() {
+              await new Promise(resolve => setTimeout(resolve, 400));
+              await fetch(new Request('https://pypi.org/pypi/widget-package/json'));
+            }
+          });`
+                  : url.endsWith('/pyodide-lock.json')
+                    ? '{"packages":{}}'
+                    : '42',
+              ),
+              contentType: 'application/octet-stream',
+            }),
+          ),
+        );
+        const host = page.locator('[data-interactive-static-host]');
+        await page
+          .locator(
+            '[data-interactive-static-state="frozen"], [data-interactive-static-state="fallback"]',
+          )
+          .waitFor({ state: 'attached' });
+        expect(await host.getAttribute('data-interactive-static-state')).toBe(
+          handled ? 'frozen' : 'fallback',
+        );
+        if (handled) {
+          const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+          expect(await child.locator('output').textContent()).toBe('Offline preview');
+        } else {
+          expect(await host.locator('[data-interactive-fallback]').textContent()).toContain(
+            'Python package download unavailable offline',
+          );
+        }
+        expect(remoteRequests).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+  );
+
+  it.each([
+    { handled: true, state: 'frozen', delay: 400 },
+    { handled: false, state: 'fallback', delay: 0 },
+    { handled: false, state: 'fallback', delay: 400 },
+  ])(
+    'preserves the scene runtime error outcome ($state, $delay ms)',
+    async ({ handled, state, delay }) => {
+      const page = await browser.newPage();
+      try {
+        await load(
+          page,
+          await emittedFixture(`
+          <output>Loading</output>
+          <script>
+            const ready = new Promise((resolve, reject) => {
+              setTimeout(() => reject(new Error('Startup failed')), ${delay});
+            });
+            const result = window.__openmaicWaitForStaticRuntime(ready);
+            ${handled ? "result.catch(() => { document.querySelector('output').textContent = 'Preview'; });" : ''}
+          </script>`),
+        );
+        await page.waitForFunction(
+          (expected) =>
+            document
+              .querySelector('[data-interactive-static-host]')
+              ?.getAttribute('data-interactive-static-state') === expected,
+          state,
+          { timeout: 2500 },
+        );
+        if (handled) {
+          const child = page.frames().find((frame) => frame !== page.mainFrame())!;
+          expect(await child.locator('output').textContent()).toBe('Preview');
+        }
+      } finally {
+        await page.close();
+      }
+    },
+  );
 
   it('switches a runtime failure to the visible placeholder without failing the composition', async () => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });

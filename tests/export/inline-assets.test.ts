@@ -227,6 +227,88 @@ describe('createAssetFetcher', () => {
     expect(await fetchAsset('https://x/big')).toBeNull();
   });
 
+  function streamedBody(totalBytes: number, headers: Record<string, string> = {}) {
+    const chunk = new Uint8Array(1024);
+    const counter = { pulled: 0 };
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (counter.pulled >= totalBytes) return controller.close();
+          counter.pulled += chunk.byteLength;
+          controller.enqueue(chunk.slice());
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const fetchImpl = (async () =>
+      new Response(body, { status: 200, headers })) as unknown as typeof fetch;
+    return { counter, fetchImpl };
+  }
+
+  it('stops reading a streamed body once it exceeds maxAssetBytes', async () => {
+    const { counter, fetchImpl } = streamedBody(1024 * 1024);
+    const fetchAsset = createAssetFetcher({ fetchImpl, maxAssetBytes: 4096 });
+
+    expect(await fetchAsset('https://x/huge.bin')).toBeNull();
+    expect(counter.pulled).toBeLessThanOrEqual(8 * 1024);
+  });
+
+  it('reads through a same-origin body when Transfer-Encoding overrides its Content-Length', async () => {
+    const fetchImpl = (async () => {
+      const res = new Response('hello', {
+        status: 200,
+        headers: { 'content-length': '999999', 'transfer-encoding': 'chunked' },
+      });
+      Object.defineProperty(res, 'type', { value: 'basic' });
+      return res;
+    }) as unknown as typeof fetch;
+    const fetchAsset = createAssetFetcher({ fetchImpl, maxAssetBytes: 10 });
+
+    expect((await fetchAsset('https://x/chunked'))?.bytes.byteLength).toBe(5);
+  });
+
+  it('refuses a same-origin body whose Content-Length exceeds the limit without reading it', async () => {
+    const { counter, fetchImpl } = streamedBody(1024 * 1024, {
+      'content-length': String(1024 * 1024),
+    });
+    const sameOrigin = (async (...args: Parameters<typeof fetch>) => {
+      const response = await fetchImpl(...args);
+      Object.defineProperty(response, 'type', { value: 'basic' });
+      return response;
+    }) as typeof fetch;
+    const fetchAsset = createAssetFetcher({ fetchImpl: sameOrigin, maxAssetBytes: 4096 });
+
+    expect(await fetchAsset('https://x/declared.bin')).toBeNull();
+    expect(counter.pulled).toBe(0);
+  });
+
+  it('accepts a body whose decoded size fits even when Content-Length is larger', async () => {
+    // A CORS response can expose Content-Length (encoded bytes) but hide Content-Encoding.
+    const fetchImpl = (async () =>
+      new Response('0123456789', {
+        status: 200,
+        headers: { 'content-length': '30' },
+      })) as unknown as typeof fetch;
+    const fetchAsset = createAssetFetcher({ fetchImpl, maxAssetBytes: 10 });
+
+    expect((await fetchAsset('https://x/encoded'))?.bytes.byteLength).toBe(10);
+  });
+
+  it('applies a per-call byte limit and downloads again when a later call allows more', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return new Response('0123456789', { status: 200 });
+    }) as unknown as typeof fetch;
+    const fetchAsset = createAssetFetcher({ fetchImpl });
+
+    expect(await fetchAsset('https://x/a', 4)).toBeNull();
+    expect((await fetchAsset('https://x/a'))?.bytes.byteLength).toBe(10);
+    expect(await fetchAsset('https://x/a', 9)).toBeNull();
+    expect((await fetchAsset('https://x/a', 10))?.bytes.byteLength).toBe(10);
+    expect(calls).toBe(2);
+  });
+
   it('returns null when fetch throws (network error)', async () => {
     const fetchAsset = createAssetFetcher({
       fetchImpl: (async () => {

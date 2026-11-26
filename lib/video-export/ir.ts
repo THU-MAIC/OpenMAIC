@@ -72,7 +72,7 @@ export const DiagnosticSeveritySchema = z.enum(['info', 'warn', 'error']);
  *   safely remained on the cover-only path.
  * - `unknown-action` — an action with an unrecognized `type` was dropped.
  * - `invalid-action` — an action missing a required field was dropped.
- * - `interactive-static-html` — an interactive scene uses packaged frozen HTML.
+ * - `interactive-static-html` — an interactive scene uses packaged HTML driven by the export clock.
  * - `missing-interactive-html` — an interactive scene has no embedded HTML.
  * - `interactive-html-packaging` — HTML preparation failed or exceeded its bound.
  * - `unresolved-interactive-resource` — an external/relative resource remained.
@@ -281,13 +281,20 @@ export const VideoSegmentSchema = z.object({
   durationSource: z.enum(['stored', 'capped', 'zero', 'skipped']),
 });
 
-/**
- * A marker — any beat that is not base/narration/effect/video: whiteboard and
- * widget actions, discussions, the synthetic implicit-whiteboard-open and
- * empty-scene dwells, and whole unsupported scenes. Markers keep every beat on
- * the timeline so nothing is silently dropped (issue AC), even before the
- * exporter can render it.
- */
+const widgetContent = { content: z.string().nullish() };
+const widgetTarget = { ...widgetContent, target: z.string() };
+export const WidgetMessageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('SET_WIDGET_STATE'),
+    state: z.record(z.string(), z.json()),
+    ...widgetContent,
+  }),
+  z.object({ type: z.literal('REVEAL_ELEMENT'), ...widgetTarget }),
+  z.object({ type: z.literal('HIGHLIGHT_ELEMENT'), ...widgetTarget }),
+  z.object({ type: z.literal('ANNOTATE_ELEMENT'), ...widgetTarget }),
+]);
+
+/** Other timed beats, including widget messages that can be replayed in the iframe. */
 export const MarkerSchema = z.object({
   actionId: z.string().optional(),
   actionIndex: z.number(),
@@ -296,6 +303,7 @@ export const MarkerSchema = z.object({
   startMs: z.number(),
   durationMs: z.number(),
   note: z.string().optional(),
+  widgetMessage: WidgetMessageSchema.optional(),
 });
 
 // ---------------------------------------------------------------------------

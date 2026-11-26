@@ -226,7 +226,7 @@ describe('emitHyperframes frozen interactive HTML', () => {
 
   it('waits for every iframe to freeze or fall back before registering the timeline', () => {
     const ready = html.indexOf(
-      'window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames()',
+      'window.__openmaicInteractiveReady = initializeOpenMaicInteractiveStaticFrames(tl)',
     );
     const registration = html.indexOf('window.__timelines["openmaic"] = tl;', ready);
     expect(ready).toBeGreaterThan(0);

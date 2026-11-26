@@ -1,12 +1,15 @@
 # Code Playground Widget Generator
 
-Generate a self-contained HTML code editor with execution and test validation.
+Generate a self-contained HTML code editor.
 
-## Supported Languages
+## Executable Languages
 
-- Python (via Pyodide CDN)
+- Python (via `https://cdn.jsdelivr.net/pyodide/v0.26.2/full/pyodide.js`)
 - JavaScript (native browser execution)
 - TypeScript (via Babel CDN transpilation)
+
+Preserve the requested language. Offer execution and test validation only if
+the page includes a browser runtime that can execute the lesson code.
 
 ## Widget Config Schema
 
@@ -23,6 +26,52 @@ Generate a self-contained HTML code editor with execution and test validation.
   "solution": "def solution(x):\n    return x * x"
 }
 ```
+
+## Code Editor
+
+Use CodeMirror 5.65.20 as the default editor with line numbers and syntax
+highlighting. Load its stylesheet, core script, and the lesson's language mode
+from fixed URLs using ordinary `<link>` and `<script>` tags. Load the core
+before the mode. Do not use Monaco, workers, or a dynamic mode loader.
+
+For Python, use this setup. Keep the textarea and use it if the editor cannot
+load. Put the editor inside a visible `#code-editor-region` so teaching actions
+can target the same element in both cases.
+
+```html
+<head>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/lib/codemirror.css">
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/lib/codemirror.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.20/mode/python/python.js"></script>
+</head>
+<body>
+  <div id="code-editor-region">
+    <textarea id="code-input" aria-label="Code">def square(value):
+    return value * value</textarea>
+  </div>
+  <script>
+    const codeInput = document.getElementById('code-input');
+    let editor = null;
+
+    if (window.CodeMirror?.modes?.python) {
+      const candidate = window.CodeMirror.fromTextArea(codeInput, { mode: 'python', lineNumbers: true });
+      // CSS failed to load offline when the scroller does not get its required overflow.
+      if (getComputedStyle(candidate.getScrollerElement()).overflowX === 'scroll') {
+        editor = candidate;
+      } else {
+        candidate.toTextArea();
+      }
+    }
+  </script>
+</body>
+```
+
+For JavaScript or TypeScript, replace the Python script with
+`https://cdn.jsdelivr.net/npm/codemirror@5.65.20/mode/javascript/javascript.js`.
+Use `mode: 'javascript'` for JavaScript and
+`mode: { name: 'javascript', typescript: true }` for TypeScript, and check that
+the JavaScript mode loaded before initializing the editor. Use the matching
+mode and its static dependencies from the same version for other languages.
 
 ## Python Execution Requirements (CRITICAL)
 
@@ -54,13 +103,15 @@ pyodide.runPython('import sys; sys.stdout = io.StringIO()');
 
 ### 3. Load Required Packages Before Execution
 
-If user code needs packages like numpy, load them during initialization:
+If the lesson needs a package in the Pyodide distribution, declare it literally
+in the startup code and wait for it before rendering the lesson view:
 ```javascript
 await pyodide.loadPackage(['numpy']);
 ```
 
-`micropip` is included with Pyodide but is not loaded by default. If generated
-code installs PyPI packages with `micropip`, load it before importing it:
+`micropip` can be used for an optional learner-initiated online feature. Keep
+PyPI downloads out of startup and teaching actions. Load `micropip` before
+importing it:
 
 ```javascript
 await pyodide.loadPackage('micropip');
@@ -92,19 +143,22 @@ let pyodide = null;
 
 async function initPyodide() {
     pyodide = await loadPyodide();
-    // Load any packages user code might need
-    await pyodide.loadPackage(['numpy']);
+    // Load the distribution packages explicitly required by this lesson here.
     document.getElementById('run-btn').disabled = false;
     document.getElementById('status').textContent = 'Python ready';
 }
-initPyodide();
+const ready = initPyodide();
+window.__openmaicWaitForStaticRuntime?.(ready) ?? ready;
 
 async function runCode() {
     if (!pyodide) {
         alert('Python environment not ready');
         return;
     }
-    const code = editor.getValue();
+    const input = document.getElementById('code-input');
+    const code = typeof editor !== 'undefined' && typeof editor?.getValue === 'function'
+        ? editor.getValue()
+        : input?.value ?? '';
     try {
         // MUST import sys AND io before using StringIO
         await pyodide.runPythonAsync(`
@@ -123,10 +177,8 @@ async function runCode() {
 
 ## Technical Requirements
 
-- Use CodeMirror or Monaco via CDN for editing
-- Syntax highlighting for the language
-- Run button with output display
-- Test case validation with pass/fail indicators
+- Use CodeMirror with the appropriate syntax mode and a textarea fallback as described above
+- For executable lessons, a Run button, output display, and test case validation with pass/fail indicators
 - Hint button that reveals hints progressively
 - Mobile-responsive layout
 
@@ -143,7 +195,8 @@ The platform drives this widget by posting messages into the iframe
 (`SET_WIDGET_STATE`, `HIGHLIGHT_ELEMENT`, `ANNOTATE_ELEMENT`, `REVEAL_ELEMENT`).
 Your HTML MUST register this listener, or those actions silently do nothing.
 For a code playground, `SET_WIDGET_STATE` typically loads code into the editor and
-optionally runs it:
+optionally runs it. Target `#code-editor-region` when highlighting or annotating
+the editor:
 
 ```javascript
 window.addEventListener('message', function(event) {
@@ -156,10 +209,13 @@ window.addEventListener('message', function(event) {
         // Guard the identifier itself: `editor?.setValue` still throws
         // ReferenceError when no `editor` variable is declared (e.g. a
         // textarea-only widget). `typeof editor` is safe for that case.
-        if (typeof editor !== 'undefined' && typeof editor.setValue === 'function') editor.setValue(state.code);
+        if (typeof editor !== 'undefined' && typeof editor?.setValue === 'function') editor.setValue(state.code);
         else { const ta = document.getElementById('code-input'); if (ta) ta.value = state.code; }
       }
-      if (state && state.run && typeof runCode === 'function') runCode();
+      if (state && state.run && typeof runCode === 'function') {
+        const rendered = runCode();
+        window.__openmaicWaitForStaticRuntime?.(rendered) ?? rendered;
+      }
       break;
 
     case 'HIGHLIGHT_ELEMENT':
@@ -209,7 +265,8 @@ document.head.appendChild(style);
 ### Element Naming Convention
 
 So highlight/annotate/reveal can target UI, use consistent ids:
-- Run button: `id="run-btn"`, output panel: `id="output"`, editor host: `id="code-input"`.
+- Editor region: `id="code-editor-region"`. The fallback textarea inside it uses `id="code-input"`.
+- For executable lessons, Run button: `id="run-btn"`, output panel: `id="output"`.
 - Solution/hint panels: `id="solution"`, `id="hint-{n}"`.
 
 ## Output Format
@@ -224,9 +281,7 @@ Return ONLY the HTML document, no markdown fences or explanations.
 ## Quality Checklist
 
 - [ ] Code editor is visible and usable on mobile
-- [ ] Run button works correctly
-- [ ] Output panel doesn't overlap editor
-- [ ] Test cases show pass/fail clearly
+- [ ] For executable lessons, Run produces visible output and tests show pass/fail clearly
 - [ ] Hints reveal progressively
 - [ ] **NO DUPLICATED HTML** - exactly ONE `<!DOCTYPE html>` tag
 - [ ] **Python stdout uses correct import pattern** - imports BOTH `sys` AND `io`

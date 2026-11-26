@@ -258,6 +258,46 @@ describe.skipIf(!REQUIRED)('interactive display-state rules in Chromium', () => 
         });
       });
     }
+
+    it('visualization3d-content: ANNOTATE_ELEMENT stays visible on a phone', async () => {
+      const markdown = template('visualization3d-content');
+      const example = onlyBlock(fencedBlocks(markdown, 'html'), 'id="canvas-container"');
+      const style = example.match(/<style>[\s\S]*?<\/style>/)![0];
+      const body = example.slice(
+        example.indexOf('<body>'),
+        example.indexOf('<script type="importmap">'),
+      );
+      const listener = onlyBlock(
+        fencedBlocks(markdown, 'javascript'),
+        "addEventListener('message'",
+      );
+      await withContext({ width: 375, height: 667 }, async (context) => {
+        const { page, errors } = await open(
+          context,
+          `<!doctype html><html><head>${style}</head>${body}<script>
+  function initScene() {
+    const camera = { position: { set() {} } };
+    const controls = { update() {} };
+    const renderer = { render() {} };
+    const scene = {};
+    const objects = {};
+    ${listener}
+  }
+  initScene();
+</script></body></html>`,
+        );
+        await page.evaluate(() => {
+          window.postMessage(
+            { type: 'ANNOTATE_ELEMENT', target: '#canvas-container', content: 'Net force' },
+            '*',
+          );
+        });
+        await expect
+          .poll(() => page.getByText('Net force', { exact: true }).isVisible())
+          .toBe(true);
+        expect(errors).toEqual([]);
+      });
+    });
   });
 
   describe('canvas sizing', () => {

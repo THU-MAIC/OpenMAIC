@@ -140,42 +140,91 @@ function serializeSrcset(candidates: SrcsetCandidate[]): string {
 
 const DEFAULT_MAX_ASSET_BYTES = 8 * 1024 * 1024;
 
+/** Reads a response body, or returns null as soon as it exceeds `maxBytes`. */
+async function readBodyWithin(res: Response, maxBytes: number): Promise<Uint8Array | null> {
+  // Only a same-origin response exposes every header, so only there does a
+  // missing Content-Encoding mean Content-Length counts the decoded bytes.
+  // Transfer-Encoding takes precedence over Content-Length per RFC 7230,
+  // so a stale length from a chunked response could reject a body that fits.
+  if (
+    res.type === 'basic' &&
+    !res.headers.has('content-encoding') &&
+    !res.headers.has('transfer-encoding') &&
+    Number(res.headers.get('content-length')) > maxBytes
+  ) {
+    await res.body?.cancel();
+    return null;
+  }
+  if (!res.body) return new Uint8Array();
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    size += read.value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(read.value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 export function createAssetFetcher(options?: InlineOptions): FetchAsset {
   const fetchImpl = options?.fetchImpl ?? fetch;
-  const maxBytes = options?.maxAssetBytes ?? DEFAULT_MAX_ASSET_BYTES;
-  const cache = new Map<string, Promise<{ bytes: Uint8Array; contentType: string } | null>>();
+  const assetLimit = options?.maxAssetBytes ?? DEFAULT_MAX_ASSET_BYTES;
+  const cache = new Map<
+    string,
+    { maxBytes: number; asset: Promise<{ bytes: Uint8Array; contentType: string } | null> }
+  >();
 
-  return function fetchAsset(url: string) {
-    const cached = cache.get(url);
-    if (cached) return cached;
-    const promise = (async () => {
-      const MAX_ATTEMPTS = 3;
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        try {
-          const res = await fetchImpl(url);
-          if (!res.ok) {
-            // permanent client errors (e.g. 404, 403): don't retry
-            if (res.status !== 429 && res.status < 500) return null;
-            // transient server/rate-limit error: fall through to retry
-            if (attempt === MAX_ATTEMPTS) return null;
-          } else {
-            const buf = new Uint8Array(await res.arrayBuffer());
-            if (buf.byteLength > maxBytes) return null;
-            const contentType =
-              res.headers.get('content-type')?.split(';')[0]?.trim() || guessMime(url);
-            return { bytes: buf, contentType };
-          }
-        } catch {
-          // network error (connection reset, ECONNRESET, etc.)
+  async function download(url: string, maxBytes: number) {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetchImpl(url);
+        if (!res.ok) {
+          // permanent client errors (e.g. 404, 403): don't retry
+          if (res.status !== 429 && res.status < 500) return null;
+          // transient server/rate-limit error: fall through to retry
           if (attempt === MAX_ATTEMPTS) return null;
+        } else {
+          const buf = await readBodyWithin(res, maxBytes);
+          if (!buf) return null;
+          const contentType =
+            res.headers.get('content-type')?.split(';')[0]?.trim() || guessMime(url);
+          return { bytes: buf, contentType };
         }
-        // backoff before next attempt (150ms, 300ms)
-        await new Promise((r) => setTimeout(r, 150 * attempt));
+      } catch {
+        // network error (connection reset, ECONNRESET, etc.)
+        if (attempt === MAX_ATTEMPTS) return null;
       }
-      return null;
-    })();
-    cache.set(url, promise);
-    return promise;
+      // backoff before next attempt (150ms, 300ms)
+      await new Promise((r) => setTimeout(r, 150 * attempt));
+    }
+    return null;
+  }
+
+  return function fetchAsset(url, maxBytes = assetLimit) {
+    const limit = Math.min(maxBytes, assetLimit);
+    const cached = cache.get(url);
+    if (cached && cached.maxBytes >= limit) {
+      return cached.asset.then((asset) =>
+        asset && asset.bytes.byteLength <= limit ? asset : null,
+      );
+    }
+    // A smaller earlier limit may have cut this download short.
+    const asset = cached
+      ? cached.asset.then((asset) => asset ?? download(url, limit))
+      : download(url, limit);
+    cache.set(url, { maxBytes: limit, asset });
+    return asset;
   };
 }
 

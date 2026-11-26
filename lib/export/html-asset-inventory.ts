@@ -59,8 +59,10 @@ export interface HtmlTextElement {
 
 export interface HtmlAssetInventory {
   attributeAssets: HtmlAttributeAsset[];
+  classicScripts: HtmlTextElement[];
   moduleScripts: HtmlTextElement[];
   importmaps: HtmlTextElement[];
+  captureAssetManifests: HtmlTextElement[];
   styles: HtmlTextElement[];
   styleAttributes: Array<{ css: string; range?: SourceRange }>;
   svgPresentationAttributes: Array<{
@@ -177,8 +179,10 @@ function attributeRange(
 export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
   const inventory: HtmlAssetInventory = {
     attributeAssets: [],
+    classicScripts: [],
     moduleScripts: [],
     importmaps: [],
+    captureAssetManifests: [],
     styles: [],
     styleAttributes: [],
     svgPresentationAttributes: [],
@@ -257,8 +261,21 @@ export function analyzeHtmlAssetInventory(html: string): HtmlAssetInventory {
 
     const text = textElement(html, element);
     if (text?.tagName === 'style') inventory.styles.push(text);
+    if (
+      text?.tagName === 'script' &&
+      attrs.src === undefined &&
+      (!type || /^(?:application|text)\/(?:java|ecma)script$/.test(type))
+    ) {
+      inventory.classicScripts.push(text);
+    }
     if (text?.tagName === 'script' && type === 'module') inventory.moduleScripts.push(text);
     if (text?.tagName === 'script' && type === 'importmap') inventory.importmaps.push(text);
+    if (
+      text?.tagName === 'script' &&
+      type === 'application/json' &&
+      'data-openmaic-offline-assets' in attrs
+    )
+      inventory.captureAssetManifests.push(text);
 
     for (const child of element.childNodes) if (isElement(child)) visit(child);
     if (isTemplate(element)) {

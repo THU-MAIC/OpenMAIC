@@ -142,7 +142,7 @@ function e2eRenderCommands(workflow: Workflow): string[] {
 
 describe('CI video-export workflow contract', () => {
   it('uses the pinned local Hyperframes CLI instead of an ephemeral npx install', () => {
-    expect(rootPackage.devDependencies?.hyperframes).toBe('0.7.60');
+    expect(rootPackage.devDependencies?.hyperframes).toBe('0.7.107');
   });
 
   it('preserves package version-bump gates for pull requests, merge queue entries and main pushes', () => {

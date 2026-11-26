@@ -560,98 +560,68 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 - Earth: Blue ocean + green continents + white ice caps
 - Planets: Appropriate colors with variations
 
-## JavaScript Coding Rules
+## Teacher Actions Listener (REQUIRED)
 
-### 1. Switch Statement Scope (CRITICAL - Causes SyntaxError)
+Register the listener inside `initScene()`, in the same scope as `const camera` and `const objects`, after both have been initialized.
+Register it after initializing `controls`, `renderer`, and `scene` so state
+patches can use the same render path as learner controls. Use CSS selectors for
+visible controls and canvas targets, and key highlightable meshes in `objects`
+by their stable selectors. Wrap switch cases in braces.
 
-**WRONG - Variables redeclared across cases:**
 ```javascript
-// This causes: SyntaxError: Identifier 'elementId' has already been declared
-switch (action) {
-  case 'HIGHLIGHT_ELEMENT':
-    const { elementId, highlight } = payload;  // First const
-    // ...
-    break;
-    
-  case 'ANNOTATE_ELEMENT':
-    const { elementId, text } = payload;  // ERROR! elementId already declared
-    // ...
-    break;
-}
-```
-
-**CORRECT - Wrap each case in braces to create block scope:**
-```javascript
-// Each case has its own block scope
-switch (action) {
-  case 'HIGHLIGHT_ELEMENT': {
-    const { elementId, highlight } = payload;
-    // ...
-    break;
-  }
-  
-  case 'ANNOTATE_ELEMENT': {
-    const { elementId, text } = payload;  // OK - different block scope
-    // ...
-    break;
-  }
-  
-  case 'SET_WIDGET_STATE': {
-    const { cameraPosition, scale } = payload;
-    // ...
-    break;
+function findTeacherTarget(target) {
+  try {
+    return typeof target === 'string' ? document.querySelector(target) : null;
+  } catch {
+    return null;
   }
 }
-```
 
-**Alternative - Use different variable names:**
-```javascript
-switch (action) {
-  case 'HIGHLIGHT_ELEMENT':
-    const highlightData = payload;
-    // Use highlightData.elementId
-    break;
-    
-  case 'ANNOTATE_ELEMENT':
-    const annotateData = payload;
-    // Use annotateData.elementId
-    break;
-}
-```
-
-### 2. Teacher Actions Listener Pattern
-
-Register the listener inside `initScene()`, in the same scope as `const camera` and `const objects`, after both have been initialized. Store each highlightable object's meshes in `objects` under its stable target selector. The optional scale example applies to a visualization that stores a scalable group as `objects.cellGroup`.
-
-Always wrap switch cases in braces:
-
-```javascript
 window.addEventListener('message', (event) => {
-  const { type, state, target, content } = event.data || {};
+  const { type, target, state, content } = event.data ?? {};
 
   switch (type) {
     case 'SET_WIDGET_STATE': {
-      if (state?.cameraPosition) camera.position.set(...state.cameraPosition);
+      if (Array.isArray(state?.cameraPosition)) {
+        camera.position.set(...state.cameraPosition);
+        controls.update();
+      }
       if (state?.scale !== undefined && objects.cellGroup) {
         objects.cellGroup.scale.setScalar(state.scale);
       }
+      renderer.render(scene, camera);
       break;
     }
-
     case 'HIGHLIGHT_ELEMENT': {
-      objects[target]?.forEach(mesh => {
-        mesh.material.emissive.set(0xffff00);
-      });
+      const meshes = objects[target];
+      if (Array.isArray(meshes)) {
+        meshes.forEach(mesh => mesh.material.emissive.set(0xffff00));
+        renderer.render(scene, camera);
+      }
+      const element = findTeacherTarget(target);
+      if (element) {
+        element.style.outline = '3px solid #a78bfa';
+        setTimeout(() => { element.style.outline = ''; }, 3000);
+      }
       break;
     }
-
     case 'ANNOTATE_ELEMENT': {
-      // Create a temporary annotation at target using content.
+      // Use the widget's annotation UI for targets that map to meshes.
+      // #info is hidden on narrow screens, so notes get their own layer.
+      const element = findTeacherTarget(target);
+      if (element && typeof content === 'string') {
+        const rect = element.getBoundingClientRect();
+        const note = document.createElement('div');
+        note.textContent = content;
+        note.style.cssText = `position:fixed;left:${rect.left + rect.width / 2}px;top:${Math.max(8, rect.top - 44)}px;transform:translateX(-50%);max-width:calc(100vw - 16px);padding:8px 12px;border-radius:8px;background:rgba(139,92,246,0.95);color:#fff;z-index:1000`;
+        document.body.appendChild(note);
+        setTimeout(() => note.remove(), 4000);
+      }
       break;
     }
-
     case 'REVEAL_ELEMENT': {
-      // Show the object or control identified by target.
+      // Reveal a mapped 3D object through the widget's model render path.
+      findTeacherTarget(target)?.removeAttribute('hidden');
       break;
     }
   }

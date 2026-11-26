@@ -32,6 +32,7 @@ import {
 } from '../../choreography';
 import type { CompilerScene } from '../deps';
 import { splitCues } from '../split-cue';
+import { WidgetMessageSchema } from '../ir';
 import type {
   Diagnostic,
   EffectSegment,
@@ -55,6 +56,15 @@ export interface TimelineResult {
 const DESCRIPTOR_ID: Record<'spotlight' | 'laser', string> = {
   spotlight: 'spotlight.v1',
   laser: 'laser.v1',
+};
+
+const WIDGET_MESSAGE_TYPES: Partial<
+  Record<Action['type'], NonNullable<Marker['widgetMessage']>['type']>
+> = {
+  widget_setState: 'SET_WIDGET_STATE',
+  widget_reveal: 'REVEAL_ELEMENT',
+  widget_highlight: 'HIGHLIGHT_ELEMENT',
+  widget_annotation: 'ANNOTATE_ELEMENT',
 };
 
 /**
@@ -255,15 +265,27 @@ function dispatchSegment(
       });
       return;
     }
-    default:
-      // Whiteboard / widget / discussion beats — carried as markers until the
-      // exporter can render them, so nothing is silently dropped.
+    default: {
+      // Keep the existing marker timing and carry replayable widget messages.
+      const type = WIDGET_MESSAGE_TYPES[action.type];
+      const message = type && WidgetMessageSchema.safeParse({ ...action, type });
+      if (message && !message.success) {
+        diagnostics.push({
+          severity: 'warn',
+          code: 'invalid-action',
+          sceneId: seg.sceneId,
+          actionId: action.id,
+          message: `Cannot replay ${action.type} with an invalid widget payload.`,
+        });
+      }
       bucket.markers.push({
         ...base,
         kind: (action as Action).type,
         startMs: seg.startMs,
         durationMs: seg.durationMs,
+        ...(message && message.success ? { widgetMessage: message.data } : {}),
       });
+    }
   }
 }
 

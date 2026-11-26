@@ -27,7 +27,7 @@ import { QUIZ_SCROLL_LAYOUT_720P, quizScrollScene } from './quiz-scroll-fixture'
  * the real pinned Hyperframes lint CLI can be run against it:
  *
  *   HF_E2E_DIR=/tmp/hf-e2e npx vitest run tests/video-export/e2e-materialize.test.ts
- *   for dir in /tmp/hf-e2e/*; do npx --yes hyperframes@0.7.60 lint "$dir"; done
+ *   for dir in /tmp/hf-e2e/*; do pnpm exec hyperframes lint "$dir"; done
  *
  * The filesystem materializer is skipped unless HF_E2E_DIR is set. CI sets it
  * explicitly before linting every emitted sample.
@@ -462,7 +462,7 @@ describe.skipIf(!OUT_DIR)('materialize a Hyperframes project for real-CLI E2E', 
       expect(arabicHtml, `arabic production cover chrome: ${expected}`).toContain(expected);
     }
     console.log(
-      `\n[hf-e2e] projects written to ${root}\n  for dir in ${root}/*; do npx --yes hyperframes@0.7.60 lint "$dir"; done\n`,
+      `\n[hf-e2e] projects written to ${root}\n  for dir in ${root}/*; do pnpm exec hyperframes lint "$dir"; done\n`,
     );
   });
 });

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
 import { prepareInteractiveHtmlScenes } from '@/lib/video-export-app/prepare-interactive-html';
 import type { Scene } from '@/lib/types/stage';
 
@@ -37,6 +38,48 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html).toContain("connect-src 'none'");
     expect(html).toContain("worker-src 'none'");
     expect(html).toContain('interactive-worker-disabled');
+  });
+
+  it('packages scenes and verifies raw Pyodide archives on a plain HTTP origin', async () => {
+    const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+    const bytes = new Uint8Array([0, 128, 255, 25, 52]);
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    const lockfile = JSON.stringify({
+      packages: {
+        numpy: { file_name: 'numpy.whl', depends: [], sha256: hash },
+        corrupt: { file_name: 'corrupt.whl', depends: [], sha256: '0'.repeat(64) },
+      },
+    });
+    const plain = { ...scene('<output>ordinary scene</output>'), id: 'plain' };
+    const python = scene(`<script src="${root}pyodide.js"></script>
+      <script>loadPyodide({packages: ['numpy', 'corrupt']});</script>`);
+    const random = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+    vi.stubGlobal('crypto', { getRandomValues: random });
+    try {
+      const prepared = await prepareInteractiveHtmlScenes([plain, python], {
+        baseUrl: 'http://192.0.2.10:3000',
+        fetcher: async (url) => ({
+          bytes: url.endsWith('.whl')
+            ? bytes
+            : new TextEncoder().encode(url.endsWith('/pyodide-lock.json') ? lockfile : '42'),
+          contentType: 'application/octet-stream',
+        }),
+      });
+      for (const widget of [plain, python]) {
+        const html = prepared.content(`interactive:${widget.id}`);
+        expect(prepared.html(widget)).toMatchObject({ present: true });
+        expect(prepared.html(widget)?.contentHash).toBe(
+          createHash('sha256').update(html!).digest('hex'),
+        );
+      }
+      const html = prepared.content('interactive:widget');
+      expect(html).toContain(
+        `numpy.whl":["application/octet-stream","${Buffer.from(bytes).toString('base64')}"]`,
+      );
+      expect(html).not.toContain('corrupt.whl');
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('keeps the doctype first when authored HTML omits an explicit head', async () => {
@@ -90,6 +133,380 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(prepared.content('interactive:widget')).toContain('src="data:image/png;base64,');
     expect(prepared.content('interactive:widget')).not.toContain('https://cdn.test/pixel.png');
   });
+
+  it('drops connection hints and still inlines the actual stylesheet and font', async () => {
+    const css = 'https://fonts.test/roboto.css';
+    const font = 'https://files.test/roboto.woff2';
+    const fetched = new Set<string>();
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<link rel="preconnect" href="https://fonts.test">\n` +
+            `<link rel="DNS-PREFETCH" href="//files.test">\n` +
+            `<link rel="stylesheet" href="${css}">`,
+        ),
+      ],
+      {
+        fetcher: async (url) => {
+          fetched.add(url);
+          if (url === css) {
+            return {
+              bytes: new TextEncoder().encode(`@font-face{font-family:Roboto;src:url(${font})}`),
+              contentType: 'text/css',
+            };
+          }
+          return url === font ? { bytes: new Uint8Array([1]), contentType: 'font/woff2' } : null;
+        },
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(fetched).toEqual(new Set([css, font]));
+    const html = prepared.content('interactive:widget');
+    expect(html).toContain('data:font/woff2;base64,');
+    expect(html).not.toMatch(/preconnect|dns-prefetch/i);
+  });
+
+  it('inlines a literal URL assigned to a dynamically created script', async () => {
+    const scriptUrl = 'https://cdn.test/dayjs.js';
+    const authored = `<script>
+      if (!window.dayjs) {
+        var script = document.createElement('script');
+        script.src = '${scriptUrl}';
+        document.head.appendChild(script);
+      }
+      const image = document.createElement('img');
+      image.src = 'https://cdn.test/not-a-script.js';
+    </script>`;
+    const fetched = new Set<string>();
+    const prepared = await prepareInteractiveHtmlScenes([scene(authored)], {
+      fetcher: async (url) => {
+        fetched.add(url);
+        return {
+          bytes: new TextEncoder().encode('window.dayjs = () => 42;'),
+          contentType: 'text/javascript',
+        };
+      },
+    });
+
+    expect(fetched).toEqual(new Set([scriptUrl]));
+    const html = prepared.content('interactive:widget');
+    expect(html).toContain('script.src = "data:text/javascript;base64,');
+    expect(html).toContain("image.src = 'https://cdn.test/not-a-script.js'");
+    expect(html).not.toContain(scriptUrl);
+  });
+
+  it('preserves the scene when a conditional script cannot be prefetched', async () => {
+    const url = 'https://cdn.test/optional-fallback.js';
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(`<script>
+          window.dayjs = () => 42;
+          if (!window.dayjs) {
+            const script = document.createElement('script');
+            script.src = '${url}';
+            document.head.appendChild(script);
+          }
+        </script>`),
+      ],
+      { fetcher: async () => null },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(prepared.content('interactive:widget')).toContain(`script.src = '${url}'`);
+  });
+
+  it('packages the startup files of the Pyodide loader with the capture page', async () => {
+    const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+    const fetched = new Set<string>();
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script defer id="python" src="${root}pyodide.js" onload="loadPyodide()"></script>` +
+            `<script src="${root}pyodide.js"></script>`,
+        ),
+      ],
+      {
+        fetcher: async (url) => {
+          fetched.add(url);
+          return {
+            bytes: new TextEncoder().encode(
+              url.endsWith('/pyodide-lock.json') ? '{"packages":{}}' : new URL(url).pathname,
+            ),
+            contentType: 'application/octet-stream',
+          };
+        },
+      },
+    );
+
+    expect(fetched).toEqual(
+      new Set(
+        [
+          'pyodide.js',
+          'pyodide.asm.js',
+          'pyodide.asm.wasm',
+          'python_stdlib.zip',
+          'pyodide-lock.json',
+        ].map((file) => root + file),
+      ),
+    );
+    const html = prepared.content('interactive:widget');
+    expect(html?.match(/data-openmaic-pyodide-runtime/g)).toHaveLength(1);
+    expect(html).toMatch(/<script defer id="python" src="data:[^"]+" onload="loadPyodide\(\)">/);
+    expect(html).toContain("connect-src 'none'");
+    expect(html).not.toContain(`src="${root}pyodide.js"`);
+  });
+
+  it('stops fetching Pyodide archives once the scene budget is spent', async () => {
+    const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+    const names = ['a', 'b', 'c', 'd', 'e'];
+    const lock = JSON.stringify({
+      packages: Object.fromEntries(
+        names.map((name) => [name, { file_name: `${name}.whl`, depends: [] }]),
+      ),
+    });
+    const archive = new Uint8Array(30_000);
+    const boot = (filename: string) =>
+      new TextEncoder().encode(filename === 'pyodide-lock.json' ? lock : '42');
+    const encoded = (bytes: number) => 4 * Math.ceil(bytes / 3);
+    const bootFiles = [
+      'pyodide.js',
+      'pyodide.asm.js',
+      'pyodide.asm.wasm',
+      'python_stdlib.zip',
+      'pyodide-lock.json',
+    ];
+    const maxHtmlBytes =
+      bootFiles.reduce((total, file) => total + encoded(boot(file).length), 0) +
+      2 * encoded(archive.length);
+    const capacity = Math.floor(maxHtmlBytes / 4) * 3;
+    const requested: string[] = [];
+    const overruns: string[] = [];
+    let returned = 0;
+
+    await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script src="${root}pyodide.js"></script>` +
+            `<script>loadPyodide({packages: ${JSON.stringify(names)}});</script>`,
+        ),
+      ],
+      {
+        maxHtmlBytes,
+        fetcher: async (url, maxBytes = Infinity) => {
+          const filename = url.slice(root.length);
+          const bytes = filename.endsWith('.whl') ? archive : boot(filename);
+          if (filename.endsWith('.whl')) requested.push(filename);
+          if (returned + maxBytes > capacity) overruns.push(filename);
+          if (bytes.length > maxBytes) return null;
+          returned += bytes.length;
+          return { bytes, contentType: 'application/octet-stream' };
+        },
+      },
+    );
+
+    expect(overruns).toEqual([]);
+    expect(requested).toEqual(['a.whl', 'b.whl']);
+  });
+
+  it('shares one archive budget between two Pyodide distributions in a scene', async () => {
+    const roots = [
+      'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/',
+      'https://static.example.edu/pyodide/v0.26.2/full/',
+    ];
+    const lock = JSON.stringify({
+      packages: { a: { file_name: 'a.whl', depends: [] }, b: { file_name: 'b.whl', depends: [] } },
+    });
+    const archive = new Uint8Array(30_000);
+    const encoded = (bytes: number) => 4 * Math.ceil(bytes / 3);
+    const archiveBytes: number[] = [];
+
+    await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          roots.map((root) => `<script src="${root}pyodide.js"></script>`).join('') +
+            `<script>loadPyodide({packages: ['a', 'b']});</script>`,
+        ),
+      ],
+      {
+        maxHtmlBytes: 2 * encoded(archive.length) + 1_000,
+        fetcher: async (url, maxBytes = Infinity) => {
+          const bytes = url.endsWith('.whl')
+            ? archive
+            : new TextEncoder().encode(url.endsWith('/pyodide-lock.json') ? lock : '42');
+          if (bytes.length > maxBytes) return null;
+          if (url.endsWith('.whl')) archiveBytes.push(encoded(bytes.length));
+          return { bytes, contentType: 'application/octet-stream' };
+        },
+      },
+    );
+
+    expect(archiveBytes).toHaveLength(2);
+  });
+
+  it('packages a self-hosted Pyodide distribution with archives from its own directory', async () => {
+    const root = 'https://static.example.edu/pyodide/v0.26.2/full/';
+    const archive = new Uint8Array([0, 128, 255, 25, 52]);
+    const lock = JSON.stringify({
+      packages: {
+        numpy: {
+          file_name: 'numpy.whl',
+          depends: [],
+          sha256: createHash('sha256').update(archive).digest('hex'),
+        },
+        corrupt: { file_name: 'corrupt.whl', depends: [], sha256: '0'.repeat(64) },
+      },
+    });
+    const fetched: string[] = [];
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script src="${root}pyodide.js"></script>` +
+            `<script>loadPyodide({packages: ['numpy', 'corrupt']});</script>`,
+        ),
+      ],
+      {
+        fetcher: async (url) => {
+          fetched.push(url);
+          return {
+            bytes: url.endsWith('.whl')
+              ? archive
+              : new TextEncoder().encode(url.endsWith('/pyodide-lock.json') ? lock : '42'),
+            contentType: 'application/octet-stream',
+          };
+        },
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    const html = prepared.content('interactive:widget');
+    expect(html).toContain('data-openmaic-pyodide-runtime');
+    expect(html).not.toContain(`src="${root}pyodide.js"`);
+    expect(html).toContain(
+      `numpy.whl":["application/octet-stream","${Buffer.from(archive).toString('base64')}"]`,
+    );
+    expect(html).not.toContain('corrupt.whl');
+    expect(fetched).toContain(`${root}pyodide.asm.wasm`);
+    expect(fetched.every((url) => url.startsWith(root))).toBe(true);
+  });
+
+  it.each([
+    { problem: 'a missing boot file', missing: 'pyodide.asm.wasm', maxHtmlBytes: undefined },
+    { problem: 'boot files over the scene budget', maxHtmlBytes: 45_000 },
+    { problem: 'an invalid lockfile', lock: '<!doctype html><p>Not found</p>' },
+  ])(
+    'keeps the view and names the Pyodide entry it could not bundle for $problem',
+    async (fixture) => {
+      const entry = 'https://static.example.edu/pyodide/v0.26.2/full/pyodide.js';
+      const prepared = await prepareInteractiveHtmlScenes(
+        [
+          scene(
+            `<p>Run the cell to start Python.</p><script src="${entry}"></script>` +
+              `<script>document.querySelector('p').addEventListener('click', () => loadPyodide({packages: ['numpy']}));</script>`,
+          ),
+        ],
+        {
+          maxHtmlBytes: fixture.maxHtmlBytes,
+          fetcher: async (url) =>
+            'missing' in fixture && url.endsWith(`/${fixture.missing}`)
+              ? null
+              : {
+                  bytes: new TextEncoder().encode(
+                    url.endsWith('/pyodide-lock.json')
+                      ? (fixture.lock ?? '{"packages":{}}')
+                      : 'x'.repeat(10_000),
+                  ),
+                  contentType: 'application/octet-stream',
+                },
+        },
+      );
+
+      expect(prepared.html(scene())).toMatchObject({ present: true });
+      const html = prepared.content('interactive:widget')!;
+      expect(html).not.toContain(`src="${entry}"`);
+      expect(html).not.toContain('data-openmaic-pyodide-runtime');
+      const src = /<script src="(data:text\/javascript,[^"]*)"/.exec(html)![1]!;
+      const loader = decodeURIComponent(src.slice('data:text/javascript,'.length));
+      const window: { loadPyodide?: () => Promise<unknown> } = {};
+      new Function('window', loader)(window);
+      await expect(window.loadPyodide!()).rejects.toThrow(
+        `Pyodide runtime unavailable offline: ${entry}`,
+      );
+    },
+  );
+
+  it('returns the budget of a discarded Pyodide bundle to later scripts', async () => {
+    const entry = 'https://static.example.edu/pyodide/v0.26.2/full/pyodide.js';
+    const scriptUrl = 'https://cdn.test/chart.js';
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script src="${entry}"></script><script>
+            var script = document.createElement('script');
+            script.src = '${scriptUrl}';
+            document.head.appendChild(script);
+          </script>`,
+        ),
+      ],
+      {
+        maxHtmlBytes: 100_000,
+        fetcher: async (url) =>
+          url.endsWith('/python_stdlib.zip')
+            ? null
+            : {
+                bytes: new TextEncoder().encode(
+                  url === scriptUrl ? `/*${'x'.repeat(30_000)}*/` : 'x'.repeat(20_000),
+                ),
+                contentType: 'text/javascript',
+              },
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    expect(prepared.content('interactive:widget')).not.toContain(scriptUrl);
+  });
+
+  it.each([
+    { startup: false, extraBytes: 0 },
+    { startup: true, extraBytes: 850 },
+  ])(
+    'gives the Pyodide core and startup archives priority under the HTML limit ($startup)',
+    async ({ startup, extraBytes }) => {
+      const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+      const widget = scene(
+        `<script src="${root}pyodide.js"></script>` +
+          `<button>Run</button><script>
+          document.querySelector('button').onclick = () => python.loadPackage('openblas');
+          ${startup ? "python.loadPackage('numpy');" : ''}
+        </script>`,
+      );
+      const lock = JSON.stringify({
+        packages: {
+          numpy: { file_name: 'numpy.whl', depends: [] },
+          openblas: { file_name: 'openblas.whl', depends: [] },
+        },
+      });
+      const fetcher = (archive: Uint8Array | null) => async (url: string) => {
+        const filename = url.slice(root.length);
+        const bytes = filename.endsWith('.whl')
+          ? archive
+          : new TextEncoder().encode(filename === 'pyodide-lock.json' ? lock : '42');
+        return bytes && { bytes, contentType: 'application/octet-stream' };
+      };
+      const core = await prepareInteractiveHtmlScenes([widget], { fetcher: fetcher(null) });
+      const coreHtml = core.content('interactive:widget')!;
+      const atLimit = await prepareInteractiveHtmlScenes([widget], {
+        fetcher: fetcher(new Uint8Array(512)),
+        maxHtmlBytes: new TextEncoder().encode(coreHtml).byteLength + extraBytes,
+      });
+
+      expect(atLimit.html(widget)).toMatchObject({ present: true });
+      const html = atLimit.content('interactive:widget');
+      expect(html).not.toContain('openblas.whl');
+      if (startup) expect(html).toContain('numpy.whl');
+      else expect(html).toBe(coreHtml);
+    },
+  );
 
   it('accepts bare module imports resolved by the final offline import map', async () => {
     const prepared = await prepareInteractiveHtmlScenes(
