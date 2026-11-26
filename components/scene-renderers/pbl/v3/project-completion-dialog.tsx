@@ -109,7 +109,7 @@ export function ProjectCompletionDialog({
           key={fullscreen ? 'native' : 'page'}
           ref={card}
           data-pbl-completion-dialog
-          className="absolute top-1/2 left-1/2 z-[61] max-h-[calc(100%-1.5rem)] w-[min(26rem,calc(100%-1.5rem))] -translate-x-1/2 -translate-y-1/2 overflow-auto rounded-3xl border bg-popover px-5 py-7 text-center text-popover-foreground shadow-2xl outline-none sm:px-8"
+          className="pbl-completion-card absolute top-1/2 left-1/2 z-[61] flex max-h-[calc(100%-1.5rem)] w-[min(26rem,calc(100%-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-3xl border bg-popover px-5 py-7 text-center text-popover-foreground shadow-2xl outline-none sm:px-8"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             primary.current?.focus({ preventScroll: true });
@@ -142,31 +142,35 @@ export function ProjectCompletionDialog({
           >
             <X size={16} aria-hidden="true" />
           </button>
-          <div className="relative mx-auto mb-5 grid size-14 place-items-center rounded-2xl border border-(--pbl-guidance)/30 bg-popover text-(--pbl-guidance) shadow-sm ring-4 ring-(--pbl-guidance)/10">
-            <BookOpenCheck size={26} strokeWidth={1.6} aria-hidden="true" />
+          <div className="relative min-h-0 overflow-y-auto">
+            <div className="pbl-completion-seal mx-auto mt-1 mb-5 grid size-14 place-items-center rounded-2xl border border-(--pbl-guidance)/30 bg-popover text-(--pbl-guidance) shadow-sm ring-4 ring-(--pbl-guidance)/10">
+              <BookOpenCheck size={26} strokeWidth={1.6} aria-hidden="true" />
+            </div>
+            <Dialog.Title className="text-xl leading-snug font-semibold text-balance">
+              {t('pblV3.completion.title')}
+            </Dialog.Title>
+            <Dialog.Description className="mt-2 text-sm leading-relaxed text-pretty text-muted-foreground">
+              {t('pblV3.completion.description')}
+            </Dialog.Description>
           </div>
-          <Dialog.Title className="relative text-xl leading-snug font-semibold text-balance">
-            {t('pblV3.completion.title')}
-          </Dialog.Title>
-          <Dialog.Description className="mt-2 text-sm leading-relaxed text-pretty text-muted-foreground">
-            {t('pblV3.completion.description')}
-          </Dialog.Description>
-          <button
-            ref={primary}
-            type="button"
-            className="pbl-report-action mx-auto mt-6 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm"
-            onClick={() => !dismissing.current && onOpenReport()}
-          >
-            {t('pblV3.completion.openReport')}
-            <ArrowUpRight size={16} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="mt-1 min-h-11 rounded-xl px-4 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={dismiss}
-          >
-            {t('pblV3.completion.stay')}
-          </button>
+          <div className="pbl-completion-actions mt-6 shrink-0">
+            <button
+              ref={primary}
+              type="button"
+              className="pbl-report-action mx-auto flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm"
+              onClick={() => !dismissing.current && onOpenReport()}
+            >
+              {t('pblV3.completion.openReport')}
+              <ArrowUpRight size={16} className="shrink-0" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="mt-1 min-h-11 rounded-xl px-4 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={dismiss}
+            >
+              {t('pblV3.completion.stay')}
+            </button>
+          </div>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

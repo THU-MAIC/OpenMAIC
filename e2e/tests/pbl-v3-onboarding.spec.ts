@@ -307,16 +307,23 @@ async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number
   if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
 }
 
-for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as const) {
+for (const layout of [...assistantModes, 'scrolled dock', 'open history', 'embedded'] as const) {
   test(`project completion hands focus to the available report in the ${layout} layout`, async ({
     page,
     learningEvents,
   }, testInfo) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    const mode = layout === 'scrolled dock' || layout === 'open history' ? 'docked' : layout;
+    const embedded = layout === 'embedded';
+    await page.setViewportSize(
+      embedded ? { width: 850, height: 475 } : { width: 1440, height: 900 },
+    );
+    const mode = embedded
+      ? 'bubble'
+      : layout === 'scrolled dock' || layout === 'open history'
+        ? 'docked'
+        : layout;
     const theme = layout === 'window' ? 'light' : layout === 'docked' ? 'dark' : null;
     if (theme) await page.emulateMedia({ colorScheme: theme === 'light' ? 'dark' : 'light' });
-    if (mode === 'bubble') await page.emulateMedia({ reducedMotion: 'reduce' });
+    if (layout === 'bubble') await page.emulateMedia({ reducedMotion: 'reduce' });
     const { view, publish, calls } = await project(page, learningEvents, {
       started: true,
       explanationBoard: true,
@@ -328,6 +335,8 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
         .poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
         .toBe(theme === 'dark');
     }
+    if (embedded)
+      await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
     await useAssistantMode(page, mode);
     view.state.position.stageIndex = 6;
     view.role = 'mentor';
@@ -418,7 +427,18 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
       await expect(history).toHaveCount(0);
     }
     await expect(dialog).toBeVisible({ timeout: 15000 });
-    await expect(dialog.getByRole('button', { name: /report/i })).toBeFocused();
+    const openReport = dialog.getByRole('button', { name: /report/i });
+    await expect(openReport).toBeFocused();
+    if (embedded) {
+      const workspace = page.getByTestId('pbl-v3-workspace');
+      expect((await workspace.boundingBox())!.height).toBeLessThan(260);
+      for (const control of [
+        openReport,
+        dialog.getByRole('button', { name: 'Close', exact: true }),
+        dialog.getByRole('button', { name: 'Stay in the workbench' }),
+      ])
+        await expect(control).toBeInViewport({ ratio: 1 });
+    }
     expect(calls.some((call) => call.includes('/report'))).toBe(false);
     if (theme)
       await page.screenshot({ path: testInfo.outputPath(`completion-dialog-${theme}.png`) });
@@ -448,7 +468,7 @@ for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as con
     await publish();
     await expect(target).toBeFocused();
     await expect(dialog).toHaveCount(0);
-    if (mode === 'bubble') {
+    if (layout === 'bubble') {
       await page.reload();
       await page.getByTestId('pbl-v3-entry').getByRole('button').first().click();
       await expect(header).toBeEnabled();
