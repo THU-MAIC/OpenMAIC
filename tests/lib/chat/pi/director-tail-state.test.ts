@@ -9,6 +9,7 @@ import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 
 const body = {
+  messages: [],
   storeState: { scenes: [], whiteboardOpen: false },
 } as unknown as StatelessChatRequest;
 const parse = (messages: AgentMessage[]) =>
@@ -56,6 +57,46 @@ describe('Director transient board state', () => {
       stageId: 'stage',
       code: 'WHITEBOARD_READ_FAILED',
     });
+  });
+
+  it('puts only the latest learner text before state in each outgoing tail', async () => {
+    const transform = createDirectorTailStateTransform({
+      body: {
+        ...body,
+        messages: [
+          { id: 'previous', role: 'user', parts: [{ type: 'text', text: 'An earlier question.' }] },
+          {
+            id: 'current',
+            role: 'user',
+            parts: [
+              { type: 'text', text: 'Explain the diagram.' },
+              { type: 'text', text: 'Why is the line horizontal?' },
+            ],
+          },
+          { id: 'answer', role: 'assistant', parts: [{ type: 'text', text: 'An answer.' }] },
+        ],
+      },
+      getAgentResponses: () => [],
+      compaction: {
+        transformContext: async (messages) => messages,
+        getTrace: () => ({ triggerCount: 0 }) as never,
+        dispose() {},
+      },
+    });
+    const history: AgentMessage[] = [{ role: 'user', content: 'Older history', timestamp: 0 }];
+
+    for (let i = 0; i < 2; i++) {
+      const outgoing = await transform(history);
+      expect(outgoing).toHaveLength(2);
+      expect(outgoing[0]).toBe(history[0]);
+      expect(outgoing[1]).toMatchObject({
+        role: 'user',
+        content: expect.stringContaining(
+          `Latest user message: Explain the diagram.\nWhy is the line horizontal?\n\n${DIRECTOR_STATE_PREFIX}`,
+        ),
+      });
+      expect(JSON.stringify(outgoing[1])).not.toContain('An earlier question.');
+    }
   });
 
   it('refreshes after a failed compaction attempt as well', async () => {

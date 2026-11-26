@@ -47,6 +47,7 @@ function state(
   } as FoldedWhiteboardRuntimeState;
 }
 const body = {
+  messages: [],
   storeState: { scenes: [], whiteboardOpen: false },
 } as unknown as StatelessChatRequest;
 const service = (read: ReturnType<typeof vi.fn>) =>
@@ -203,7 +204,12 @@ describe('request-scoped optional whiteboard preview', () => {
       preview,
       service: service(read),
       stageId: 'stage',
-      body,
+      body: {
+        ...body,
+        messages: [
+          { id: 'question', role: 'user', parts: [{ type: 'text', text: 'Explain this board.' }] },
+        ],
+      },
       getAgentResponses: () => [],
       compaction: {
         transformContext,
@@ -213,6 +219,15 @@ describe('request-scoped optional whiteboard preview', () => {
     });
     const result = await director(history);
     expect(history).toEqual(before);
+    expect(tailContent(result)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'text',
+          text: expect.stringMatching(/^Latest user message: Explain this board\./),
+        }),
+        expect.objectContaining({ type: 'image', mimeType: 'image/png' }),
+      ]),
+    );
     expect(tailText(result)).toContain('Whiteboard image at lastSeq=1;');
     expect(tailText(result)).not.toContain('Sequence 0');
     expect(

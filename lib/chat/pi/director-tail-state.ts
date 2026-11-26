@@ -8,6 +8,7 @@ import type { AgentTurnSummary } from '@/lib/orchestration/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import type { DirectorCompactionRuntime } from './director-compaction';
+import { getLatestLearnerText } from './prompts';
 
 const log = createLogger('DirectorTailState');
 export const DIRECTOR_STATE_PREFIX =
@@ -102,6 +103,7 @@ export function createDirectorTailStateTransform(opts: {
   getAgentResponses: () => AgentTurnSummary[];
   compaction: DirectorCompactionRuntime;
 }) {
+  const learnerText = getLatestLearnerText(opts.body.messages);
   let requestIndex = 0;
   const readMessage = async (signal?: AbortSignal): Promise<AgentMessage> => {
     signal?.throwIfAborted();
@@ -141,6 +143,7 @@ export function createDirectorTailStateTransform(opts: {
       (candidate) => candidate.id === opts.body.storeState.currentSceneId,
     );
     const content =
+      (learnerText?.trim() ? `Latest user message: ${learnerText}\n\n` : '') +
       DIRECTOR_STATE_PREFIX +
       JSON.stringify({
         requestStart: {
