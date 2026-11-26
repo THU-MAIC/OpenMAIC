@@ -27,9 +27,11 @@ function stop(timestamp: number, words: string): AssistantMessage {
   } as AssistantMessage;
 }
 
-async function recoverMessage(given: string, message: AssistantMessage) {
-  const boundary = withTeachingTurnBoundary(
+function recoveryBoundary(given: string, replies: AssistantMessage[], live?: () => string) {
+  return withTeachingTurnBoundary(
     () => {
+      const message = replies.shift();
+      if (!message) throw new Error('Unexpected extra recovery request');
       const response = createAssistantMessageEventStream();
       response.push({
         type: 'done',
@@ -39,11 +41,182 @@ async function recoverMessage(given: string, message: AssistantMessage) {
       return response;
     },
     () => false,
-    { stageKey: 'intro:0', studentTurns: 1, spokenReview: true, recoverySpeech: [given] },
+    {
+      stageKey: 'intro:0',
+      studentTurns: 1,
+      spokenReview: true,
+      recoverySpeech: [given],
+      recoveryQuestion: given.split('\n\n').at(-1),
+    },
+    live,
   );
+}
+
+async function recoverMessage(given: string, ...replies: AssistantMessage[]) {
+  const boundary = recoveryBoundary(given, replies);
   const stream = await boundary({} as Parameters<StreamFn>[0], { messages: [] });
   return stream.result();
 }
+
+describe('an unfinished review with a different closing', () => {
+  const tool = 'request_skill_review';
+  const given = 'Open the project.';
+  const draft = 'Tell me which file to check first.';
+  const ambiguous = frame(20, given + '\n\n' + draft, tool);
+
+  it.each(['keep_question', 'ask_question', 'add_hint'])(
+    'uses the exact wording selected by the author (%s)',
+    async (delivery) => {
+      const speech = spokenHandoffClosing();
+      speech.observe(stop(10, given));
+      const decision = frame(30, '', tool, { reviewDelivery: delivery, approval: true });
+      const reply = await recoverMessage(given, ambiguous, decision);
+      expect(reply.content).toEqual([
+        ...(delivery !== 'keep_question' ? [{ type: 'text', text: draft }] : []),
+        { type: 'toolCall', id: '20', name: tool, arguments: {} },
+      ]);
+      speech.observe(reply);
+      expect(speech.forCall('20')).toEqual({
+        question: delivery === 'ask_question' ? draft : given,
+        spokenAt: delivery === 'ask_question' ? 20 : 10,
+      });
+    },
+  );
+
+  it('needs no second model decision for a declared intent, an exact replay or a tool-only registration', async () => {
+    for (const [words, args, delivered] of [
+      [draft, { askNewQuestion: true }, [draft]],
+      [draft, { reviewDelivery: 'keep_question' }, []],
+      [draft, { reviewDelivery: 'add_hint' }, [draft]],
+      [given, {}, []],
+      ['', {}, []],
+    ] as const) {
+      const result = await recoverMessage(given, frame(20, words, tool, args));
+      expect(result.content.flatMap((part) => (part.type === 'text' ? [part.text] : []))).toEqual(
+        delivered,
+      );
+    }
+  });
+
+  it('does not publish or register a closing when the author omits a decision again', async () => {
+    const invalid = frame(30, 'Another draft.', tool, {});
+    await expect(recoverMessage(given, ambiguous, invalid)).rejects.toThrow(
+      'Could not confirm which review question to deliver',
+    );
+  });
+
+  it('checks the lease again after the author confirms the draft', async () => {
+    const replies = [ambiguous, frame(30, '', tool, { reviewDelivery: 'ask_question' })];
+    let checks = 0;
+    const boundary = recoveryBoundary(given, replies, () => {
+      if (++checks === 3) throw new Error('Teaching lease expired');
+      return '';
+    });
+    await expect(boundary({} as Parameters<StreamFn>[0], { messages: [] })).rejects.toThrow(
+      'Teaching lease expired',
+    );
+    expect(replies).toHaveLength(0);
+  });
+
+  it('requests just the missing hint when a declared supplement has no text', () => {
+    const speech = spokenHandoffClosing();
+    speech.observe(stop(10, given));
+    speech.observe(frame(20, '', tool, { reviewDelivery: 'add_hint' }));
+    expect(() => speech.forCall('20')).toThrow(
+      'Speak only the missing hint. Keep the original question pending.',
+    );
+    expect(speech.recoveryQuestion()).toBe(given);
+  });
+
+  it('keeps assistance available without registering advice as a question in a mixed handoff', async () => {
+    const supplied = frame(20, draft, tool, { reviewDelivery: 'add_hint', approval: true });
+    supplied.content.push({
+      type: 'toolCall',
+      name: 'respond_to_learner',
+      id: 'support',
+      arguments: { remainingSpeech: '' },
+    });
+    const speech = spokenHandoffClosing();
+    speech.observe(stop(10, given));
+    speech.observe(await recoverMessage(given, supplied));
+    expect(speech.forCall('20')).toBeUndefined();
+    expect(speech.forCall('support')).toEqual({ question: draft, spokenAt: 20 });
+    expect(speech.recoveryQuestion()).toBe(given);
+  });
+
+  it.each(['hint then question', 'question then hint', 'question around hint'])(
+    'publishes only the hint for %s',
+    async (layout) => {
+      const question = 'Which handoff would you inspect first?';
+      const hint = 'Use the network response as a clue.';
+      const words =
+        layout === 'hint then question'
+          ? [hint, question]
+          : layout === 'question then hint'
+            ? [question, hint]
+            : [question, hint, question];
+      const supplied = frame(20, words.join('\n\n'), tool, { reviewDelivery: 'add_hint' });
+      const reply = await recoverMessage(question, supplied);
+      const speech = spokenHandoffClosing();
+      speech.observe(stop(10, question));
+      speech.observe(JSON.parse(JSON.stringify(reply)));
+      expect(reply.content.flatMap((part) => (part.type === 'text' ? [part.text] : []))).toEqual([
+        hint,
+      ]);
+      expect(speech.forCall('20')).toEqual({ question, spokenAt: 10 });
+      expect(speech.recoveryQuestion()).toBe(question);
+    },
+  );
+
+  it.each(['read_file', 'write_file'])(
+    'respects the %s boundary when the draft is a hint, a question or a restatement',
+    async (fileTool) => {
+      for (const delivery of ['add_hint', 'keep_question', 'ask_question'] as const) {
+        for (const explicit of [true, false]) {
+          const supplied = frame(20, draft, tool, explicit ? { reviewDelivery: delivery } : {});
+          supplied.content.unshift({
+            type: 'toolCall',
+            id: 'file',
+            name: fileTool,
+            arguments: { path: 'PLAN.md' },
+          });
+          const reply = await recoverMessage(
+            given,
+            supplied,
+            ...(explicit ? [] : [frame(30, '', tool, { reviewDelivery: delivery })]),
+          );
+          expect(reply.content.flatMap((p) => (p.type === 'text' ? [p.text] : []))).toEqual(
+            delivery === 'keep_question' ? [] : [draft],
+          );
+          const speech = spokenHandoffClosing();
+          speech.observe(stop(10, given));
+          speech.observe(JSON.parse(JSON.stringify(reply)));
+          expect(speech.forCall('20')).toEqual(
+            delivery === 'ask_question'
+              ? { question: draft, spokenAt: 20 }
+              : { question: given, spokenAt: 10 },
+          );
+          expect(speech.recoverySpeech()).toBeUndefined();
+          speech.observe(frame(21, '', tool));
+          expect(speech.forCall('21')).toBeUndefined();
+        }
+      }
+      for (const [args, expectedQuestion] of [
+        [{ reviewDelivery: 'keep_question' }, { question: given, spokenAt: 10 }],
+        [{}, undefined],
+      ] as const) {
+        const supplied = frame(20, '', tool, args);
+        supplied.content.unshift({ type: 'toolCall', id: 'file', name: fileTool, arguments: {} });
+        const speech = spokenHandoffClosing();
+        speech.observe(stop(10, given));
+        speech.observe(await recoverMessage(given, supplied));
+        expect(speech.forCall('20')).toEqual(expectedQuestion);
+        speech.observe(frame(21, '', tool));
+        expect(speech.forCall('21')).toBeUndefined();
+      }
+    },
+  );
+});
 
 it.each([
   ['The value is 4', 'The value is 42.', 'The value is 42.'],

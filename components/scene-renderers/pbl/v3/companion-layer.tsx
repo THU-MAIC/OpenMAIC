@@ -8,7 +8,7 @@ import {
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
-import { continueActionLabel, nextLearningStep } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel, stageCompletionCopy } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { Companion } from './companion';
 import { ExplainBoard } from './explain-board';
@@ -99,7 +99,7 @@ export function CompanionLayer({
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
   const opening = pendingAction === 'begin' || (blockedReason === 'opening' && !view.roleRun);
   const role = view.role ?? 'mentor';
-  const nextAction = continueActionLabel(view, t);
+  const completion = stageCompletionCopy(view, t);
   return (
     <Narrated
       conversation={conversation}
@@ -108,15 +108,9 @@ export function CompanionLayer({
       onBoard={onBoard}
       onPoint={onPoint}
       onTold={onTold}
-      nextActionLabel={nextLearningStep(view) ? nextAction : undefined}
-      completionConfirmation={t('pblV3.journey.completionHandoff')}
-      nextInstruction={
-        'studentActions' in view.stage &&
-        view.stage.studentActions.includes('next') &&
-        !view.evaluation
-          ? t('pblV3.journey.ready', { action: nextAction })
-          : undefined
-      }
+      nextActionLabel={completion.afterMention?.label}
+      completionConfirmation={completion.confirmation}
+      nextInstruction={completion.instruction}
     >
       {(narration) => (
         <>
@@ -166,7 +160,7 @@ export function CompanionLayer({
                         ? { id: stageKey, text: t('pblV3.pendingActions.begin') }
                         : undefined)
                     }
-                    learner={learnerTurn(conversation, pendingMessage)}
+                    learner={learnerTurn(conversation, pendingMessage, !!narration.speech)}
                     tools={narration.tools}
                     playing={narration.playing}
                     paused={narration.paused}

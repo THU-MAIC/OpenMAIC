@@ -5313,7 +5313,11 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     'restated',
     'new question',
     'takeover',
+    'takeover with a missing question',
+    'takeover with an extra hint',
     'missing closing',
+    'missing closing without intent',
+    'unconfirmed closing',
   ] as const)('registers one board review from %s delivery', async (mode) => {
     const previous = process.env.OPENMAIC_PBL_V3_WHITEBOARD;
     process.env.OPENMAIC_PBL_V3_WHITEBOARD = 'true';
@@ -5344,8 +5348,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       ];
       const starting = (await store.get(study.id, principal.ownerId)).state.position;
       const inputs = await agents.listUserMessages(sessionId);
-      if (mode === 'takeover') {
-        // The original worker delivered the question and died before registering it.
+      const takeover = mode.startsWith('takeover');
+      if (takeover) {
+        // The interrupted reply can end either with a question or with just its introduction.
         const input = inputs.at(-1)!;
         const session = new Session(
           await AgentSessionEntryStorage.open({
@@ -5366,7 +5371,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         );
         const delivered: import('@earendil-works/pi-ai').AssistantMessage = {
           role: 'assistant',
-          content: [{ type: 'text', text: speech }],
+          content: [
+            { type: 'text', text: mode === 'takeover with a missing question' ? summary : speech },
+          ],
           stopReason: 'stop',
           api: 'openai-completions',
           provider: 'openai',
@@ -5409,7 +5416,36 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       }
       switch (mode) {
         case 'takeover':
-          mocked.responses = [speakAndCall('你准备先检查哪个步骤？', register)];
+          mocked.responses = [
+            speakAndCall('你准备先检查哪个步骤？', register),
+            callOnly({ ...register, input: { reviewDelivery: 'keep_question' } }),
+          ];
+          break;
+        case 'takeover with an extra hint':
+          mocked.responses = [
+            speakAndCall(summary + '\n\n' + question, register),
+            callOnly({ ...register, input: { reviewDelivery: 'add_hint' } }),
+          ];
+          break;
+        case 'unconfirmed closing':
+          mocked.responses = [
+            textResponse(summary),
+            speakAndCall(question, register),
+            callOnly(register),
+          ];
+          break;
+        case 'takeover with a missing question':
+        case 'missing closing without intent':
+          mocked.responses = [
+            ...(takeover ? [] : [textResponse(summary)]),
+            [
+              { type: 'text-delta', text: summary + '\n\n' + question },
+              { ...register, toolName: 'wb_close', toolCallId: 'close-board' },
+              ...callOnly(register),
+            ],
+            // The author selects the exact buffered question without generating it again.
+            callOnly({ ...register, input: { reviewDelivery: 'ask_question' } }),
+          ];
           break;
         case 'missing closing':
           mocked.responses = [
@@ -5451,6 +5487,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           mocked.responses = [speakAndCall(speech, register)];
           break;
       }
+      const callsBefore = mocked.modelCalls;
       await runSession(
         { running: new Map(), shuttingDown: false },
         {
@@ -5459,6 +5496,22 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         },
       );
       const session = await agents.getSession(sessionId);
+      if (mode === 'unconfirmed closing') {
+        expect(mocked.modelCalls - callsBefore).toBe(3);
+        expect(session?.status).toBe('failed');
+        expect((await store.binding(sessionId))?.guided?.pending).toBeUndefined();
+        expect((await store.get(study.id, principal.ownerId)).state.position).toEqual(starting);
+        expect(await agents.listUserMessages(sessionId)).toEqual(inputs);
+        const failed = await learningView(principal, study.id, { passive: true });
+        expect(failed.roleRun?.canRetry).toBe(true);
+        expect(failed.actions).not.toContain('next');
+        expect(
+          failed
+            .conversation!.flatMap((entry) => entry.parts)
+            .flatMap((p) => (p.kind === 'text' ? [p.text] : [])),
+        ).toEqual([summary]);
+        return;
+      }
       expect(session?.status, session?.error ?? undefined).toBe('succeeded');
       expect((await store.binding(sessionId))?.guided?.pending?.question).toBe(question);
       const committed = (await store.binding(sessionId))!.guided!;
@@ -5473,10 +5526,25 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       if (mode === 'takeover')
         expect(recoveredReviewSpeech(refreshed.conversation!.at(-1))?.text).toBe(question);
       const parts = view.conversation!.flatMap((entry) => entry.parts);
+      if (mode === 'takeover with an extra hint') {
+        const original = parts.find((p) => p.kind === 'text' && p.text === speech);
+        expect(original).toMatchObject({ spokenAt: committed.pending?.spokenAt });
+        const replay = view.conversation!.flatMap((entry) => narrationSteps(entry));
+        const spoken = replay.flatMap((step) => (step.kind === 'say' ? [step.text] : []));
+        expect(spoken.join(' ')).toContain(summary);
+        expect(spoken.join(' ').split(question)).toHaveLength(2);
+      }
       expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
-        mode === 'new question' || mode === 'missing closing'
-          ? [summary, question]
-          : [mode === 'tool-only' ? question : speech],
+        mode === 'takeover with an extra hint'
+          ? [speech, summary]
+          : [
+                'new question',
+                'missing closing',
+                'missing closing without intent',
+                'takeover with a missing question',
+              ].includes(mode)
+            ? [summary, question]
+            : [mode === 'tool-only' ? question : speech],
       );
       expect(
         parts.filter(
@@ -5493,6 +5561,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     ['respond_to_learner', 'read_file', false],
     ['request_learner_help', 'read_file', false],
     ['respond_to_learner', 'read_file', true],
+    ['request_skill_review', 'read_file', 'hint'],
   ] as const)(
     'registers %s alongside %s in the same SDK reply (replayed: %s)',
     async (handoff, fileTool, replayed) => {
@@ -5547,14 +5616,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const words =
         handoff === 'request_learner_help'
           ? 'Which build requirement should we check?'
-          : handoff === 'respond_to_learner'
+          : handoff === 'respond_to_learner' || replayed === 'hint'
             ? 'Open greeting.py to see its return value.'
             : 'Which line returns the greeting?';
       mocked.responses = [
         ...(handoff === 'respond_to_learner'
           ? []
           : [toolResponse([{ name: 'read_next_skill', input: {} }])]),
-        ...(replayed ? [textResponse(words)] : []),
+        ...(replayed ? [textResponse(replayed === 'hint' ? original : words)] : []),
         [
           { type: 'text-delta', text: words },
           ...toolResponse([
@@ -5563,7 +5632,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
               input:
                 fileTool === 'read_file' ? { path } : { path, text, expectedHash: digest(before) },
             },
-            { name: handoff, input: {} },
+            { name: handoff, input: replayed === 'hint' ? { reviewDelivery: 'add_hint' } : {} },
           ]),
         ],
       ];
@@ -5580,9 +5649,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(parts.filter((part) => part.kind === 'text' && part.text === words)).toHaveLength(1);
       const guided = (await store.binding(sessionId))!.guided!;
       expect(handoff === 'request_skill_review' ? guided.pending : guided.handoff).toMatchObject({
-        question: words,
+        question: replayed === 'hint' ? original : words,
         spokenAt: expect.any(Number),
       });
+      if (replayed === 'hint')
+        expect(parts.find((p) => p.kind === 'text' && p.text === original)).toMatchObject({
+          spokenAt: guided.pending?.spokenAt,
+        });
       if (handoff === 'respond_to_learner') expect(guided.pending?.question).toBe(original);
       if (fileTool === 'write_file')
         expect(await service.readText(row.environment_id!, path)).toBe(text);

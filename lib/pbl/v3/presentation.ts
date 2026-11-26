@@ -74,6 +74,22 @@ export function continueActionLabel(
   );
 }
 
+/** A named step can be acknowledged briefly; generic milestone/Continue labels still need the instruction. */
+export function stageCompletionCopy(
+  view: Pick<LearningView, 'state' | 'milestones' | 'explainBoard' | 'actions'>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const label = continueActionLabel(view, t);
+  const confirmation = t('pblV3.journey.completionHandoff');
+  return {
+    confirmation,
+    instruction: view.actions.includes('next')
+      ? t('pblV3.journey.ready', { action: label })
+      : undefined,
+    afterMention: view.explainBoard && nextLearningStep(view) ? { label, confirmation } : undefined,
+  };
+}
+
 /** Introduction is part of the first installed teaching step. */
 export function learningProgress(view: Pick<LearningView, 'state' | 'stage' | 'milestones'>) {
   const milestone = view.milestones?.[view.state.position.milestoneIndex];

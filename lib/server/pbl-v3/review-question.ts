@@ -5,6 +5,8 @@ import type { Queryable } from '@openmaic/storage/agent-session/pg';
 export const LEARNER_HANDOFF_EVENT = 'pbl_learner_handoff';
 /** Durable assistant-frame metadata, set by the host only after verifying an exact speech replay. */
 export const REPLAYED_HANDOFF_SPEECH = 'pblReplayedHandoffSpeech';
+/** The host settled this recovery against its earlier spoken question, with or without a new hint. */
+export const RETAINED_REVIEW = 'pblRetainedReview';
 
 /** One authored message supplies both display text and the question recorded for feedback. */
 export function reviewResponse(response: string): { response: string; question: string } {
@@ -31,7 +33,7 @@ export function isSpokenHandoff(name: string) {
 
 export function spokenHandoffClosing() {
   // message_end feeds this same record from the live stream and from durable history on resume.
-  type Speech = { blocks: string[]; spokenAt: number };
+  type Speech = { blocks: string[]; spokenAt: number; guidanceOnly?: boolean };
   let source: { frames: Speech[]; recovering: boolean } | undefined;
   let frames: Speech[] = [];
   let hasCurrentSpeech = false;
@@ -47,10 +49,22 @@ export function spokenHandoffClosing() {
         return;
       }
       const tools = message.content.filter((part) => part.type === 'toolCall');
+      const handoffs = tools.filter((tool) => isSpokenHandoff(tool.name));
+      const mixedAssistance =
+        source?.recovering &&
+        handoffs.some((tool) => tool.name === 'request_skill_review') &&
+        handoffs.some((tool) => tool.name !== 'request_skill_review');
+      const retainsReview = RETAINED_REVIEW in message && message[RETAINED_REVIEW] === true;
       const blocks = message.content.flatMap((part) =>
         part.type === 'text' && part.text.trim() ? [part.text] : [],
       );
-      const current = blocks.length ? { blocks, spokenAt: message.timestamp } : undefined;
+      const current = blocks.length
+        ? {
+            blocks,
+            spokenAt: message.timestamp,
+            guidanceOnly: retainsReview || mixedAssistance,
+          }
+        : undefined;
       hasCurrentSpeech = !!current;
       const operations = tools.filter(
         (tool) => !isSpokenHandoff(tool.name) && !preservesSpokenClosing(tool.name),
@@ -61,13 +75,13 @@ export function spokenHandoffClosing() {
         const previous = source;
         source = undefined;
         if (operations.some((op) => op.name !== 'read_file' && op.name !== 'write_file')) return;
-        if (current) frames = [current];
-        else if (
+        if (
           previous?.recovering &&
-          REPLAYED_HANDOFF_SPEECH in message &&
-          message[REPLAYED_HANDOFF_SPEECH] === true
+          (retainsReview ||
+            (REPLAYED_HANDOFF_SPEECH in message && message[REPLAYED_HANDOFF_SPEECH] === true))
         )
           frames = previous.frames;
+        else if (current) frames = [current];
         else return;
       } else {
         if (current) {
@@ -78,25 +92,40 @@ export function spokenHandoffClosing() {
         }
         frames = source?.frames ?? [];
       }
-      calls = tools.filter((tool) => isSpokenHandoff(tool.name));
+      // An assistance turn can keep the existing question, but cannot also
+      // checkpoint its advice as learner review or approval.
+      calls = mixedAssistance
+        ? handoffs.filter((call) => call.name !== 'request_skill_review')
+        : handoffs;
     },
     recoverySpeech(): readonly string[] | undefined {
       return source?.recovering ? source.frames.flatMap((frame) => frame.blocks) : undefined;
+    },
+    recoveryQuestion(): string | undefined {
+      const closing =
+        source?.recovering && source.frames.findLast((frame) => !frame.guidanceOnly)?.blocks.at(-1);
+      return closing ? reviewResponse(closing).question : undefined;
     },
     forCall(id: string): { question: string; spokenAt?: number } | undefined {
       const call = calls.find((tool) => tool.id === id);
       if (!call) return undefined;
       // Older in-flight calls could supply both prose and a different question. Only the
       // author can distinguish an introduction from a closing invitation in arbitrary prose.
-      if (call.arguments.askNewQuestion === true && !hasCurrentSpeech)
+      if (
+        (call.arguments.askNewQuestion === true ||
+          call.arguments.reviewDelivery === 'ask_question') &&
+        !hasCurrentSpeech
+      )
         throw new Error('Speak the missing review question before registering it.');
+      if (call.arguments.reviewDelivery === 'add_hint' && !hasCurrentSpeech)
+        throw new Error('Speak only the missing hint. Keep the original question pending.');
       if (call.arguments.deliverMissing === true && !hasCurrentSpeech)
         throw new Error('Speak the missing information before registering it.');
       const review = call.name === 'request_skill_review';
       const legacy =
         call.name === 'respond_to_learner' ? call.arguments.response : call.arguments.question;
       const supplied = typeof legacy === 'string' ? legacy.trim() : '';
-      const last = frames.at(-1);
+      const last = review ? frames.findLast((frame) => !frame.guidanceOnly) : frames.at(-1);
       if (last) {
         const closing = reviewResponse(last.blocks.at(-1)!);
         const delivery = review ? closing.question : closing.response;
@@ -118,6 +147,7 @@ export function spokenHandoffClosing() {
         }
         return { question: delivery, spokenAt: last.spokenAt };
       }
+      if (review && frames.some((frame) => frame.guidanceOnly)) return undefined;
       // A tool-only call issued under the old schema can still finish after an upgrade.
       return typeof legacy === 'string' && supplied ? { question: legacy } : undefined;
     },

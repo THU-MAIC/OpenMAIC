@@ -15,6 +15,8 @@ export interface TeachingHistoryWindow {
   spokenReview?: boolean;
   /** Continuous speech preceding an unresolved handoff, rebuilt from this learner's messages. */
   readonly recoverySpeech?: readonly string[];
+  /** The closing before any hints that deliberately kept its review. */
+  readonly recoveryQuestion?: string;
   /** Host-only request recovery policy; never a learner frame or durable message. */
   continuationInstruction?: string;
   /** Planner-only initial file data; never a learner frame or a section instruction. */
@@ -97,7 +99,7 @@ function withDeliveredReply(
         'Original learner input: ' + JSON.stringify(request ?? ''),
         'Already delivered to the learner: ' + JSON.stringify(reply),
         'For assistance, compare each requested item with the delivered words. A concise answer counts. If every item was answered, call respond_to_learner with remainingSpeech empty immediately. Do not expand an adequate answer, offer alternatives, or repeat a covered item. If one item is unanswered, put only its answer in remainingSpeech. The host will deliver it once. Use the same rule for a blocked build request. Keep the pending review.',
-        'For an existing teaching question, call request_skill_review alone. Only when the question is missing, ask it once with askNewQuestion. Commit the appropriate teaching tool before stopping.',
+        'For an existing teaching question, use request_skill_review with keep_question and no text. Use ask_question for the missing question or add_hint for a new hint that keeps the old question. Speak only the missing words. Commit the appropriate teaching tool before stopping.',
       ].join('\n'),
     );
   }

@@ -1604,6 +1604,71 @@ it.each([
   },
 );
 
+it('keeps the added hint and original pending question at rest without voicing the question again', () => {
+  const question = 'Which file should we inspect?';
+  const hints = ['Open the network tab.', 'Check the response first.'];
+  const before = [
+    event(1, 'user_message', { text: 'I am ready.' }),
+    event(2, 'message_end', {
+      message: { ...message(question).message, stopReason: 'stop', timestamp: 10 },
+      pblInputId: 1,
+    }),
+    event(3, 'session_interrupted', { pblInputId: 1 }),
+  ];
+  const after = [
+    event(4, 'session_resumed', { pblInputId: 1 }, 2),
+    event(
+      5,
+      'message_end',
+      {
+        pblInputId: 1,
+        message: {
+          role: 'assistant',
+          timestamp: 20,
+          stopReason: 'toolUse',
+          pblRetainedReview: true,
+          content: [
+            ...hints.map((text) => ({ type: 'text', text })),
+            { type: 'toolCall', name: 'request_skill_review', id: 'register', arguments: {} },
+          ],
+        },
+      },
+      2,
+    ),
+    event(
+      6,
+      'pbl_learner_handoff',
+      {
+        toolCallId: 'register',
+        question,
+        spokenAt: 10,
+        pblInputId: 1,
+      },
+      2,
+    ),
+    event(7, 'session_end', { status: 'succeeded', pblInputId: 1 }, 2),
+  ];
+  const page = (events: typeof before) =>
+    projectConversation(events, 'planner', false, undefined, true);
+  for (const view of [
+    projectConversation([...before, ...after], 'planner', false),
+    mergeConversationHistory([page(after)]),
+    mergeConversationHistory([page(before), page(after)]),
+    mergeConversationHistory([page(before), page(after.slice(0, 2)), page(after.slice(2))]),
+  ]) {
+    const settled = view.at(-1)!;
+    expect(recoveredReviewSpeech(settled)?.text).toBe([...hints, question].join('\n\n'));
+    expect(recoveredReviewSpeech({ ...settled, status: 'running' })).toBeUndefined();
+    const played = view.flatMap((entry) =>
+      entry.speaker !== 'user'
+        ? narrationSteps(entry).flatMap((step) => (step.kind === 'say' ? [step.text] : []))
+        : [],
+    );
+    expect(played.slice(-hints.length)).toEqual(hints);
+    for (const hint of hints) expect(played.filter((text) => text === hint)).toHaveLength(1);
+  }
+});
+
 describe.each(['request_skill_review', 'respond_to_learner', 'request_learner_help'])(
   '%s recovery',
   (toolName) => {

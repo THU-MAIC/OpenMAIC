@@ -123,14 +123,42 @@ function isSpokenReceipt(part: Extract<Part, { kind: 'text' }>) {
   return part.spokenAt !== undefined && part.id.startsWith('question-');
 }
 
+/** The confirmed tool owns one instruction in both the spoken turn and its transcript. */
+export function completionHandoff(
+  entry: LearningConversationEntry,
+  instruction?: string,
+  afterMention?: { label: string; confirmation: string },
+) {
+  if (!instruction) return;
+  const index = entry.parts.findIndex(
+    (part) =>
+      part.kind === 'tool' &&
+      part.action === 'complete' &&
+      part.status === 'succeeded' &&
+      part.readyForStudentConfirmation &&
+      !part.projectCompleted,
+  );
+  if (index < 0) return;
+  const mentioned =
+    afterMention?.label &&
+    entry.parts
+      .slice(0, index)
+      .some(
+        (part) =>
+          part.kind === 'text' &&
+          !isSpokenReceipt(part) &&
+          spokenText(part.text, part.streaming).includes(afterMention.label),
+      );
+  return { part: index, text: mentioned ? afterMention.confirmation : instruction };
+}
+
 /** The stream parts of one reply as steps; thinking is never told. */
 export function narrationSteps(
   entry: LearningConversationEntry,
   nextInstruction?: string,
   afterMention?: { label: string; confirmation: string },
 ): NarrationStep[] {
-  let namedNextAction = false;
-  let announcedCompletion = false;
+  const handoff = completionHandoff(entry, nextInstruction, afterMention);
   let pendingPoints: PointStep[] = [];
   let explanationPoints: PointStep[] = [];
   // Later cues should not flash past the first location before its explanation starts.
@@ -143,7 +171,6 @@ export function narrationSteps(
       if (isSpokenReceipt(part)) return [];
       const text = spokenText(part.text, part.streaming);
       if (!text) return [];
-      if (afterMention?.label && text.includes(afterMention.label)) namedNextAction = true;
       // A model can explain one batch of cues in several consecutive text parts.
       // A new pointing sequence or a whiteboard change starts a new explanation.
       if (pendingPoints.length) {
@@ -217,22 +244,10 @@ export function narrationSteps(
         },
       ];
     const tool: NarrationStep = { ...at, kind: 'tool', tool: part };
-    // The same successful completion that enables the next button owns its instruction.
-    // A failed attempt, a review question and the final project recap have no such handoff.
-    if (
-      nextInstruction &&
-      !announcedCompletion &&
-      part.action === 'complete' &&
-      part.status === 'succeeded' &&
-      part.readyForStudentConfirmation &&
-      !part.projectCompleted
-    ) {
-      announcedCompletion = true;
-      const instruction =
-        afterMention && namedNextAction ? afterMention.confirmation : nextInstruction;
+    if (handoff?.part === index) {
       return [
         tool,
-        { ...at, kind: 'say', id: part.id + ':continue', text: instruction, streaming: false },
+        { ...at, kind: 'say', id: part.id + ':continue', text: handoff.text, streaming: false },
       ];
     }
     return [tool];
@@ -258,15 +273,13 @@ export function pointerAt(steps: readonly NarrationStep[], index: number) {
   return undefined;
 }
 
-/** A successful tool-only retry displays the committed handoff without queuing speech again. */
+/** Show the settled handoff, including any recovered guidance, without queuing speech again. */
 export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
   if (!entry || (entry.status !== undefined && entry.status !== 'succeeded')) return;
-  const closing = entry.parts.findLast((part) => part.kind === 'text' && part.text.trim());
-  if (closing?.kind === 'text') {
-    if (isSpokenReceipt(closing)) return { id: closing.id, text: spokenText(closing.text) };
-    if (!closing.id.startsWith('question-')) return;
-  }
   if (entry.restingHandoff) return { id: entry.id, text: spokenText(entry.restingHandoff) };
+  const closing = entry.parts.findLast((part) => part.kind === 'text' && part.text.trim());
+  if (closing?.kind === 'text' && isSpokenReceipt(closing))
+    return { id: closing.id, text: spokenText(closing.text) };
 }
 
 /**
@@ -275,7 +288,8 @@ export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
  */
 export function learnerTurn(
   conversation: readonly LearningConversationEntry[],
-  pending?: LearningConversationEntry | null,
+  pending: LearningConversationEntry | null,
+  replyHasSpeech: boolean,
 ) {
   const text = (entry?: LearningConversationEntry | null) =>
     entry?.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n') ||
@@ -285,9 +299,7 @@ export function learnerTurn(
   const last = turns.at(-1);
   if (last?.speaker === 'user') return text(last);
   const before = turns.at(-2);
-  return last?.status === 'running' &&
-    before?.speaker === 'user' &&
-    !narrationSteps(last).some((step) => step.kind === 'say')
+  return last?.status === 'running' && before?.speaker === 'user' && !replyHasSpeech
     ? text(before)
     : undefined;
 }

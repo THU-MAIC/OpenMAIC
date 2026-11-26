@@ -67,7 +67,7 @@ export interface LearningConversationEntry {
   currentStage?: true;
   status?: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
   failure?: LearningRunFailure;
-  /** Full registered words for the resting bubble when some or all were already delivered. */
+  /** Words to keep in the resting bubble, including guidance delivered with the pending question. */
   restingHandoff?: string;
   omitted?: boolean;
   speaker: 'user' | AgentRole;
@@ -89,6 +89,8 @@ export interface LearningConversationEntry {
         canonical?: true;
         /** The legacy review receipt requested in the very same assistant message. */
         reviewReceiptId?: string;
+        /** New guidance delivered while the receipt keeps the previously spoken question. */
+        supplementsReview?: string;
         /** A finished prose-only stop can be registered by the next legacy tool-only call. */
         reviewStop?: true;
         /** Original assistant frame, also referenced by a spoken review receipt. */
@@ -373,8 +375,10 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       )
       .map((reply) => reply.part),
   );
-  // A legacy recovery call can be on a later attempt or history page. Link it only to the
-  // preceding completed stop for this input, never across a file/board operation or user turn.
+  // Both the new hint and its receipt can span history pages.
+  const reviewHints = new Map<string, string[]>();
+  // Link a legacy recovery call only to the preceding completed stop for this input,
+  // never across a file/board operation or user turn.
   const legacySources = new Map<
     string,
     Extract<LearningConversationEntry['parts'][number], { kind: 'text' }>
@@ -388,6 +392,12 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
     const turn = `${conversationScope(entry)}:${entry.inputId}`;
     for (const part of entry.parts) {
       if (part.kind === 'text' && !part.id.startsWith('question-')) {
+        if (part.supplementsReview) {
+          const key = `${turn}:${part.supplementsReview}`;
+          const hints = reviewHints.get(key);
+          if (hints) hints.push(part.text);
+          else reviewHints.set(key, [part.text]);
+        }
         if (part.reviewReceiptId) legacySources.set(`${turn}:${part.reviewReceiptId}`, part);
         if (part.reviewStop) stops.set(turn, part);
         else stops.delete(turn);
@@ -475,7 +485,14 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
         return text !== undefined && part.kind === 'text' ? { ...part, text } : part;
       });
     const latestText = entry.parts.findLast((p) => p.kind === 'text');
-    const restingHandoff = latestText && resting.get(latestText);
+    const hints =
+      latestText?.spokenAt !== undefined && entry.inputId !== undefined
+        ? reviewHints.get(`${conversationScope(entry)}:${entry.inputId}:${latestText.id}`)
+        : undefined;
+    const restingHandoff =
+      hints && latestText
+        ? [...hints, latestText.text].join('\n\n')
+        : latestText && resting.get(latestText);
     if (restingHandoff) return [{ ...entry, parts, restingHandoff }];
     // The durable handoff owns the resting bubble, even when the worker never wrote a tool card.
     const closing =

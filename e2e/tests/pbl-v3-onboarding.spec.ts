@@ -689,6 +689,80 @@ test('names the available milestone button when the tutor merely mentioned the n
   expect(commands).toEqual([]);
 });
 
+test('uses the same completion confirmation in the bubble and conversation before and after next', async ({
+  page,
+  learningEvents,
+}) => {
+  const { view, publish, commands } = await project(page, learningEvents, {
+    started: true,
+    explanationBoard: true,
+    locale: 'zh-CN',
+  });
+  const button = '进入讨论并提交决策';
+  const confirmed = '本环节已完成。';
+  view.stage = {
+    kind: 'mentor_say',
+    agent: 'discussion',
+    say: 'Welcome',
+    reads: [],
+    studentActions: ['chat', 'next'],
+  };
+  view.actions = ['chat', 'next'];
+  view.conversation = [
+    {
+      id: 'teaching-complete',
+      speaker: 'discussion',
+      currentStage: true,
+      status: 'succeeded',
+      parts: [
+        { kind: 'text', id: 'closing', text: `准备好后点击 **${button}**。` },
+        {
+          kind: 'tool',
+          id: 'done',
+          action: 'complete',
+          status: 'succeeded',
+          readyForStudentConfirmation: true,
+        },
+      ],
+    },
+  ];
+  view.revision++;
+  await publish();
+  await expect(page.getByTestId('pbl-companion-speech')).toContainText(confirmed);
+  await expect(page.getByRole('button', { name: button, exact: true }).first()).toBeEnabled();
+  await page.getByTestId('pbl-companion-avatar').click();
+  const receipt = page.getByTestId('pbl-assistant').getByTestId('pbl-completion-handoff');
+  await expect(receipt).toHaveText(confirmed);
+  expect(commands).toEqual([]);
+  await page.getByRole('button', { name: button, exact: true }).first().click();
+  await expect.poll(() => commands).toEqual(['next']);
+
+  // Earlier entries remain readable but never advertise the new stage's button.
+  view.state.position.stageIndex++;
+  view.stage = {
+    kind: 'dialogue',
+    agent: 'discussion',
+    reads: [],
+    collects: 'decisions',
+    studentActions: ['chat', 'decide'],
+  };
+  delete view.conversation[0].currentStage;
+  view.conversation.push({
+    id: 'discussion-opening',
+    speaker: 'discussion',
+    currentStage: true,
+    status: 'succeeded',
+    parts: [{ kind: 'text', id: 'welcome', text: '现在开始讨论。' }],
+  });
+  view.actions = ['chat'];
+  view.revision++;
+  await publish();
+  await expect(receipt).toHaveText(confirmed);
+  await page.getByTestId('pbl-assistant-close').click();
+  await expect(page.getByTestId('pbl-companion-speech')).toContainText('现在开始讨论。');
+  await expect(page.getByTestId('pbl-companion-speech')).not.toContainText(button);
+});
+
 // Keep the first clip playing long enough for a real Chrome audio element to receive
 // the replacement snapshot mid-sentence. Track natural ends separately from TTS requests.
 type NarratedEntry = NonNullable<LearningView['conversation']>[number];
@@ -736,6 +810,182 @@ async function narratedProject(page: Page, learningEvents: Parameters<typeof pro
   };
   return { ...fixture, requested, playback, show };
 }
+
+test('announces a reviewed plan only when next is available, including a late readiness snapshot', async ({
+  page,
+  learningEvents,
+}) => {
+  const { view, show, requested, playback, commands } = await narratedProject(page, learningEvents);
+  view.state.position.stageIndex = 2;
+  view.stage = {
+    kind: 'produce',
+    agent: 'planner',
+    writes: 'plan',
+    reads: [],
+    reviewRequired: true,
+    studentActions: ['chat', 'next'],
+  };
+  view.role = 'planner';
+  view.actions = ['chat'];
+  const tool = {
+    kind: 'tool',
+    id: 'done',
+    action: 'complete',
+    status: 'succeeded',
+    readyForStudentConfirmation: true,
+  } as const;
+  const old: NarratedEntry = {
+    id: 'reviewed-plan',
+    inputId: 3,
+    currentStage: true,
+    speaker: 'planner',
+    status: 'succeeded',
+    parts: [{ kind: 'text', id: 'old-text', text: 'The original plan was reviewed.' }, tool],
+  };
+  const bubble = page.getByTestId('pbl-companion-speech');
+  await show([old]); // Reopen after an edit invalidated the old version's approval.
+  await expect(bubble).toContainText('The original plan was reviewed.');
+  await expect(bubble).not.toContainText('This step is ready');
+  expect(requested).toEqual([]);
+
+  const reply: NarratedEntry = {
+    id: 'new-review',
+    inputId: 7,
+    currentStage: true,
+    speaker: 'planner',
+    status: 'running',
+    parts: [
+      {
+        kind: 'tool',
+        id: 'open-board',
+        action: 'board',
+        status: 'succeeded',
+        display: { op: 'open', label: 'Open', seq: 1 },
+      },
+      { kind: 'text', id: 'new-text', text: 'The revised plan is approved.' },
+    ],
+  };
+  await show([old, reply]);
+  await expect.poll(() => playback).toContain('start');
+  reply.parts.push({ ...tool, id: 'done-again' });
+  reply.status = 'succeeded';
+  await show([old, reply]);
+  await expect(bubble.locator('[data-playing="true"]')).toHaveCount(0);
+  expect(requested).toEqual(['The revised plan is approved.']);
+  const board = page.getByTestId('pbl-explain-board');
+  await expect(board).toBeVisible();
+  await page.getByTestId('pbl-board-toggle').click();
+  await expect(board).toBeHidden();
+
+  view.actions.push('next');
+  await show([old, reply]);
+  await expect.poll(() => requested).toHaveLength(2);
+  expect(requested[1]).toContain('This step is ready');
+  await expect(board).toBeHidden();
+  await expect.poll(() => playback, { timeout: 15000 }).toEqual(['start', 'end', 'start', 'end']);
+  await expect(board).toBeHidden();
+  await show([old, reply]);
+  await expect(bubble).toContainText(requested[1]);
+  view.actions = ['chat'];
+  await show([old, reply]); // The learner edits the new plan without leaving the stage.
+  await expect(bubble).not.toContainText('This step is ready');
+  expect(requested).toHaveLength(2);
+
+  // Permission may also be withdrawn while earlier speech still holds the playhead.
+  const latest = {
+    ...reply,
+    id: 'review-3',
+    inputId: 11,
+    status: 'running' as const,
+    parts: [
+      { kind: 'text' as const, id: 'third-text', text: 'I checked the third revision.' },
+      { ...tool, id: 'third-completion' },
+    ],
+  };
+  view.actions.push('next');
+  await show([old, reply, latest]);
+  await expect.poll(() => requested).toHaveLength(3);
+  view.actions = ['chat'];
+  await show([old, reply, { ...latest, status: 'succeeded' }]);
+  await expect(bubble.locator('[data-playing="true"]')).toHaveCount(0, { timeout: 15000 });
+  expect(requested).toEqual([
+    'The revised plan is approved.',
+    requested[1],
+    'I checked the third revision.',
+  ]);
+  await expect(bubble).not.toContainText('This step is ready');
+  expect(commands).toEqual([]);
+});
+
+test('shows the spoken completion in the avatar while a tool-only reply is still running', async ({
+  page,
+  learningEvents,
+}) => {
+  const { view, show, requested, playback, commands } = await narratedProject(page, learningEvents);
+  view.stage = {
+    kind: 'mentor_say',
+    agent: 'discussion',
+    say: 'Teaching',
+    reads: [],
+    studentActions: ['chat', 'next'],
+  };
+  const learner: NarratedEntry = {
+    id: 'user-10',
+    inputId: 10,
+    speaker: 'user',
+    currentStage: true,
+    parts: [{ kind: 'text', id: 'answer', text: 'I would check the last response.' }],
+  };
+  const completion: NarratedEntry = {
+    id: 'reply-10',
+    inputId: 10,
+    speaker: 'discussion',
+    status: 'running',
+    currentStage: true,
+    parts: [],
+  };
+  const tool: NarratedEntry['parts'][number] = {
+    kind: 'tool',
+    id: 'complete-10',
+    name: 'complete_stage',
+    action: 'complete',
+    status: 'running',
+  };
+  const bubble = page.getByTestId('pbl-companion-speech');
+  await show([learner, { ...completion, parts: [tool] }]);
+  await expect(bubble.getByTestId('pbl-companion-learner')).toContainText('the last response');
+  expect(requested).toEqual([]);
+
+  view.actions = ['chat', 'next'];
+  completion.parts = [{ ...tool, status: 'succeeded', readyForStudentConfirmation: true }];
+  await show([learner, completion]);
+  await expect.poll(() => playback).toContain('start');
+  await expect(bubble).toContainText('This step is ready');
+  await expect(bubble.getByTestId('pbl-companion-learner')).toHaveCount(0);
+  await expect.poll(() => playback).toEqual(['start', 'end']);
+  await show([learner, { ...completion, status: 'succeeded' }]);
+  await expect(bubble).toContainText(requested[0]);
+  // A new input takes the bubble back, even if the tutor's latest action has no words.
+  const followUp = {
+    ...learner,
+    id: 'user-20',
+    inputId: 20,
+    parts: [{ kind: 'text' as const, id: 'follow-up', text: 'Where is that response?' }],
+  };
+  const failedTool = { ...tool, id: 'complete-20', status: 'failed' as const };
+  await show([
+    learner,
+    { ...completion, status: 'succeeded' },
+    followUp,
+    { ...completion, id: 'reply-20', inputId: 20, parts: [failedTool] },
+  ]);
+  await expect(bubble.getByTestId('pbl-companion-learner')).toContainText(
+    'Where is that response?',
+  );
+  await expect(bubble).not.toContainText(requested[0]);
+  expect(requested).toHaveLength(1);
+  expect(commands).toEqual([]);
+});
 
 for (const sawToolStart of [false, true]) {
   test(`voices a legacy answer's new instruction once (saw tool start: ${sawToolStart})`, async ({
@@ -806,6 +1056,41 @@ for (const sawToolStart of [false, true]) {
     expect(fixture.commands).toEqual([]);
   });
 }
+
+test('speaks a recovered hint once and keeps the original question readable in the avatar', async ({
+  page,
+  learningEvents,
+}) => {
+  const { show, playback, requested, commands } = await narratedProject(page, learningEvents);
+  const question = 'Which file should we inspect?';
+  const hint = 'Check the network response first.';
+  const original: NarratedEntry = {
+    id: 'original-question',
+    inputId: 21,
+    speaker: 'discussion',
+    currentStage: true,
+    status: 'running',
+    parts: [{ kind: 'text', id: 'text-31-0', text: question, spokenAt: 10 }],
+  };
+  await show([original]);
+  await expect.poll(() => playback).toEqual(['start']);
+
+  // The committed projection supplies resting copy separately from the newly spoken hint.
+  const recovered: NarratedEntry = {
+    ...original,
+    id: 'recovered-review',
+    status: 'succeeded',
+    parts: [{ kind: 'text', id: 'text-91-0', text: hint, spokenAt: 20 }],
+    restingHandoff: hint + '\n\n' + question,
+  };
+  await show([{ ...original, status: 'interrupted' }, recovered]);
+  await expect.poll(() => playback, { timeout: 15000 }).toEqual(['start', 'end', 'start', 'end']);
+  const bubble = page.getByTestId('pbl-companion-speech');
+  await expect(bubble).toContainText(hint);
+  await expect(bubble).toContainText(question);
+  expect(requested).toEqual([question, hint]);
+  expect(commands).toEqual([]);
+});
 
 for (const scenario of ['single clip', 'separate clips', 'two takeovers'] as const) {
   test(`drains unheard instructions through a worker takeover (${scenario})`, async ({

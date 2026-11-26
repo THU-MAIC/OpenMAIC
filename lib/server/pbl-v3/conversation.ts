@@ -7,7 +7,7 @@ import type {
   LearningBoardDisplay,
 } from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
+import { LEARNER_HANDOFF_EVENT, RETAINED_REVIEW, reviewQuestions } from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   executionFailureCode,
@@ -345,8 +345,11 @@ export function projectConversation(
         if (part.kind === 'text' && typeof message.timestamp === 'number')
           part.spokenAt = message.timestamp;
         if (part.kind === 'text' && index === closingIndex && reviewStop) part.reviewStop = true;
-        if (part.kind === 'text' && index === closingIndex && typeof reviewCall?.id === 'string')
-          part.reviewReceiptId = `question-${event.attempt}-${reviewCall.id}`;
+        if (part.kind === 'text' && typeof reviewCall?.id === 'string') {
+          const receiptId = `question-${event.attempt}-${reviewCall.id}`;
+          if (index === closingIndex) part.reviewReceiptId = receiptId;
+          if (message[RETAINED_REVIEW] === true) part.supplementsReview = receiptId;
+        }
         part.text = text;
         part.streaming =
           event.type !== 'message_end' && (part.kind !== 'thinking' || part.endedAt === undefined);

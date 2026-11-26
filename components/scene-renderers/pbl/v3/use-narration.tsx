@@ -73,6 +73,7 @@ export function useNarration(
     onAudioStateChange: (_agent, state) => setAudio(state),
   });
   const ttsRef = useRef(tts);
+  const canContinue = useRef(!!nextInstruction);
   // Where the buffer's playhead is: the step being told, how much of its text is out, and
   // whether the learner has paused the telling.
   const [stage, setStage] = useState<{
@@ -86,6 +87,7 @@ export function useNarration(
     turn: string;
     entry: LearningConversationEntry;
     drained: boolean;
+    continuation?: string;
     buffer: StreamBuffer;
     /** A legacy receipt can replace earlier prose, moving following tools to a new index. */
     queued: Map<string, NarrationStep>;
@@ -128,26 +130,44 @@ export function useNarration(
       ? entry?.id
       : undefined;
   const speaker = entry?.speaker;
+  const active =
+    stage && entry?.id === stage.id && previous?.turn === turn && !failed ? stage : null;
+  const telling = !!active || !!live;
+  // An invalidated completion is still part of the transcript, but it no longer
+  // authorizes a spoken button instruction. Show its neutral receipt only at rest.
+  const instruction =
+    nextInstruction ?? (!telling && complete ? completionConfirmation : undefined);
   const projected = useMemo(
     () =>
       entry
         ? narrationSteps(
             entry,
-            nextInstruction,
+            instruction,
             nextActionLabel && completionConfirmation
               ? { label: nextActionLabel, confirmation: completionConfirmation }
               : undefined,
           )
         : [],
-    [entry, nextInstruction, nextActionLabel, completionConfirmation],
+    [entry, instruction, nextActionLabel, completionConfirmation],
   );
-  const active =
-    stage && entry?.id === stage.id && previous?.turn === turn && !failed ? stage : null;
+  // A tool result can arrive before the revision that enables its button. Only a turn
+  // already told in this tab may pick up that last cue after its playhead has drained.
+  const lateHandoff =
+    nextInstruction &&
+    previous?.drained &&
+    previous.turn === turn &&
+    previous.id === entry?.id &&
+    turn !== stopped &&
+    !failed
+      ? projected.find((step) => step.id.endsWith(':continue') && !previous.voiced.has(step.id))?.id
+      : undefined;
+  const continuation = lateHandoff || (active ? previous?.continuation : undefined);
   // A legacy receipt can replace the text in the transcript while its audio is playing.
   // Keep already queued steps in playback order; at rest use the canonical transcript.
   const queued = active ? previous?.queued : undefined;
-  const telling = !!active || !!live;
   const steps = useMemo(() => {
+    // A late availability change cannot replay board actions, move a pointer or re-hide earlier text.
+    if (continuation) return projected.filter((step) => step.id === continuation);
     if (!telling) return projected;
     const priorSpeech =
       previous?.turn === turn && previous
@@ -168,11 +188,12 @@ export function useNarration(
       } else ordered.set(step.id, step);
     }
     return [...ordered.values()];
-  }, [projected, queued, telling, previous, turn, entry?.id]);
+  }, [projected, queued, telling, previous, turn, entry?.id, continuation]);
   const segments = useMemo(() => narrationSegments(steps), [steps]);
   const writes = useMemo(() => boardWrites(steps), [steps]);
   useLayoutEffect(() => {
     ttsRef.current = tts;
+    canContinue.current = !!nextInstruction;
   });
 
   const stop = () => {
@@ -188,13 +209,15 @@ export function useNarration(
 
   useEffect(() => {
     if (run.current && (run.current.turn !== turn || failed)) stopRef.current();
-    if (!live || !turn || !entry || run.current?.id === live) return;
+    if (!turn || !entry || (!lateHandoff && (!live || run.current?.id === live))) return;
     const lastRun = run.current;
+    const resumed = lateHandoff ? lastRun : null;
     const priorSpeech =
-      lastRun?.turn === turn ? [...lastRun.priorSpeech, ...lastRun.voiced.values()] : [];
+      resumed?.priorSpeech ??
+      (lastRun?.turn === turn ? [...lastRun.priorSpeech, ...lastRun.voiced.values()] : []);
     run.current?.buffer.shutdown();
     ttsRef.current.cleanup();
-    const id = live;
+    const id = entry.id;
     const mine = () => (run.current?.id === id ? run.current : null);
     const buffer = new StreamBuffer(
       {
@@ -205,6 +228,7 @@ export function useNarration(
           const head = state?.says[Number(partId.slice(1))];
           const step = head ? state?.queued.get(head) : undefined;
           if (!state || !head || step?.kind !== 'say') return;
+          if (head.endsWith(':continue') && !canContinue.current && !state.voiced.has(head)) return;
           // The voice gets a piece of text when the playhead is on it and it is whole.
           if (!step.streaming && !state.voiced.has(head)) {
             const words = step.text;
@@ -269,17 +293,18 @@ export function useNarration(
       turn,
       entry,
       drained: false,
+      continuation: lateHandoff,
       queued: new Map(),
       openText: null,
       done: false,
       says: [],
-      voiced: new Map(),
+      voiced: resumed?.voiced ?? new Map(),
       priorSpeech,
       reading: null,
     };
     buffer.start();
-    setStage({ id, head: null, text: '', paused: false });
-  }, [live, turn, failed, entry, speaker]);
+    setStage({ id, head: lateHandoff ?? null, text: '', paused: false });
+  }, [live, lateHandoff, turn, failed, entry, speaker]);
 
   // The stream fills the buffer: new steps are queued, growing text is appended in place.
   useEffect(() => {
@@ -325,7 +350,7 @@ export function useNarration(
       buffer.pushDone({ totalActions: 0, totalAgents: 1 });
       state.done = true;
     }
-  }, [steps, complete, entry, speaker, live]);
+  }, [steps, complete, entry, speaker, live, lateHandoff]);
   useLayoutEffect(
     () => () => {
       const previous = run.current;
@@ -417,8 +442,8 @@ export function useNarration(
   });
   useEffect(() => {
     const { onTold, id } = told.current;
-    onTold?.(playing && id ? { id, part: toldPart, said, displaced } : null);
-  }, [playing, entry?.id, toldPart, said, displaced]);
+    onTold?.(playing && !continuation && id ? { id, part: toldPart, said, displaced } : null);
+  }, [playing, entry?.id, toldPart, said, displaced, continuation]);
   useEffect(() => () => told.current.onTold?.(null), []);
 
   const say = segment?.say;
@@ -443,7 +468,9 @@ export function useNarration(
   if (handoff && displayedSpeech) {
     // The host adds a spoken button hint to the tutor's closing words. Keep those
     // words readable while the hint is revealed, without queuing them for speech again.
-    const previous = steps.findLast((step) => step.kind === 'say' && step.part < say.part);
+    const previous = (continuation ? projected : steps).findLast(
+      (step) => step.kind === 'say' && step.part < say.part,
+    );
     const closing = previous && entry?.parts[previous.part];
     if (closing?.kind === 'text')
       displayedSpeech = {
