@@ -1,9 +1,39 @@
 /** A step's budget: a timeout is a retryable failure; the run's own abort is an abort. */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { isAbortError } from '@openmaic/generation';
 
-import { StepTimeoutError, withDeadline } from '@/lib/server/generation/run/deadline';
+import {
+  DEFAULT_MEDIA_DEADLINE_MS,
+  mediaDeadlineMs,
+  StepTimeoutError,
+  withDeadline,
+} from '@/lib/server/generation/run/deadline';
 import { withRouteRetry } from '@/lib/server/generation/run/retry';
+
+describe('mediaDeadlineMs', () => {
+  const original = process.env.MEDIA_DEADLINE_MS;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.MEDIA_DEADLINE_MS;
+    else process.env.MEDIA_DEADLINE_MS = original;
+  });
+
+  it('defaults to 12 minutes so a cold local model load can finish', () => {
+    delete process.env.MEDIA_DEADLINE_MS;
+    expect(mediaDeadlineMs()).toBe(DEFAULT_MEDIA_DEADLINE_MS);
+    expect(mediaDeadlineMs()).toBe(720_000);
+  });
+
+  it('honors an override at or above 60 seconds', () => {
+    process.env.MEDIA_DEADLINE_MS = '180000';
+    expect(mediaDeadlineMs()).toBe(180_000);
+  });
+
+  it('ignores a value below 60 seconds', () => {
+    process.env.MEDIA_DEADLINE_MS = '1000';
+    expect(mediaDeadlineMs()).toBe(DEFAULT_MEDIA_DEADLINE_MS);
+  });
+});
 
 describe('step deadlines', () => {
   it('fails a call that outlives its budget, even one that ignores its signal', async () => {

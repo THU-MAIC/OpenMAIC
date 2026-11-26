@@ -79,16 +79,30 @@ describe('ZIP-imported slide audio', () => {
     expect(audioSlide.elements[0].src).toBe('ast_imported_audio');
   });
 
-  it.each(['pending', 'missing'] as const)('withholds a %s pool ID from the player', (status) => {
+  it('waits while a pool lease is still in flight', () => {
     const resolved = resolveSlideMedia(
       audioSlide,
       'stage-1',
       {},
       {
-        assetLeases: { [pooled.src]: { status } },
+        assetLeases: { [pooled.src]: { status: 'pending' } },
       },
     );
     expect(resolved.elements[0]).toMatchObject({ src: '' });
+  });
+
+  it('plays a committed asset from the persistence content URL when the lease misses', () => {
+    const resolved = resolveSlideMedia(
+      audioSlide,
+      'stage-1',
+      {},
+      {
+        assetLeases: { [pooled.src]: { status: 'missing' } },
+      },
+    );
+    expect(resolved.elements[0]).toMatchObject({
+      src: `/api/persistence/assets/${pooled.src}/content`,
+    });
   });
 });
 
@@ -176,7 +190,7 @@ describe('resolveSlideMedia', () => {
     expect(resolved.elements[0]).toMatchObject({ src: 'blob:pool-video' });
   });
 
-  it('keeps a pending task hidden even when stale pool bytes exist', () => {
+  it('keeps a committed video visible while a regeneration task is pending', () => {
     const resolved = resolveSlideMedia(
       allocatedSlide,
       'stage-1',
@@ -190,7 +204,7 @@ describe('resolveSlideMedia', () => {
     );
 
     expect(resolved.elements[0]).toMatchObject({
-      src: '',
+      src: 'blob:pool-video',
       poster: 'blob:pool-poster',
     });
   });
@@ -326,7 +340,7 @@ describe('resolveSlideMedia', () => {
     });
   });
 
-  it('hides an allocated ref when pool resolution misses', () => {
+  it('uses the persistence content URL when an allocated ref misses the pool', () => {
     const baseVideo = slide.elements[0] as PPTVideoElement;
     const allocatedSlide: Slide = {
       ...slide,
@@ -341,7 +355,7 @@ describe('resolveSlideMedia', () => {
 
     const resolved = resolveSlideMedia(allocatedSlide, 'stage-1', {}, { assetUrls: {} });
     expect(resolved.elements[0]).toMatchObject({
-      src: '',
+      src: '/api/persistence/assets/ast_missing_ref/content',
       mediaRef: 'ast_missing_ref',
     });
   });

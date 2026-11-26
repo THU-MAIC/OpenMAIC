@@ -688,7 +688,7 @@ slots:
 
 Image generation providers use `IMAGE_<PROVIDER>_API_KEY` and optionally `IMAGE_<PROVIDER>_BASE_URL`. Supported prefixes include:
 
-`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, `IMAGE_GLM_`, and `IMAGE_LEMONADE_`.
+`IMAGE_OPENAI_`, `IMAGE_SEEDREAM_`, `IMAGE_QWEN_IMAGE_`, `IMAGE_NANO_BANANA_`, `IMAGE_MINIMAX_`, `IMAGE_GROK_`, `IMAGE_GLM_`, `IMAGE_LEMONADE_`, and `IMAGE_COMFYUI_`.
 
 GLM Image (Zhipu CogView) generates images with CogView models (`cogview-3-flash`, `cogview-4`):
 
@@ -731,6 +731,12 @@ slots:
 ```
 
 Place workflow JSON exported in API format in OpenMAIC's `public/` directory. Use filenames matching `comfyui-*.json` or containing `workflow`; OpenMAIC discovers these files automatically and offers them as workflows. With Docker, add the workflow before building the image or mount an individual workflow file into `/app/public/` in the container. Because the provider is declared by the deployment, a ComfyUI server on the host or a private network does not need `ALLOW_LOCAL_NETWORKS`.
+
+The repository ships two examples. `comfyui-workflow.json` is the default Flux/Ernie graph. `comfyui-workflow-sdxl.json` is an SDXL graph (`CheckpointLoaderSimple` with `sdxl_base_v1.0.safetensors`, `EmptyLatentImage`, `KSampler` at 20 steps / cfg 7 / `dpmpp_2m`). Selecting a workflow whose filename contains `sdxl` snaps sizes to SDXL buckets (16:9 → 1344×768). Other workflows keep an explicit width and height; an aspect ratio alone still expands up to 1920×1920. See `comfyui-setup-instructions.md`.
+
+The same base URL can be set without `openmaic.yml`, from `server-providers.yml` (`image.comfyui-image.baseUrl`) or `IMAGE_COMFYUI_BASE_URL` (read at runtime; no API key). `COMFYUI_GENERATION_TIMEOUT_MS` and `MEDIA_DEADLINE_MS` both default to 720000 (12 minutes) so a cold checkpoint load can finish.
+
+A provider that returns an `http://` media URL is fetched only when `ALLOW_LOCAL_NETWORKS=true` and the host is loopback, private, link-local, or CGNAT. Public `http://` URLs stay refused. The ComfyUI image adapter returns bytes, so this matters for providers that hand back a URL rather than for the ComfyUI base URL itself.
 
 ### Video generation providers
 

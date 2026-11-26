@@ -225,7 +225,7 @@ const TEMPORARY_VENDOR_DEBT: readonly AllowedVendorDebt[] = [
       ['searxng', 3],
       ['browser-native-tts', 2],
       ['browser-native', 3],
-      ['comfyui', 2],
+      ['comfyui', 3],
       ['alidocmind', 14],
     ],
   ),

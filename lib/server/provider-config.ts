@@ -148,6 +148,8 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_GLM: 'glm-image',
   IMAGE_LEMONADE: 'lemonade',
   IMAGE_OPENROUTER: 'openrouter-image',
+  // Keyless: a base URL alone activates it. There is no API key.
+  IMAGE_COMFYUI: 'comfyui-image',
 };
 
 const VIDEO_ENV_MAP: Record<string, string> = {
@@ -188,8 +190,8 @@ type CapabilitySection = 'tts' | 'asr' | 'image' | 'video' | 'webSearch';
 /**
  * Env prefixes for each capability's force-disable switch
  * (`<CAP>_<PREFIX>_ENABLED=false`). Built from the existing per-section env
- * maps plus the client-only keyless providers that have no credential env
- * (browser-native, ComfyUI) — operators may still want to force those off
+ * maps plus the client-only providers that have no credential env
+ * (browser-native) — operators may still want to force those off
  * fleet-wide (#665). The `_ENABLED` vars can only disable; they never
  * force-enable a provider that has no credentials configured.
  */
@@ -204,9 +206,6 @@ const DISABLE_ENV_MAPS: Record<CapabilitySection, Record<string, string>> = {
   },
   image: {
     ...IMAGE_ENV_MAP,
-    // comfyui-image lives in the client-side catalog only (no credential env),
-    // but operators may still want to force it off fleet-wide.
-    IMAGE_COMFYUI: 'comfyui-image',
   },
   video: { ...VIDEO_ENV_MAP },
   webSearch: {
@@ -538,7 +537,7 @@ function applyBedrockProviderConfig(
 function buildConfig(yamlData: YamlData): ServerConfig {
   const image = applyOpenAIImageFallback(
     loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
-      keylessProviders: new Set(['lemonade']),
+      keylessProviders: new Set(['lemonade', 'comfyui-image']),
     }),
     yamlData.image,
   );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  persistenceAssetContentUrl,
   renderableMediaUrl,
   resolveMediaRef,
   type MediaTaskState,
@@ -24,11 +25,11 @@ describe('resolveMediaRef truth table', () => {
     expected: ReturnType<typeof resolveMediaRef>;
   }>([
     {
-      name: 'pending task wins over last-good pool bytes',
+      name: 'committed ast_ stays visible while a run task is still pending',
       ref: 'ast_image',
       task: task({ status: 'pending' }),
       lease: pooled,
-      expected: { kind: 'pending' },
+      expected: { kind: 'url', url: 'blob:pool' },
     },
     {
       name: 'generating task is pending',
@@ -46,11 +47,15 @@ describe('resolveMediaRef truth table', () => {
       expected: { kind: 'disabled' },
     },
     {
-      name: 'retryable failure without bytes is failed',
+      name: 'retryable failure on a committed ast_ still shows the persistence URL',
       ref: 'ast_image',
       task: task({ status: 'failed', errorCode: 'UPSTREAM_TIMEOUT' }),
       lease: missing,
-      expected: { kind: 'failed', retryable: true },
+      expected: {
+        kind: 'url',
+        url: persistenceAssetContentUrl('ast_image'),
+        retryable: true,
+      },
     },
     {
       name: 'permanent failure without bytes is failed',
@@ -135,10 +140,16 @@ describe('resolveMediaRef truth table', () => {
       expected: { kind: 'disabled' },
     },
     {
-      name: 'missing allocated ref is hidden',
+      name: 'committed ast_ uses the persistence content URL when the lease is missing',
       ref: 'ast_missing_ref',
       lease: missing,
-      expected: { kind: 'placeholder' },
+      expected: { kind: 'url', url: persistenceAssetContentUrl('ast_missing_ref') },
+    },
+    {
+      name: 'a lease still in flight waits instead of binding the content URL',
+      ref: 'ast_image',
+      lease: pendingLease,
+      expected: { kind: 'pending' },
     },
     {
       name: 'unknown string with a confirmed miss is raw passthrough',

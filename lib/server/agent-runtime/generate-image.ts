@@ -13,6 +13,7 @@ import type {
 } from '@/lib/media/types';
 import { enabledProviderIds, isServerProviderDisabled } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
+import { DEFAULT_MEDIA_DEADLINE_MS, mediaDeadlineMs } from '@/lib/server/generation/run/deadline';
 import { resolveImageSize } from '@/lib/server/image-sizing';
 import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { fetchProviderResultUrl } from '@/lib/server/provider-result-fetch';
@@ -33,7 +34,8 @@ import { errorResult, MEDIA_TOOL_ERROR_REASONS } from './media-tool-result';
 const log = createLogger('AgentGenerateImage');
 
 export const GENERATE_IMAGE_TOOL_NAME = 'generate_image';
-export const GENERATE_IMAGE_TIMEOUT_MS = 300_000;
+/** Default image-tool budget when `MEDIA_DEADLINE_MS` is unset. The live value is {@link mediaDeadlineMs}. */
+export const GENERATE_IMAGE_TIMEOUT_MS = DEFAULT_MEDIA_DEADLINE_MS;
 
 export const GenerateImageParams = Type.Object({
   stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
@@ -379,13 +381,17 @@ export function buildGenerateImageTool(deps: GenerateImageToolDeps): AgentTool<
         );
       }
 
-      const options = resolveImageSize({
-        prompt: params.styleHint
-          ? `${prompt}\nStyle direction: ${params.styleHint.trim()}`
-          : prompt,
-        aspectRatio: params.aspectRatio ?? '16:9',
-      });
-      const ioSignal = combineSignals(callerSignal, deps.timeoutMs ?? GENERATE_IMAGE_TIMEOUT_MS);
+      const options = resolveImageSize(
+        {
+          prompt: params.styleHint
+            ? `${prompt}\nStyle direction: ${params.styleHint.trim()}`
+            : prompt,
+          aspectRatio: params.aspectRatio ?? '16:9',
+        },
+        { providerId, modelId: model },
+      );
+      const timeoutMs = deps.timeoutMs ?? mediaDeadlineMs();
+      const ioSignal = combineSignals(callerSignal, timeoutMs);
 
       try {
         const result = await callProvider(providerConfig, {
@@ -441,7 +447,7 @@ export function buildGenerateImageTool(deps: GenerateImageToolDeps): AgentTool<
         }
         if (isTimeout(ioSignal)) {
           log.warn(
-            `[${toolCallId}] Image generation timed out: provider=${providerId}, model=${model ?? 'default'}, timeoutMs=${deps.timeoutMs ?? GENERATE_IMAGE_TIMEOUT_MS}`,
+            `[${toolCallId}] Image generation timed out: provider=${providerId}, model=${model ?? 'default'}, timeoutMs=${timeoutMs}`,
           );
           return errorResult('Image generation timed out after the configured server timeout.', {
             stageId,

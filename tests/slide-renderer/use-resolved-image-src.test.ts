@@ -142,11 +142,14 @@ describe('resolveImageSrc (pure)', () => {
     expect(r.resolvedSrc).toBe('logo.png');
   });
 
-  it('hides an opaque allocated ref when pool lookup misses', () => {
+  it('binds the persistence content URL when an allocated ref misses the pool', () => {
     const allocated = { ...PLACEHOLDER, src: 'ast_missing_image' };
     const r = resolveImageSrc(allocated, STAGE, undefined, null);
-    expect(r.resolvedSrc).toBe('');
-    expect(r.resolution).toEqual({ kind: 'placeholder' });
+    expect(r.resolvedSrc).toBe('/api/persistence/assets/ast_missing_image/content');
+    expect(r.resolution).toEqual({
+      kind: 'url',
+      url: '/api/persistence/assets/ast_missing_image/content',
+    });
   });
 
   it('renders an allocated asset id through the pool lease (RFC #1153 part 2)', () => {

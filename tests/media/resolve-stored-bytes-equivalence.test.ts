@@ -608,13 +608,15 @@ describe('frozen-base differential harness', () => {
     // combinations never touch the unguarded `record.blob.size`: pool `url`,
     // one of the three non-concrete refs, a fetch outcome the frozen `fetchBlob`
     // accepts (`ok` and `empty` alike -- it checks only `response.ok`), and any
-    // task state that still resolves to a URL, which is all of them except
+    // task state. A committed pool id resolves for all nine, including
     // `generating` and `pending`. Two non-concrete refs qualify: the opaque base
     // ref and the opaque ref carrying an additional colon. The generation
     // placeholder no longer does — the pool cannot hold it, so there are no
     // pooled bytes to return before the row is read.
     const bloblessStaged = REFS.length * 9 * POOL_CASES.length * FETCH_CASES.length;
-    const pooledBeforeRow = 2 * 1 * 2 * 7;
+    // A committed pool id resolves for every task state, including generating
+    // and pending: the classroom keeps that image, so the export does too.
+    const pooledBeforeRow = 2 * 1 * 2 * 9;
     expect(divergences.length).toBe(bloblessStaged - pooledBeforeRow);
   });
 

@@ -36,6 +36,17 @@ function isRetryableFailure(task: MediaTaskState): boolean {
 }
 
 /**
+ * Same-origin content URL for a durable pool asset.
+ *
+ * Used when a blob lease is missing (or a regeneration task would otherwise
+ * paint the generation skeleton) so a committed `ast_` id still renders.
+ * The persistence route answers 200 for an asset this owner can read.
+ */
+export function persistenceAssetContentUrl(assetId: string): string {
+  return `/api/persistence/assets/${encodeURIComponent(assetId)}/content`;
+}
+
+/**
  * The only media-reference decision table. Callers supply task state and the
  * current pool/Dexie lease result; this function decides whether bytes are
  * renderable, still pending, failed, a generation placeholder, or a raw source.
@@ -55,6 +66,29 @@ export function resolveMediaRef(
   // it is not treated as a URL at all. The lease over that same id is what
   // produces the bytes, and it is preferred below exactly as before.
   const taskUrl = mayNameAPoolAsset(task?.objectUrl) ? undefined : task?.objectUrl;
+
+  // A document that already names a committed pool asset must render it.
+  // A pending or generating task used to win here and paint the generation
+  // skeleton (no Retry) even when the slide src was already `ast_` and the
+  // bytes were in the store. Prefer the lease, then a concrete task URL,
+  // then the persistence content path. A failed regeneration keeps that
+  // image and still offers Retry.
+  if (mayNameAPoolAsset(value)) {
+    const concreteTaskUrl = taskUrl && isConcreteMediaAddress(taskUrl) ? taskUrl : undefined;
+    const durableUrl = leaseUrl ?? concreteTaskUrl ?? persistenceAssetContentUrl(value);
+    const waitingForLease = lease.status === 'pending' && !leaseUrl && !concreteTaskUrl;
+    if (task?.status === 'failed') {
+      return { kind: 'url', url: durableUrl, retryable: isRetryableFailure(task) };
+    }
+    // No task yet and the lease is still in flight: wait, so the first paint
+    // does not fetch the bytes twice. A confirmed miss falls through to the
+    // content URL. An in-flight regeneration does not: the committed image
+    // stays on screen instead of the skeleton.
+    if (waitingForLease && task?.status !== 'pending' && task?.status !== 'generating') {
+      return { kind: 'pending' };
+    }
+    return { kind: 'url', url: durableUrl };
+  }
 
   if (task?.status === 'pending' || task?.status === 'generating') {
     return mediaGenerationDisabled ? { kind: 'disabled' } : { kind: 'pending' };
