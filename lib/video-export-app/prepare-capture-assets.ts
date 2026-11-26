@@ -11,8 +11,8 @@ import { randomBrowserId, sha256BytesHex } from '@/lib/legacy-browser-import/dig
 
 // Pyodide's core WebAssembly alone can exceed the regular 8 MiB asset limit.
 export const MAX_VIDEO_CAPTURE_ASSET_BYTES = 12 * 1024 * 1024;
-const PYODIDE_ENTRY =
-  /^https:\/\/cdn\.jsdelivr\.net\/(?:pyodide\/v\d+\.\d+\.\d+\/full|npm\/pyodide@\d+\.\d+\.\d+)\/pyodide\.js$/;
+// Any distribution directory that serves the boot files next to its loader.
+const PYODIDE_ENTRY = /^https?:\/\/[^?#]*\/pyodide\.js$/;
 const PYODIDE_BOOT_FILES = [
   ['pyodide.js', 'text/javascript'],
   ['pyodide.asm.js', 'text/javascript'],
@@ -23,10 +23,27 @@ const PYODIDE_BOOT_FILES = [
 const PYODIDE_PAYLOAD_END = '}</script>';
 const MAX_DECLARED_OFFLINE_ASSETS = 64;
 
+/**
+ * Bytes the packaged scene can still hold, counted after base64 encoding.
+ * Optional Pyodide archives are dropped first, so they draw on `remaining`
+ * without reducing it and track their own total across runtimes.
+ */
+type SceneBudget = { remaining: number; archives: number };
+
+const encodedSize = (bytes: number) => 4 * Math.ceil(bytes / 3);
+
+/** Fetches `url` only up to the bytes whose base64 encoding fits `remaining`. */
+async function fetchWithin(fetcher: FetchAsset, url: string, remaining: number) {
+  const maxBytes = Math.floor(remaining / 4) * 3;
+  if (maxBytes <= 0) return null;
+  const asset = await fetcher(url, maxBytes);
+  return asset && asset.bytes.length <= maxBytes ? asset : null;
+}
+
 async function collectOfflineAssets(
   manifests: readonly HtmlTextElement[],
   fetcher: FetchAsset,
-  maxHtmlBytes: number,
+  budget: SceneBudget,
 ) {
   const urls = new Set<string>();
   for (const manifest of manifests) {
@@ -45,16 +62,17 @@ async function collectOfflineAssets(
 
   const assets: Array<[string, string]> = [];
   const unresolved: string[] = [];
-  let remaining = maxHtmlBytes;
   for (const url of urls) {
-    const asset = await fetcher(url);
+    const asset = await fetchWithin(fetcher, url, budget.remaining - url.length);
     if (!asset) {
       unresolved.push(url);
       continue;
     }
     const data = toDataUri(asset.bytes, asset.contentType);
-    remaining -= data.length + url.length;
-    if (remaining < 0) throw new Error('declared offline assets exceed the capture size limit');
+    budget.remaining -= data.length + url.length;
+    if (budget.remaining < 0) {
+      throw new Error('declared offline assets exceed the capture size limit');
+    }
     assets.push([url, data]);
   }
   return { assets, unresolved };
@@ -216,7 +234,7 @@ type PyodidePackage = { file_name: string; depends: string[]; sha256?: string };
 type PyodideFile = {
   filename: string;
   mime: string;
-  asset: Awaited<ReturnType<FetchAsset>>;
+  asset: NonNullable<Awaited<ReturnType<FetchAsset>>>;
 };
 
 async function fetchPyodidePackageFiles(
@@ -224,7 +242,7 @@ async function fetchPyodidePackageFiles(
   lockBytes: Uint8Array,
   requested: ReadonlySet<string>,
   fetcher: FetchAsset,
-  remainingBytes: number,
+  budget: SceneBudget,
 ): Promise<PyodideFile[]> {
   if (!requested.size) return [];
   const lockfile = JSON.parse(new TextDecoder().decode(lockBytes)) as {
@@ -250,16 +268,18 @@ async function fetchPyodidePackageFiles(
     for (let index = depends.length - 1; index >= 0; index--)
       pending.push(normalize(depends[index]));
     if (files.has(filename)) continue;
-    const asset = await fetcher(new URL(filename, archiveRoot).href);
+    const asset = await fetchWithin(
+      fetcher,
+      new URL(filename, archiveRoot).href,
+      budget.remaining - budget.archives,
+    );
     // A static call may sit in a branch or click handler the capture never runs.
     if (!asset) continue;
-    const size = 4 * Math.ceil(asset.bytes.length / 3);
-    if (size > remainingBytes) continue;
     // The capture fetch shim serves a Response directly, so check the hash
     // here instead of relying on the browser to enforce fetch integrity.
     if (sha256 && (await sha256BytesHex(Uint8Array.from(asset.bytes))) !== sha256) continue;
     files.set(filename, { filename, mime: 'application/octet-stream', asset });
-    remainingBytes -= size;
+    budget.archives += encodedSize(asset.bytes.length);
   }
   return [...files.values()];
 }
@@ -268,40 +288,38 @@ async function inlinePyodide(
   url: string,
   fetcher: FetchAsset,
   requested: ReadonlySet<string>,
-  maxHtmlBytes: number,
+  budget: SceneBudget,
 ) {
-  const files = await Promise.all(
-    PYODIDE_BOOT_FILES.map(async ([filename, mime]) => ({
-      filename,
-      mime,
-      asset: await fetcher(new URL(filename, url).href),
-    })),
-  );
-  if (files.some(({ asset }) => !asset)) return;
+  const files: PyodideFile[] = [];
+  for (const [filename, mime] of PYODIDE_BOOT_FILES) {
+    const asset = await fetchWithin(fetcher, new URL(filename, url).href, budget.remaining);
+    if (!asset) return;
+    budget.remaining -= encodedSize(asset.bytes.length);
+    files.push({ filename, mime, asset });
+  }
 
   const upstreamRoot = new URL('.', url);
   const rootPath = upstreamRoot.pathname;
-  // The npm distribution contains the boot files but not the package archives.
-  const npmVersion = /^\/npm\/pyodide@(\d+\.\d+\.\d+)\/$/.exec(rootPath)?.[1];
+  // The npm distribution on jsDelivr contains the boot files but not the package archives.
+  const npmVersion =
+    upstreamRoot.host === 'cdn.jsdelivr.net'
+      ? /^\/npm\/pyodide@(\d+\.\d+\.\d+)\/$/.exec(rootPath)?.[1]
+      : undefined;
   const archiveRoot = npmVersion
     ? new URL(`/pyodide/v${npmVersion}/full/`, upstreamRoot)
     : upstreamRoot;
-  const localRoot = 'https://openmaic.invalid' + rootPath;
-  const payloadId = 'openmaic-pyodide:' + rootPath;
+  const localRoot = `https://openmaic.invalid/${upstreamRoot.host}${rootPath}`;
+  const payloadId = `openmaic-pyodide:${upstreamRoot.host}${rootPath}`;
   const [entry, factory, wasm, stdlib, lockfile] = files;
-  const bootSize = files.reduce(
-    (size, { asset }) => size + 4 * Math.ceil(asset!.bytes.length / 3),
-    0,
-  );
   const archives = await fetchPyodidePackageFiles(
     archiveRoot,
-    lockfile.asset!.bytes,
+    lockfile.asset.bytes,
     requested,
     fetcher,
-    maxHtmlBytes - bootSize,
+    budget,
   );
   function encodeFile({ filename, mime, asset }: PyodideFile): [string, [string, string]] {
-    const dataUri = toDataUri(asset!.bytes, mime);
+    const dataUri = toDataUri(asset.bytes, mime);
     return [localRoot + filename, [mime, dataUri.slice(dataUri.indexOf(',') + 1)]];
   }
   const embedded = Object.fromEntries([wasm, stdlib, lockfile].map(encodeFile));
@@ -314,9 +332,9 @@ async function inlinePyodide(
   // the original script's execution timing and load handlers.
   const source = `
 (function () {
-  ${decoder.decode(factory.asset!.bytes)}
+  ${decoder.decode(factory.asset.bytes)}
   ;
-  ${decoder.decode(entry.asset!.bytes)}
+  ${decoder.decode(entry.asset.bytes)}
   ;
   const localRoot = ${JSON.stringify(localRoot)};
   const originalRoot = ${JSON.stringify(upstreamRoot.href)};
@@ -423,15 +441,12 @@ export async function prepareCaptureAssets(
   maxHtmlBytes: number,
 ) {
   const inventory = analyzeHtmlAssetInventory(html);
-  const offline = await collectOfflineAssets(
-    inventory.captureAssetManifests,
-    fetcher,
-    maxHtmlBytes,
-  );
+  const budget: SceneBudget = { remaining: maxHtmlBytes, archives: 0 };
+  const offline = await collectOfflineAssets(inventory.captureAssetManifests, fetcher, budget);
   const patches: SourcePatch[] = [];
   const scripts = [...inventory.classicScripts, ...inventory.moduleScripts];
   let requestedPackages: Set<string> | undefined;
-  const runtimeSources = new Map<string, string | undefined>();
+  const runtimeSources = new Map<string, string>();
   const runtimeScripts = new Map<string, string>();
   const runtimePayloads = new Map<string, NonNullable<Awaited<ReturnType<typeof inlinePyodide>>>>();
   for (const asset of inventory.attributeAssets) {
@@ -452,7 +467,8 @@ export async function prepareCaptureAssets(
         /^(?:application|text)\/(?:java|ecma)script$/i.test(asset.attributes.type.trim())) &&
       PYODIDE_ENTRY.test(asset.url)
     ) {
-      if (!runtimeSources.has(asset.url)) {
+      let source = runtimeSources.get(asset.url);
+      if (!source) {
         if (!requestedPackages) {
           const names: PyodidePackageNames = { startup: new Set(), interactions: new Set() };
           for (const script of scripts) {
@@ -471,8 +487,7 @@ export async function prepareCaptureAssets(
           }
           requestedPackages = new Set([...names.startup, ...names.interactions]);
         }
-        const runtime = await inlinePyodide(asset.url, fetcher, requestedPackages, maxHtmlBytes);
-        let source: string | undefined;
+        const runtime = await inlinePyodide(asset.url, fetcher, requestedPackages, budget);
         if (runtime) {
           // Keep the large runtime out of the HTML parsing and rewrite passes.
           const marker = `openmaic-capture-${randomBrowserId()}`;
@@ -482,11 +497,17 @@ export async function prepareCaptureAssets(
           runtimePayloads.set(payload, runtime);
           const { start } = asset.elementRange;
           patches.push({ range: { start, end: start }, replacement: payload });
+        } else {
+          // The view may not need Python until a learner acts. A scene that
+          // loads it during capture reports which runtime was missing.
+          const error = JSON.stringify(`Pyodide runtime unavailable offline: ${asset.url}`);
+          source = `data:text/javascript,${encodeURIComponent(
+            `window.loadPyodide = () => Promise.reject(new Error(${error}));`,
+          )}`;
         }
         runtimeSources.set(asset.url, source);
       }
-      const source = runtimeSources.get(asset.url);
-      const patch = source && replaceAttributePatch(asset, source);
+      const patch = replaceAttributePatch(asset, source);
       if (patch) patches.push(patch);
     }
   }
@@ -499,10 +520,11 @@ export async function prepareCaptureAssets(
     for (const source of dynamicScriptSources(script)) {
       const url = source.value;
       if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) continue;
-      const asset = await fetcher(url);
+      const asset = await fetchWithin(fetcher, url, budget.remaining);
       // The script may belong to an unneeded fallback branch. If it cannot be
       // fetched, let the capture's CSP and error handling govern actual use.
       if (!asset) continue;
+      budget.remaining -= encodedSize(asset.bytes.length);
       patches.push({
         range: { start: start + source.start, end: start + source.end },
         replacement: JSON.stringify(toDataUri(asset.bytes, asset.contentType)).replace(

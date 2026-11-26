@@ -18,8 +18,13 @@ export interface InlineOptions {
   skipMedia?: boolean;
 }
 
+/**
+ * `maxBytes` asks the implementation to stop downloading and resolve null once
+ * the body exceeds it. Callers that budget bytes still check the result size.
+ */
 export type FetchAsset = (
   url: string,
+  maxBytes?: number,
 ) => Promise<{ bytes: Uint8Array; contentType: string } | null>;
 
 /** Encode bytes as a data: URI. */

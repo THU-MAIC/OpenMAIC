@@ -255,6 +255,176 @@ describe('prepareInteractiveHtmlScenes', () => {
     expect(html).not.toContain(`src="${root}pyodide.js"`);
   });
 
+  it('stops fetching Pyodide archives once the scene budget is spent', async () => {
+    const root = 'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
+    const names = ['a', 'b', 'c', 'd', 'e'];
+    const lock = JSON.stringify({
+      packages: Object.fromEntries(
+        names.map((name) => [name, { file_name: `${name}.whl`, depends: [] }]),
+      ),
+    });
+    const archive = new Uint8Array(30_000);
+    const boot = (filename: string) =>
+      new TextEncoder().encode(filename === 'pyodide-lock.json' ? lock : '42');
+    const encoded = (bytes: number) => 4 * Math.ceil(bytes / 3);
+    const bootFiles = [
+      'pyodide.js',
+      'pyodide.asm.js',
+      'pyodide.asm.wasm',
+      'python_stdlib.zip',
+      'pyodide-lock.json',
+    ];
+    const maxHtmlBytes =
+      bootFiles.reduce((total, file) => total + encoded(boot(file).length), 0) +
+      2 * encoded(archive.length);
+    const capacity = Math.floor(maxHtmlBytes / 4) * 3;
+    const requested: string[] = [];
+    const overruns: string[] = [];
+    let returned = 0;
+
+    await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script src="${root}pyodide.js"></script>` +
+            `<script>loadPyodide({packages: ${JSON.stringify(names)}});</script>`,
+        ),
+      ],
+      {
+        maxHtmlBytes,
+        fetcher: async (url, maxBytes = Infinity) => {
+          const filename = url.slice(root.length);
+          const bytes = filename.endsWith('.whl') ? archive : boot(filename);
+          if (filename.endsWith('.whl')) requested.push(filename);
+          if (returned + maxBytes > capacity) overruns.push(filename);
+          if (bytes.length > maxBytes) return null;
+          returned += bytes.length;
+          return { bytes, contentType: 'application/octet-stream' };
+        },
+      },
+    );
+
+    expect(overruns).toEqual([]);
+    expect(requested).toEqual(['a.whl', 'b.whl']);
+  });
+
+  it('shares one archive budget between two Pyodide distributions in a scene', async () => {
+    const roots = [
+      'https://cdn.jsdelivr.net/pyodide/v0.26.2/full/',
+      'https://static.example.edu/pyodide/v0.26.2/full/',
+    ];
+    const lock = JSON.stringify({
+      packages: { a: { file_name: 'a.whl', depends: [] }, b: { file_name: 'b.whl', depends: [] } },
+    });
+    const archive = new Uint8Array(30_000);
+    const encoded = (bytes: number) => 4 * Math.ceil(bytes / 3);
+    const archiveBytes: number[] = [];
+
+    await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          roots.map((root) => `<script src="${root}pyodide.js"></script>`).join('') +
+            `<script>loadPyodide({packages: ['a', 'b']});</script>`,
+        ),
+      ],
+      {
+        maxHtmlBytes: 2 * encoded(archive.length) + 1_000,
+        fetcher: async (url, maxBytes = Infinity) => {
+          const bytes = url.endsWith('.whl')
+            ? archive
+            : new TextEncoder().encode(url.endsWith('/pyodide-lock.json') ? lock : '42');
+          if (bytes.length > maxBytes) return null;
+          if (url.endsWith('.whl')) archiveBytes.push(encoded(bytes.length));
+          return { bytes, contentType: 'application/octet-stream' };
+        },
+      },
+    );
+
+    expect(archiveBytes).toHaveLength(2);
+  });
+
+  it('packages a self-hosted Pyodide distribution with archives from its own directory', async () => {
+    const root = 'https://static.example.edu/pyodide/v0.26.2/full/';
+    const archive = new Uint8Array([0, 128, 255, 25, 52]);
+    const lock = JSON.stringify({
+      packages: {
+        numpy: {
+          file_name: 'numpy.whl',
+          depends: [],
+          sha256: createHash('sha256').update(archive).digest('hex'),
+        },
+        corrupt: { file_name: 'corrupt.whl', depends: [], sha256: '0'.repeat(64) },
+      },
+    });
+    const fetched: string[] = [];
+    const prepared = await prepareInteractiveHtmlScenes(
+      [
+        scene(
+          `<script src="${root}pyodide.js"></script>` +
+            `<script>loadPyodide({packages: ['numpy', 'corrupt']});</script>`,
+        ),
+      ],
+      {
+        fetcher: async (url) => {
+          fetched.push(url);
+          return {
+            bytes: url.endsWith('.whl')
+              ? archive
+              : new TextEncoder().encode(url.endsWith('/pyodide-lock.json') ? lock : '42'),
+            contentType: 'application/octet-stream',
+          };
+        },
+      },
+    );
+
+    expect(prepared.html(scene())).toMatchObject({ present: true });
+    const html = prepared.content('interactive:widget');
+    expect(html).toContain('data-openmaic-pyodide-runtime');
+    expect(html).not.toContain(`src="${root}pyodide.js"`);
+    expect(html).toContain(
+      `numpy.whl":["application/octet-stream","${Buffer.from(archive).toString('base64')}"]`,
+    );
+    expect(html).not.toContain('corrupt.whl');
+    expect(fetched).toContain(`${root}pyodide.asm.wasm`);
+    expect(fetched.every((url) => url.startsWith(root))).toBe(true);
+  });
+
+  it.each([
+    { problem: 'a missing boot file', missing: 'pyodide.asm.wasm', maxHtmlBytes: undefined },
+    { problem: 'boot files over the scene budget', missing: undefined, maxHtmlBytes: 45_000 },
+  ])(
+    'keeps the view and names the Pyodide entry it could not bundle for $problem',
+    async (fixture) => {
+      const entry = 'https://static.example.edu/pyodide/v0.26.2/full/pyodide.js';
+      const prepared = await prepareInteractiveHtmlScenes(
+        [scene(`<p>Run the cell to start Python.</p><script src="${entry}"></script>`)],
+        {
+          maxHtmlBytes: fixture.maxHtmlBytes,
+          fetcher: async (url) =>
+            url.endsWith(`/${fixture.missing}`)
+              ? null
+              : {
+                  bytes: new TextEncoder().encode(
+                    url.endsWith('/pyodide-lock.json') ? '{"packages":{}}' : 'x'.repeat(10_000),
+                  ),
+                  contentType: 'application/octet-stream',
+                },
+        },
+      );
+
+      expect(prepared.html(scene())).toMatchObject({ present: true });
+      const html = prepared.content('interactive:widget')!;
+      expect(html).not.toContain(`src="${entry}"`);
+      expect(html).not.toContain('data-openmaic-pyodide-runtime');
+      const src = /<script src="(data:text\/javascript,[^"]*)"/.exec(html)![1]!;
+      const loader = decodeURIComponent(src.slice('data:text/javascript,'.length));
+      const window: { loadPyodide?: () => Promise<unknown> } = {};
+      new Function('window', loader)(window);
+      await expect(window.loadPyodide!()).rejects.toThrow(
+        `Pyodide runtime unavailable offline: ${entry}`,
+      );
+    },
+  );
+
   it.each([
     { startup: false, extraBytes: 0 },
     { startup: true, extraBytes: 850 },
