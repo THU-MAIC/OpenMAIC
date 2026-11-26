@@ -67,7 +67,7 @@ export function ProjectCast({
   const lines = still ? CAST.length : said;
   const settled = lines >= CAST.length;
 
-  // The page lives in the stage's fixed box: scale to fit instead of clipping the way in.
+  // Measure the grid at its design width so a narrow stage scales both columns together.
   const box = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -116,7 +116,7 @@ export function ProjectCast({
       <div className="absolute inset-0 flex items-center justify-center">
         <div
           ref={content}
-          className="relative grid w-[1180px] grid-cols-[minmax(0,1fr)_500px] items-center gap-16 px-12 py-10"
+          className="relative grid w-[1180px] shrink-0 grid-cols-[minmax(0,1fr)_500px] items-center gap-16 px-12 py-10"
           style={
             scale < 1 ? { transform: `scale(${scale})`, transformOrigin: 'center' } : undefined
           }

@@ -118,6 +118,9 @@ function AgentTurn({
             <div key={part[0].id} className="flex flex-col gap-3">
               {/* Whiteboard and pointer calls are tool calls like any other in the stream. */}
               <ToolActivity tools={part} t={t} />
+              {part.some((tool) => tool.acknowledgeResponse) && (
+                <p className="text-foreground">{t('pblV3.journey.acceptedResponse')}</p>
+              )}
               {part.some(
                 (tool) =>
                   tool.action === 'complete' &&

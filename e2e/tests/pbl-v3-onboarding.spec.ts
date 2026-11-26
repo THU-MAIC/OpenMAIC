@@ -957,10 +957,14 @@ test('shows the spoken completion in the avatar while a tool-only reply is still
   expect(requested).toEqual([]);
 
   view.actions = ['chat', 'next'];
-  completion.parts = [{ ...tool, status: 'succeeded', readyForStudentConfirmation: true }];
+  completion.parts = [
+    { ...tool, status: 'succeeded', readyForStudentConfirmation: true, acknowledgeResponse: true },
+  ];
   await show([learner, completion]);
   await expect.poll(() => playback).toContain('start');
+  await expect(bubble).toContainText('Thanks, we have what we need for this step.');
   await expect(bubble).toContainText('This step is ready');
+  expect(requested).toHaveLength(1);
   await expect(bubble.getByTestId('pbl-companion-learner')).toHaveCount(0);
   await expect.poll(() => playback).toEqual(['start', 'end']);
   await show([learner, { ...completion, status: 'succeeded' }]);
@@ -984,6 +988,93 @@ test('shows the spoken completion in the avatar while a tool-only reply is still
   );
   await expect(bubble).not.toContainText(requested[0]);
   expect(requested).toHaveLength(1);
+  expect(commands).toEqual([]);
+});
+
+test('accepts a silent reply once when next arrives late or is withdrawn before playback', async ({
+  page,
+  learningEvents,
+}) => {
+  const { view, show, requested, playback, commands } = await narratedProject(page, learningEvents);
+  const acceptance = 'Thanks, we have what we need for this step.';
+  const learner: NarratedEntry = {
+    id: 'user-10',
+    inputId: 10,
+    speaker: 'user',
+    currentStage: true,
+    parts: [{ kind: 'text', id: 'answer', text: 'I checked the response.' }],
+  };
+  const receipt: NarratedEntry = {
+    id: 'reply-10',
+    inputId: 10,
+    speaker: 'discussion',
+    status: 'running',
+    currentStage: true,
+    parts: [
+      {
+        kind: 'tool',
+        action: 'complete',
+        id: 'done',
+        status: 'succeeded',
+        readyForStudentConfirmation: true,
+        acknowledgeResponse: true,
+      },
+    ],
+  };
+  const bubble = page.getByTestId('pbl-companion-speech');
+  view.actions = ['chat'];
+  await show([learner, receipt]);
+  await expect.poll(() => requested).toEqual([acceptance]);
+  receipt.status = 'succeeded';
+  await show([learner, receipt]);
+  await expect.poll(() => playback).toEqual(['start', 'end']);
+  view.actions.push('next');
+  await show([learner, receipt]);
+  await expect.poll(() => requested).toHaveLength(2);
+  expect(requested[1]).toContain('This step is ready');
+  expect(requested[1]).not.toContain(acceptance);
+  await expect.poll(() => playback).toEqual(['start', 'end', 'start', 'end']);
+  await expect(bubble).toContainText(acceptance);
+  await expect(bubble).toContainText(requested[1]);
+  await useAssistantMode(page, 'window');
+  await expect(
+    page.getByTestId('pbl-assistant').getByText(acceptance, { exact: true }),
+  ).toHaveCount(1);
+  await expect(page.getByTestId('pbl-completion-handoff')).toHaveText(requested[1]);
+  await page.getByTestId('pbl-assistant-close').click();
+
+  // The decision about the button is made at playback, even if the receipt came in earlier.
+  const wait: NarratedEntry['parts'][number] = {
+    kind: 'tool',
+    id: 'read',
+    action: 'read',
+    status: 'running',
+  };
+  const nextLearner = { ...learner, id: 'user-20', inputId: 20 };
+  const nextReceipt = {
+    ...receipt,
+    id: 'reply-20',
+    inputId: 20,
+    status: 'running' as const,
+    parts: [wait, ...receipt.parts],
+  };
+  await show([nextLearner, nextReceipt]);
+  await expect(
+    page.getByTestId('pbl-bubble-tools').locator('[data-status="running"]'),
+  ).toBeVisible();
+  view.actions = ['chat'];
+  wait.status = 'succeeded';
+  await show([nextLearner, { ...nextReceipt, status: 'succeeded' }]);
+  await expect.poll(() => requested, { timeout: 15000 }).toHaveLength(3);
+  await expect
+    .poll(() => playback, { timeout: 15000 })
+    .toEqual(['start', 'end', 'start', 'end', 'start', 'end']);
+  expect(requested).toEqual([acceptance, requested[1], acceptance]);
+  await expect(bubble).not.toContainText('This step is ready');
+  view.actions.push('next');
+  await show([nextLearner, { ...nextReceipt, status: 'succeeded' }]);
+  await expect.poll(() => requested, { timeout: 15000 }).toHaveLength(4);
+  expect(requested[3]).toBe(requested[1]);
   expect(commands).toEqual([]);
 });
 

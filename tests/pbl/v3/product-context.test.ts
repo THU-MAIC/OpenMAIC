@@ -139,6 +139,18 @@ describe('authoritative product guidance', () => {
     );
   });
 
+  it('requests a visible acknowledgment during guided review only', () => {
+    const feedback = 'acknowledge it once in learner-facing prose';
+    for (const index of [0, 2, 3, 6]) {
+      const prompt = renderTeachingPrompt(fixture(index)).systemPrompt;
+      expect(prompt).toContain(feedback);
+      expect(prompt).toContain('before calling complete_stage in the same turn');
+    }
+    for (const index of [1, 4, 5]) {
+      expect(renderTeachingPrompt(fixture(index)).systemPrompt).not.toContain(feedback);
+    }
+  });
+
   it.each([0, 2, 6])(
     'preserves feedback coverage and pacing in guided stage %s, beyond recap alone',
     (index) => {

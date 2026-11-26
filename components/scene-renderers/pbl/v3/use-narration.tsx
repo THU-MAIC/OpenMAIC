@@ -1,8 +1,10 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import {
+  acknowledgeSilentCompletion,
   boardAt,
   boardWrites,
   narrationSegments,
@@ -65,6 +67,8 @@ export function useNarration(
     onTold?: (told: NarrationProgress | null) => void;
   },
 ) {
+  const { t } = useI18n();
+  const acknowledgement = t('pblV3.journey.acceptedResponse');
   const ttsMuted = useSettingsStore((state) => state.ttsMuted);
   const [audio, setAudio] = useState<AudioIndicatorState>('idle');
   const tts = useDiscussionTTS({
@@ -137,19 +141,17 @@ export function useNarration(
   // authorizes a spoken button instruction. Show its neutral receipt only at rest.
   const instruction =
     nextInstruction ?? (!telling && complete ? completionConfirmation : undefined);
-  const projected = useMemo(
-    () =>
-      entry
-        ? narrationSteps(
-            entry,
-            instruction,
-            nextActionLabel && completionConfirmation
-              ? { label: nextActionLabel, confirmation: completionConfirmation }
-              : undefined,
-          )
-        : [],
-    [entry, instruction, nextActionLabel, completionConfirmation],
-  );
+  const projected = useMemo(() => {
+    if (!entry) return [];
+    const steps = narrationSteps(
+      entry,
+      instruction,
+      nextActionLabel && completionConfirmation
+        ? { label: nextActionLabel, confirmation: completionConfirmation }
+        : undefined,
+    );
+    return acknowledgeSilentCompletion(steps, acknowledgement);
+  }, [entry, instruction, nextActionLabel, completionConfirmation, acknowledgement]);
   // A tool result can arrive before the revision that enables its button. Only a turn
   // already told in this tab may pick up that last cue after its playhead has drained.
   const lateHandoff =
@@ -219,6 +221,9 @@ export function useNarration(
     ttsRef.current.cleanup();
     const id = entry.id;
     const mine = () => (run.current?.id === id ? run.current : null);
+    // Resolve a silent completion once when its clip starts. Its button can change
+    // availability while the buffer is still revealing that same clip.
+    let completionClip: { head: string; words: string; prefix: string } | undefined;
     const buffer = new StreamBuffer(
       {
         onAgentStart() {},
@@ -228,11 +233,36 @@ export function useNarration(
           const head = state?.says[Number(partId.slice(1))];
           const step = head ? state?.queued.get(head) : undefined;
           if (!state || !head || step?.kind !== 'say') return;
-          if (head.endsWith(':continue') && !canContinue.current && !state.voiced.has(head)) return;
-          // The voice gets a piece of text when the playhead is on it and it is whole.
-          if (!step.streaming && !state.voiced.has(head)) {
-            const words = step.text;
-            state.voiced.set(head, step.markdown ?? words);
+          let words: string | undefined;
+          if (step.acknowledgement) {
+            if (completionClip?.head !== head) {
+              const ack = step.acknowledgement;
+              const accepted = !state.voiced.has(ack.id);
+              const instruction =
+                canContinue.current && !state.voiced.has(head) ? ack.instruction : undefined;
+              if (accepted) state.voiced.set(ack.id, ack.text);
+              if (instruction) state.voiced.set(head, instruction);
+              words = [accepted ? ack.text : undefined, instruction].filter(Boolean).join(' ');
+              completionClip = {
+                head,
+                words,
+                prefix: !accepted && instruction ? ack.text + ' ' : '',
+              };
+            }
+            if (!completionClip.words) return;
+            const length = Math.ceil(
+              (revealed.length / step.text.length) * completionClip.words.length,
+            );
+            revealed = completionClip.prefix + completionClip.words.slice(0, length);
+          } else {
+            if (head.endsWith(':continue') && !canContinue.current && !state.voiced.has(head))
+              return;
+            if (!step.streaming && !state.voiced.has(head)) {
+              words = step.text;
+              state.voiced.set(head, step.markdown ?? words);
+            }
+          }
+          if (words !== undefined) {
             if (words) ttsRef.current.handleSegmentSealed(id, step.id, words, speaker ?? null);
             // Muted, or no voice for this role: the playhead holds for reading time instead.
             state.reading =

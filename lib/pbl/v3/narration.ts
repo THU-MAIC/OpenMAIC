@@ -24,6 +24,8 @@ export type NarrationStep = { id: string; part: number } & (
       text: string;
       /** Preserve code spans and link boundaries when comparing a legacy receipt. */
       markdown?: string;
+      /** The reply acceptance and the optional button instruction can become ready separately. */
+      acknowledgement?: { id: string; text: string; instruction?: string };
       streaming: boolean;
       /** A paragraph of a multi-location explanation, within the original Markdown part. */
       passage?: { from: number; to: number; point: Point | null };
@@ -256,6 +258,33 @@ export function narrationSteps(
   // retains its individual actions, including its final location.
   if (entry.status === 'running') holdForSpeech(pendingPoints);
   return steps;
+}
+
+/** Reuse a successful completion's own speech slot so its button hint is still spoken once. */
+export function acknowledgeSilentCompletion(steps: NarrationStep[], text: string): NarrationStep[] {
+  const index = steps.findIndex((step) => step.kind === 'tool' && step.tool.acknowledgeResponse);
+  if (index === -1) return steps;
+  const receipt = steps[index];
+  const hint = steps[index + 1];
+  const result = steps.slice();
+  const acknowledgement = { id: receipt.id + ':acknowledgement', text };
+  if (hint?.kind === 'say' && hint.part === receipt.part) {
+    result[index + 1] = {
+      ...hint,
+      text: text + ' ' + hint.text,
+      acknowledgement: { ...acknowledgement, instruction: hint.text },
+    };
+  } else {
+    result.splice(index + 1, 0, {
+      id: acknowledgement.id,
+      acknowledgement,
+      part: receipt.part,
+      kind: 'say',
+      text,
+      streaming: false,
+    });
+  }
+  return result;
 }
 
 /** The pointer in force at a step: the last one set, until the board is written again. */

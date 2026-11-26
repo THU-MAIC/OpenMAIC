@@ -128,6 +128,8 @@ export interface LearningConversationEntry {
         progress?: { kind?: string; text?: string; percent?: number; data?: unknown };
         projectCompleted?: boolean;
         readyForStudentConfirmation?: boolean;
+        /** A real learner reply was accepted without any learner-visible tutor text. */
+        acknowledgeResponse?: true;
         /** A later successful teaching-control call recovered this failure for the same input. */
         recovered?: boolean;
         startedAt?: number;
@@ -510,5 +512,28 @@ export function deduplicateHandoffs(entries: readonly LearningConversationEntry[
       return [];
     return [{ ...entry, parts }];
   });
-  return markRecoveredTeachingTools(deduplicated);
+  // A retry or an older history page can own the tutor's words. Only supply an
+  // acknowledgement when the actual input and its silent completion are both in view.
+  const unanswered = new Set<string>();
+  return markRecoveredTeachingTools(deduplicated).map((entry) => {
+    if (entry.inputId === undefined) return entry;
+    const key = entry.id.slice(0, entry.id.indexOf(':') + 1) + entry.inputId;
+    if (entry.speaker === 'user') {
+      unanswered.add(key);
+      return entry;
+    }
+    if (entry.omitted || entry.parts.some((part) => part.kind === 'text' && part.text.trim()))
+      unanswered.delete(key);
+    for (const part of entry.parts) {
+      if (part.kind !== 'tool' || part.action !== 'complete') continue;
+      delete part.acknowledgeResponse;
+      if (
+        part.status === 'succeeded' &&
+        (part.readyForStudentConfirmation || part.projectCompleted) &&
+        unanswered.delete(key)
+      )
+        part.acknowledgeResponse = true;
+    }
+    return entry;
+  });
 }

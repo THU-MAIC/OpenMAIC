@@ -3170,6 +3170,7 @@
       "currentMilestone": "المرحلة الحالية",
       "milestoneGoal": "الهدف:",
       "milestoneResult": "النتيجة:",
+      "acceptedResponse": "شكرًا، وضّحنا ما نحتاج إليه في هذه الخطوة.",
       "completionHandoff": "This step is complete.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

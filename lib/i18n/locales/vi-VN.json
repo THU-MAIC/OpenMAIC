@@ -3170,6 +3170,7 @@
       "currentMilestone": "Giai đoạn hiện tại",
       "milestoneGoal": "Mục tiêu:",
       "milestoneResult": "Kết quả:",
+      "acceptedResponse": "Cảm ơn bạn, chúng ta đã làm rõ những điều cần thiết ở bước này.",
       "completionHandoff": "This step is complete.",
       "startConversation": "Your assistant will open this step when the learning environment is ready.",
       "latest": "Go to the latest message",

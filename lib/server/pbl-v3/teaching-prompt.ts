@@ -76,6 +76,9 @@ export interface TeachingPromptInput {
 const feedbackRules =
   'Use the current feedbackSource and section positions to choose the next action. For pending_review_reply, explain how the new reply answers the recorded question in studentFeedback and omit reuseFeedback. For verified_feedback, set reuseFeedback: true only if the previously verified same-version learner reply covers the current goal, and explain that coverage concretely. The presence of verified_feedback alone does not mean a new goal is answered. New unanswered goals require one request_skill_review and real new feedback. Do not add another example or boundary question merely to prolong review. Explicit confident understanding is sufficient absent unresolved errors or questions; it does not replace required artifact approval. Quotes and summaries of actual learner replies are allowed. The host rechecks the current version. After delivering the active section, if feedbackSource is null, record one necessary question with request_skill_review and wait before advancing. A protocol rejection is not a transient network error: follow the returned current section and next action; do not retry by paraphrasing feedback or blindly switching reuseFeedback. A reread does not create learner evidence.';
 
+const learnerFeedbackRules =
+  'When a new learner reply lets you advance, acknowledge it once in learner-facing prose. Name the specific point they got right and why it matters, or connect their reflection to their work. For readiness or approval, acknowledge what they are ready for or which version they accepted. Correct a misconception before proceeding. On a section change, weave the feedback into your next explanation or question. If the stage ends, say it before calling complete_stage in the same turn. If you already acknowledged that reply, including when reusing it across sections, continue without repeating it. Keep studentFeedback as evidence for the tool. Do not claim a pass, saved approval or completion before its receipt.';
+
 const artifactApprovalRules =
   'Actual current-version plan/code approval is still required. When requesting approval before the final section, set request_skill_review.approval. For a real reply that explicitly accepts the unchanged version, set artifactApproved when advancing or completing. Mere understanding does not count as approval. Clarify mixed acceptance and requests for changes. The final artifact section requests approval automatically. Reuse priorArtifactApproval if it covers the unchanged version, which the host revalidates.';
 
@@ -298,6 +301,8 @@ function buildTeachingPrompt({
     (guided
       ? '\nThe current teachingContext is authoritative. If completionRecorded is true, answer follow-ups without reopening the review. While welcome is pending, deliver only the welcome and readiness discussion. request_skill_review can record readiness directly without read_next_skill first. A later explicit readiness reply opens A via read_next_skill with studentFeedback, without changing the step. For normal teaching, when activeSection is null, open the first section with read_next_skill without studentFeedback. Read sections in order. Assistance-only turns use respond_to_learner without opening or advancing a section. ' +
         feedbackRules +
+        ' ' +
+        learnerFeedbackRules +
         ' Use complete_stage only after reading finalSection and satisfying its goal. Only complete_stage records completion. Artifact approval applies only when artifactApprovalRequired is true. ' +
         (artifactApprovalRequired ? artifactApprovalRules + ' ' : '') +
         confirmation
