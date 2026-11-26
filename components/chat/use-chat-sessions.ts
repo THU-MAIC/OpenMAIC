@@ -42,6 +42,7 @@ import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
+import { withAbort } from '@/lib/web-fetch/abort';
 
 const log = createLogger('ChatSessions');
 const SOFT_CLOSE_TIMEOUT_MS = 15_000;
@@ -130,6 +131,13 @@ interface UseChatSessionsOptions {
   onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onActiveBubble?: (messageId: string | null) => void;
   onLiveSessionError?: () => void;
+  /**
+   * Called as soon as a QA/Discussion session is ended by a manual stop, a
+   * soft-close confirmation or a scene switch, before waiting for an in-flight
+   * whiteboard action.
+   * Speech for the ended turn should stop here rather than after that wait.
+   */
+  onLiveSessionStopping?: () => void;
   /** Called immediately when the server semantically closes a QA/Discussion session. */
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   /** Called when a QA/Discussion session completes naturally (director end). */
@@ -141,7 +149,10 @@ interface UseChatSessionsOptions {
     agentId: string | null,
   ) => void;
   /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
-  shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
+  shouldHoldAfterReveal?: (
+    messageId?: string,
+    partId?: string,
+  ) => { holding: boolean; segmentDone: number } | boolean;
 }
 
 export type ChatRequestTemplate = {
@@ -250,7 +261,7 @@ type StatelessStreamConsumerFactory = (
   controller: AbortController,
   sessionType: SessionType,
 ) => {
-  onEvent: (event: StatelessEvent) => void;
+  onEvent: (event: StatelessEvent) => void | Promise<void>;
   onIterationEnd: () => Promise<{
     directorState: DirectorState | undefined;
     totalAgents: number;
@@ -453,6 +464,8 @@ export async function runPiSingleRequest(
   let sawDoneEvent = false;
   let sawAgentOutput = false;
   let failedWithoutOutput = false;
+  let presentation: Promise<void> | undefined;
+  let presentationFailure: { error: unknown } | undefined;
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -477,11 +490,32 @@ export async function runPiSingleRequest(
       }
       if (isVisibleAgentOutput(event)) sawAgentOutput = true;
       if (event.type === 'done') sawDoneEvent = true;
-      consumer.onEvent(event);
+
+      // The Native child waits for visibility replies. Keep reading and answer
+      // these queries even while a previous drawing is being loaded.
+      if (event.type === 'whiteboard' && event.data.kind === 'visibility_query') {
+        consumer.onEvent(event);
+        continue;
+      }
+
+      const pending = presentation
+        ? presentation.then(() => {
+            if (!controller.signal.aborted && !presentationFailure) return consumer.onEvent(event);
+          })
+        : consumer.onEvent(event);
+      if (pending) {
+        presentation = pending.catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          presentationFailure = { error };
+          void reader.cancel().catch(() => {});
+        });
+      }
     }
   }
 
+  if (presentation) await presentation;
   if (controller.signal.aborted) return;
+  if (presentationFailure) throw presentationFailure.error;
   if (failedWithoutOutput) {
     clearLiveSessionAfterError(sessionId, t('chat.error.teacherNoResponse'));
     onStopSessionRef.current?.({ sessionId, source: 'error' });
@@ -548,24 +582,51 @@ export async function respondToWhiteboardVisibilityQuery(
   }
 }
 
+/**
+ * Apply a Native whiteboard event. Returns true when it was a whiteboard action
+ * that took effect (a committed change, or the board opened or closed), which
+ * ends the speech segment before it. A projection returns a promise for the
+ * drawing required by subsequent speech. A visibility query only reads.
+ */
 export function consumePiWhiteboardEvent(
   data: Extract<StatelessEvent, { type: 'whiteboard' }>['data'],
   signal: AbortSignal,
-): void {
-  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return;
+): boolean | Promise<boolean> {
+  if (signal.aborted || useStageStore.getState().stage?.id !== data.stageId) return false;
   if (data.kind === 'visibility_query') {
     void respondToWhiteboardVisibilityQuery(data, signal).catch((error) => {
       if (!signal.aborted) log.warn('Whiteboard visibility response failed', error);
     });
-    return;
+    return false;
   }
   if (data.kind === 'projection') {
-    void refreshWhiteboardRuntimeProjection(data.stageId, data.lastSeq);
-    return;
+    return waitForPiWhiteboardProjection(data.stageId, data.lastSeq, signal);
   }
   const canvas = useCanvasStore.getState();
-  if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return;
-  canvas.setWhiteboardOpen(data.kind === 'open');
+  if (canvas.whiteboardManualVisibilityRevision !== data.manualVisibilityRevision) return false;
+  const open = data.kind === 'open';
+  // Opening an open board (or closing a closed one) changes nothing on screen.
+  if (canvas.whiteboardOpen === open) return false;
+  canvas.setWhiteboardOpen(open);
+  return true;
+}
+
+async function waitForPiWhiteboardProjection(
+  stageId: string,
+  lastSeq: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const hasProjection = () => {
+    const projection = useCanvasStore.getState().runtimeWhiteboardProjection;
+    return projection?.stageId === stageId && (projection.lastSeq ?? -1) >= lastSeq;
+  };
+  const refresh = () =>
+    withAbort(refreshWhiteboardRuntimeProjection(stageId, lastSeq, signal), signal);
+
+  if (hasProjection() || (await refresh()) || hasProjection()) return true;
+  if (signal.aborted || useStageStore.getState().stage?.id !== stageId) return false;
+  // Opening the board can start a newer background refresh and supersede ours.
+  return (await refresh()) || hasProjection();
 }
 
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
@@ -575,6 +636,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onCueUserRef = useRef(options.onCueUser);
   const onActiveBubbleRef = useRef(options.onActiveBubble);
   const onLiveSessionErrorRef = useRef(options.onLiveSessionError);
+  const onLiveSessionStoppingRef = useRef(options.onLiveSessionStopping);
   const onSoftCloseSessionRef = useRef(options.onSoftCloseSession);
   const onStopSessionRef = useRef(options.onStopSession);
   const onSegmentSealedRef = useRef(options.onSegmentSealed);
@@ -586,6 +648,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     onCueUserRef.current = options.onCueUser;
     onActiveBubbleRef.current = options.onActiveBubble;
     onLiveSessionErrorRef.current = options.onLiveSessionError;
+    onLiveSessionStoppingRef.current = options.onLiveSessionStopping;
     onSoftCloseSessionRef.current = options.onSoftCloseSession;
     onStopSessionRef.current = options.onStopSession;
     onSegmentSealedRef.current = options.onSegmentSealed;
@@ -597,6 +660,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     options.onCueUser,
     options.onActiveBubble,
     options.onLiveSessionError,
+    options.onLiveSessionStopping,
     options.onSoftCloseSession,
     options.onStopSession,
     options.onSegmentSealed,
@@ -1163,8 +1227,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             onSegmentSealedRef.current?.(messageId, partId, fullText, agentId);
           },
 
-          shouldHoldAfterReveal() {
-            return shouldHoldAfterRevealRef.current?.() ?? (false as const);
+          shouldHoldAfterReveal(messageId, partId) {
+            return shouldHoldAfterRevealRef.current?.(messageId, partId) ?? (false as const);
           },
         },
         pacingOptions,
@@ -1191,8 +1255,17 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       const onEvent = (event: StatelessEvent) => {
         if (event.type === 'whiteboard') {
-          consumePiWhiteboardEvent(event.data, controller.signal);
-          return;
+          // A whiteboard action ends the text before it, as an action item does,
+          // so that text goes to speech synthesis without waiting for the turn.
+          const effect = consumePiWhiteboardEvent(event.data, controller.signal);
+          if (!effect) return;
+          currentBuffer?.sealSegment();
+          if (effect === true) return;
+          return effect.then((applied) => {
+            if (!applied && !controller.signal.aborted) {
+              throw new Error(t('chat.error.streamInterrupted'));
+            }
+          });
         }
         if (!currentBuffer) {
           currentBuffer = createBufferForSession(sessionId, sessionType);
@@ -1281,7 +1354,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       return { onEvent, onIterationEnd };
     },
-    [createBufferForSession],
+    [createBufferForSession, t],
   );
 
   /**
@@ -1405,6 +1478,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       const wasStreaming = !!(
         abortControllerRef.current && streamingSessionIdRef.current === sessionId
       );
+      if (
+        isLiveSession &&
+        (options.source === 'manual_stop' ||
+          options.source === 'soft_close_confirmed' ||
+          options.source === 'scene_switch')
+      ) {
+        onLiveSessionStoppingRef.current?.();
+      }
 
       // Retire presentation work before callers start another session. An action
       // already inside ActionEngine cannot be cancelled, so wait for it to settle.

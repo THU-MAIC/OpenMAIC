@@ -36,6 +36,9 @@ const mocks = vi.hoisted(() => ({
   engineStart: vi.fn(),
   engineContinuePlayback: vi.fn(),
   handleUserInterrupt: vi.fn(),
+  ttsCleanup: vi.fn(),
+  endActiveSession: vi.fn(),
+  chatAreaProps: undefined as Record<string, unknown> | undefined,
 }));
 
 vi.mock('next/navigation', () => ({
@@ -261,10 +264,13 @@ vi.mock('@/components/roundtable', async () => {
 vi.mock('@/components/chat/chat-area', async () => {
   const React = await import('react');
   return {
-    ChatArea: React.forwardRef(function MockChatArea(_props, ref) {
+    ChatArea: React.forwardRef(function MockChatArea(props: Record<string, unknown>, ref) {
+      React.useEffect(() => {
+        mocks.chatAreaProps = props;
+      });
       React.useImperativeHandle(ref, () => ({
         sendMessage: mocks.sendMessage,
-        endActiveSession: vi.fn().mockResolvedValue(undefined),
+        endActiveSession: mocks.endActiveSession,
         endSession: mocks.endSession,
         startLecture: mocks.startLecture,
         addLectureMessage: vi.fn(),
@@ -304,6 +310,7 @@ vi.mock('@/lib/playback', () => ({
     stop() {
       mocks.engineStop();
     }
+    handleDiscussionError() {}
     getMode() {
       return mocks.engineMode;
     }
@@ -362,7 +369,7 @@ vi.mock('@/lib/utils/audio-player', () => ({
 }));
 vi.mock('@/lib/hooks/use-discussion-tts', () => ({
   useDiscussionTTS: () => ({
-    cleanup: vi.fn(),
+    cleanup: mocks.ttsCleanup,
     pause: vi.fn(),
     resume: vi.fn(),
     handleSegmentSealed: vi.fn(),
@@ -424,6 +431,10 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     mocks.engineStart.mockReset();
     mocks.engineContinuePlayback.mockReset();
     mocks.handleUserInterrupt.mockReset();
+    mocks.ttsCleanup.mockReset();
+    mocks.endActiveSession.mockReset();
+    mocks.endActiveSession.mockResolvedValue(undefined);
+    mocks.chatAreaProps = undefined;
     stageState.scenes = [scene, secondScene];
     stageState.currentSceneId = scene.id;
     stageState.setCurrentSceneId.mockClear();
@@ -962,6 +973,44 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
 
     expect(stageState.setCurrentSceneId).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="owner-pill"]')).not.toBeNull();
+  });
+
+  describe('discussion speech cleanup', () => {
+    it('stops speech when a live session fails', async () => {
+      await renderOwner();
+      mocks.ttsCleanup.mockClear();
+      act(() => (mocks.chatAreaProps?.onLiveSessionError as () => void)());
+      expect(mocks.ttsCleanup).toHaveBeenCalledOnce();
+    });
+
+    it('lets the chat area stop speech as soon as a stop is accepted', async () => {
+      await renderOwner();
+      expect(mocks.chatAreaProps?.onLiveSessionStopping).toBe(mocks.ttsCleanup);
+    });
+
+    it('stops speech before waiting for the session to end on a scene switch', async () => {
+      await renderOwner();
+      mocks.ttsCleanup.mockClear();
+      mocks.endActiveSession.mockClear();
+      stageState.currentSceneId = secondScene.id;
+      await rerenderOwner();
+      expect(mocks.endActiveSession).toHaveBeenCalledWith({ source: 'scene_switch' });
+      expect(mocks.ttsCleanup.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.endActiveSession.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('stops speech before waiting for the session to end on teardown', async () => {
+      const ref: { current: { teardown: () => Promise<void> } | null } = { current: null };
+      await renderOwner({ ref });
+      mocks.ttsCleanup.mockClear();
+      mocks.endActiveSession.mockClear();
+      await act(async () => ref.current!.teardown());
+      expect(mocks.endActiveSession).toHaveBeenCalledOnce();
+      expect(mocks.ttsCleanup.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.endActiveSession.mock.invocationCallOrder[0],
+      );
+    });
   });
 
   it('stops the previous engine when switching to a non-playable scene', async () => {

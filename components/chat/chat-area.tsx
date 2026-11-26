@@ -43,6 +43,7 @@ interface ChatAreaProps {
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
   onCueUser?: (fromAgentId?: string, prompt?: string, options?: string[]) => void;
   onLiveSessionError?: () => void;
+  onLiveSessionStopping?: () => void;
   onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
   onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
   onStopSession?: (payload: SessionCleanupPayload) => void;
@@ -53,7 +54,10 @@ interface ChatAreaProps {
     agentId: string | null,
   ) => void;
   /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
-  shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
+  shouldHoldAfterReveal?: (
+    messageId?: string,
+    partId?: string,
+  ) => { holding: boolean; segmentDone: number } | boolean;
   currentSceneId?: string | null;
   currentActionIndex?: number | null;
   canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;
@@ -106,6 +110,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onThinking,
       onCueUser,
       onLiveSessionError,
+      onLiveSessionStopping,
       onSoftCloseSession,
       onSoftClosingChange,
       onStopSession,
@@ -149,6 +154,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onCueUser,
       onActiveBubble,
       onLiveSessionError,
+      onLiveSessionStopping,
       onSoftCloseSession,
       onStopSession,
       onSegmentSealed,

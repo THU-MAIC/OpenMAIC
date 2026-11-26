@@ -415,6 +415,73 @@ describe('lectureActionPersistParams', () => {
 });
 
 describe('runPiSingleRequest', () => {
+  it('waits for a drawing before presenting later narration and answers visibility queries meanwhile', async () => {
+    let finishProjection!: () => void;
+    const projection = new Promise<void>((resolve) => {
+      finishProjection = resolve;
+    });
+    const events = [
+      { type: 'whiteboard', data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 } },
+      { type: 'text_delta', data: { content: 'The drawing shows the result.' } },
+      { type: 'whiteboard', data: { kind: 'visibility_query', stageId: 'stage-1', queryId: 'q1' } },
+      { type: 'done', data: {} },
+    ];
+    const onEvent = vi.fn((event: StatelessEvent) => {
+      if (event.type === 'whiteboard' && event.data.kind === 'projection') return projection;
+    });
+    const onIterationEnd = vi.fn(async () => null);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')),
+      ),
+    );
+
+    const request = runPiSingleRequest(
+      'session-1',
+      {
+        messages: [],
+        storeState: {
+          stage: null,
+          scenes: [],
+          currentSceneId: null,
+          mode: 'autonomous',
+          whiteboardOpen: false,
+        },
+        config: { agentIds: ['teacher'] },
+      },
+      new AbortController(),
+      'qa',
+      () => ({ onEvent, onIterationEnd }),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      {},
+      (key) => key,
+    );
+    try {
+      await vi.waitFor(() =>
+        expect(onEvent.mock.calls.map(([event]) => event)).toEqual([events[0], events[2]]),
+      );
+      expect(onIterationEnd).not.toHaveBeenCalled();
+      finishProjection();
+      await request;
+      expect(onEvent.mock.calls.map(([event]) => event)).toEqual([
+        events[0],
+        events[2],
+        events[1],
+        events[3],
+      ]);
+      expect(onIterationEnd).toHaveBeenCalledOnce();
+    } finally {
+      finishProjection();
+      await request;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ['qa', 'tool_calling_required', 'toolCallingRequired'],
     ['discussion', 'tool_calling_required', 'toolCallingRequired'],
@@ -828,36 +895,76 @@ describe('Pi Native whiteboard Browser events', () => {
     const stage = useStageStore.getState().stage;
     const signal = new AbortController().signal;
 
-    consumePiWhiteboardEvent(
-      {
-        kind: 'open',
-        stageId: 'stage-1',
-        manualVisibilityRevision: 2,
-      },
-      signal,
-    );
+    // The return value says whether the action took effect, which ends the
+    // speech segment before it; ignored events must not split speech.
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'open',
+          stageId: 'stage-1',
+          manualVisibilityRevision: 2,
+        },
+        signal,
+      ),
+    ).toBe(true);
     expect(useCanvasStore.getState().whiteboardOpen).toBe(true);
 
     useCanvasStore.getState().setWhiteboardOpenManually(false);
-    consumePiWhiteboardEvent(
-      {
-        kind: 'open',
-        stageId: 'stage-1',
-        manualVisibilityRevision: 2,
-      },
-      signal,
-    );
-    consumePiWhiteboardEvent(
-      {
-        kind: 'close',
-        stageId: 'another-stage',
-        manualVisibilityRevision: 3,
-      },
-      signal,
-    );
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'open',
+          stageId: 'stage-1',
+          manualVisibilityRevision: 2,
+        },
+        signal,
+      ),
+    ).toBe(false);
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'close',
+          stageId: 'another-stage',
+          manualVisibilityRevision: 3,
+        },
+        signal,
+      ),
+    ).toBe(false);
 
     expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
     expect(useStageStore.getState().stage).toBe(stage);
+  });
+
+  it('does not report opening an open board or closing a closed one as an action', () => {
+    const signal = new AbortController().signal;
+    const open = { kind: 'open', stageId: 'stage-1', manualVisibilityRevision: 2 } as const;
+    const close = { kind: 'close', stageId: 'stage-1', manualVisibilityRevision: 2 } as const;
+    expect(consumePiWhiteboardEvent(close, signal)).toBe(false);
+    expect(consumePiWhiteboardEvent(open, signal)).toBe(true);
+    expect(consumePiWhiteboardEvent(open, signal)).toBe(false);
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(true);
+    expect(consumePiWhiteboardEvent(close, signal)).toBe(true);
+    expect(useCanvasStore.getState().whiteboardOpen).toBe(false);
+  });
+
+  it('waits for a committed projection, and ignores one for another Stage or after abort', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+    const projection = { kind: 'projection', stageId: 'stage-1', lastSeq: 1 } as const;
+    await expect(consumePiWhiteboardEvent(projection, new AbortController().signal)).resolves.toBe(
+      false,
+    );
+    expect(
+      consumePiWhiteboardEvent(
+        { ...projection, stageId: 'another-stage' },
+        new AbortController().signal,
+      ),
+    ).toBe(false);
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(consumePiWhiteboardEvent(projection, aborted.signal)).toBe(false);
   });
 
   it('answers a current-Stage visibility query with the active Browser state', async () => {
@@ -866,14 +973,17 @@ describe('Pi Native whiteboard Browser events', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const controller = new AbortController();
-    consumePiWhiteboardEvent(
-      {
-        kind: 'visibility_query',
-        queryId: 'query-1',
-        stageId: 'stage-1',
-      },
-      controller.signal,
-    );
+    // A query only reads the board, so it does not end a speech segment.
+    expect(
+      consumePiWhiteboardEvent(
+        {
+          kind: 'visibility_query',
+          queryId: 'query-1',
+          stageId: 'stage-1',
+        },
+        controller.signal,
+      ),
+    ).toBe(false);
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith('/api/chat/pi/whiteboard-visibility', {
