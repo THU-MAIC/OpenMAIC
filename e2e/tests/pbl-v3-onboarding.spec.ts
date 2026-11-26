@@ -1213,6 +1213,53 @@ test('speaks a recovered hint once and keeps it with the original question after
   expect(commands).toEqual([]);
 });
 
+test('finishes the original audio and speaks each hint when recovery settles in one snapshot', async ({
+  page,
+  learningEvents,
+}) => {
+  const { show, requested, playback, commands } = await narratedProject(page, learningEvents);
+  const question = 'Which response should the page receive?';
+  const hints = ['Open the Network tab.', 'Look at the status code in Headers.'];
+  const original: NarratedEntry = {
+    id: 'original-question',
+    inputId: 21,
+    speaker: 'discussion',
+    currentStage: true,
+    status: 'running',
+    parts: [{ kind: 'text', id: 'text-31-0', text: question, spokenAt: 10, reviewStop: true }],
+  };
+  await show([original]);
+  await expect.poll(() => playback).toEqual(['start']);
+
+  const recovery: NarratedEntry = {
+    ...original,
+    id: 'recovery',
+    status: 'succeeded',
+    parts: [
+      ...hints.map((text, index) => ({
+        kind: 'text' as const,
+        id: `text-91-${index}`,
+        text,
+        spokenAt: 20,
+        supplementsReview: 10,
+      })),
+      { kind: 'tool', id: 'tool-2-review', action: 'review', status: 'succeeded' },
+      { kind: 'text', id: 'question-2-review', text: question, spokenAt: 10 },
+    ],
+  };
+  await show(deduplicateHandoffs([{ ...original, status: 'interrupted' }, recovery]));
+  const expected = [question, ...hints];
+  await expect
+    .poll(() => playback, { timeout: 20000 })
+    .toEqual(expected.flatMap(() => ['start', 'end']));
+  expect(requested).toEqual(expected);
+  const bubble = page.getByTestId('pbl-companion-speech');
+  for (const text of expected) await expect(bubble).toContainText(text);
+  await expect(page.getByTestId('pbl-companion-input').getByRole('textbox')).toBeEditable();
+  await expect(page.getByTestId('pbl-companion-continue')).toHaveCount(0);
+  expect(commands).toEqual([]);
+});
+
 for (const scenario of ['single clip', 'separate clips', 'two takeovers'] as const) {
   test(`drains unheard instructions through a worker takeover (${scenario})`, async ({
     page,

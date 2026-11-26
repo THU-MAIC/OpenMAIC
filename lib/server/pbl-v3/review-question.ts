@@ -68,10 +68,11 @@ export function isSpokenHandoff(name: string) {
 
 export function spokenHandoffClosing() {
   // message_end feeds this same record from the live stream and from durable history on resume.
-  type Speech = { blocks: string[]; spokenAt: number; guidanceOnly?: boolean };
-  let source: { frames: Speech[]; recovering: boolean } | undefined;
+  type Speech = { blocks: string[]; spokenAt: number; guidanceOnly?: boolean; bareStop?: boolean };
+  let source: { frames: Speech[]; recovering: boolean; questionAt?: number } | undefined;
   let frames: Speech[] = [];
   let hasCurrentSpeech = false;
+  let retainedAt: number | undefined;
   let calls: { name: string; id: string; arguments: Record<string, unknown> }[] = [];
   return {
     observe(message: AgentMessage) {
@@ -90,6 +91,12 @@ export function spokenHandoffClosing() {
         handoffs.some((tool) => tool.name === 'request_skill_review') &&
         handoffs.some((tool) => tool.name !== 'request_skill_review');
       const retainsReview = RETAINED_REVIEW in message && message[RETAINED_REVIEW] === true;
+      retainedAt =
+        retainsReview &&
+        REVIEW_SOURCE_AT in message &&
+        typeof message[REVIEW_SOURCE_AT] === 'number'
+          ? message[REVIEW_SOURCE_AT]
+          : undefined;
       const blocks = message.content.flatMap((part) =>
         part.type === 'text' && part.text.trim() ? [part.text] : [],
       );
@@ -98,6 +105,7 @@ export function spokenHandoffClosing() {
             blocks,
             spokenAt: message.timestamp,
             guidanceOnly: retainsReview || mixedAssistance,
+            bareStop: !tools.length && message.stopReason === 'stop',
           }
         : undefined;
       hasCurrentSpeech = !!current;
@@ -125,6 +133,10 @@ export function spokenHandoffClosing() {
           if (!tools.length && message.stopReason === 'stop') source.recovering = true;
           source.frames.push(current);
         }
+        if (source && handoffs.some((call) => call.name === 'request_skill_review')) {
+          if (retainedAt !== undefined) source.questionAt = retainedAt;
+          else if (current && !current.guidanceOnly) source.questionAt = current.spokenAt;
+        }
         frames = source?.frames ?? [];
       }
       // An assistance turn can keep the existing question, but cannot also
@@ -136,14 +148,25 @@ export function spokenHandoffClosing() {
     recoverySpeech(): readonly string[] | undefined {
       return source?.recovering ? source.frames.flatMap((frame) => frame.blocks) : undefined;
     },
-    recoveryQuestion(): SpokenReview | undefined {
-      if (!source?.recovering) return;
-      const frame = source.frames.findLast((item) => !item.guidanceOnly);
-      if (frame)
-        return {
-          question: reviewResponse(frame.blocks.at(-1)!).question,
-          spokenAt: frame.spokenAt,
-        };
+    recoveryQuestions(): SpokenReview[] {
+      if (!source?.recovering) return [];
+      const candidates = source.frames.filter((frame) => !frame.guidanceOnly);
+      const last = candidates.at(-1);
+      // Old workers could stop twice without registering either closing. Only
+      // the author knows which was the question and which was an introduction or hint.
+      const unmarked = candidates.filter((frame) => frame.bareStop);
+      const selected =
+        source.questionAt !== undefined
+          ? candidates.filter((frame) => frame.spokenAt === source!.questionAt)
+          : unmarked.length > 1
+            ? candidates.filter((frame) => frame.bareStop || frame === last)
+            : last
+              ? [last]
+              : [];
+      return selected.map((frame) => ({
+        question: reviewResponse(frame.blocks.at(-1)!).question,
+        spokenAt: frame.spokenAt,
+      }));
     },
     forCall(id: string): { question: string; spokenAt?: number } | undefined {
       const call = calls.find((tool) => tool.id === id);
@@ -164,7 +187,13 @@ export function spokenHandoffClosing() {
       const legacy =
         call.name === 'respond_to_learner' ? call.arguments.response : call.arguments.question;
       const supplied = typeof legacy === 'string' ? legacy.trim() : '';
-      const last = review ? frames.findLast((frame) => !frame.guidanceOnly) : frames.at(-1);
+      const last = review
+        ? frames.findLast(
+            (frame) =>
+              !frame.guidanceOnly && (retainedAt === undefined || frame.spokenAt === retainedAt),
+          )
+        : frames.at(-1);
+      if (review && retainedAt !== undefined && !last) return undefined;
       if (last) {
         const closing = reviewResponse(last.blocks.at(-1)!);
         const delivery = review ? closing.question : closing.response;

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createAssistantMessageEventStream, type AssistantMessage } from '@earendil-works/pi-ai';
 import type { StreamFn } from '@earendil-works/pi-agent-core';
 import { spokenHandoffClosing } from '@/lib/server/pbl-v3/review-question';
+import type { TeachingHistoryWindow } from '@/lib/server/pbl-v3/teaching-context';
 import { withTeachingTurnBoundary } from '@/lib/server/pbl-v3/runner-tools';
 
 vi.mock('server-only', () => ({}));
@@ -27,7 +28,12 @@ function stop(timestamp: number, words: string): AssistantMessage {
   } as AssistantMessage;
 }
 
-function recoveryBoundary(given: string, replies: AssistantMessage[], live?: () => string) {
+function recoveryBoundary(
+  given: string,
+  replies: AssistantMessage[],
+  live?: () => string,
+  history?: Partial<TeachingHistoryWindow>,
+) {
   return withTeachingTurnBoundary(
     () => {
       const message = replies.shift();
@@ -46,7 +52,8 @@ function recoveryBoundary(given: string, replies: AssistantMessage[], live?: () 
       studentTurns: 1,
       spokenReview: true,
       recoverySpeech: [given],
-      recoveryQuestion: { question: given.split('\n\n').at(-1)!, spokenAt: 10 },
+      recoveryQuestions: [{ question: given.split('\n\n').at(-1)!, spokenAt: 10 }],
+      ...history,
     },
     live,
   );
@@ -83,6 +90,119 @@ describe('an unfinished review with a different closing', () => {
     },
   );
 
+  it.each([
+    ['request_skill_review', { reviewDelivery: 'add_hint' }, given],
+    ['request_skill_review', { reviewDelivery: 'ask_question' }, draft],
+    ['respond_to_learner', {}, draft],
+    ['request_learner_help', {}, draft],
+  ] as const)(
+    'settles a recovered prose stop through the author’s %s call (%j)',
+    async (name, args, closing) => {
+      const next = frame(30, 'Private confirmation prose.', name, { ...args, approval: true });
+      const boundary = recoveryBoundary(given, [stop(20, draft), next]);
+      const stream = await boundary({} as Parameters<StreamFn>[0], {
+        messages: [{ role: 'user', content: 'I need another hint.', timestamp: 5 }],
+        tools: [{ name, parameters: { type: 'object' }, description: 'Available handoff' }],
+      });
+      const settled = await stream.result();
+      expect(settled.stopReason).toBe('toolUse');
+      expect(settled.content).toEqual([
+        { type: 'text', text: draft },
+        { type: 'toolCall', id: '30', name, arguments: args },
+      ]);
+      const speech = spokenHandoffClosing();
+      speech.observe(stop(10, given));
+      speech.observe(settled);
+      expect(speech.forCall('30')).toEqual({
+        question: closing,
+        spokenAt: closing === given ? 10 : 20,
+      });
+    },
+  );
+
+  it('cannot replace a pending teaching registration with assistance after this input already advanced the section', async () => {
+    const reply = stop(20, 'Open the Network panel to find the status.');
+    const support = frame(30, '', 'respond_to_learner');
+    const boundary = recoveryBoundary(given, [reply, support], undefined, {
+      recoveryHandoffs: [tool],
+    });
+    await expect(
+      boundary({} as Parameters<StreamFn>[0], {
+        messages: [
+          {
+            role: 'user',
+            content: 'Ask me a question about this change and add a hint.',
+            timestamp: 5,
+          },
+        ],
+        tools: [tool, 'respond_to_learner', 'request_learner_help'].map((name) => ({
+          name,
+          parameters: { type: 'object' },
+          description: name,
+        })),
+      }),
+    ).rejects.toThrow('Could not confirm the interrupted teaching handoff');
+  });
+
+  it('cannot select a progress tool or accept a second unregistered draft while settling a stop', async () => {
+    for (const invalid of [frame(30, '', 'complete_stage'), stop(30, 'Another draft.')]) {
+      const boundary = recoveryBoundary(given, [stop(20, draft), invalid]);
+      await expect(
+        boundary({} as Parameters<StreamFn>[0], {
+          messages: [],
+          tools: [tool, 'complete_stage'].map((name) => ({
+            name,
+            parameters: { type: 'object' },
+            description: name,
+          })),
+        }),
+      ).rejects.toThrow('Could not confirm the interrupted teaching handoff');
+    }
+  });
+
+  it.each(['question then hint', 'intro then question'])(
+    'resolves old unregistered closings (%s) by their source',
+    async (order) => {
+      const speech = spokenHandoffClosing();
+      const firstQuestion = order === 'question then hint';
+      const first = firstQuestion ? 'Which part handles HTTP?' : 'Look at this diagram.';
+      const second = firstQuestion
+        ? 'Check Network. Then answer the question on the board.'
+        : 'Which part handles HTTP?';
+      speech.observe(stop(10, first));
+      speech.observe(stop(20, second));
+      const history = {
+        recoverySpeech: speech.recoverySpeech(),
+        recoveryQuestions: speech.recoveryQuestions(),
+      };
+      const review = frame(30, '', tool, { reviewDelivery: 'keep_question' });
+      const choice = frame(40, '', tool, {
+        reviewDelivery: 'keep_question',
+        questionId: firstQuestion ? 1 : 2,
+      });
+      const boundary = recoveryBoundary(first, [review, choice], undefined, history);
+      const reply = await (
+        await boundary({} as Parameters<StreamFn>[0], { messages: [] })
+      ).result();
+      expect(reply.content).toEqual(review.content);
+      speech.observe(reply);
+      const original = { question: 'Which part handles HTTP?', spokenAt: firstQuestion ? 10 : 20 };
+      expect(speech.forCall('30')).toEqual(original);
+      expect(speech.recoveryQuestions()).toEqual([original]);
+      expect(speech.recoverySpeech()).toEqual([first, second]);
+
+      const invalid = recoveryBoundary(
+        first,
+        [review, frame(40, '', tool, { reviewDelivery: 'keep_question', questionId: 3 })],
+        undefined,
+        history,
+      );
+      await expect(invalid({} as Parameters<StreamFn>[0], { messages: [] })).rejects.toThrow(
+        'Could not confirm the interrupted teaching handoff',
+      );
+    },
+  );
+
   it('needs no second model decision for a declared intent, an exact replay or a tool-only registration', async () => {
     for (const [words, args, delivered] of [
       [draft, { askNewQuestion: true }, [draft]],
@@ -101,7 +221,7 @@ describe('an unfinished review with a different closing', () => {
   it('does not publish or register a closing when the author omits a decision again', async () => {
     const invalid = frame(30, 'Another draft.', tool, {});
     await expect(recoverMessage(given, ambiguous, invalid)).rejects.toThrow(
-      'Could not confirm which review question to deliver',
+      'Could not confirm the interrupted teaching handoff',
     );
   });
 
@@ -125,7 +245,7 @@ describe('an unfinished review with a different closing', () => {
     expect(() => speech.forCall('20')).toThrow(
       'Speak only the missing hint. Keep the original question pending.',
     );
-    expect(speech.recoveryQuestion()).toEqual({ question: given, spokenAt: 10 });
+    expect(speech.recoveryQuestions().at(-1)).toEqual({ question: given, spokenAt: 10 });
   });
 
   it('keeps assistance available without registering advice as a question in a mixed handoff', async () => {
@@ -141,7 +261,7 @@ describe('an unfinished review with a different closing', () => {
     speech.observe(await recoverMessage(given, supplied));
     expect(speech.forCall('20')).toBeUndefined();
     expect(speech.forCall('support')).toEqual({ question: draft, spokenAt: 20 });
-    expect(speech.recoveryQuestion()).toEqual({ question: given, spokenAt: 10 });
+    expect(speech.recoveryQuestions().at(-1)).toEqual({ question: given, spokenAt: 10 });
   });
 
   it.each(['hint then question', 'question then hint', 'question around hint'])(
@@ -164,7 +284,7 @@ describe('an unfinished review with a different closing', () => {
         hint,
       ]);
       expect(speech.forCall('20')).toEqual({ question, spokenAt: 10 });
-      expect(speech.recoveryQuestion()).toEqual({ question, spokenAt: 10 });
+      expect(speech.recoveryQuestions().at(-1)).toEqual({ question, spokenAt: 10 });
     },
   );
 

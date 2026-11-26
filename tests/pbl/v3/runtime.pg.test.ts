@@ -5315,7 +5315,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     'takeover',
     'takeover with a missing question',
     'takeover with an extra hint',
+    'takeover with a hint but no tool',
     'takeover after delivering the hint',
+    'takeover after two old stops with the question first',
+    'takeover after two old stops with the question last',
     'missing closing',
     'missing closing without intent',
     'unconfirmed closing',
@@ -5350,6 +5353,8 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       const starting = (await store.get(study.id, principal.ownerId)).state.position;
       const inputs = await agents.listUserMessages(sessionId);
       const takeover = mode.startsWith('takeover');
+      const oldPair = mode.startsWith('takeover after two old stops');
+      const questionLast = mode === 'takeover after two old stops with the question last';
       if (takeover) {
         // The interrupted reply can end either with a question or with just its introduction.
         const input = inputs.at(-1)!;
@@ -5373,7 +5378,10 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         const delivered: import('@earendil-works/pi-ai').AssistantMessage = {
           role: 'assistant',
           content: [
-            { type: 'text', text: mode === 'takeover with a missing question' ? summary : speech },
+            {
+              type: 'text',
+              text: mode === 'takeover with a missing question' || questionLast ? summary : speech,
+            },
           ],
           stopReason: 'stop',
           api: 'openai-completions',
@@ -5396,6 +5404,20 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           attempt: claim!.attempt,
           data: { message: delivered },
         });
+        if (oldPair) {
+          const second = {
+            ...delivered,
+            timestamp: delivered.timestamp + 1,
+            content: [{ type: 'text' as const, text: questionLast ? question : summary }],
+          };
+          await session.appendMessage(second);
+          await agents.appendRunEvent(sessionId, worker.workerId, {
+            ts: second.timestamp,
+            type: 'message_end',
+            attempt: claim!.attempt,
+            data: { message: second },
+          });
+        }
         await agents.markUserMessageDelivered(
           sessionId,
           worker.workerId,
@@ -5457,6 +5479,22 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           mocked.responses = [
             speakAndCall('你准备先检查哪个步骤？', register),
             callOnly({ ...register, input: { reviewDelivery: 'keep_question' } }),
+          ];
+          break;
+        case 'takeover after two old stops with the question first':
+        case 'takeover after two old stops with the question last':
+          mocked.responses = [
+            callOnly({ ...register, input: { reviewDelivery: 'keep_question' } }),
+            callOnly({
+              ...register,
+              input: { reviewDelivery: 'keep_question', questionId: questionLast ? 2 : 1 },
+            }),
+          ];
+          break;
+        case 'takeover with a hint but no tool':
+          mocked.responses = [
+            textResponse(summary + ' ' + question),
+            callOnly({ ...register, input: { reviewDelivery: 'add_hint' } }),
           ];
           break;
         case 'takeover with an extra hint':
@@ -5568,7 +5606,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         expect(recoveredReviewSpeech(refreshed.conversation!.at(-1))?.text).toBe(question);
       const parts = view.conversation!.flatMap((entry) => entry.parts);
       const deliveredHint =
-        mode === 'takeover with an extra hint' || mode === 'takeover after delivering the hint';
+        mode === 'takeover with an extra hint' ||
+        mode === 'takeover after delivering the hint' ||
+        mode === 'takeover with a hint but no tool';
       if (deliveredHint) {
         const original = parts.find((p) => p.kind === 'text' && p.text === speech);
         expect(original).toMatchObject({ spokenAt: committed.pending?.spokenAt });
@@ -5583,13 +5623,14 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         );
       }
       expect(parts.filter((p) => p.kind === 'text').map((p) => p.text)).toEqual(
-        deliveredHint
+        deliveredHint || (oldPair && !questionLast)
           ? [speech, summary]
           : [
                 'new question',
                 'missing closing',
                 'missing closing without intent',
                 'takeover with a missing question',
+                'takeover after two old stops with the question last',
               ].includes(mode)
             ? [summary, question]
             : [mode === 'tool-only' ? question : speech],
