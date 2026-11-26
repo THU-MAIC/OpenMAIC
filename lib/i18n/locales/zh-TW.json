@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "恢復學習環境",
     "retryOpening": "重試本環節開場",
+    "completion": {
+      "title": "恭喜你，完成了這個專案！",
+      "description": "在學習報告裡，回顧你做過的決策與完成的作品。",
+      "openReport": "查看學習報告",
+      "stay": "留在工作台"
+    },
     "reportCopy": {
       "waitFinal": "最後一輪復盤回覆儲存完成後，即可產生報告。",
       "generating": "Preparing your project report…",

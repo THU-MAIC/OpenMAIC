@@ -45,6 +45,9 @@ import type { ProjectHeroDetails } from '@/lib/pbl/project-hero';
 import { LearningWorkbenchPanel } from './workbench-panel';
 import type { FileSaveReceipt } from './use-project-editor';
 import { ProjectReport } from './project-report';
+import { ProjectCompletionDialog } from './project-completion-dialog';
+import { useProjectCompletion } from './use-project-completion';
+import { reportHandoffTarget } from './report-handoff-target';
 import { FileText, CheckCircle2 } from 'lucide-react';
 import { LearningPanels } from './learning-panels';
 import { LearningConversation } from './conversation';
@@ -105,7 +108,9 @@ function PBLV3WorkspaceContent({
   const { t, locale } = useI18n(),
     stageId = useStageStore((state) => state.stage?.id);
   const { view, workbench, latestView, updateView, receive, openView } = useLearningObservation();
-  const [reportOpen, setReportOpen] = useState(false);
+  const [reportEntry, setReportEntry] = useState<'workspace' | 'completion' | null>(null);
+  const reportOpen = reportEntry !== null;
+  const [historyOpen, setHistoryOpen] = useState(false);
   const workspaceRoot = useRef<HTMLElement>(null);
   const assistant = useRef<HTMLElement>(null);
   const restoreStartFocus = useRef(false);
@@ -709,6 +714,13 @@ function PBLV3WorkspaceContent({
         !applicationPreview.error &&
         !applicationPreview.expired);
   const launchingApplication = useLaunchHold(applicationComing, 90_000);
+  const completion = useProjectCompletion(view, {
+    reportOpen,
+    blocked:
+      !!told || pending || historyOpen || onboarding.active || entryLoading || launchingApplication,
+  });
+  const getReportTarget = useCallback(() => reportHandoffTarget(workspaceRoot.current), []);
+  const modalActive = onboarding.active || entryLoading || completion.open;
   return (
     <section
       ref={workspaceRoot}
@@ -766,16 +778,12 @@ function PBLV3WorkspaceContent({
               <span className="hidden xl:inline">{t('pblV3.onboarding.replay')}</span>
             </button>
             {view.application && <ApplicationPreviewToggle preview={applicationPreview} />}
-            <LearningPanels
-              key={view.id}
-              view={view}
-              modalActive={onboarding.active || entryLoading}
-            />
+            <LearningPanels key={view.id} view={view} modalActive={modalActive} />
             {view.reportAvailable && (
               <button
                 data-pbl-tour="report"
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-500"
-                onClick={() => setReportOpen(true)}
+                onClick={() => setReportEntry('workspace')}
                 disabled={view.busy}
                 aria-label={t('pblV3.report')}
               >
@@ -909,14 +917,27 @@ function PBLV3WorkspaceContent({
           {toolbarControl}
         </div>
       </header>
+      {completion.open && view && (
+        <ProjectCompletionDialog
+          key={`completion-${view.id}`}
+          root={workspaceRoot}
+          getReportTarget={getReportTarget}
+          onDismiss={completion.dismiss}
+          onOpenReport={() => {
+            completion.dismiss();
+            setReportEntry('completion');
+          }}
+        />
+      )}
       {view?.reportAvailable && (
         <ProjectReport
           key={view.id}
           studyId={view.id}
           title={view.title}
           open={reportOpen}
-          onClose={() => setReportOpen(false)}
-          onWorkbench={() => setReportOpen(false)}
+          onClose={() => setReportEntry(null)}
+          onWorkbench={() => setReportEntry(null)}
+          getReturnFocus={reportEntry === 'completion' ? getReportTarget : undefined}
         />
       )}
       {error && (
@@ -1039,7 +1060,7 @@ function PBLV3WorkspaceContent({
                 <ApplicationPreview
                   application={view.application}
                   preview={applicationPreview}
-                  inputPaused={onboarding.active || entryLoading}
+                  inputPaused={modalActive}
                   pointer={pointer && 'selector' in pointer ? pointer : null}
                 />
               ) : undefined
@@ -1256,7 +1277,7 @@ function PBLV3WorkspaceContent({
                     <LearningConversation
                       waitingToStart={waitingToStart}
                       overview={overview}
-                      modalActive={onboarding.active || entryLoading}
+                      modalActive={modalActive}
                       // The conversation shows the reply as far as it has been told, the same
                       // place the bubble is at.
                       view={toldView ?? view}
@@ -1269,8 +1290,11 @@ function PBLV3WorkspaceContent({
                         });
                       }}
                       onOpenReport={
-                        view.reportAvailable && !view.busy ? () => setReportOpen(true) : undefined
+                        view.reportAvailable && !view.busy
+                          ? () => setReportEntry('workspace')
+                          : undefined
                       }
+                      onHistoryOpenChange={setHistoryOpen}
                       onOpenTask={() => taskDock.current?.open()}
                       sent={sent}
                       pendingMessage={pendingMessage}
@@ -1278,7 +1302,7 @@ function PBLV3WorkspaceContent({
                     />
                     <TaskDock
                       actionDisabled={disabled}
-                      modalActive={onboarding.active || entryLoading}
+                      modalActive={modalActive}
                       key={`${view.id}:${view.state.position.milestoneIndex}:${view.state.position.stageIndex}`}
                       view={view}
                       ref={taskDock}

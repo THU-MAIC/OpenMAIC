@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "Restore learning environment",
     "retryOpening": "Retry step opening",
+    "completion": {
+      "title": "おめでとうございます！プロジェクトが完了しました。",
+      "description": "学習レポートで、自分が選んだことや完成した作品を振り返れます。",
+      "openReport": "学習レポートを見る",
+      "stay": "ワークスペースに残る"
+    },
     "reportCopy": {
       "waitFinal": "Wait for the final teaching response to finish before preparing the report.",
       "generating": "Preparing your project report…",

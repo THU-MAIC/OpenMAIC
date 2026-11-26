@@ -307,6 +307,128 @@ async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number
   if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
 }
 
+for (const layout of [...assistantModes, 'scrolled dock', 'open history'] as const) {
+  test(`project completion hands focus to the available report in the ${layout} layout`, async ({
+    page,
+    learningEvents,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const mode = layout === 'scrolled dock' || layout === 'open history' ? 'docked' : layout;
+    if (mode === 'bubble') await page.emulateMedia({ reducedMotion: 'reduce' });
+    const { view, publish, calls } = await project(page, learningEvents, {
+      started: true,
+      explanationBoard: true,
+    });
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    await useAssistantMode(page, mode);
+    view.state.position.stageIndex = 6;
+    view.role = 'mentor';
+    view.stage = {
+      kind: 'mentor_say',
+      agent: 'mentor',
+      say: 'Recap',
+      reads: [],
+      studentActions: [],
+    };
+    view.actions = [];
+    view.conversation = [
+      {
+        id: 'closing-recap',
+        speaker: 'mentor',
+        currentStage: true,
+        status: 'running',
+        parts: [
+          { kind: 'text', id: 'reflection', text: 'You tested your greeting.', streaming: true },
+        ],
+      },
+    ];
+    view.busy = true;
+    view.revision++;
+    await publish();
+    const turn = view.conversation[0]!;
+    if (layout === 'scrolled dock') {
+      view.conversation.unshift({
+        id: 'previous-reply',
+        speaker: 'discussion',
+        status: 'succeeded',
+        parts: [{ kind: 'text', id: 'earlier-text', text: readingParagraphs() }],
+      });
+      view.revision++;
+      await publish();
+      await readPassage(page, 60);
+    }
+    if (layout === 'open history') {
+      view.conversationHistory = [{ sessionId: 'discussion', role: 'discussion', through: 8 }];
+      await page.route('**/api/pbl/v3/history?**', (route) =>
+        route.fulfill({ json: { through: 8, nextBefore: null, conversation: [] } }),
+      );
+      view.revision++;
+      await publish();
+      await page.getByRole('button', { name: 'Conversation history' }).click();
+      await expect(page.getByRole('dialog', { name: 'Conversation history' })).toBeVisible();
+    }
+    const dialog = page.locator('[data-pbl-completion-dialog]');
+    const header = page.locator('[data-pbl-tour="report"]');
+    const chat = page.locator('.pbl-conversation-scroll [data-pbl-report-handoff]');
+    await expect(dialog).toHaveCount(0);
+    view.state.status = 'completed';
+    view.reportAvailable = true;
+    view.revision++;
+    await publish();
+    await expect(header).toBeDisabled();
+    await expect(dialog).toHaveCount(0);
+
+    turn.parts = [
+      { kind: 'text', id: 'reflection', text: 'You tested your greeting.' },
+      {
+        kind: 'tool',
+        id: 'finish',
+        action: 'complete',
+        status: 'succeeded',
+        projectCompleted: true,
+      },
+    ];
+    turn.status = 'succeeded';
+    view.busy = false;
+    view.revision++;
+    await publish();
+    if (layout === 'open history') {
+      await expect(chat).toBeAttached();
+      const history = page.getByRole('dialog', { name: 'Conversation history' });
+      await expect(dialog).toHaveCount(0);
+      await page.keyboard.press('Tab');
+      await expect
+        .poll(() => history.evaluate((el) => el.contains(document.activeElement)))
+        .toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(history).toHaveCount(0);
+    }
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+    await expect(dialog.getByRole('button', { name: /report/i })).toBeFocused();
+    expect(calls.some((call) => call.includes('/report'))).toBe(false);
+    if (mode === 'window')
+      await page.screenshot({ path: testInfo.outputPath('completion-dialog.png') });
+    if (mode === 'window')
+      await dialog.getByRole('button', { name: 'Stay in the workbench' }).click();
+    else await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    const target = mode === 'bubble' || layout === 'scrolled dock' ? header : chat;
+    await expect(target).toBeFocused();
+    if (mode === 'window')
+      await page.screenshot({ path: testInfo.outputPath('returned-to-report.png') });
+    view.revision++;
+    await publish();
+    await expect(target).toBeFocused();
+    await expect(dialog).toHaveCount(0);
+    if (mode === 'bubble') {
+      await page.reload();
+      await page.getByTestId('pbl-v3-entry').getByRole('button').first().click();
+      await expect(header).toBeEnabled();
+      await expect(dialog).toHaveCount(0);
+    }
+  });
+}
+
 async function expectGuideTarget(page: Page, step: string, selector: string) {
   await expect(page.getByTestId('workspace-tour')).toHaveAttribute('data-step', step);
   const target = page.locator(selector);

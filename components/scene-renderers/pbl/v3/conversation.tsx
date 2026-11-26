@@ -139,6 +139,7 @@ function AgentTurn({
                     tool.projectCompleted,
                 ) && (
                   <button
+                    data-pbl-report-handoff
                     className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500"
                     onClick={onOpenReport}
                   >
@@ -236,11 +237,13 @@ export function LearningConversation({
   waitingToStart = false,
   onOpenFile,
   onOpenReport,
+  onHistoryOpenChange,
   onOpenTask,
   overview,
 }: {
   view: LearningView;
   onOpenReport?: () => void;
+  onHistoryOpenChange?: (open: boolean) => void;
   onOpenFile?: (reference: FileReference) => void;
   onOpenTask?: () => void;
   overview?: ReactNode;
@@ -307,6 +310,7 @@ export function LearningConversation({
     >
       <ConversationHistory
         id={view.id}
+        onOpenChange={onHistoryOpenChange}
         sources={view.conversationHistory ?? []}
         milestones={view.milestones}
         renderEntry={(entry, dismiss) => (

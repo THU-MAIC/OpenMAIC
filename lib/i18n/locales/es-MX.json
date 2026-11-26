@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "Restore learning environment",
     "retryOpening": "Retry step opening",
+    "completion": {
+      "title": "¡Felicidades, terminaste el proyecto!",
+      "description": "Revisa tus decisiones y lo que creaste en tu informe de aprendizaje.",
+      "openReport": "Ver informe de aprendizaje",
+      "stay": "Seguir en el espacio de trabajo"
+    },
     "reportCopy": {
       "waitFinal": "Wait for the final teaching response to finish before preparing the report.",
       "generating": "Preparing your project report…",

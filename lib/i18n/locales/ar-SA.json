@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "Restore learning environment",
     "retryOpening": "Retry step opening",
+    "completion": {
+      "title": "تهانينا، لقد أكملت المشروع!",
+      "description": "راجع القرارات التي اتخذتها وما أنجزته في تقرير التعلّم.",
+      "openReport": "عرض تقرير التعلّم",
+      "stay": "البقاء في مساحة العمل"
+    },
     "reportCopy": {
       "waitFinal": "Wait for the final teaching response to finish before preparing the report.",
       "generating": "Preparing your project report…",

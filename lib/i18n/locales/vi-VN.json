@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "Restore learning environment",
     "retryOpening": "Retry step opening",
+    "completion": {
+      "title": "Chúc mừng bạn đã hoàn thành dự án!",
+      "description": "Xem lại những quyết định và sản phẩm của bạn trong báo cáo học tập.",
+      "openReport": "Xem báo cáo học tập",
+      "stay": "Ở lại không gian làm việc"
+    },
     "reportCopy": {
       "waitFinal": "Wait for the final teaching response to finish before preparing the report.",
       "generating": "Preparing your project report…",
