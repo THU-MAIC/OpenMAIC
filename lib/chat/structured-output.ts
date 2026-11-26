@@ -18,10 +18,7 @@ const log = createLogger('StructuredOutput');
 /**
  * Parser state for incremental JSON Array parsing.
  *
- * Accumulates raw text from the LLM stream. Once the opening `[` is found,
- * uses `partial-json` to incrementally parse the growing array. Emits new
- * complete items as they appear, and streams partial text content deltas
- * for the last (potentially incomplete) text item.
+ * Tracks completed array items and the text already streamed from the current item.
  */
 interface ParserState {
   /** Accumulated raw text from the LLM */
@@ -60,181 +57,191 @@ export interface ParseResult {
   ordered: Array<{ type: 'text'; index: number } | { type: 'action'; index: number }>;
 }
 
-/**
- * Emit a single parsed item into the result, returning updated segment indices.
- */
-function emitItem(
-  item: Record<string, unknown>,
-  result: ParseResult,
-  textSegmentIndex: number,
-  actionSegmentIndex: number,
-): { textSegmentIndex: number; actionSegmentIndex: number } {
-  if (item.type === 'text') {
-    const content = (item.content as string) || '';
-    if (content) {
-      result.textChunks.push(content);
-      // Use per-call array index (not cumulative segment index) so that
-      // consumers can read result.textChunks[entry.index] correctly.
-      result.ordered.push({
-        type: 'text',
-        index: result.textChunks.length - 1,
-      });
-      return { textSegmentIndex: textSegmentIndex + 1, actionSegmentIndex };
-    }
-  } else if (item.type === 'action') {
-    // Support both new format (name/params) and legacy format (tool_name/parameters)
-    const action: ParsedAction = {
-      actionId:
-        (item.action_id as string) || `action-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      actionName: (item.name || item.tool_name) as string,
-      params: (item.params || item.parameters || {}) as Record<string, unknown>,
-    };
-    result.actions.push(action);
-    // Use per-call array index (not cumulative segment index) so that
-    // consumers can read result.actions[entry.index] correctly.
-    result.ordered.push({ type: 'action', index: result.actions.length - 1 });
-    return { textSegmentIndex, actionSegmentIndex: actionSegmentIndex + 1 };
-  }
-  return { textSegmentIndex, actionSegmentIndex };
+function pushText(result: ParseResult, content: string) {
+  if (!content) return;
+  result.textChunks.push(content);
+  result.ordered.push({ type: 'text', index: result.textChunks.length - 1 });
 }
 
-/**
- * Parse streaming chunks of structured JSON Array output.
- *
- * The LLM is expected to produce a JSON array like:
- * [{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},
- *  {"type":"text","content":"Hello students..."},...]
- *
- * This parser:
- * 1. Accumulates chunks into a buffer
- * 2. Skips any prefix before `[` (e.g. ```json\n, explanatory text)
- * 3. Uses partial-json to incrementally parse the growing array
- * 4. Emits new complete items (action→toolCall, text→textChunk)
- * 5. For the trailing incomplete text item, emits content deltas for streaming
- * 6. Marks done when the buffer contains the closing `]`
- *
- * @param chunk - New chunk of text to parse
- * @param state - Current parser state (mutated in place)
- * @returns Parsed text chunks and tool calls from this chunk
- */
-export function parseStructuredChunk(chunk: string, state: ParserState): ParseResult {
-  const result: ParseResult = {
-    textChunks: [],
-    actions: [],
-    isDone: false,
-    ordered: [],
-  };
+const STRUCTURED_ITEM_OPENINGS = ['[{"type":"text"', '[{"type":"action"'];
 
-  if (state.isDone) {
-    return result;
-  }
+function findArrayStart(buffer: string, allowIncompleteType = false): number {
+  const leading = /^\s*(?:```(?:json)?\s*)?\[\s*(?=[{\]])/i.exec(buffer);
+  if (leading) return leading[0].indexOf('[');
 
-  state.buffer += chunk;
-
-  // Step 1: Find the opening `[` if not yet found
-  if (!state.jsonStarted) {
-    const bracketIndex = state.buffer.indexOf('[');
-    if (bracketIndex === -1) {
-      return result;
-    }
-    // Trim everything before `[` (markdown fences, explanatory text, etc.)
-    state.buffer = state.buffer.slice(bracketIndex);
-    state.jsonStarted = true;
-  }
-
-  // Step 2: Check if the array is complete (closing `]` found)
-  const trimmed = state.buffer.trimEnd();
-  const isArrayClosed = trimmed.endsWith(']') && trimmed.length > 1;
-
-  // Step 3: Try incremental parse — jsonrepair first (fixes unescaped quotes), fallback to partial-json
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- partial-json returns any[]
-  let parsed: any[];
-  try {
-    const repaired = jsonrepair(state.buffer);
-    parsed = JSON.parse(repaired);
-  } catch {
-    try {
-      parsed = parsePartialJson(
-        state.buffer,
-        Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
-      );
-    } catch {
-      return result;
-    }
-  }
-
-  if (!Array.isArray(parsed)) {
-    return result;
-  }
-
-  // Step 4: Determine how many items are fully complete
-  // When the array is closed, all items are complete.
-  // When still streaming, items [0..N-2] are complete; item [N-1] may be partial.
-  const completeUpTo = isArrayClosed ? parsed.length : Math.max(0, parsed.length - 1);
-
-  // Count segment indices for items already emitted
-  let textSegmentIndex = 0;
-  let actionSegmentIndex = 0;
-  for (let i = 0; i < state.lastParsedItemCount && i < parsed.length; i++) {
-    const item = parsed[i];
-    if (item?.type === 'text') textSegmentIndex++;
-    else if (item?.type === 'action') actionSegmentIndex++;
-  }
-
-  // Step 5: Emit newly completed items
-  for (let i = state.lastParsedItemCount; i < completeUpTo; i++) {
-    const item = parsed[i];
-    if (!item || typeof item !== 'object') continue;
-
-    // If this item was previously the trailing partial text item, we've already
-    // streamed its content incrementally. Only emit the remaining delta, not the full content.
-    if (
-      i === state.lastParsedItemCount &&
-      state.lastPartialTextLength > 0 &&
-      item.type === 'text'
-    ) {
-      const content = item.content || '';
-      const remaining = content.slice(state.lastPartialTextLength);
-      if (remaining) {
-        result.textChunks.push(remaining);
-        // Only push ordered entry when there is actual content to emit
-        result.ordered.push({
-          type: 'text',
-          index: result.textChunks.length - 1,
-        });
+  // With an explanatory prefix, require a classroom item so bracketed prose
+  // and unrelated array examples stay on the plain-text path.
+  const openings = /\[\s*(?=\{)/g;
+  for (let opening = openings.exec(buffer); opening; opening = openings.exec(buffer)) {
+    if (allowIncompleteType) {
+      // At EOF only, a tail that stops before the type value is complete
+      // (`[{`, `[{"ty`, `[{"type":`) is an unfinished classroom item.
+      const tail = buffer.slice(opening.index).replace(/\s+/g, '');
+      if (STRUCTURED_ITEM_OPENINGS.some((itemOpening) => itemOpening.startsWith(tail))) {
+        return opening.index;
       }
-      textSegmentIndex++;
-      state.lastPartialTextLength = 0;
+    }
+    try {
+      const items = parsePartialJson(buffer.slice(opening.index), Allow.ARR | Allow.OBJ);
+      if (
+        items.some(
+          (item: { type?: string } | null) => item?.type === 'text' || item?.type === 'action',
+        )
+      ) {
+        return opening.index;
+      }
+      if (allowIncompleteType) {
+        // At EOF only, recognize a type string that was omitted above because
+        // it is unfinished. Complete unrelated type values remain plain prose.
+        const partialItems = parsePartialJson(
+          buffer.slice(opening.index),
+          Allow.ARR | Allow.OBJ | Allow.STR,
+        );
+        if (
+          partialItems.some(
+            (item: { type?: string } | null, index: number) =>
+              typeof item?.type === 'string' &&
+              items[index]?.type === undefined &&
+              ('text'.startsWith(item.type) || 'action'.startsWith(item.type)),
+          )
+        ) {
+          return opening.index;
+        }
+      }
+    } catch {
+      // The discriminator may still be arriving.
+    }
+  }
+  return -1;
+}
+
+function scanArray(buffer: string): { items: string[]; trailing: string; closed: boolean } {
+  const items: string[] = [];
+  let start = 1;
+  let depth = 1;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < buffer.length; index++) {
+    const char = buffer[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === '\\') escaped = true;
+      else if (char === '"') inString = false;
       continue;
     }
 
-    const indices = emitItem(item, result, textSegmentIndex, actionSegmentIndex);
-    textSegmentIndex = indices.textSegmentIndex;
-    actionSegmentIndex = indices.actionSegmentIndex;
-  }
-
-  state.lastParsedItemCount = completeUpTo;
-
-  // Step 6: Stream partial text delta for the trailing item
-  if (!isArrayClosed && parsed.length > completeUpTo) {
-    const lastItem = parsed[parsed.length - 1];
-    if (lastItem && typeof lastItem === 'object' && lastItem.type === 'text') {
-      const content = lastItem.content || '';
-      if (content.length > state.lastPartialTextLength) {
-        result.textChunks.push(content.slice(state.lastPartialTextLength));
-        state.lastPartialTextLength = content.length;
-      }
+    if (depth === 1 && (char === ',' || char === ']')) {
+      const item = buffer.slice(start, index).trim();
+      if (item) items.push(item);
+      if (char === ']') return { items, trailing: '', closed: true };
+      start = index + 1;
+    } else if (char === '"') {
+      inString = true;
+    } else if (char === '[' || char === '{') {
+      depth++;
+    } else if (char === ']' || char === '}') {
+      depth--;
     }
   }
 
-  // Step 7: Mark done if array is closed
-  if (isArrayClosed) {
-    state.isDone = true;
-    result.isDone = true;
-    state.lastParsedItemCount = parsed.length;
-    state.lastPartialTextLength = 0;
+  return { items, trailing: buffer.slice(start).trimStart(), closed: false };
+}
+
+function parseCompleteItem(raw: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(raw) as Record<string, unknown> | null;
+  } catch {
+    try {
+      // Recover speech with unescaped quotes without creating an action.
+      const repaired = JSON.parse(jsonrepair(raw)) as Record<string, unknown> | null;
+      return repaired?.type === 'text' ? repaired : null;
+    } catch {
+      try {
+        // A false boundary inside malformed speech can leave an unrepaired
+        // fragment. Preserve only its readable text prefix, never an action.
+        const partial = parsePartialJson(
+          raw,
+          Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
+        );
+        return partial?.type === 'text' ? partial : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+}
+
+function repairPendingTextArray(trailing: string): string | null {
+  const raw = `[${trailing.replace(/\s*```\s*$/, '').trimEnd()}`;
+  if (!raw.endsWith(']')) return null;
+
+  try {
+    const repaired = jsonrepair(raw);
+    const { items, closed } = scanArray(repaired);
+    const first = items[0];
+    if (!closed || !first || JSON.parse(first)?.type !== 'text') return null;
+
+    // Allow quote escapes in the pending text item only. The rest of the
+    // array must already be present verbatim, including any action delimiters.
+    const suffix = repaired.slice(1 + first.length);
+    if (!raw.endsWith(suffix)) return null;
+    const original = raw.slice(1, raw.length - suffix.length);
+    return original.replaceAll(/\\"/g, '"') === first.replaceAll(/\\"/g, '"') ? repaired : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stream text deltas and emit complete items in their original order. */
+export function parseStructuredChunk(chunk: string, state: ParserState): ParseResult {
+  const result: ParseResult = { textChunks: [], actions: [], isDone: false, ordered: [] };
+  if (state.isDone) return result;
+
+  state.buffer += chunk;
+  if (!state.jsonStarted) {
+    const start = findArrayStart(state.buffer);
+    if (start === -1) return result;
+    state.buffer = state.buffer.slice(start);
+    state.jsonStarted = true;
   }
 
+  const { items, trailing, closed } = scanArray(state.buffer);
+  for (let index = state.lastParsedItemCount; index < items.length; index++) {
+    const item = parseCompleteItem(items[index]);
+    if (item?.type === 'text' && typeof item.content === 'string') {
+      pushText(result, item.content.slice(state.lastPartialTextLength));
+    } else if (item?.type === 'action') {
+      result.actions.push({
+        actionId:
+          (item.action_id as string) ||
+          `action-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        actionName: (item.name || item.tool_name) as string,
+        params: (item.params || item.parameters || {}) as Record<string, unknown>,
+      });
+      result.ordered.push({ type: 'action', index: result.actions.length - 1 });
+    }
+    state.lastPartialTextLength = 0;
+  }
+  state.lastParsedItemCount = items.length;
+
+  if (!closed && trailing) {
+    try {
+      const item = parsePartialJson(
+        trailing,
+        Allow.ARR | Allow.OBJ | Allow.STR | Allow.NUM | Allow.BOOL | Allow.NULL,
+      );
+      if (item?.type === 'text' && typeof item.content === 'string') {
+        pushText(result, item.content.slice(state.lastPartialTextLength));
+        state.lastPartialTextLength = Math.max(state.lastPartialTextLength, item.content.length);
+      }
+    } catch {
+      // A partial escape or property may need more input.
+    }
+  }
+
+  state.isDone = closed;
+  result.isDone = closed;
   return result;
 }
 
@@ -339,7 +346,7 @@ export function finalizeParser(state: ParserState): ParseResult {
     if (structured.matched) {
       // Bare `{type:'text'}` (or array of them) → show content; action/unknown → suppress.
       structured.texts.forEach(pushText);
-    } else if (!looksLikeStructuredFragment(content)) {
+    } else if (!looksLikeStructuredFragment(content) && findArrayStart(content, true) === -1) {
       // Genuine plain prose — display it.
       pushText(content);
     } else {
@@ -354,7 +361,10 @@ export function finalizeParser(state: ParserState): ParseResult {
     // parser can still recover. Intentionally NO raw-buffer fallback:
     // suppressing a truncated structured tail is safer than leaking
     // `{"type":"text",...` as visible speech.
-    const finalChunk = parseStructuredChunk('', state);
+    const repaired = repairPendingTextArray(scanArray(state.buffer).trailing);
+    const finalChunk = repaired
+      ? parseStructuredChunk(repaired, { ...state, buffer: '', lastParsedItemCount: 0 })
+      : parseStructuredChunk('', state);
     result.textChunks.push(...finalChunk.textChunks);
     result.actions.push(...finalChunk.actions);
     result.ordered.push(...finalChunk.ordered);
