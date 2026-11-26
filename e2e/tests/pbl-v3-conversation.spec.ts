@@ -778,7 +778,7 @@ test('PBL conversation stays in the host classroom through expansion, scene navi
   await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
   await expect(enterDecisions).toBeVisible();
   await expect(page.getByTestId('pbl-completion-handoff')).toHaveText(
-    'This step is ready. Choose “Continue to Make your decisions” when you are ready to move on.',
+    'This step is ready. The “Continue to Make your decisions” button is now available.',
   );
   await expect(enterDecisions).toHaveAttribute('data-state', 'ready');
   await expect(enterDecisions).toBeEnabled();

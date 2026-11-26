@@ -19,12 +19,14 @@ export const guidedSkillStateSchema = z
     protocolDigest: z.string(),
     activeFile: z.string(),
     reviewedFiles: z.array(z.string()).max(16),
+    advancedRunId: z.string().optional(),
     pending: receiptSchema.optional(),
     handoff: z
       .object({
         runId: z.string(),
         question: z.string().min(1),
         kind: z.literal('support').optional(),
+        spokenAt: z.number().optional(),
       })
       .optional(),
     welcome: z.enum(['pending', 'ready']).optional(),
@@ -59,7 +61,9 @@ export class GuidedSkillReview {
   private stageKey = '';
   private messages: readonly StudentMessage[] = [];
   private eligible = false;
-  private advanced = false;
+  private get advanced(): boolean {
+    return !!this.runId && this.state.advancedRunId === this.runId;
+  }
   private ended = false;
 
   constructor(
@@ -97,7 +101,14 @@ export class GuidedSkillReview {
     this.messages = messages;
     this.runId = `${stageKey}:${turnSequence}`;
     this.eligible = eligible;
-    this.advanced = false;
+    // A lease takeover continues the same learner turn. Older records can also
+    // prove that this turn advanced by the feedback used for its coverage.
+    if (
+      !this.state.advancedRunId &&
+      this.state.coverage?.stageKey === stageKey &&
+      this.state.coverage.studentSeq === turnSequence
+    )
+      this.state.advancedRunId = this.runId;
     // A retry is still the same student turn, not permission to revise their review.
     this.ended =
       this.state.pending?.runId === this.runId || this.state.handoff?.runId === this.runId;
@@ -107,34 +118,36 @@ export class GuidedSkillReview {
   /** Keep local protocol flags aligned with a tool's committed database result. */
   async withRollback<T>(work: () => Promise<T>): Promise<T> {
     const state = structuredClone(this.state),
-      advanced = this.advanced,
       ended = this.ended;
     try {
       return await work();
     } catch (error) {
       this.state = state;
-      this.advanced = advanced;
       this.ended = ended;
       throw error;
     }
   }
 
   /** A blocked build can return control without creating review/approval evidence. */
-  handoff(question: string): void {
+  handoff(question: string, spokenAt?: number): void {
     if (!question.trim()) throw new Error('A concrete learner question is required.');
     this.assertWritable();
     delete this.state.pending;
     delete this.state.coverage;
-    this.state.handoff = { runId: this.runId, question };
+    this.state.handoff = { runId: this.runId, question, spokenAt };
     this.finishRun();
   }
 
+  canSupport(): boolean {
+    return !this.ended && !this.advanced;
+  }
+
   /** Answer a help-only turn without replacing a pending review or creating learner evidence. */
-  support(response: string): void {
+  support(response: string, spokenAt?: number): void {
     if (!response.trim()) throw new Error('A learner-facing response is required.');
-    if (this.ended || this.advanced)
+    if (!this.canSupport())
       throw new Error('Answer assistance before opening/advancing a section and end this turn.');
-    this.state.handoff = { runId: this.runId, question: response, kind: 'support' };
+    this.state.handoff = { runId: this.runId, question: response, kind: 'support', spokenAt };
     this.finishRun();
   }
 
@@ -232,7 +245,7 @@ export class GuidedSkillReview {
     this.state.welcome = 'ready';
     delete this.state.pending;
     delete this.state.coverage; // Readiness is not evidence of conceptual understanding.
-    this.advanced = true;
+    this.state.advancedRunId = this.runId;
   }
 
   advance(
@@ -268,7 +281,7 @@ export class GuidedSkillReview {
     }
     this.state.activeFile = file;
     delete this.state.pending;
-    this.advanced = true;
+    this.state.advancedRunId = this.runId;
   }
 
   checkpoint(

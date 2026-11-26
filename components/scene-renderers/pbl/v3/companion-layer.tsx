@@ -8,7 +8,7 @@ import {
   type NarrationProgress,
   type NarrationTarget,
 } from '@/lib/pbl/v3/narration';
-import { continueActionLabel } from '@/lib/pbl/v3/presentation';
+import { continueActionLabel, stageCompletionCopy } from '@/lib/pbl/v3/presentation';
 import type { LearningView } from '@/lib/pbl/v3/types';
 import { Companion } from './companion';
 import { ExplainBoard } from './explain-board';
@@ -27,6 +27,7 @@ export type AssistantMode = 'closed' | 'window' | 'docked';
  */
 export function CompanionLayer({
   view,
+  acceptedRetry,
   board,
   boardOpen,
   onBoard,
@@ -52,6 +53,7 @@ export function CompanionLayer({
   command,
 }: {
   view: LearningView;
+  acceptedRetry: string;
   board: NonNullable<LearningView['explainBoard']>;
   /** The whiteboard window is in view. */
   boardOpen: boolean;
@@ -97,20 +99,18 @@ export function CompanionLayer({
   const testStage = view.stage.kind === 'check' && view.stage.checker === 'tests';
   const opening = pendingAction === 'begin' || (blockedReason === 'opening' && !view.roleRun);
   const role = view.role ?? 'mentor';
+  const completion = stageCompletionCopy(view, t, disabled);
   return (
     <Narrated
       conversation={conversation}
-      stageKey={stageKey}
+      // An accepted learner retry reopens a stopped input. A background takeover does not.
+      stageKey={`${stageKey}:${acceptedRetry}`}
       onBoard={onBoard}
       onPoint={onPoint}
       onTold={onTold}
-      nextInstruction={
-        'studentActions' in view.stage &&
-        view.stage.studentActions.includes('next') &&
-        !view.evaluation
-          ? t('pblV3.journey.ready', { action: continueActionLabel(view, t) })
-          : undefined
-      }
+      nextActionLabel={completion.afterMention?.label}
+      completionConfirmation={completion.confirmation}
+      nextInstruction={completion.instruction}
     >
       {(narration) => (
         <>
@@ -160,7 +160,7 @@ export function CompanionLayer({
                         ? { id: stageKey, text: t('pblV3.pendingActions.begin') }
                         : undefined)
                     }
-                    learner={learnerTurn(conversation, pendingMessage)}
+                    learner={learnerTurn(conversation, pendingMessage, !!narration.speech)}
                     tools={narration.tools}
                     playing={narration.playing}
                     paused={narration.paused}

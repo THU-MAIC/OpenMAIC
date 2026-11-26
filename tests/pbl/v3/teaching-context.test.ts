@@ -96,6 +96,20 @@ describe('teaching stage handoff', () => {
     expect(currentTeachingContext(context, { ...window, studentTurns: 3 })).toBe(context);
   });
 
+  it('quotes the current spoken source for registration and only quotes history after a file operation', () => {
+    const initial = 'Open the project files.';
+    const detail = 'Read the selected return value.';
+    const source = { ...window, deliveredReply: initial, spokenReview: true };
+    const context = { messages: [reflection] };
+    const live = currentTeachingContext(context, { ...source, recoverySpeech: [initial, detail] });
+    expect(requestStateTail(live)).toContain(JSON.stringify(initial + '\n\n' + detail));
+    expect(requestStateTail(live)).toContain('remainingSpeech');
+    expect(requestStateTail(live)).toContain(JSON.stringify(reflection.content));
+    const afterRead = requestStateTail(currentTeachingContext(context, source));
+    expect(afterRead).toContain(JSON.stringify(initial));
+    expect(afterRead).not.toContain('remainingSpeech');
+  });
+
   it.each([true, false])(
     'retains already delivered prose as recovery data, not learner feedback (history: %s)',
     (history) => {

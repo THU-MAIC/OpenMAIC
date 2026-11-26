@@ -1269,7 +1269,9 @@ export async function learningView(
   const canonicalPending =
     !!pendingReview &&
     (('displayText' in pendingReview && !!pendingReview.displayText) ||
-      ('kind' in pendingReview && pendingReview.kind === 'support'));
+      ('kind' in pendingReview &&
+        pendingReview.kind === 'support' &&
+        pendingReview.spokenAt === undefined));
   if (pendingReview?.runId === `${stageKey(row)}:${latestUserSeq ?? 0}` && !currentQuestionShown) {
     messages.push({
       role: 'assistant',

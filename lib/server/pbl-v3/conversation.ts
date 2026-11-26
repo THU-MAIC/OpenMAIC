@@ -7,7 +7,12 @@ import type {
   LearningBoardDisplay,
 } from '@/lib/pbl/v3/conversation';
 import { deduplicateHandoffs } from '@/lib/pbl/v3/conversation';
-import { LEARNER_HANDOFF_EVENT, reviewQuestions } from './review-question';
+import {
+  LEARNER_HANDOFF_EVENT,
+  RETAINED_REVIEW,
+  REVIEW_SOURCE_AT,
+  reviewQuestions,
+} from './review-question';
 import { CONVERSATION_BYTES } from './conversation-history';
 import {
   executionFailureCode,
@@ -345,8 +350,13 @@ export function projectConversation(
         if (part.kind === 'text' && typeof message.timestamp === 'number')
           part.spokenAt = message.timestamp;
         if (part.kind === 'text' && index === closingIndex && reviewStop) part.reviewStop = true;
-        if (part.kind === 'text' && index === closingIndex && typeof reviewCall?.id === 'string')
-          part.reviewReceiptId = `question-${event.attempt}-${reviewCall.id}`;
+        if (part.kind === 'text' && typeof reviewCall?.id === 'string') {
+          const receiptId = `question-${event.attempt}-${reviewCall.id}`;
+          if (index === closingIndex) part.reviewReceiptId = receiptId;
+          if (message[RETAINED_REVIEW] === true)
+            part.supplementsReview =
+              typeof message[REVIEW_SOURCE_AT] === 'number' ? message[REVIEW_SOURCE_AT] : receiptId;
+        }
         part.text = text;
         part.streaming =
           event.type !== 'message_end' && (part.kind !== 'thinking' || part.endedAt === undefined);
@@ -436,6 +446,7 @@ export function projectConversation(
       e.boundary ||
       e.omitted ||
       e.parts.length ||
+      e.restingHandoff ||
       // Empty failures belong in the run banner, not in fabricated replies.
       // Retain partial replies, active waiters and cancellation history.
       e.status === 'running' ||
@@ -483,6 +494,14 @@ export function boundConversation(
 ) {
   let remaining = budget;
   for (const entry of entries.toReversed()) {
+    if (entry.restingHandoff) {
+      const size = Buffer.byteLength(JSON.stringify(entry.restingHandoff));
+      if (size <= remaining) remaining -= size;
+      else {
+        entry.omitted = true;
+        delete entry.restingHandoff;
+      }
+    }
     const kept: Part[] = [];
     for (const part of entry.parts.toReversed()) {
       const size = Buffer.byteLength(JSON.stringify(part));

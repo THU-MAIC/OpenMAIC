@@ -1,5 +1,10 @@
 import { fromMarkdown } from 'mdast-util-from-markdown';
-import type { LearningBoardDisplay, LearningConversationEntry } from './conversation';
+import {
+  conversationScope,
+  newLegacyDirections,
+  type LearningBoardDisplay,
+  type LearningConversationEntry,
+} from './conversation';
 import { parseFileReference } from './file-reference';
 
 type Part = LearningConversationEntry['parts'][number];
@@ -17,6 +22,10 @@ export type NarrationStep = { id: string; part: number } & (
   | {
       kind: 'say';
       text: string;
+      /** Preserve code spans and link boundaries when comparing a legacy receipt. */
+      markdown?: string;
+      /** The reply acceptance and the optional button instruction can become ready separately. */
+      acknowledgement?: { id: string; text: string; instruction?: string };
       streaming: boolean;
       /** A paragraph of a multi-location explanation, within the original Markdown part. */
       passage?: { from: number; to: number; point: Point | null };
@@ -39,6 +48,11 @@ export type NarrationStep = { id: string; part: number } & (
   | { kind: 'tool'; tool: ToolPart }
 );
 
+/** Attempts can change while the learner is still hearing the same reply. */
+export function narrationTurn(entry: LearningConversationEntry) {
+  return entry.inputId === undefined ? entry.id : `${conversationScope(entry)}:${entry.inputId}`;
+}
+
 /** Speech reads plain words: links keep their label, emphasis and code marks go. */
 export function spokenText(text: string, streaming = false) {
   // The playback buffer only appends. Consume complete links first and withhold a
@@ -51,6 +65,24 @@ export function spokenText(text: string, streaming = false) {
     .replace(/[*_`#>]+/g, '')
     .replace(/[ \t]+/g, ' ')
     .trim();
+}
+
+/** A legacy receipt can republish speech after it was voiced, then append a new direction. */
+export function unspokenReceipt(text: string, delivered: Iterable<string>) {
+  let rest = text;
+  for (const previous of delivered) {
+    if (rest === previous) return '';
+    if (!previous) continue;
+    if (!rest.startsWith(previous)) {
+      // The old answer and formal receipt can share one complete sentence and then diverge.
+      rest = newLegacyDirections(previous, rest);
+      continue;
+    }
+    const suffix = rest.slice(previous.length);
+    // A longer number, filename or unfinished word is a different statement.
+    if (/^\s/u.test(suffix) || /[。！？]$/u.test(previous)) rest = suffix.trimStart();
+  }
+  return rest;
 }
 
 type MarkdownBlock = ReturnType<typeof fromMarkdown>['children'][number];
@@ -93,12 +125,42 @@ function isSpokenReceipt(part: Extract<Part, { kind: 'text' }>) {
   return part.spokenAt !== undefined && part.id.startsWith('question-');
 }
 
+/** The confirmed tool owns one instruction in both the spoken turn and its transcript. */
+export function completionHandoff(
+  entry: LearningConversationEntry,
+  instruction?: string,
+  afterMention?: { label: string; confirmation: string },
+) {
+  if (!instruction) return;
+  const index = entry.parts.findIndex(
+    (part) =>
+      part.kind === 'tool' &&
+      part.action === 'complete' &&
+      part.status === 'succeeded' &&
+      part.readyForStudentConfirmation &&
+      !part.projectCompleted,
+  );
+  if (index < 0) return;
+  const mentioned =
+    afterMention?.label &&
+    entry.parts
+      .slice(0, index)
+      .some(
+        (part) =>
+          part.kind === 'text' &&
+          !isSpokenReceipt(part) &&
+          spokenText(part.text, part.streaming).includes(afterMention.label),
+      );
+  return { part: index, text: mentioned ? afterMention.confirmation : instruction };
+}
+
 /** The stream parts of one reply as steps; thinking is never told. */
 export function narrationSteps(
   entry: LearningConversationEntry,
   nextInstruction?: string,
+  afterMention?: { label: string; confirmation: string },
 ): NarrationStep[] {
-  let announcedCompletion = false;
+  const handoff = completionHandoff(entry, nextInstruction, afterMention);
   let pendingPoints: PointStep[] = [];
   let explanationPoints: PointStep[] = [];
   // Later cues should not flash past the first location before its explanation starts.
@@ -119,7 +181,7 @@ export function narrationSteps(
         pendingPoints = [];
       }
       if (explanationPoints.length < 2)
-        return [{ ...at, kind: 'say', text, streaming: !!part.streaming }];
+        return [{ ...at, kind: 'say', text, markdown: part.text, streaming: !!part.streaming }];
 
       // Each paragraph gets its own voice segment. Its target changes at the same playhead
       // as the words, including when muted or paused. Keep the transcript in source coordinates.
@@ -139,6 +201,7 @@ export function narrationSteps(
           id: `${part.id}:passage-${start}`,
           kind: 'say',
           text: words,
+          markdown: part.text.slice(start, end),
           streaming: false,
           passage: {
             from: start / part.text.length,
@@ -183,20 +246,10 @@ export function narrationSteps(
         },
       ];
     const tool: NarrationStep = { ...at, kind: 'tool', tool: part };
-    // The same successful completion that enables the next button owns its instruction.
-    // A failed attempt, a review question and the final project recap have no such handoff.
-    if (
-      nextInstruction &&
-      !announcedCompletion &&
-      part.action === 'complete' &&
-      part.status === 'succeeded' &&
-      part.readyForStudentConfirmation &&
-      !part.projectCompleted
-    ) {
-      announcedCompletion = true;
+    if (handoff?.part === index) {
       return [
         tool,
-        { ...at, kind: 'say', id: part.id + ':continue', text: nextInstruction, streaming: false },
+        { ...at, kind: 'say', id: part.id + ':continue', text: handoff.text, streaming: false },
       ];
     }
     return [tool];
@@ -214,11 +267,17 @@ export function acknowledgeSilentCompletion(steps: NarrationStep[], text: string
   const receipt = steps[index];
   const hint = steps[index + 1];
   const result = steps.slice();
+  const acknowledgement = { id: receipt.id + ':acknowledgement', text };
   if (hint?.kind === 'say' && hint.part === receipt.part) {
-    result[index + 1] = { ...hint, text: text + ' ' + hint.text };
+    result[index + 1] = {
+      ...hint,
+      text: text + ' ' + hint.text,
+      acknowledgement: { ...acknowledgement, instruction: hint.text },
+    };
   } else {
     result.splice(index + 1, 0, {
-      id: receipt.id + ':acknowledgement',
+      id: acknowledgement.id,
+      acknowledgement,
       part: receipt.part,
       kind: 'say',
       text,
@@ -243,17 +302,13 @@ export function pointerAt(steps: readonly NarrationStep[], index: number) {
   return undefined;
 }
 
-/** A successful tool-only retry rests on the original question without queuing speech again. */
+/** Show the settled handoff, including any recovered guidance, without queuing speech again. */
 export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
   if (!entry || (entry.status !== undefined && entry.status !== 'succeeded')) return;
-  const closing = entry.parts.findLast(
-    (part) =>
-      (part.kind === 'text' && part.text.trim()) || (part.kind === 'tool' && part.restingReview),
-  );
+  if (entry.restingHandoff) return { id: entry.id, text: spokenText(entry.restingHandoff) };
+  const closing = entry.parts.findLast((part) => part.kind === 'text' && part.text.trim());
   if (closing?.kind === 'text' && isSpokenReceipt(closing))
     return { id: closing.id, text: spokenText(closing.text) };
-  if (closing?.kind === 'tool' && closing.restingReview)
-    return { id: closing.id, text: spokenText(closing.restingReview) };
 }
 
 /**
@@ -262,7 +317,8 @@ export function recoveredReviewSpeech(entry?: LearningConversationEntry) {
  */
 export function learnerTurn(
   conversation: readonly LearningConversationEntry[],
-  pending?: LearningConversationEntry | null,
+  pending: LearningConversationEntry | null,
+  replyHasSpeech: boolean,
 ) {
   const text = (entry?: LearningConversationEntry | null) =>
     entry?.parts.flatMap((part) => (part.kind === 'text' ? [part.text] : [])).join('\n') ||
@@ -272,9 +328,7 @@ export function learnerTurn(
   const last = turns.at(-1);
   if (last?.speaker === 'user') return text(last);
   const before = turns.at(-2);
-  return last?.status === 'running' &&
-    before?.speaker === 'user' &&
-    !narrationSteps(last).some((step) => step.kind === 'say')
+  return last?.status === 'running' && before?.speaker === 'user' && !replyHasSpeech
     ? text(before)
     : undefined;
 }
@@ -358,6 +412,8 @@ export interface NarrationProgress {
   part: number;
   /** How much of that part's text is out, from 0 to 1. */
   said: number;
+  /** Live draft still playing after a formal receipt replaced it in history. */
+  displaced?: string;
 }
 
 /**
@@ -370,8 +426,21 @@ export function toldConversation(
   told: NarrationProgress | null,
 ): readonly LearningConversationEntry[] {
   if (!told) return conversation;
+  const active = conversation.find((entry) => entry.id === told.id);
+  let afterHead = false;
   return conversation.map((entry) => {
-    if (entry.id !== told.id) return entry;
+    if (entry.id !== told.id) {
+      // A retry can have finished already while its predecessor is still audible.
+      if (
+        afterHead &&
+        active &&
+        entry.speaker !== 'user' &&
+        narrationTurn(entry) === narrationTurn(active)
+      )
+        return { ...entry, parts: [] };
+      return entry;
+    }
+    afterHead = true;
     const parts = entry.parts.slice(0, told.part + 1).map((part, index) =>
       index === told.part && part.kind === 'text'
         ? {
@@ -381,6 +450,8 @@ export function toldConversation(
           }
         : part,
     );
+    if (told.displaced)
+      parts.push({ kind: 'text', id: told.id + ':playing', text: told.displaced, streaming: true });
     return { ...entry, parts };
   });
 }

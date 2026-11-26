@@ -26,6 +26,39 @@ describe('guided review boundaries', () => {
     expect(restored.state.welcome).toBe('pending');
   });
 
+  it.each(['current', 'legacy'])(
+    'keeps a teaching turn in review after takeover (%s)',
+    (format) => {
+      const review = new GuidedSkillReview(protocol);
+      const opening = { seq: 1, text: 'Begin.' };
+      const answer = {
+        seq: 2,
+        text: 'The server routes the reply. Give me the next question and a hint.',
+      };
+      review.beginRun('intro:0', [opening], false);
+      review.advance('A-teach.md', undefined, artifact);
+      review.checkpoint('Who routes the reply?', artifact);
+      review.beginRun('intro:0', [opening, answer], true);
+      review.advance('B-review.md', 'Learner identified the server.', artifact);
+      const saved = structuredClone(review.state);
+      if (format === 'legacy') delete saved.advancedRunId;
+      const resumed = new GuidedSkillReview(protocol, saved);
+      resumed.beginRun('intro:0', [opening, answer], true);
+      expect(resumed.canSupport()).toBe(false);
+      expect(() => resumed.support('Check the Network tab.')).toThrow('before opening/advancing');
+      resumed.checkpoint('Which field changes?', artifact, false, undefined, 20);
+      const next = new GuidedSkillReview(protocol, resumed.state);
+      next.beginRun(
+        'intro:0',
+        [opening, answer, { seq: 3, text: 'Where do I see headers?' }],
+        true,
+      );
+      next.support('Open Headers.');
+      expect(next.state.pending).toMatchObject({ question: 'Which field changes?', spokenAt: 20 });
+      expect(next.state.coverage?.studentSeq).toBe(answer.seq);
+    },
+  );
+
   it('preserves the pending approval during assistance and rolls back a failed support receipt', async () => {
     const review = new GuidedSkillReview(protocol, undefined, false, true);
     review.beginRun('plan:2', [{ seq: 1, text: 'Start' }], false);
