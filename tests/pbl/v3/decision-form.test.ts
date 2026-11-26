@@ -57,8 +57,12 @@ it('keeps the existing immediate-submit choice interaction', async () => {
   await mount({
     id: 'format',
     prompt: 'Choose a format',
+    responseLabel: 'Text answer',
+    rationaleLabel: 'Evidence',
     options: [{ id: 'plain', label: 'Plain text' }],
   });
+  expect(container.textContent).not.toContain('Text answer');
+  expect(container.textContent).not.toContain('Evidence');
   await act(async () => container.querySelector('button')!.click());
   expect(submit).toHaveBeenCalledWith('plain');
   expect(container.querySelector('textarea')).toBeNull();
@@ -69,8 +73,12 @@ it('requires an explanation before submitting an option with rationale', async (
     id: 'format',
     prompt: 'Choose and explain',
     requiresRationale: true,
+    rationaleLabel: 'What makes this format a good fit?',
     options: [{ id: 'plain', label: 'Plain text' }],
   });
+  expect(container.querySelector('textarea')!.labels![0]!.textContent).toBe(
+    'What makes this format a good fit?',
+  );
   const button = () => container.querySelectorAll('button')[1]!;
   await act(async () => container.querySelector('button')!.click());
   expect(submit).not.toHaveBeenCalled();
@@ -79,6 +87,30 @@ it('requires an explanation before submitting an option with rationale', async (
   expect(button().disabled).toBe(false);
   await act(async () => button().click());
   expect(submit).toHaveBeenCalledWith('plain', 'It fits my use case.');
+});
+
+it.each([
+  [undefined, undefined],
+  ['Proposed rule', undefined],
+  [undefined, 'Supporting evidence'],
+  ['Proposed rule', 'Supporting evidence'],
+])('labels each text field independently (%s, %s)', async (responseLabel, rationaleLabel) => {
+  await mount({
+    id: 'rule',
+    prompt: 'How should duplicates be handled?',
+    responseType: 'text',
+    requiresRationale: true,
+    responseLabel,
+    rationaleLabel,
+    options: [],
+  });
+  expect(container.querySelector('legend')!.textContent).toBe('How should duplicates be handled?');
+  expect(
+    [...container.querySelectorAll('textarea')].map((field) => field.labels![0]!.textContent),
+  ).toEqual([
+    responseLabel ?? 'pblV3.decisionResponse',
+    rationaleLabel ?? 'pblV3.decisionRationale',
+  ]);
 });
 
 it('submits learner-authored multiline text and rationale without a prefilled answer', async () => {

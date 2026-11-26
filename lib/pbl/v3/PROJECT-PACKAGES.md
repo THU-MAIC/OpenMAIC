@@ -136,6 +136,31 @@ choice forms then use an explicit Submit decision button. The server validates
 nonempty responses, required rationales and option membership. Saving a response
 records a learner proposal; it does not certify its engineering correctness.
 Teaching materials remain responsible for reviewing reasoning and explaining gaps.
+
+In `project.json`, `decisionPrompt` gives the question for the whole decision.
+Use `responseLabel` to name the answer text area for `responseType: "text"`.
+Use `rationaleLabel` to name the explanation text area for either format when
+`requiresRationale` is true. The following excerpt shows these fields in a
+`definition.decisions[]` entry for a reading list.
+
+```json
+{
+  "decisionPrompt": "How should the reading list handle duplicate titles?",
+  "responseType": "text",
+  "options": [],
+  "requiresRationale": true,
+  "responseLabel": "Rule for duplicate titles",
+  "rationaleLabel": "Why this rule suits your readers"
+}
+```
+
+Each label accepts up to 80 UTF-16 code units after trimming. An omitted,
+blank or invalid label falls back to the interface translation for that field.
+Existing packages keep their translated labels. Older readers that
+support the decision format ignore the optional labels. To update a published
+course, release a new project version and reference it in the classroom.
+Existing studies keep their pinned version.
+
 Each submitted response and rationale is limited to 64,000 UTF-16 code units,
 matching chat input. The command boundary rejects oversized fields before any
 study activity, command receipt or decision event is written; direct domain

@@ -1485,9 +1485,11 @@ export async function learningView(
               id: d.id,
               prompt: d.decisionPrompt,
               ...(d.responseType === undefined ? {} : { responseType: d.responseType }),
+              ...(d.responseLabel && { responseLabel: d.responseLabel }),
               ...(d.requiresRationale === undefined
                 ? {}
                 : { requiresRationale: d.requiresRationale }),
+              ...(d.rationaleLabel && { rationaleLabel: d.rationaleLabel }),
               options: d.options.map((o) => ({ id: o.id, label: o.label })),
             }))
         : [],
