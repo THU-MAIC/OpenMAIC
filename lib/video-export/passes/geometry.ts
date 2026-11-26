@@ -10,12 +10,18 @@
  * with `geometry: null`, marked `degraded`, and an `unresolved-element`
  * diagnostic is recorded so the export report shows what could not be placed.
  *
- * Pure: no IO; reads only the scene's canvas elements.
+ * Pure: no IO; reads only the scene's canvas elements and viewport.
  */
 import type { PPTElement } from '@openmaic/dsl';
 import type { CompilerScene, GeometryProbe } from '../deps';
 import { findElementGeometry, findElementPlacement } from '../geometry';
 import type { Diagnostic, EffectSegment, VideoSegment, VideoTimelineScene } from '../ir';
+
+/** The slide's coordinate space; an absent field falls back to 1000px wide, 16:9. */
+type SlideViewport = { viewportSize?: number; viewportRatio?: number };
+
+const finitePositive = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 
 export interface GeometryResult {
   scenes: VideoTimelineScene[];
@@ -33,9 +39,18 @@ export function resolveEffectGeometry(
   effect: EffectSegment,
   elements: readonly PPTElement[] | undefined,
   measured?: ReturnType<GeometryProbe['contentGeometry']>,
+  viewport: SlideViewport = {},
 ): { effect: EffectSegment; unresolved: boolean } {
   const geometry =
-    measured ?? (elements ? findElementGeometry([...elements], effect.elementId) : null);
+    measured ??
+    (elements
+      ? findElementGeometry(
+          [...elements],
+          effect.elementId,
+          viewport.viewportSize,
+          viewport.viewportRatio,
+        )
+      : null);
   if (geometry) return { effect: { ...effect, geometry, degraded: false }, unresolved: false };
   return { effect: { ...effect, geometry: null, degraded: true }, unresolved: true };
 }
@@ -60,8 +75,16 @@ export function resolveVideoPlacement(
   video: VideoSegment,
   elements: readonly PPTElement[] | undefined,
   measured?: ReturnType<GeometryProbe['contentGeometry']>,
+  viewport: SlideViewport = {},
 ): { video: VideoSegment; unresolved: boolean } {
-  const placement = elements ? findElementPlacement([...elements], video.elementId) : null;
+  const placement = elements
+    ? findElementPlacement(
+        [...elements],
+        video.elementId,
+        viewport.viewportSize,
+        viewport.viewportRatio,
+      )
+    : null;
   const rotate = placement?.rotate ?? 0;
   // The measured AABB is only compatible with a zero rotation; a rotated element
   // must use its authored box so the single downstream `rotate` isn't doubled.
@@ -92,7 +115,12 @@ export function applyGeometry(
     if (scene.effects.length === 0 && scene.videos.length === 0) return scene;
 
     const sourceScene = sourceScenes[index];
-    const elements = sourceScene?.content?.canvas?.elements;
+    const canvas = sourceScene?.content?.canvas;
+    const elements = canvas?.elements;
+    const viewport: SlideViewport = {
+      viewportSize: finitePositive(canvas?.viewportSize),
+      viewportRatio: finitePositive(canvas?.viewportRatio),
+    };
     const measure = (elementId: string) =>
       geometryProbe && sourceScene ? geometryProbe.contentGeometry(elementId, sourceScene) : null;
 
@@ -101,6 +129,7 @@ export function applyGeometry(
         effect,
         elements,
         measure(effect.elementId),
+        viewport,
       );
       if (unresolved) {
         diagnostics.push({
@@ -119,6 +148,7 @@ export function applyGeometry(
         video,
         elements,
         measure(video.elementId),
+        viewport,
       );
       if (unresolved) {
         diagnostics.push({

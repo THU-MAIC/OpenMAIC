@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import type { Action, PPTElement } from '@openmaic/dsl';
 import {
   findElementGeometry,
   getElementPercentageGeometry,
   applyGeometry,
   resolveEffectGeometry,
   resolveVideoPlacement,
+  type CompilerScene,
   type EffectSegment,
   type VideoSegment,
   type VideoTimelineScene,
 } from '@/lib/video-export';
-import { el, slide, spotlight } from './helpers';
+import { el, playVideo, slide, spotlight } from './helpers';
 
 describe('geometry helper (pure)', () => {
   it('computes percentage geometry against the fixed 1000 x 562.5 base', () => {
@@ -189,6 +191,60 @@ describe('applyGeometry — GeometryProbe (content-box) vs authored box', () => 
     expect(video.geometry).toEqual(getElementPercentageGeometry(rotated)); // authored box, not measured
     expect(video.rotate).toBe(30); // rotation from the authored element, applied once
     expect(video.degraded).toBe(false);
+  });
+});
+
+describe('applyGeometry — authored box on a slide that is not 1000px wide', () => {
+  // An imported 16:9 deck is 1280 x 720. This box is centred at half size.
+  const wide = (elements: PPTElement[], actions: Action[]): CompilerScene => {
+    const scene = slide('s0', actions, { elements });
+    return {
+      ...scene,
+      content: { type: 'slide', canvas: { elements, viewportSize: 1280, viewportRatio: 0.5625 } },
+    };
+  };
+  const centred = { x: 25, y: 25, w: 50, h: 50, centerX: 50, centerY: 50 };
+
+  it('places a rotated clip against the slide width', () => {
+    const rotated = el('v1', { left: 320, top: 180, width: 640, height: 360, rotate: 15 });
+    const seg: VideoSegment = {
+      actionId: 'pv',
+      actionIndex: 0,
+      startMs: 0,
+      durationMs: 100,
+      elementId: 'v1',
+      geometry: null,
+      rotate: 0,
+      present: true,
+      degraded: false,
+      durationSource: 'stored',
+    };
+    const source = [wide([rotated], [playVideo('pv', 'v1')])];
+    const { scenes } = applyGeometry([{ ...baseScene('s0', 0), videos: [seg] }], source);
+    expect(scenes[0].videos[0].geometry).toEqual(centred);
+    expect(scenes[0].videos[0].rotate).toBe(15);
+  });
+
+  it('places an unmeasured spotlight against the slide width', () => {
+    const box = el('e1', { left: 320, top: 180, width: 640, height: 360 });
+    const source = [wide([box], [spotlight('sp', 'e1')])];
+    const probe = { contentGeometry: () => null };
+    const { scenes } = applyGeometry(
+      [{ ...baseScene('s0', 0), effects: [effect('e1')] }],
+      source,
+      probe,
+    );
+    expect(scenes[0].effects[0].geometry).toEqual(centred);
+  });
+
+  it('falls back to 1000px and 16:9 for a viewport that is not a positive number', () => {
+    const box = el('e1', { left: 100, top: 100, width: 200, height: 100 });
+    const scene = slide('s0', [spotlight('sp', 'e1')], { elements: [box] });
+    const source = [
+      { ...scene, content: { type: 'slide', canvas: { elements: [box], viewportSize: 0 } } },
+    ];
+    const { scenes } = applyGeometry([{ ...baseScene('s0', 0), effects: [effect('e1')] }], source);
+    expect(scenes[0].effects[0].geometry).toEqual(getElementPercentageGeometry(box));
   });
 });
 
