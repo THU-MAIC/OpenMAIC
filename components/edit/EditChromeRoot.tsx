@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
 import { EditDock } from '@/components/edit/EditDock/EditDock';
+import { CourseIssuesButton } from '@/components/edit/EditDock/CourseIssuesButton';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
@@ -128,13 +129,17 @@ export function EditChromeRoot({
   const timelineEnabled = supportsNarrationTimeline(scene.type, authoringEnabled);
 
   const headerControls = inWorkbenchPanel ? undefined : (
-    <HeaderControls
-      mode="edit"
-      canEdit={isEditable}
-      onToggleEditMode={isMaicEditorEnabled() && !inWorkbenchPanel ? onToggleEditMode : undefined}
-      workbenchControls={workbenchControls}
-      onOpenInWorkspace={onOpenInWorkspace}
-    />
+    <>
+      {/* Course issues — course-level, Edit mode only, standalone classroom. */}
+      <CourseIssuesButton />
+      <HeaderControls
+        mode="edit"
+        canEdit={isEditable}
+        onToggleEditMode={isMaicEditorEnabled() && !inWorkbenchPanel ? onToggleEditMode : undefined}
+        workbenchControls={workbenchControls}
+        onOpenInWorkspace={onOpenInWorkspace}
+      />
+    </>
   );
 
   return (
