@@ -33,6 +33,7 @@ import { postProcessInteractiveHtml } from '../../packages/@openmaic/generation/
 import { config } from './config.js';
 import { hostedInteractiveLibraries } from './hosted-interactive-libraries.js';
 import { InMemoryJobStore } from './job-store.js';
+import { ShutdownGate } from './shutdown-gate.js';
 import { LocalDiskArtifactStore } from './artifact-store.js';
 import {
   RenderCoordinator,
@@ -740,15 +741,32 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
           }
         : {}),
     });
-  // Assigned after `jobs` so its reap callback can close over the coordinator.
+  // Assigned after `jobs` so its reap callback can close over them.
   // eslint-disable-next-line prefer-const
   let coordinator: RenderCoordinator;
+  // eslint-disable-next-line prefer-const
+  let shutdown: ShutdownGate;
   const jobs = new InMemoryJobStore(config.jobTtlMs, (record) => {
     // A reaped job's artifact + project dir go with it.
     void artifacts.remove(record.id);
     void coordinator.cleanupProject(record.projectDir);
+    shutdown.forget(record.id);
   });
   coordinator = new RenderCoordinator(executor, jobs, artifacts);
+  shutdown = new ShutdownGate(jobs, () => process.exit(0));
+
+  // On SIGTERM, stop admitting: `/health` reports `accepting: false`, so a
+  // caller that checks it before sending a render (the app's durable export
+  // queue) sends nothing more here. The process exits once nothing is left
+  // (src/shutdown-gate.ts): no render, no upload still answering, and no
+  // finished output not yet fetched. Now if that is already so, as before
+  // this handler existed. Nothing extends the platform's grace period: a
+  // render still running when it ends is killed with the process, and that
+  // caller sends it again. The resource entrypoint has its own SIGTERM
+  // handler, which closes the resource owner and exits.
+  process.once('SIGTERM', () => {
+    coordinator.closeAdmission(resourceExecutor ? undefined : () => shutdown.idle());
+  });
 
   // Build the browser mount off the request path so the first preview does not
   // pay the cold esbuild cost while holding admission and execution permits.
@@ -776,7 +794,9 @@ export async function startService(resourceExecutor?: RenderExecutor): Promise<v
   // makeProjectDir() would ENOENT. mktemp still creates a fresh subdir per job.
   await mkdir(config.tmpDir, { recursive: true }).catch(() => {});
 
-  serve({ fetch: app.fetch, port: config.port }, (info) => {
+  const fetchRequest = resourceExecutor ? app.fetch : shutdown.wrap(app.fetch);
+
+  serve({ fetch: fetchRequest, port: config.port }, (info) => {
     console.log(
       `[render-service] listening on :${info.port} ` +
         `(resourceProfile=${config.resourceProfile.name}, ` +
