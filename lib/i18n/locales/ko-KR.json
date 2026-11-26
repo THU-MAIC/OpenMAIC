@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "Restore learning environment",
     "retryOpening": "Retry step opening",
+    "completion": {
+      "title": "축하합니다! 프로젝트를 마쳤습니다.",
+      "description": "학습 보고서에서 내가 내린 결정과 완성한 결과물을 돌아보세요.",
+      "openReport": "학습 보고서 보기",
+      "stay": "작업 공간에 머무르기"
+    },
     "reportCopy": {
       "waitFinal": "Wait for the final teaching response to finish before preparing the report.",
       "generating": "Preparing your project report…",

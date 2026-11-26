@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "恢复学习环境",
     "retryOpening": "重试本环节开场",
+    "completion": {
+      "title": "恭喜你，完成了这个项目！",
+      "description": "在学习报告里，回看你做过的决策和完成的作品。",
+      "openReport": "查看学习报告",
+      "stay": "留在工作台"
+    },
     "reportCopy": {
       "waitFinal": "最后一轮复盘回复保存完成后，即可生成报告。",
       "generating": "正在依据项目过程生成报告…",

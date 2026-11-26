@@ -51,6 +51,42 @@
   background: var(--pbl-chrome);
 }
 
+.pbl-report-action {
+  background-color: var(--pbl-guidance);
+  color: var(--pbl-guidance-foreground);
+}
+.pbl-report-action:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--pbl-guidance) 90%, var(--foreground));
+}
+
+/* A short embedded stage still needs a visible button to start the closing animation. */
+@container (max-height: 22rem) {
+  .pbl-completion-card {
+    padding: 0.75rem;
+  }
+  .pbl-completion-card h2 {
+    padding-inline: 1.75rem;
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+  .pbl-completion-seal {
+    display: none;
+  }
+  .pbl-completion-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-block-start: 0.5rem;
+  }
+  .pbl-completion-actions button {
+    flex: 1;
+    margin: 0;
+    padding-inline: 0.5rem;
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+  }
+}
+
 /* Every pane in the workbench shares one chrome height, so their headers line up
    across columns and stay the same height when a pane narrows or stacks. */
 .pbl-pane-header {
@@ -521,7 +557,7 @@
     flex-wrap: wrap;
     gap: 4px;
   }
-  .pbl-workbench .pbl-topbar h2 {
+  .pbl-workbench .pbl-project-heading {
     flex-basis: 100%;
   }
 }

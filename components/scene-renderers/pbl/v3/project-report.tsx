@@ -31,12 +31,14 @@ export function ProjectReport({
   open,
   onClose,
   onWorkbench,
+  getReturnFocus,
 }: {
   studyId: string;
   title: string;
   open: boolean;
   onClose: () => void;
   onWorkbench: () => void;
+  getReturnFocus?: () => HTMLElement | null;
 }) {
   const { t } = useI18n();
   const [shareOpen, setShareOpen] = useState(false);
@@ -111,9 +113,11 @@ export function ProjectReport({
     const previous = document.activeElement;
     surface.current?.focus();
     return () => {
-      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+      const target = getReturnFocus?.();
+      if (target) target.focus({ preventScroll: true });
+      else if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
     };
-  }, [open, studyId]);
+  }, [open, studyId, getReturnFocus]);
   if (!open) return null;
   const sourceId = (id: string) => `report-source-${studyId}-${id.replaceAll(':', '-')}`;
   const cite = (id: string) => {

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { History, Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -21,15 +21,23 @@ export function ConversationHistory({
   id,
   sources,
   milestones = [],
+  onOpenChange,
   renderEntry,
 }: {
   id: string;
   sources: Source[];
   milestones?: ReadonlyArray<{ id: string; title: string }>;
+  onOpenChange?: (open: boolean) => void;
   renderEntry: (entry: LearningConversationEntry, dismissForNavigation: () => void) => ReactNode;
 }) {
   const { t } = useI18n();
   const [source, setSource] = useState<Source | null>(null);
+  const open = !!source;
+  useLayoutEffect(() => {
+    if (!open || !onOpenChange) return;
+    onOpenChange(true);
+    return () => onOpenChange(false);
+  }, [open, onOpenChange]);
   const [openedSources, setOpenedSources] = useState<Source[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [pending, setPending] = useState(false);

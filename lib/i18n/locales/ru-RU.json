@@ -3314,6 +3314,12 @@
     },
     "recoverEnvironment": "Restore learning environment",
     "retryOpening": "Retry step opening",
+    "completion": {
+      "title": "Поздравляем с завершением проекта!",
+      "description": "В отчёте об обучении можно посмотреть, какие решения вы приняли и что создали.",
+      "openReport": "Открыть отчёт об обучении",
+      "stay": "Остаться в рабочей области"
+    },
     "reportCopy": {
       "waitFinal": "Wait for the final teaching response to finish before preparing the report.",
       "generating": "Preparing your project report…",

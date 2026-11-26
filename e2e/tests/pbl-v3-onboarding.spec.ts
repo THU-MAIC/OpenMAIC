@@ -307,6 +307,176 @@ async function useAssistantMode(page: Page, mode: (typeof assistantModes)[number
   if (mode === 'docked') await page.getByTestId('pbl-assistant-dock').click();
 }
 
+for (const layout of [...assistantModes, 'scrolled dock', 'open history', 'embedded'] as const) {
+  test(`project completion hands focus to the available report in the ${layout} layout`, async ({
+    page,
+    learningEvents,
+  }, testInfo) => {
+    const embedded = layout === 'embedded';
+    await page.setViewportSize(
+      embedded ? { width: 850, height: 475 } : { width: 1440, height: 900 },
+    );
+    const mode = embedded
+      ? 'bubble'
+      : layout === 'scrolled dock' || layout === 'open history'
+        ? 'docked'
+        : layout;
+    const theme = layout === 'window' ? 'light' : layout === 'docked' ? 'dark' : null;
+    if (theme) await page.emulateMedia({ colorScheme: theme === 'light' ? 'dark' : 'light' });
+    if (layout === 'bubble') await page.emulateMedia({ reducedMotion: 'reduce' });
+    const { view, publish, calls } = await project(page, learningEvents, {
+      started: true,
+      explanationBoard: true,
+    });
+    await expect(page.locator('[data-pbl-tour="replay"]')).toBeEnabled();
+    if (theme) {
+      await page.getByRole('button', { name: 'Switch color theme' }).click();
+      await expect
+        .poll(() => page.locator('html').evaluate((el) => el.classList.contains('dark')))
+        .toBe(theme === 'dark');
+    }
+    if (embedded)
+      await page.getByRole('button', { name: 'Exit fullscreen workspace', exact: true }).click();
+    await useAssistantMode(page, mode);
+    view.state.position.stageIndex = 6;
+    view.role = 'mentor';
+    view.stage = {
+      kind: 'mentor_say',
+      agent: 'mentor',
+      say: 'Recap',
+      reads: [],
+      studentActions: [],
+    };
+    view.actions = [];
+    view.conversation = [
+      {
+        id: 'closing-recap',
+        speaker: 'mentor',
+        currentStage: true,
+        status: 'running',
+        parts:
+          layout === 'open history'
+            ? []
+            : [
+                {
+                  kind: 'text',
+                  id: 'reflection',
+                  text: 'You tested your greeting.',
+                  streaming: true,
+                },
+              ],
+      },
+    ];
+    view.busy = true;
+    view.revision++;
+    await publish();
+    const turn = view.conversation[0]!;
+    if (layout === 'scrolled dock') {
+      view.conversation.unshift({
+        id: 'previous-reply',
+        speaker: 'discussion',
+        status: 'succeeded',
+        parts: [{ kind: 'text', id: 'earlier-text', text: readingParagraphs() }],
+      });
+      view.revision++;
+      await publish();
+      await readPassage(page, 60);
+    }
+    if (layout === 'open history') {
+      view.conversationHistory = [{ sessionId: 'discussion', role: 'discussion', through: 8 }];
+      await page.route('**/api/pbl/v3/history?**', (route) =>
+        route.fulfill({ json: { through: 8, nextBefore: null, conversation: [] } }),
+      );
+      view.revision++;
+      await publish();
+      await page.getByRole('button', { name: 'Conversation history' }).click();
+      await expect(page.getByRole('dialog', { name: 'Conversation history' })).toBeVisible();
+    }
+    const dialog = page.locator('[data-pbl-completion-dialog]');
+    const header = page.locator('[data-pbl-tour="report"]');
+    const chat = page.locator('.pbl-conversation-scroll [data-pbl-report-handoff]');
+    await expect(dialog).toHaveCount(0);
+    view.state.status = 'completed';
+    view.reportAvailable = true;
+    view.revision++;
+    await publish();
+    await expect(header).toBeDisabled();
+    await expect(dialog).toHaveCount(0);
+
+    if (turn.parts[0]?.kind === 'text') turn.parts[0].streaming = false;
+    turn.parts.push({
+      kind: 'tool',
+      id: 'finish',
+      action: 'complete',
+      status: 'succeeded',
+      projectCompleted: true,
+    });
+    turn.status = 'succeeded';
+    view.busy = false;
+    view.revision++;
+    await publish();
+    if (layout === 'open history') {
+      await expect(header).toBeEnabled();
+      const history = page.getByRole('dialog', { name: 'Conversation history' });
+      await expect(dialog).toHaveCount(0);
+      await page.keyboard.press('Tab');
+      await expect
+        .poll(() => history.evaluate((el) => el.contains(document.activeElement)))
+        .toBe(true);
+      await page.keyboard.press('Escape');
+      await expect(history).toHaveCount(0);
+    }
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+    const openReport = dialog.getByRole('button', { name: /report/i });
+    await expect(openReport).toBeFocused();
+    if (embedded) {
+      const workspace = page.getByTestId('pbl-v3-workspace');
+      expect((await workspace.boundingBox())!.height).toBeLessThan(260);
+      for (const control of [
+        openReport,
+        dialog.getByRole('button', { name: 'Close', exact: true }),
+        dialog.getByRole('button', { name: 'Stay in the workbench' }),
+      ])
+        await expect(control).toBeInViewport({ ratio: 1 });
+    }
+    expect(calls.some((call) => call.includes('/report'))).toBe(false);
+    if (theme)
+      await page.screenshot({ path: testInfo.outputPath(`completion-dialog-${theme}.png`) });
+    if (mode === 'window')
+      await dialog.getByRole('button', { name: 'Stay in the workbench' }).click();
+    else await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    const target = mode === 'bubble' || layout === 'scrolled dock' ? header : chat;
+    await expect(target).toBeFocused();
+    if (theme) {
+      const toolbar = page.getByTestId('pbl-v3-workspace').locator(':scope > header');
+      const status = toolbar.getByTestId('pbl-project-completed');
+      await expect(status).toBeVisible();
+      expect(
+        await status.evaluate((el) => {
+          const header = el.closest('header')!;
+          const height = header.getBoundingClientRect().height;
+          el.style.display = 'none';
+          const withoutMark = header.getBoundingClientRect().height;
+          el.style.removeProperty('display');
+          return height - withoutMark;
+        }),
+      ).toBe(0);
+      await page.screenshot({ path: testInfo.outputPath(`returned-to-report-${theme}.png`) });
+    }
+    view.revision++;
+    await publish();
+    await expect(target).toBeFocused();
+    await expect(dialog).toHaveCount(0);
+    if (layout === 'bubble') {
+      await page.reload();
+      await page.getByTestId('pbl-v3-entry').getByRole('button').first().click();
+      await expect(header).toBeEnabled();
+      await expect(dialog).toHaveCount(0);
+    }
+  });
+}
+
 async function expectGuideTarget(page: Page, step: string, selector: string) {
   await expect(page.getByTestId('workspace-tour')).toHaveAttribute('data-step', step);
   const target = page.locator(selector);

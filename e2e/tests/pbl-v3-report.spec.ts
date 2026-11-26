@@ -426,8 +426,8 @@ test('completed project reports stay discoverable, show facts before analysis, a
   await page.setViewportSize(priorViewport);
   await report.getByRole('button', { name: 'View read-only workbench', exact: true }).click();
   const workspace = page.getByTestId('pbl-v3-workspace');
-  await expect(workspace.getByTestId('pbl-project-completed')).toBeVisible();
-  await expect(workspace.getByTestId('pbl-project-completed').getByRole('button')).toHaveCount(0);
+  await expect(workspace.locator('header').getByTestId('pbl-project-completed')).toBeVisible();
+  await expect(page.locator('[data-pbl-completion-dialog]')).toHaveCount(0);
   await expect(workspace.getByRole('button', { name: 'Learning report', exact: true })).toHaveCount(
     2,
   );

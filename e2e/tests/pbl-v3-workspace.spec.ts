@@ -1133,12 +1133,27 @@ test('installed sample opens in the normal classroom and preserves progress afte
   ];
   await page.getByRole('button', { name: 'Refresh progress' }).click();
   const workspace = page.getByTestId('pbl-v3-workspace');
+  const celebration = page.locator('[data-pbl-completion-dialog]');
+  await expect(celebration).toBeVisible();
+  await celebration.getByRole('button', { name: /report/i }).click();
+  await expect(page.getByTestId('pbl-project-report')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(celebration).toHaveCount(0);
   const toolbarReport = workspace
     .locator(':scope > header')
     .getByRole('button', { name: 'Learning report', exact: true });
   const completionReport = workspace
     .getByTestId('pbl-agent-turn')
     .getByRole('button', { name: 'Learning report', exact: true });
+  await expect
+    .poll(() =>
+      workspace.evaluate(
+        (el) =>
+          document.activeElement?.matches('[data-pbl-report-handoff], [data-pbl-tour="report"]') &&
+          el.contains(document.activeElement),
+      ),
+    )
+    .toBe(true);
   await expect(toolbarReport).toBeVisible();
   await expect(completionReport).toBeVisible();
   await expect(workspace.getByRole('button', { name: 'Learning report', exact: true })).toHaveCount(
