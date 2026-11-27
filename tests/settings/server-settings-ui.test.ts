@@ -293,6 +293,35 @@ describe('Model Services → provider changes', () => {
     }
   });
 
+  it('shows a failed welcome acknowledgement in the dialog and still lets the user reach disconnect', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ success: false }, { status: 503 })),
+    );
+    mount(
+      createElement(ChatGPTPlanAccount, {
+        save: vi.fn(),
+        account: {
+          status: { available: true, state: 'connected', noticeAcknowledged: false },
+          statusFailed: false,
+          loadStatus: vi.fn(),
+        },
+      }),
+    );
+    click(byText('settings.chatgptPlan.noticeAccept'));
+    await flush();
+    expect(document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent).toBe(
+      'settings.chatgptPlan.errorFailed',
+    );
+    click(byText('common.close'));
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    click(byText('settings.chatgptPlan.disconnect'));
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'settings.chatgptPlan.disconnectConfirm',
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('welcomes the first successful connection once, even after disconnect and reconnect', async () => {
     const preset = { ...chatPreset, id: 'chatgpt-plan', capabilities: { chat: { models: [] } } };
     const view = makeView({ presets: [preset] });

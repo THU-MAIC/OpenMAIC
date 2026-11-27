@@ -58,6 +58,7 @@ export function ChatGPTPlanAccount({
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState<'sign-in' | 'paste' | 'models' | 'disconnect' | null>(null);
   const [error, setError] = useState('');
+  const [welcome, setWelcome] = useState<'open' | 'saving' | 'failed' | 'dismissed'>('open');
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   const failed = useCallback(
@@ -108,8 +109,10 @@ export function ChatGPTPlanAccount({
   }, [pending, loadStatus, connected]);
 
   const acceptNotice = async () => {
+    setWelcome('saving');
     const answer = await callChatGPTPlan(CHATGPT_PLAN_API.notice, {});
-    if (!answer.ok) return failed(answer);
+    if (!answer.ok) return setWelcome('failed');
+    setWelcome('dismissed');
     await loadStatus();
   };
 
@@ -311,17 +314,28 @@ export function ChatGPTPlanAccount({
     <div className="space-y-3 rounded-lg border p-4">
       {body}
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <AlertDialog open={status.state === 'connected' && !status.noticeAcknowledged}>
+      <AlertDialog
+        open={status.state === 'connected' && !status.noticeAcknowledged && welcome !== 'dismissed'}
+        onOpenChange={(open) => {
+          if (!open && welcome === 'failed') setWelcome('dismissed');
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('settings.chatgptPlan.usingPlan')}</AlertDialogTitle>
             <AlertDialogDescription>{t('settings.chatgptPlan.noticeBody')}</AlertDialogDescription>
           </AlertDialogHeader>
+          {welcome === 'failed' && (
+            <p role="alert" className="text-sm text-destructive">
+              {t('settings.chatgptPlan.errorFailed')}
+            </p>
+          )}
           <AlertDialogFooter>
             {usageLink}
-            <AlertDialogAction onClick={acceptNotice}>
+            {welcome === 'failed' && <AlertDialogCancel>{t('common.close')}</AlertDialogCancel>}
+            <Button onClick={acceptNotice} disabled={welcome === 'saving'}>
               {t('settings.chatgptPlan.noticeAccept')}
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
