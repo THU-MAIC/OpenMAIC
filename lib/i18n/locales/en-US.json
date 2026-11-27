@@ -3455,7 +3455,8 @@
       "empty": "No saved messages in this page."
     },
     "decisionResponse": "Decision",
-    "decisionRationale": "Reason",
+    "decisionRationale": "Why did you choose this?",
+    "decisionRationaleInput": "Reason",
     "submitDecision": "Submit decision",
     "decisionSaved": "Response saved",
     "decisionUnsaved": "Unsaved changes",

@@ -3455,7 +3455,8 @@
       "empty": "本页暂无对话内容。"
     },
     "decisionResponse": "决策",
-    "decisionRationale": "理由",
+    "decisionRationale": "为什么这样决定？",
+    "decisionRationaleInput": "理由",
     "submitDecision": "提交决策",
     "decisionSaved": "回答已保存",
     "decisionUnsaved": "修改尚未提交",

@@ -109,7 +109,7 @@ it.each([
     [...container.querySelectorAll('textarea')].map((field) => field.labels![0]!.textContent),
   ).toEqual([
     responseLabel ?? 'pblV3.decisionResponse',
-    rationaleLabel ?? 'pblV3.decisionRationale',
+    rationaleLabel ?? 'pblV3.decisionRationaleInput',
   ]);
 });
 

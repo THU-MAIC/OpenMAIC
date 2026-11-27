@@ -91,7 +91,7 @@ export function DecisionResponseForm({
       {decision.requiresRationale && (
         <label className="grid gap-1 text-sm">
           <span className="[overflow-wrap:anywhere]">
-            {decision.rationaleLabel ?? t('pblV3.decisionRationale')}
+            {decision.rationaleLabel ?? t('pblV3.decisionRationaleInput')}
           </span>
           <textarea
             className="min-h-20 w-full rounded-md border bg-background p-3 text-sm"
