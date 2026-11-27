@@ -30,6 +30,8 @@ import { cn } from '@/lib/utils';
 interface InlineQACameraPreviewProps {
   readonly open: boolean;
   readonly onClose: () => void;
+  /** When true, renders embedded inside the right sidebar tab instead of a floating overlay. */
+  readonly embedded?: boolean;
   /** Pauses classroom lecture/discussion audio when Gemini Live starts. */
   readonly onActivateLive?: () => void;
   /** Latest spoken/typed classroom Q&A lines for shared conversational context. */
@@ -59,6 +61,7 @@ function collectVisibleChatTranscript(): string {
 
 function InlineQACameraLiveBody({
   onClose,
+  embedded = false,
   onActivateLive,
   recentClassroomSpeech,
 }: Omit<InlineQACameraPreviewProps, 'open'>) {
@@ -163,13 +166,18 @@ function InlineQACameraLiveBody({
     void sendStudentTurn(trimmed);
   };
 
-  return createPortal(
+  const card = (
     <div
       data-testid="inline-qa-camera-preview"
-      className="fixed bottom-24 left-4 z-[60] w-[min(350px,calc(100vw-32px))] rounded-2xl overflow-hidden border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.55)] backdrop-blur-xl flex flex-col"
+      className={cn(
+        'flex flex-col overflow-hidden',
+        embedded
+          ? 'h-full min-h-0 rounded-2xl border border-violet-200/70 dark:border-violet-800/60 bg-gray-950/95 shadow-sm'
+          : 'fixed bottom-24 left-4 z-[60] w-[min(350px,calc(100vw-32px))] rounded-2xl border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.55)] backdrop-blur-xl',
+      )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-black/50 border-b border-white/10">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-black/50 border-b border-white/10 shrink-0">
         <span
           className={cn(
             'inline-flex items-center gap-1.5 text-[11px] font-semibold truncate',
@@ -198,19 +206,26 @@ function InlineQACameraLiveBody({
           >
             <PencilLine className="size-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={handleClose}
-            title={t('common.close')}
-            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X className="size-3.5" />
-          </button>
+          {!embedded && (
+            <button
+              type="button"
+              onClick={handleClose}
+              title={t('common.close')}
+              className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Camera Viewport */}
-      <div className="relative aspect-[4/3] bg-gray-950 flex items-center justify-center overflow-hidden">
+      <div
+        className={cn(
+          'relative bg-gray-950 flex items-center justify-center overflow-hidden',
+          embedded ? 'flex-1 min-h-[220px]' : 'aspect-[4/3]',
+        )}
+      >
         <video
           ref={videoRef}
           autoPlay
@@ -388,19 +403,20 @@ function InlineQACameraLiveBody({
           </>
         )}
       </div>
-    </div>,
-    document.body,
+    </div>
   );
+
+  if (embedded) return card;
+  return createPortal(card, document.body);
 }
 
 /**
- * Classroom Gemini Live Camera & Voice Tutor popup triggered from the inline
- * camera button next to Mic and Chat in the Classroom Roundtable dock.
- * Streams real-time audio + 1 fps notebook video to Gemini Live (with automatic
- * turn-based fallback on non-Google providers) and projects steps/equations
- * directly onto OpenMAIC's native Classroom Whiteboard.
+ * Classroom Gemini Live Camera & Voice Tutor panel. Renders embedded inside
+ * the right-hand sidebar Camera tab on desktop/tablet, or as a floating
+ * overlay on narrow mobile portrait screens.
  */
 export function InlineQACameraPreview(props: InlineQACameraPreviewProps) {
-  if (!props.open || typeof document === 'undefined') return null;
+  if (!props.open) return null;
+  if (!props.embedded && typeof document === 'undefined') return null;
   return <InlineQACameraLiveBody {...props} />;
 }

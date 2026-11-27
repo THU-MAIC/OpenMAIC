@@ -123,6 +123,7 @@ interface RoundtableProps {
   readonly chatCollapsed?: boolean;
   readonly onToggleSidebar?: () => void;
   readonly onToggleChat?: () => void;
+  readonly onOpenCameraTab?: () => void;
   readonly onPrevSlide?: () => void;
   readonly onNextSlide?: () => void;
   readonly onWhiteboardClose?: () => void;
@@ -206,6 +207,7 @@ export function Roundtable({
   chatCollapsed,
   onToggleSidebar,
   onToggleChat,
+  onOpenCameraTab,
   onPrevSlide,
   onNextSlide,
   onWhiteboardClose,
@@ -1162,7 +1164,11 @@ export function Roundtable({
                         title={t('liveTutor.classroomButtonHint')}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setIsCameraOpen((v) => !v);
+                          if (onOpenCameraTab) {
+                            onOpenCameraTab();
+                          } else {
+                            setIsCameraOpen((v) => !v);
+                          }
                         }}
                         className={cn(
                           'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
@@ -2363,7 +2369,11 @@ export function Roundtable({
                       title={t('liveTutor.classroomButtonHint')}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setIsCameraOpen((v) => !v);
+                        if (onOpenCameraTab) {
+                          onOpenCameraTab();
+                        } else {
+                          setIsCameraOpen((v) => !v);
+                        }
                       }}
                       className={cn(
                         'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',

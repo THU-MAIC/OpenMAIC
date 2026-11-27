@@ -2335,6 +2335,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 onToggleChat={
                   mobile ? mobileToggleChat : () => setChatAreaCollapsed(!chatAreaCollapsed)
                 }
+                onOpenCameraTab={() => {
+                  if (mobile) {
+                    setMobileCameraTutorOpen((v) => !v);
+                  } else {
+                    setChatAreaCollapsed(false);
+                    chatAreaRef.current?.switchToTab('camera');
+                  }
+                }}
                 onPrevSlide={handlePreviousScene}
                 onNextSlide={handleNextScene}
                 onWhiteboardClose={handleWhiteboardToggle}
@@ -2462,6 +2470,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             onStopSession={handleSessionStop}
             onSegmentSealed={discussionTTS.handleSegmentSealed}
             shouldHoldAfterReveal={discussionTTS.shouldHold}
+            onActivateCameraLive={() => {
+              if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
+                const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
+                if (paused) {
+                  discussionTTS.pause();
+                  setIsDiscussionPaused(true);
+                }
+              }
+              if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
+                engineRef.current.pause();
+              }
+            }}
           />
         </div>
         {mobile && (

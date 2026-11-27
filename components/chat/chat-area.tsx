@@ -16,8 +16,9 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
 import { buildLectureNotes } from '@/lib/chat/lecture-notes';
-import { PanelRightClose, BookOpen, MessageSquare } from 'lucide-react';
+import { PanelRightClose, BookOpen, Camera, MessageSquare } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { InlineQACameraPreview } from '@/components/live-tutor/inline-qa-camera-preview';
 import {
   useChatSessions,
   MANUAL_STOP_END_OPTIONS,
@@ -62,6 +63,8 @@ interface ChatAreaProps {
   currentActionIndex?: number | null;
   canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;
   onJumpToAction?: (sceneId: string, actionIndex: number) => void;
+  /** Pauses classroom playback/discussion audio when Gemini Live starts in the Camera tab. */
+  onActivateCameraLive?: () => void;
 }
 
 export type SpeechSource = 'lecture' | 'reply' | 'question';
@@ -86,7 +89,7 @@ export interface ChatAreaRef {
   resumeBuffer: (sessionId: string) => void;
   pauseActiveLiveBuffer: () => boolean;
   resumeActiveLiveBuffer: () => void;
-  switchToTab: (tab: 'lecture' | 'chat') => void;
+  switchToTab: (tab: 'lecture' | 'chat' | 'camera') => void;
 }
 
 const DEFAULT_WIDTH = 340;
@@ -120,6 +123,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       currentActionIndex,
       canJumpToAction,
       onJumpToAction,
+      onActivateCameraLive,
     },
     ref,
   ) => {
@@ -161,7 +165,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       shouldHoldAfterReveal,
     });
 
-    const [activeTab, setActiveTab] = useState<'lecture' | 'chat'>('lecture');
+    const [activeTab, setActiveTab] = useState<'lecture' | 'chat' | 'camera'>('lecture');
+    const [cameraEverVisited, setCameraEverVisited] = useState(false);
     const [noteTarget, setNoteTarget] = useState<{ sceneId: string; actionIndex: number } | null>(
       null,
     );
@@ -178,6 +183,24 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
 
     // Filter out lecture sessions for the Chat tab
     const chatSessions = useMemo(() => sessions.filter((s) => s.type !== 'lecture'), [sessions]);
+
+    // Extract recent Q&A messages so Gemini Live in the Camera tab shares classroom context
+    const recentQaTranscript = useMemo(() => {
+      const lines: string[] = [];
+      for (const s of chatSessions.slice(-2)) {
+        for (const m of s.messages.slice(-8)) {
+          const speaker = m.metadata?.senderName || (m.role === 'user' ? 'Student' : 'AI Teacher');
+          const text = m.parts
+            .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+            .map((p) => p.text)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (text) lines.push(`${speaker}: ${text}`);
+        }
+      }
+      return lines.slice(-8).join('\n').slice(0, 1500);
+    }, [chatSessions]);
 
     // On phones the panel owns scrolling across sessions. Stream updates may
     // follow its bottom, but must not move it while someone reads older replies.
@@ -238,11 +261,12 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     }, [chatSessions, continueSoftClosingSession]);
 
     const switchToTab = useCallback(
-      (tab: 'lecture' | 'chat') => {
+      (tab: 'lecture' | 'chat' | 'camera') => {
         setNoteTarget(null);
         setMessageTarget(null);
+        if (tab === 'camera') setCameraEverVisited(true);
         setActiveTab(tab);
-        onTabChange?.(tab);
+        if (tab !== 'camera') onTabChange?.(tab);
       },
       [onTabChange],
     );
@@ -358,7 +382,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         <div className={cn('flex flex-col w-full h-full overflow-hidden', collapsed && 'hidden')}>
           <Tabs
             value={activeTab}
-            onValueChange={(v) => switchToTab(v as 'lecture' | 'chat')}
+            onValueChange={(v) => switchToTab(v as 'lecture' | 'chat' | 'camera')}
             className="flex flex-col h-full gap-0"
           >
             {/* Tab header row */}
@@ -378,6 +402,14 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
                     </span>
                   )}
+                </TabsTrigger>
+                <TabsTrigger
+                  value="camera"
+                  data-testid="sidebar-camera-tab"
+                  className="text-xs gap-1 flex-1"
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  {t('liveTutor.classroomButton')}
                 </TabsTrigger>
               </TabsList>
 
@@ -455,6 +487,24 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                 )}
               </div>
             </TabsContent>
+
+            {/* Persistent Camera Tutor Tab (kept mounted once visited so Gemini Live stays active across tab switches) */}
+            {(cameraEverVisited || activeTab === 'camera') && (
+              <div
+                className={cn(
+                  'flex-1 min-h-0 flex flex-col p-3 overflow-hidden',
+                  activeTab !== 'camera' && 'hidden',
+                )}
+              >
+                <InlineQACameraPreview
+                  embedded
+                  open
+                  onClose={() => switchToTab('chat')}
+                  onActivateLive={onActivateCameraLive}
+                  recentClassroomSpeech={recentQaTranscript}
+                />
+              </div>
+            )}
           </Tabs>
         </div>
       </div>
