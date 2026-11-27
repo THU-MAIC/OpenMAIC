@@ -17,18 +17,15 @@ export async function GET(request: Request) {
     const { returnTo } = await completeChatGPTSignIn({
       params: new URL(request.url).searchParams,
     });
-    return callbackPage({ ok: true, ...(returnTo ? { returnTo } : {}) });
+    return callbackPage(request, { ok: true, ...(returnTo ? { returnTo } : {}) });
   } catch (error) {
     if (!(error instanceof ChatGPTPlanError)) log.error('ChatGPT sign-in callback failed:', error);
     else if (error.code === 'upstream' || error.code === 'sign-in-failed') {
       log.warn('ChatGPT sign-in callback failed:', error);
     }
-    return callbackPage({
+    return callbackPage(request, {
       ok: false,
-      message:
-        error instanceof ChatGPTPlanError
-          ? error.message
-          : 'The ChatGPT sign-in could not be completed.',
+      reason: error instanceof ChatGPTPlanError ? error.code : undefined,
     });
   }
 }

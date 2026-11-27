@@ -50,6 +50,27 @@ async function call<T>(path: string, body?: Record<string, unknown>): Promise<An
   }
 }
 
+export function useChatGPTPlanStatus(offered: boolean) {
+  const [status, setStatus] = useState<ChatGPTPlanStatus | null>(null);
+  const [statusFailed, setStatusFailed] = useState(false);
+  const loadStatus = useCallback(async () => {
+    const answer = await call<{ status: ChatGPTPlanStatus }>(CHATGPT_PLAN_API.status);
+    const next = answer.ok ? answer.data.status : null;
+    setStatus(next);
+    setStatusFailed(!answer.ok);
+    return next;
+  }, []);
+  useEffect(() => {
+    if (!offered) return;
+    void loadStatus();
+    window.addEventListener('focus', loadStatus);
+    return () => window.removeEventListener('focus', loadStatus);
+  }, [offered, loadStatus]);
+  return { status, statusFailed, loadStatus };
+}
+
+export type PlanAccountState = ReturnType<typeof useChatGPTPlanStatus>;
+
 /** What the settings say for a failure the server reported with a code. */
 const REASON_KEYS: Record<string, string> = {
   'sign-in-expired': 'settings.chatgptPlan.errorExpired',
@@ -66,11 +87,12 @@ const REASON_KEYS: Record<string, string> = {
  */
 export function ChatGPTPlanAccount({
   save,
+  account: { status, statusFailed, loadStatus },
 }: {
+  account: PlanAccountState;
   save: (fields: ProviderFields) => Promise<unknown>;
 }) {
   const { t } = useI18n();
-  const [status, setStatus] = useState<ChatGPTPlanStatus | null>(null);
   const [pending, setPending] = useState<
     (ChatGPTPlanSignInStart & { from: ChatGPTPlanStatus['state'] }) | null
   >(null);
@@ -86,18 +108,15 @@ export function ChatGPTPlanAccount({
     [t],
   );
 
-  const loadStatus = useCallback(async () => {
-    const answer = await call<{ status: ChatGPTPlanStatus }>(CHATGPT_PLAN_API.status);
-    if (answer.ok) setStatus(answer.data.status);
-    return answer.ok ? answer.data.status : undefined;
-  }, []);
-
   /** Make the provider's model list the account's. */
   const syncModels = useCallback(async () => {
     setBusy('models');
     const answer = await call<{ models: ChatGPTPlanModel[] }>(CHATGPT_PLAN_API.models);
     setBusy(null);
-    if (!answer.ok) return failed(answer);
+    if (!answer.ok) {
+      await loadStatus();
+      return failed(answer);
+    }
     const { models } = answer.data;
     const windows = Object.fromEntries(
       models.flatMap((model) => (model.contextWindow ? [[model.id, model.contextWindow]] : [])),
@@ -106,7 +125,7 @@ export function ChatGPTPlanAccount({
       models: models.length ? models.map((model) => model.id) : null,
       modelContextWindows: Object.keys(windows).length ? windows : null,
     });
-  }, [failed, save]);
+  }, [failed, loadStatus, save]);
 
   const connected = useCallback(async () => {
     setPending(null);
@@ -115,18 +134,6 @@ export function ChatGPTPlanAccount({
     const next = await loadStatus();
     if (next?.state === 'connected') await syncModels();
   }, [loadStatus, syncModels]);
-
-  useEffect(() => {
-    let active = true;
-    void call<{ status: ChatGPTPlanStatus }>(CHATGPT_PLAN_API.status).then((answer) => {
-      if (!active) return;
-      if (answer.ok) setStatus(answer.data.status);
-      else setError(t('settings.chatgptPlan.errorFailed'));
-    });
-    return () => {
-      active = false;
-    };
-  }, [t]);
 
   // A sign-in in another tab returns to this server: watch for it to land.
   useEffect(() => {
@@ -185,8 +192,8 @@ export function ChatGPTPlanAccount({
   };
 
   if (!status) {
-    return error ? (
-      <p className="text-sm text-destructive">{error}</p>
+    return statusFailed || error ? (
+      <p className="text-sm text-destructive">{error || t('settings.chatgptPlan.errorFailed')}</p>
     ) : (
       <Loader2 className="size-4 animate-spin text-muted-foreground" />
     );

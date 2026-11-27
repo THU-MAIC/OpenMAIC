@@ -1,0 +1,22 @@
+---
+title: ChatGPT 方案（預覽）
+description: 在個人部署中登入 ChatGPT，使用方案額度產生課程。
+---
+
+在個人部署中登入 ChatGPT，使用方案額度產生課程。
+
+## 啟用條件
+
+伺服器須使用 PostgreSQL、執行個體密鑰，並設定 `OWNER_SINGLE_USER=true` 和 `OPENMAIC_CHATGPT_PLAN_ENABLED=true`。若已註冊身分驗證方式，僅可啟用 `singleUser`。任何可進入此部署的人都能使用已連結帳號的額度，包括知道 `ACCESS_CODE` 的人。
+
+## 連結帳號
+
+在模型設定的聊天服務中選擇 **ChatGPT plan (Preview)**，閱讀並確認提示，選擇使用 ChatGPT 繼續登入，在新分頁允許 OpenMAIC 使用方案額度。將帳號提供的模型指派給課程階段。可隨時重新整理模型清單。
+
+## 遠端登入
+
+從其他機器連至伺服器時，授權後瀏覽器可能無法開啟回呼頁。複製網址列內完整的 `http://127.0.0.1:<port>/auth/callback` 網址（含查詢參數），貼到模型設定中。該網址十分鐘內有效，僅能使用一次。
+
+## 用量與中斷連線
+
+請求會計入方案供 OpenMAIC 使用的額度。達到上限時，請求會停止；你可以自行切換服務供應商。前往 [ChatGPT 用量設定](https://chatgpt.com/settings/usage) 檢視或管理額度。中斷連線會移除伺服器上加密儲存的登入資訊，並請求 OpenAI 撤銷授權。若未確認撤銷，可在 ChatGPT 設定中移除 OpenMAIC。

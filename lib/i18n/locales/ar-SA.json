@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "خطة ChatGPT (معاينة)"
     },
     "chatgptPlan": {
+      "usingPlan": "يُستخدم اشتراك ChatGPT",
+      "callbackConnected": "تم الاتصال بـ ChatGPT",
+      "callbackComplete": "يمكنك إغلاق علامة التبويب هذه والعودة إلى OpenMAIC.",
+      "callbackFailed": "لم يكتمل تسجيل الدخول إلى ChatGPT",
+      "callbackReturn": "العودة إلى OpenMAIC",
       "signIn": "المتابعة باستخدام ChatGPT",
       "signInAgain": "تسجيل الدخول مرة أخرى",
       "noticeTitle": "استخدم خطة ChatGPT الخاصة بك في OpenMAIC",

@@ -6,6 +6,9 @@ import 'server-only';
 
 import { randomBytes } from 'node:crypto';
 
+import { resolveRequestLocale } from '@/lib/i18n/resolve-locale';
+import { loadLocaleResource } from '@/lib/i18n/load-resource';
+import type en from '@/lib/i18n/locales/en-US.json';
 import { createLogger } from '@/lib/logger';
 import { isSameOriginJsonRequest } from '@/lib/persistence/owner-claim-http';
 import { apiError, type ApiErrorCode } from '@/lib/server/api-response';
@@ -98,20 +101,30 @@ const escapeHtml = (text: string) =>
  * The page the browser shows after a loopback sign-in. It takes the code and
  * state out of the address bar and the history, and sends no referrer.
  */
-export function callbackPage(
-  result: { ok: true; returnTo?: string } | { ok: false; message: string },
-): Response {
+export async function callbackPage(
+  request: Request,
+  result: { ok: true; returnTo?: string } | { ok: false; reason?: ChatGPTPlanError['code'] },
+): Promise<Response> {
+  const locale = resolveRequestLocale({ acceptLanguage: request.headers.get('accept-language') });
+  const resource = (await loadLocaleResource(locale)) as typeof en;
+  const copy = resource.settings.chatgptPlan;
   const nonce = randomBytes(16).toString('base64');
-  const title = result.ok ? 'ChatGPT is connected' : 'ChatGPT sign-in did not finish';
+  const title = result.ok ? copy.callbackConnected : copy.callbackFailed;
   const message = result.ok
-    ? 'You can close this tab and return to OpenMAIC.'
-    : `${result.message} You can start again from the model settings in OpenMAIC.`;
+    ? copy.callbackComplete
+    : result.reason === 'sign-in-expired'
+      ? copy.errorExpired
+      : result.reason === 'sign-in-denied'
+        ? copy.errorDenied
+        : result.reason === 'invalid-callback'
+          ? copy.errorInvalidCallback
+          : copy.errorFailed;
   const link =
     result.ok && result.returnTo
-      ? `<p><a href="${escapeHtml(result.returnTo)}/">Return to OpenMAIC</a></p>`
+      ? `<p><a href="${escapeHtml(result.returnTo)}/">${escapeHtml(copy.callbackReturn)}</a></p>`
       : '';
   const html = `<!doctype html>
-<html lang="en">
+<html lang="${locale}" dir="${locale === 'ar-SA' ? 'rtl' : 'ltr'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

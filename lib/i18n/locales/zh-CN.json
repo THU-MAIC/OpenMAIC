@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "ChatGPT 订阅（预览）"
     },
     "chatgptPlan": {
+      "usingPlan": "正在使用 ChatGPT 套餐",
+      "callbackConnected": "已连接 ChatGPT",
+      "callbackComplete": "你可以关闭此标签页，返回 OpenMAIC。",
+      "callbackFailed": "未能完成 ChatGPT 登录",
+      "callbackReturn": "返回 OpenMAIC",
       "signIn": "使用 ChatGPT 继续",
       "signInAgain": "重新登录",
       "noticeTitle": "在 OpenMAIC 中使用你的 ChatGPT 订阅",

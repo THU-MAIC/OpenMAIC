@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "ChatGPT-Abo (Vorschau)"
     },
     "chatgptPlan": {
+      "usingPlan": "ChatGPT-Tarif wird verwendet",
+      "callbackConnected": "ChatGPT ist verbunden",
+      "callbackComplete": "Du kannst diesen Tab schließen und zu OpenMAIC zurückkehren.",
+      "callbackFailed": "Die Anmeldung bei ChatGPT wurde nicht abgeschlossen",
+      "callbackReturn": "Zurück zu OpenMAIC",
       "signIn": "Mit ChatGPT fortfahren",
       "signInAgain": "Erneut anmelden",
       "noticeTitle": "Dein ChatGPT-Abo in OpenMAIC nutzen",

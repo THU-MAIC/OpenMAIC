@@ -7,6 +7,8 @@ import { registryIdsFor } from '@/components/settings/service-display';
  * workspace's model configuration on the server; keys are written there and
  * never come back, and services the server configures are shown read-only.
  */
+import { useChatGPTPlanStatus } from './chatgpt-plan-account';
+import { CHATGPT_PLAN_PROVIDER_ID } from '@/lib/chatgpt-plan/shared';
 import { useMemo, useState } from 'react';
 import {
   Box,
@@ -150,6 +152,13 @@ export function ModelServicesPanel({
       entry.provider && !entry.serviceId ? 0 : entry.id === PINNED_PROVIDER_ID ? 1 : 2;
     return capability === 'chat' ? [...list].sort((a, b) => rank(a) - rank(b)) : list;
   }, [view, capability]);
+  const planAccount = useChatGPTPlanStatus(
+    entries.some((item) => item.registryId === CHATGPT_PLAN_PROVIDER_ID),
+  );
+  const configuredFor = (item: ServiceEntry) =>
+    capability === 'chat' && item.registryId === CHATGPT_PLAN_PROVIDER_ID
+      ? !!planAccount.status?.available && planAccount.status.state === 'connected'
+      : isEntryConfigured(item, capability);
   const [selected, setSelected] = useState<Partial<Record<ServiceTab, string>>>({});
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [deleting, setDeleting] = useState<ServiceEntry | null>(null);
@@ -166,7 +175,7 @@ export function ModelServicesPanel({
     if (!entry) return null;
     const name = entryName(entry, capability, t);
     const icon = entryIcon(entry, capability);
-    const configured = isEntryConfigured(entry, capability);
+    const configured = configuredFor(entry);
     // "Fill in credentials" only where this service can be set up here.
     const settable = canAdd && entry.state !== 'server-only' && entry.state !== 'deployment';
     return (
@@ -194,7 +203,7 @@ export function ModelServicesPanel({
             <p className="text-[11px] text-muted-foreground">
               {configured
                 ? t('settings.modelServices.configuredHint')
-                : settable
+                : settable && entry.registryId !== CHATGPT_PLAN_PROVIDER_ID
                   ? t('settings.modelServices.notConfiguredHint')
                   : t('settings.modelServices.notConfigured')}
             </p>
@@ -287,7 +296,7 @@ export function ModelServicesPanel({
               name: entryName(item, capability, t),
               icon: entryIcon(item, capability),
               registryId: item.serviceId ?? item.registryId,
-              configured: isEntryConfigured(item, capability),
+              configured: configuredFor(item),
             }))}
             selectedProviderId={entry?.id ?? ''}
             onSelect={select}
@@ -301,7 +310,9 @@ export function ModelServicesPanel({
           {header()}
           {panelProps && (
             <div className="mt-4" key={`${tab}:${entry!.id}`}>
-              {tab === 'providers' && <ProviderConfigPanel {...panelProps} />}
+              {tab === 'providers' && (
+                <ProviderConfigPanel {...panelProps} planAccount={planAccount} />
+              )}
               {tab === 'image' && <ImageSettings {...panelProps} />}
               {tab === 'video' && <VideoSettings {...panelProps} />}
               {tab === 'tts' && <TTSSettings {...panelProps} />}

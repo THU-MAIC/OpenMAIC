@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "ChatGPT プラン（プレビュー）"
     },
     "chatgptPlan": {
+      "usingPlan": "ChatGPT プランを使用中",
+      "callbackConnected": "ChatGPT に接続しました",
+      "callbackComplete": "このタブを閉じて OpenMAIC に戻れます。",
+      "callbackFailed": "ChatGPT へのサインインが完了しませんでした",
+      "callbackReturn": "OpenMAIC に戻る",
       "signIn": "ChatGPT で続行",
       "signInAgain": "もう一度サインイン",
       "noticeTitle": "ChatGPT プランを OpenMAIC で使う",

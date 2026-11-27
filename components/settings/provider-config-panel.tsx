@@ -35,7 +35,7 @@ import { PROVIDERS, type ProviderId } from '@/lib/ai/providers';
 import type { CatalogueModel } from '@/lib/config/provider-presets';
 import { formatContextWindow } from './utils';
 import { PROVIDER_SIGNUP_LINKS } from './provider-links';
-import { ChatGPTPlanAccount } from './chatgpt-plan-account';
+import { ChatGPTPlanAccount, type PlanAccountState } from './chatgpt-plan-account';
 import { ModelEditDialog } from './model-edit-dialog';
 import {
   ApiKeyField,
@@ -53,7 +53,12 @@ import { cn } from '@/lib/utils';
  * server lets a workspace set one, and its models. A service the server
  * configures is shown read-only.
  */
-export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
+export function ProviderConfigPanel({
+  view,
+  apply,
+  entry,
+  planAccount,
+}: ServicePanelProps & { planAccount?: PlanAccountState }) {
   const { t } = useI18n();
   const registry = PROVIDERS[entry.registryId as ProviderId];
   const provider = entry.provider;
@@ -177,7 +182,9 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {/* A provider the server signs in to shows its account instead. */}
-      {editable && registry?.serverAdapter && <ChatGPTPlanAccount save={save} />}
+      {editable && planAccount && registry?.serverAdapter && (
+        <ChatGPTPlanAccount save={save} account={planAccount} />
+      )}
 
       {/* The server's providers are the operator's: their key and endpoint
           are neither shown nor editable here. */}
@@ -350,7 +357,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
               </span>
             )}
           </div>
-          {editable && (
+          {editable && !registry?.serverAdapter && (
             <div className="flex items-center gap-2 flex-wrap">
               {pinned && entry.preset?.capabilities.chat?.models.length ? (
                 <Button
@@ -406,7 +413,10 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
         )}
 
         <div className="space-y-1.5">
-          {models.map((model, index) => {
+          {(!registry?.serverAdapter || planAccount?.status?.state === 'connected'
+            ? models
+            : []
+          ).map((model, index) => {
             return (
               <div
                 key={model.id}
@@ -455,7 +465,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
                 </div>
 
                 {/* Edit/Delete Buttons — only for the workspace's own services */}
-                {editable && (
+                {editable && !registry?.serverAdapter && (
                   <div className="flex items-center gap-1">
                     <Button
                       variant="outline"

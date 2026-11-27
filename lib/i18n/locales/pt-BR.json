@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "Plano do ChatGPT (prévia)"
     },
     "chatgptPlan": {
+      "usingPlan": "Usando o plano do ChatGPT",
+      "callbackConnected": "ChatGPT conectado",
+      "callbackComplete": "Você pode fechar esta aba e voltar ao OpenMAIC.",
+      "callbackFailed": "Não foi possível concluir o login no ChatGPT",
+      "callbackReturn": "Voltar ao OpenMAIC",
       "signIn": "Continuar com o ChatGPT",
       "signInAgain": "Entrar novamente",
       "noticeTitle": "Use seu plano do ChatGPT no OpenMAIC",

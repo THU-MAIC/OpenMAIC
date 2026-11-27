@@ -231,6 +231,44 @@ describe('Model Services → provider changes', () => {
     expect(changes).toEqual([{ kind: 'provider', id: 'acme', preset: 'acme', apiKey: '' }]);
   });
 
+  it('shows a disconnected ChatGPT account as unconfigured and only offers account models', async () => {
+    const preset = {
+      ...chatPreset,
+      id: 'chatgpt-plan',
+      name: 'ChatGPT plan',
+      capabilities: { chat: { models: [] } },
+    };
+    const view = makeView({ presets: [preset] });
+    let state = 'disconnected';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          success: true,
+          status: { available: true, state, noticeAcknowledged: true },
+        }),
+      ),
+    );
+    const { apply } = recordingApply(() => view);
+    mount(
+      createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+    );
+    click(byText('ChatGPT'));
+    expect(document.body.textContent).not.toContain('settings.modelServices.ready');
+    await flush();
+    expect(document.body.textContent).toContain('settings.chatgptPlan.signIn');
+    expect(document.body.textContent).not.toContain('settings.addNewModel');
+    for (state of ['connected', 'reauth-required', 'sharing-disabled', 'disconnected']) {
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flush();
+      expect(document.body.textContent?.includes('settings.modelServices.ready')).toBe(
+        state === 'connected',
+      );
+    }
+  });
+
   it("shows the server's providers read-only and says what only the server can set up", () => {
     const view = makeView({
       providers: [{ ...workspaceProvider('operator'), source: 'deployment', key: undefined }],
@@ -470,6 +508,30 @@ describe("the server's providers wherever chat models are offered", () => {
     return flush().then(() => {
       expect(changes.at(-1)).toEqual({ kind: 'slots', set: { llm: 'gateway:gpt-5.4-mini' } });
     });
+  });
+
+  it('links to usage next to the selected ChatGPT plan model in the home toolbar', () => {
+    const view = withLlm(makeView(), 'personal:gpt');
+    const llm = view.slots.find((slot) => slot.slot === 'llm')!.effective;
+    if (llm.status !== 'assigned') throw new Error('Expected assigned model');
+    llm.registryId = 'chatgpt-plan';
+    modelSettingsClient.adopt(view);
+    try {
+      mount(
+        createElement(GenerationToolbar, {
+          courseMaterials: [],
+          onCourseMaterialsAdd: () => {},
+          onCourseMaterialRemove: () => {},
+          onPdfError: () => {},
+        }),
+      );
+      expect(document.body.textContent).toContain('settings.chatgptPlan.usingPlan');
+      expect(byText('settings.chatgptPlan.manageUsage', 'a').getAttribute('href')).toBe(
+        'https://chatgpt.com/settings/usage',
+      );
+    } finally {
+      modelSettingsClient.adopt(null);
+    }
   });
 
   it('offers them in the home toolbar', () => {

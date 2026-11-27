@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "Подписка ChatGPT (предварительная версия)"
     },
     "chatgptPlan": {
+      "usingPlan": "Используется тариф ChatGPT",
+      "callbackConnected": "Подключение к ChatGPT установлено",
+      "callbackComplete": "Можно закрыть вкладку и вернуться в OpenMAIC.",
+      "callbackFailed": "Не удалось завершить вход в ChatGPT",
+      "callbackReturn": "Вернуться в OpenMAIC",
       "signIn": "Продолжить с ChatGPT",
       "signInAgain": "Войти снова",
       "noticeTitle": "Используйте подписку ChatGPT в OpenMAIC",

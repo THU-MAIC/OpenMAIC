@@ -1389,6 +1389,11 @@
       "chatgpt-plan": "Gói ChatGPT (Xem trước)"
     },
     "chatgptPlan": {
+      "usingPlan": "Đang dùng gói ChatGPT",
+      "callbackConnected": "Đã kết nối ChatGPT",
+      "callbackComplete": "Bạn có thể đóng thẻ này và quay lại OpenMAIC.",
+      "callbackFailed": "Chưa hoàn tất đăng nhập ChatGPT",
+      "callbackReturn": "Quay lại OpenMAIC",
       "signIn": "Tiếp tục với ChatGPT",
       "signInAgain": "Đăng nhập lại",
       "noticeTitle": "Dùng gói ChatGPT của bạn trong OpenMAIC",

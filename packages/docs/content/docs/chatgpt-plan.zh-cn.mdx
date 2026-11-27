@@ -1,0 +1,22 @@
+---
+title: ChatGPT 套餐（预览）
+description: 在个人部署中登录 ChatGPT，使用套餐额度生成课程。
+---
+
+在个人部署中登录 ChatGPT，使用套餐额度生成课程。
+
+## 启用条件
+
+服务器需使用 PostgreSQL、实例密钥，并设置 `OWNER_SINGLE_USER=true` 和 `OPENMAIC_CHATGPT_PLAN_ENABLED=true`。如果注册了身份验证方式，只能启用 `singleUser`。能进入该部署的人都可以使用已连接账号的额度，包括知道 `ACCESS_CODE` 的人。
+
+## 连接账号
+
+在模型设置的聊天服务中选择 **ChatGPT plan (Preview)**，阅读并确认提示，点击 **使用 ChatGPT 继续**，在新标签页允许 OpenMAIC 使用套餐额度。连接后，将账号提供的模型分配给课程阶段。要更新列表，选择刷新模型。
+
+## 远程登录
+
+从其他机器访问服务器时，授权后浏览器可能打不开回调页。复制地址栏中完整的 `http://127.0.0.1:<port>/auth/callback` 地址（含查询参数），粘贴到模型设置中。该地址在十分钟内有效，只能使用一次。
+
+## 用量与断开连接
+
+请求计入套餐为 OpenMAIC 提供的额度。达到上限时，请求会停止；你可以自行切换服务商。在 [ChatGPT 用量设置](https://chatgpt.com/settings/usage) 查看或管理额度。断开连接会移除服务器上加密保存的登录信息，并请求 OpenAI 撤销授权。如果撤销未获确认，可在 ChatGPT 设置中移除 OpenMAIC。
