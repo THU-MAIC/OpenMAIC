@@ -106,7 +106,7 @@ allowUserKeys: false               # 用户只能在这些服务商中选择，�
 
 大多数预设只覆盖一种能力，与内置 registry 一一对应：`openai` 预设只有对话，OpenAI 的图像、语音合成和语音识别分别是 `openai-image`、`openai-tts` 和 `openai-whisper` 预设。每种能力声明一个服务商；同一个 key 覆盖多种能力时，引用同一个 `${VAR}` 即可。**Token Plan 预设**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一个 key 覆盖多种能力，每种能力使用该套餐自己的端点。服务商上的 `baseUrl` 会替换它覆盖的所有能力的端点，因此只有当 Token Plan 的全部能力都一起迁移时，才给它设置 `baseUrl`。
 
-Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境变量、profile 或 role）签名请求，区域取自 `BEDROCK_REGION`、`AWS_REGION` 或 `AWS_DEFAULT_REGION`；`apiKey` 是可选的 bearer token。
+Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境变量、profile 或 role）签名请求，区域取自 `BEDROCK_REGION`、`AWS_REGION` 或 `AWS_DEFAULT_REGION`；已声明的 Bedrock 服务商可使用 `AWS_BEARER_TOKEN_BEDROCK`，或显式设置其 `apiKey`。如需继续接受请求体中写明 `bedrock:<model>` 的现有请求，请把部署服务商声明为 `providers.bedrock`，并授权该模型。
 
 ### 槽位
 

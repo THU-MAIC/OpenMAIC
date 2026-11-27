@@ -106,7 +106,7 @@ allowUserKeys: false               # يختار المستخدمون من بين
 
 تغطي معظم الإعدادات المسبقة قدرة واحدة وفق السجلات المدمجة: الإعداد `openai` للمحادثة فقط، أما صور OpenAI وتحويل النص إلى كلام والتفريغ الصوتي فهي الإعدادات `openai-image` و`openai-tts` و`openai-whisper`. أعلن مزودًا واحدًا لكل قدرة، وأشر إلى `${VAR}` نفسه عندما يغطي مفتاح واحد عدة قدرات. **إعدادات Token Plan المسبقة** (`minimax` و`tokendance` و`volcengine-ark` و`kimi-coding-plan`) تغطي عدة قدرات بمفتاح واحد، كل منها على عنوان الخطة الخاص. يستبدل `baseUrl` على المزود العنوان لكل القدرات التي يغطيها، لذا لا تضع `baseUrl` لـ Token Plan إلا إذا انتقلت كل قدراته معه.
 
-يوقّع Amazon Bedrock (`preset: bedrock`) الطلبات بسلسلة بيانات اعتماد AWS على الخادم (البيئة أو profile أو role)، ويقرأ المنطقة من `BEDROCK_REGION` أو `AWS_REGION` أو `AWS_DEFAULT_REGION`؛ و`apiKey` رمز bearer اختياري.
+يوقّع Amazon Bedrock (`preset: bedrock`) الطلبات بسلسلة بيانات اعتماد AWS على الخادم (البيئة أو profile أو role)، ويقرأ المنطقة من `BEDROCK_REGION` أو `AWS_REGION` أو `AWS_DEFAULT_REGION`؛ ولمزود Bedrock معلَن استخدم `AWS_BEARER_TOKEN_BEDROCK` أو اضبط `apiKey` الخاص به صراحةً. ولمواصلة قبول جسم طلب حالي يذكر `bedrock:<model>`، أعلِن مزود النشر باسم `providers.bedrock` وصرّح بذلك النموذج.
 
 ### الخانات
 

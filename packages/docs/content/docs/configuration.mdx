@@ -106,7 +106,7 @@ Each entry under `providers` declares one provider. The key is its id, which slo
 
 Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
 
-Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; Use `AWS_BEARER_TOKEN_BEDROCK` for a declared Bedrock provider or set its `apiKey` explicitly. To keep accepting an existing request body that names `bedrock:<model>`, declare the deployment provider as `providers.bedrock` and authorize that model.
+Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; use `AWS_BEARER_TOKEN_BEDROCK` for a declared Bedrock provider or set its `apiKey` explicitly. To keep accepting an existing request body that names `bedrock:<model>`, declare the deployment provider as `providers.bedrock` and authorize that model.
 
 ### Slots
 
