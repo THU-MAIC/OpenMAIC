@@ -3,6 +3,7 @@ import {
   applyWhiteboardOps,
   buildWhiteboardFromSteps,
   renderSafeLatexHtml,
+  sanitizeSvgDiagram,
 } from '@/lib/live-tutor/whiteboard-elements';
 
 describe('live-tutor whiteboard projection', () => {
@@ -61,6 +62,28 @@ describe('live-tutor whiteboard projection', () => {
     if (firstEl.type === 'text') {
       expect(firstEl.content).toContain('&lt;');
       expect(firstEl.content).toContain('&amp;');
+    }
+  });
+
+  it('sanitizes SVG diagrams and projects them as PPTImageElement on the whiteboard', () => {
+    const dirty =
+      '<svg onclick="alert(1)" viewBox="0 0 600 340"><script>alert(1)</script><polygon points="100,280 460,280 460,80" fill="#eef2ff" stroke="#4f46e5" stroke-width="3"/><text x="260" y="305">Base = 12</text></svg>';
+    const clean = sanitizeSvgDiagram(dirty);
+    expect(clean).not.toBeNull();
+    expect(clean).not.toContain('<script');
+    expect(clean).not.toContain('onclick');
+    expect(clean).toContain('xmlns="http://www.w3.org/2000/svg"');
+
+    const steps = applyWhiteboardOps(
+      [],
+      [{ op: 'add_diagram', content: dirty, caption: 'Right Triangle Diagram' }],
+    );
+    const wb = buildWhiteboardFromSteps(steps, 'wb-diag-1');
+    expect(wb.elements).toHaveLength(2);
+    expect(wb.elements[0].type).toBe('text');
+    expect(wb.elements[1].type).toBe('image');
+    if (wb.elements[1].type === 'image') {
+      expect(wb.elements[1].src).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
     }
   });
 });

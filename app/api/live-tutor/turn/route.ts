@@ -120,13 +120,13 @@ Rules:
 1. Praise what the student wrote correctly first.
 2. Never blurt out the final answer immediately — point out the exact step to check and ask one short guiding question.
 3. Keep spoken "reply" concise (1 to 3 sentences).
-4. Whenever writing a step, key hint, or LaTeX equation on the whiteboard helps the student follow along, include it in "whiteboardOps". LaTeX formulas must NOT include surrounding $ or $$ delimiters.
+4. Whenever writing a step, key hint, LaTeX equation, or labeled vector diagram (triangles, rays, forces, shapes, graphs) on the whiteboard helps the student follow along, include it in "whiteboardOps". LaTeX formulas must NOT include surrounding $ or $$ delimiters. Diagrams must be self-contained <svg viewBox="0 0 600 340" xmlns="http://www.w3.org/2000/svg">...</svg> strings with no scripts.
 
 Reply with valid JSON only:
 {
   "reply": "<1-3 sentence encouraging spoken response>",
   "whiteboardOps": [
-    { "op": "add_heading" | "add_step" | "add_formula" | "clear", "content": "<text or LaTeX>" }
+    { "op": "add_heading" | "add_step" | "add_formula" | "add_diagram" | "clear", "content": "<text, LaTeX, or SVG>", "caption": "<optional short caption for add_diagram>" }
   ]
 }`;
 
@@ -194,15 +194,24 @@ Reply with valid JSON only:
       const whiteboardOps: WhiteboardOp[] = [];
       for (const candidate of rawOps) {
         if (!candidate || typeof candidate !== 'object') continue;
-        const opObj = candidate as { op?: string; content?: string };
+        const opObj = candidate as { op?: string; content?: string; caption?: string };
         if (opObj.op === 'clear') {
           whiteboardOps.push({ op: 'clear' });
         } else if (
-          (opObj.op === 'add_heading' || opObj.op === 'add_step' || opObj.op === 'add_formula') &&
+          (opObj.op === 'add_heading' ||
+            opObj.op === 'add_step' ||
+            opObj.op === 'add_formula' ||
+            opObj.op === 'add_diagram') &&
           typeof opObj.content === 'string' &&
           opObj.content.trim()
         ) {
-          whiteboardOps.push({ op: opObj.op, content: opObj.content.trim() });
+          whiteboardOps.push({
+            op: opObj.op,
+            content: opObj.content.trim(),
+            ...(typeof opObj.caption === 'string' && opObj.caption.trim()
+              ? { caption: opObj.caption.trim() }
+              : {}),
+          });
         }
       }
 

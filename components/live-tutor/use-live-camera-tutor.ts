@@ -339,7 +339,7 @@ export function useLiveCameraTutor({
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
-        'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters).',
+        'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters). Whenever a visual sketch (labeled right triangle, angle arc, light rays, forces, coordinate axes, shapes, or arrows) helps explain the concept, call draw_whiteboard_diagram with a clean SVG (viewBox="0 0 600 340", white/light background, clear dark strokes and readable labels).',
         cur.topic ? `Current topic: ${cur.topic}.` : '',
         cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
         cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(0, 1800)}` : '',
@@ -400,6 +400,26 @@ export function useLiveCameraTutor({
                         },
                       },
                       required: ['latex'],
+                    },
+                  },
+                  {
+                    name: 'draw_whiteboard_diagram',
+                    description:
+                      'Draw a labeled vector diagram (triangles, shapes, lines, arrows, light rays, coordinate graphs, free-body diagrams) onto the shared whiteboard as a clean self-contained SVG.',
+                    parameters: {
+                      type: 'OBJECT',
+                      properties: {
+                        svg: {
+                          type: 'STRING',
+                          description:
+                            'Self-contained <svg viewBox="0 0 600 340" xmlns="http://www.w3.org/2000/svg">...</svg> using crisp shapes, lines, arrows, and readable text labels (no scripts or external links).',
+                        },
+                        caption: {
+                          type: 'STRING',
+                          description: 'Optional short title shown above the diagram.',
+                        },
+                      },
+                      required: ['svg'],
                     },
                   },
                   {
@@ -524,6 +544,12 @@ export function useLiveCameraTutor({
               });
             } else if (fc.name === 'write_whiteboard_formula' && typeof args.latex === 'string') {
               ops.push({ op: 'add_formula', content: args.latex });
+            } else if (fc.name === 'draw_whiteboard_diagram' && typeof args.svg === 'string') {
+              ops.push({
+                op: 'add_diagram',
+                content: args.svg,
+                caption: typeof args.caption === 'string' ? args.caption : undefined,
+              });
             } else if (fc.name === 'clear_whiteboard') {
               ops.push({ op: 'clear' });
             }

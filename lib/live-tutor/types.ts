@@ -28,8 +28,9 @@ export interface HelpMeLearnPlan {
 
 export interface WhiteboardStepItem {
   id: string;
-  kind: 'heading' | 'text' | 'latex';
+  kind: 'heading' | 'text' | 'latex' | 'diagram';
   content: string;
+  caption?: string;
   color?: string;
 }
 
@@ -37,6 +38,7 @@ export type WhiteboardOp =
   | { op: 'add_heading'; content: string }
   | { op: 'add_step'; content: string }
   | { op: 'add_formula'; content: string }
+  | { op: 'add_diagram'; content: string; caption?: string }
   | { op: 'clear' };
 
 export type LiveTutorSessionResponse =

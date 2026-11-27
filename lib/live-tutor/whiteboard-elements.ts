@@ -2,6 +2,7 @@ import katex from 'katex';
 import {
   safeKatexOptions,
   type PPTElement,
+  type PPTImageElement,
   type PPTLatexElement,
   type PPTTextElement,
   type Whiteboard,
@@ -38,6 +39,41 @@ export function renderSafeLatexHtml(latex: string, displayMode = true): string {
   }
 }
 
+/**
+ * Strictly sanitizes an LLM-generated SVG diagram so it can be rendered safely
+ * as a self-contained vector `data:image/svg+xml` image inside OpenMAIC's whiteboard.
+ */
+export function sanitizeSvgDiagram(rawSvg: string): string | null {
+  const cleaned = rawSvg
+    .replace(/```(?:svg|xml|html)?\s*/gi, '')
+    .replace(/```/g, '')
+    .trim();
+  const match = cleaned.match(/<svg[\s\S]*?<\/svg>/i);
+  if (!match) return null;
+
+  let svg = match[0]
+    // Strip active / external-loading elements
+    .replace(/<(script|foreignObject|iframe|object|embed|use|image|link)\b[\s\S]*?<\/\1>/gi, '')
+    .replace(/<(script|foreignObject|iframe|object|embed|use|image|link)\b[^>]*\/?>/gi, '')
+    // Strip inline event handlers
+    .replace(/\son[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    // Strip javascript: and external http(s) URLs in href/src/style attributes
+    .replace(/(?:xlink:)?href\s*=\s*(?:"[^"]*"|'[^']*')/gi, '')
+    .replace(/url\(\s*['"]?\s*https?:[^)]*\)/gi, 'none');
+
+  if (!/\bxmlns\s*=/i.test(svg)) {
+    svg = svg.replace(/^<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  }
+  if (!/\bviewBox\s*=/i.test(svg)) {
+    svg = svg.replace(/^<svg\b/i, '<svg viewBox="0 0 600 340"');
+  }
+  return svg;
+}
+
+function svgToDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
 export function applyWhiteboardOps(
   current: WhiteboardStepItem[],
   ops: WhiteboardOp[],
@@ -55,6 +91,16 @@ export function applyWhiteboardOps(
       next.push({ id, kind: 'heading', content, color: '#4f46e5' });
     } else if (item.op === 'add_formula') {
       next.push({ id, kind: 'latex', content, color: '#111827' });
+    } else if (item.op === 'add_diagram') {
+      const safeSvg = sanitizeSvgDiagram(content);
+      if (safeSvg) {
+        next.push({
+          id,
+          kind: 'diagram',
+          content: safeSvg,
+          caption: item.caption?.trim() || undefined,
+        });
+      }
     } else {
       next.push({ id, kind: 'text', content, color: '#1f2937' });
     }
@@ -64,7 +110,7 @@ export function applyWhiteboardOps(
 
 /**
  * Projects structured tutor steps onto an OpenMAIC `@openmaic/dsl` Whiteboard
- * so `WhiteboardFrame` / `WhiteboardCanvas` renders text and LaTeX natively.
+ * so `WhiteboardFrame` / `WhiteboardCanvas` renders text, LaTeX, and vector diagrams natively.
  */
 export function buildWhiteboardFromSteps(
   steps: WhiteboardStepItem[],
@@ -74,6 +120,40 @@ export function buildWhiteboardFromSteps(
   let cursorY = 44;
 
   for (const step of steps) {
+    if (step.kind === 'diagram') {
+      if (step.caption) {
+        const captionEl: PPTTextElement = {
+          id: `${step.id}-cap`,
+          type: 'text',
+          left: 60,
+          top: cursorY,
+          width: 880,
+          height: 36,
+          rotate: 0,
+          content: paragraphHtml(step.caption, 16, true),
+          defaultFontName: 'Inter',
+          defaultColor: '#4f46e5',
+        };
+        elements.push(captionEl);
+        cursorY += 40;
+      }
+      const imgEl: PPTImageElement = {
+        id: step.id,
+        type: 'image',
+        left: 110,
+        top: cursorY,
+        width: 780,
+        height: 340,
+        rotate: 0,
+        fixedRatio: true,
+        src: svgToDataUrl(step.content),
+        radius: 12,
+      };
+      elements.push(imgEl);
+      cursorY += 356;
+      continue;
+    }
+
     if (step.kind === 'latex') {
       const latexEl: PPTLatexElement = {
         id: step.id,
