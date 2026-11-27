@@ -94,7 +94,8 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Camera, X } from 'lucide-react';
+import { ClassroomCameraTutorDrawer } from '@/components/live-tutor/classroom-camera-tutor-drawer';
 import { VisuallyHidden } from 'radix-ui';
 import type { PPTElement } from '@openmaic/dsl';
 import {
@@ -1915,6 +1916,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // `null` is the classroom (roundtable) tab. The choice persists across scenes,
     // so notes and chat keep following playback.
     const [mobilePanel, setMobilePanel] = useState<ClassroomPanel | null>(null);
+    const [mobileCameraTutorOpen, setMobileCameraTutorOpen] = useState(false);
     // Entering a quiz returns to the classroom tab, so the quiz has the room it needs.
     const [mobilePanelSceneId, setMobilePanelSceneId] = useState(currentSceneId);
     if (mobilePanelSceneId !== currentSceneId) {
@@ -2465,6 +2467,20 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         {mobile && (
           <>
             <div className="mobile-classroom-composer" ref={setMobileComposerHost} />
+            <button
+              type="button"
+              data-testid="mobile-classroom-camera-tutor-button"
+              onClick={() => setMobileCameraTutorOpen((v) => !v)}
+              title={t('liveTutor.classroomButtonHint')}
+              className="fixed right-3 bottom-20 z-40 inline-flex items-center gap-1.5 rounded-full bg-violet-600 text-white px-3.5 py-2 text-xs font-semibold shadow-lg"
+            >
+              <Camera className="size-4" />
+              <span>{t('liveTutor.classroomButton')}</span>
+            </button>
+            <ClassroomCameraTutorDrawer
+              open={mobileCameraTutorOpen}
+              onOpenChange={setMobileCameraTutorOpen}
+            />
           </>
         )}
 
