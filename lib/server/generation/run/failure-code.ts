@@ -5,7 +5,11 @@
  */
 import { ModelAuthorizationError } from '@/lib/server/model-config/model-authorization';
 import { AudioProviderError } from '@/lib/audio/provider-error';
-import { isUpstreamQuotaExhausted, upstreamHttpStatus } from '@/lib/server/llm-error-response';
+import {
+  isUpstreamQuotaExhausted,
+  publicProviderFailure,
+  upstreamHttpStatus,
+} from '@/lib/server/llm-error-response';
 import { ModelConfigurationError } from '@/lib/server/model-config/llm';
 import { WebSearchConfigError } from '@/lib/server/web-search-config';
 
@@ -16,6 +20,8 @@ export type RunFailureErrorCode = RunFailureCode['errorCode'];
 
 export interface RunFailureCode {
   errorCode: string;
+  /** Overrides a wrapper message with the adapter-authored recovery instruction. */
+  message?: string;
   /**
    * Status used to classify the failure. A provider HTTP status when the
    * failure carries one. `TTSRateLimitError` contributes 429 as a classifier
@@ -36,6 +42,13 @@ export function runFailureCode(error: unknown): RunFailureCode {
   // A step that refused its own output (no usable content): the content and
   // actions routes answer it as GENERATION_FAILED.
   if (error instanceof StepRefusal) return { errorCode: 'GENERATION_FAILED' };
+  const provider = publicProviderFailure(error);
+  if (provider)
+    return {
+      errorCode: 'PROVIDER_ACTION_REQUIRED',
+      statusCode: provider.statusCode,
+      message: provider.message,
+    };
   const status = upstreamHttpStatus(error);
   // The provider account's plan or balance, not the owner's quota: a host's
   // own quota failure has the code its `classifyFailure` answers.

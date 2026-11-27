@@ -6,6 +6,7 @@
  */
 import type { LanguageModel } from 'ai';
 
+import { markPublicProviderFailure } from '@/lib/server/llm-error-response';
 import { chatGPTPlanAvailability } from '@/lib/server/chatgpt-plan/availability';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
@@ -64,12 +65,16 @@ export async function serverAdapterModel(
   },
 ): Promise<ResolvedModel> {
   const problem = adapter.problem();
-  if (problem) throw new ServerAdapterUnavailableError(problem);
+  if (problem) throw markPublicProviderFailure(new Error(problem), 403, 'unavailable');
   const { registryId, modelId, thinkingConfig, contextWindow } = target;
   const listed = (await adapter.listModels()).find((model) => model.id === modelId);
   if (!listed)
-    throw new ServerAdapterUnavailableError(
-      `Model ${modelId} is unavailable for the connected account. Refresh the model list in settings.`,
+    throw markPublicProviderFailure(
+      new Error(
+        'The selected model is unavailable for the connected account. Refresh the model list in settings.',
+      ),
+      400,
+      'model-unavailable',
     );
   return {
     model: await adapter.languageModel(listed),
@@ -86,12 +91,4 @@ export async function serverAdapterModel(
     ...(thinkingConfig ? { thinkingConfig } : {}),
     serverManaged: true,
   };
-}
-
-/** The installation cannot use a server adapter's provider. */
-export class ServerAdapterUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ServerAdapterUnavailableError';
-  }
 }

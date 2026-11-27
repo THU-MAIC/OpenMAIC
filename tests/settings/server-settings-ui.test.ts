@@ -62,6 +62,7 @@ vi.mock('@/components/ui/select', async () => {
 });
 
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
+import { ChatGPTPlanAccount } from '@/components/settings/chatgpt-plan-account';
 import { ModelServicesPanel } from '@/components/settings/model-services';
 import { ModelMap } from '@/components/settings/models/model-map';
 import { llmPickerGroups } from '@/components/settings/use-llm-picker-groups';
@@ -229,6 +230,29 @@ describe('Model Services → provider changes', () => {
     click(byText('settings.serverConfig.removeKey'));
     await flush();
     expect(changes).toEqual([{ kind: 'provider', id: 'acme', preset: 'acme', apiKey: '' }]);
+  });
+
+  it('shows the marked account recovery message when refreshing the ChatGPT models', async () => {
+    const message = 'Review the limit at https://chatgpt.com/settings/usage.';
+    vi.stubGlobal('fetch', async () =>
+      Response.json(
+        { success: false, errorCode: 'PROVIDER_ACTION_REQUIRED', error: message },
+        { status: 429 },
+      ),
+    );
+    mount(
+      createElement(ChatGPTPlanAccount, {
+        save: vi.fn(),
+        account: {
+          status: { available: true, state: 'connected', noticeAcknowledged: true },
+          statusFailed: false,
+          loadStatus: vi.fn(),
+        },
+      }),
+    );
+    click(byText('settings.chatgptPlan.refreshModels'));
+    await flush();
+    expect(document.body.textContent).toContain(message);
   });
 
   it('shows a disconnected ChatGPT account as unconfigured and only offers account models', async () => {

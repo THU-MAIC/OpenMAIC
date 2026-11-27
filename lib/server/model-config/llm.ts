@@ -19,11 +19,7 @@ import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import type { ProviderId, ThinkingConfig } from '@/lib/types/provider';
 
 import { isPiGeminiCompatibleRoute, PiGeminiNativeRequiredError } from './pi-gemini-route';
-import {
-  serverAdapterModel,
-  ServerAdapterUnavailableError,
-  serverLanguageModelAdapter,
-} from './server-adapters';
+import { serverAdapterModel, serverLanguageModelAdapter } from './server-adapters';
 import { checkRequirement, type ResolvedModelTarget, type SlotResolution } from './resolve-slot';
 import { lookupStage, requestMayChoose, SlotDisabledError, SlotUnassignedError } from './runtime';
 
@@ -72,19 +68,12 @@ export async function languageModelFor(
   }
   const adapter = serverLanguageModelAdapter(registryId);
   if (adapter) {
-    try {
-      return await serverAdapterModel(adapter, {
-        registryId,
-        modelId,
-        thinkingConfig,
-        contextWindow: target.declaredContextWindow,
-      });
-    } catch (error) {
-      if (error instanceof ServerAdapterUnavailableError) {
-        throw new ModelConfigurationError('MODEL_CONFIG_INVALID', error.message);
-      }
-      throw error;
-    }
+    return serverAdapterModel(adapter, {
+      registryId,
+      modelId,
+      thinkingConfig,
+      contextWindow: target.declaredContextWindow,
+    });
   }
   const userEndpoint = target.providerSource === 'workspace';
   if (userEndpoint) {

@@ -1,7 +1,6 @@
-import { APICallError } from 'ai';
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { publicProviderResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchModels, ModelFetchError } from '@/lib/server/model-fetch';
 import {
@@ -30,13 +29,8 @@ async function adapterModels(adapter: ServerLanguageModelAdapter) {
   } catch (error) {
     // An adapter's errors carry fixed, caller-facing messages.
     log.warn('Model listing failed:', error);
-    if (APICallError.isInstance(error) && error.statusCode !== undefined) {
-      return apiError(
-        error.statusCode === 401 ? 'INVALID_CREDENTIALS' : 'UPSTREAM_ERROR',
-        error.statusCode,
-        error.message,
-      );
-    }
+    const provider = publicProviderResponse(error);
+    if (provider) return provider;
     return apiError('UPSTREAM_ERROR', 502, 'The provider could not list its models');
   }
 }

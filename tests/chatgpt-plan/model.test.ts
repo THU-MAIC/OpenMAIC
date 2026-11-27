@@ -33,7 +33,14 @@ vi.mock('@/lib/server/chatgpt-plan/session', () => ({
   chatGPTPlanAccessToken: (rejected?: string) => accessToken(rejected),
 }));
 
+import { NextRequest } from 'next/server';
+import { runFailureCode } from '@/lib/server/generation/run/failure-code';
+import { runFailureText } from '@/lib/generation-run-client/failure-message';
 import { Type } from 'typebox';
+vi.mock('@/lib/server/model-config/saved-provider', async (original) => ({
+  ...(await original<typeof import('@/lib/server/model-config/saved-provider')>()),
+  savedChatEndpoint: async () => ({ registryId: 'chatgpt-plan', apiKey: '' }),
+}));
 import { resolveEvalModel } from '@/eval/shared/resolve-model';
 import type { Message as PiMessage } from '@earendil-works/pi-ai';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
@@ -461,6 +468,108 @@ describe('ChatGPT plan models', () => {
     await expect(resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:hidden')).rejects.toThrow(
       /unavailable for the connected account/,
     );
+  });
+
+  it.each([
+    () => new Response('private upstream text'),
+    () => json(200, { error: 'private upstream text' }),
+    () => json(200, { models: [{}] }),
+  ])('reports malformed catalogues without exposing their bodies', async (makeResponse) => {
+    answer = makeResponse;
+    await expect(listChatGPTPlanModels()).rejects.toMatchObject({
+      statusCode: 502,
+      message: expect.stringContaining('invalid model list'),
+    });
+    answer = () => json(200, { models: [] });
+    expect(await listChatGPTPlanModels()).toEqual([]);
+  });
+
+  it.each(['classroom', 'verify model list', 'verify inference', 'probe'] as const)(
+    'keeps a safe quota response through %s',
+    async (entry) => {
+      const reason = 'subscription_sharing_usage_limit_exceeded';
+      answer = ({ url }) =>
+        entry === 'verify inference' && url.endsWith('/models')
+          ? json(200, { models: [{ slug: 'plan-model', visibility: 'list' }] })
+          : json(429, { error: { code: reason, message: 'private upstream text' } });
+      const classroom = entry === 'classroom';
+      const { POST } = classroom
+        ? await import('@/app/api/chat/pi/route')
+        : entry === 'probe'
+          ? await import('@/app/api/provider/probe-models/route')
+          : await import('@/app/api/verify-model/route');
+      const req = new NextRequest('http://localhost/api/test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'chatgpt-plan:plan-model',
+          ...(entry === 'probe' ? { provider: 'plan' } : {}),
+          ...(classroom
+            ? {
+                messages: [{ id: 'u', role: 'user', parts: [{ type: 'text', text: 'hello' }] }],
+                storeState: { scenes: [] },
+                config: { agentIds: ['teacher'] },
+              }
+            : {}),
+        }),
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(429);
+      const body = await res.json();
+      expect(body).toMatchObject({
+        errorCode: 'PROVIDER_ACTION_REQUIRED',
+        reason,
+        error: expect.stringContaining(CHATGPT_USAGE_SETTINGS_URL),
+      });
+      expect(JSON.stringify(body)).not.toContain('private upstream text');
+    },
+  );
+
+  it.each(['verify', 'probe'] as const)(
+    'asks for ChatGPT sign-in when %s discovers an expired account',
+    async (entry) => {
+      accessToken.mockRejectedValueOnce(new ChatGPTPlanError('reauth-required'));
+      const { POST } =
+        entry === 'verify'
+          ? await import('@/app/api/verify-model/route')
+          : await import('@/app/api/provider/probe-models/route');
+      const req = new NextRequest('http://localhost/api/test', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(
+          entry === 'verify' ? { model: 'chatgpt-plan:plan-model' } : { provider: 'plan' },
+        ),
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(401);
+      expect(await res.json()).toMatchObject({
+        errorCode: 'PROVIDER_ACTION_REQUIRED',
+        reason: 'reauth-required',
+        error: expect.stringContaining('Sign in again'),
+      });
+    },
+  );
+
+  it('shows the safe plan recovery in the paused generation preview', async () => {
+    answer = () =>
+      json(429, {
+        error: {
+          code: 'subscription_sharing_usage_limit_exceeded',
+          message: 'private upstream text',
+        },
+      });
+    const error = await listChatGPTPlanModels().catch(
+      (cause) => new Error('internal wrapper', { cause }),
+    );
+    const failure = {
+      step: 'scene:1:actions',
+      message: 'internal wrapper',
+      ...runFailureCode(error),
+    };
+    expect(runFailureText(failure)).toEqual({
+      text: expect.stringContaining(CHATGPT_USAGE_SETTINGS_URL),
+    });
+    expect(JSON.stringify(failure)).not.toContain('internal wrapper');
   });
 
   it('lists the models the account offers, in server order', async () => {

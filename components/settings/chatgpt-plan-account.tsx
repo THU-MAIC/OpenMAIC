@@ -44,7 +44,11 @@ async function call<T>(path: string, body?: Record<string, unknown>): Promise<An
     const data = await response.json().catch(() => ({}));
     return response.ok && data.success
       ? { ok: true, data: data as T }
-      : { ok: false, reason: data.reason, error: data.error };
+      : {
+          ok: false,
+          reason: data.reason,
+          error: data.errorCode === 'PROVIDER_ACTION_REQUIRED' ? data.error : undefined,
+        };
   } catch {
     return { ok: false };
   }
@@ -103,13 +107,16 @@ export function ChatGPTPlanAccount({
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   const failed = useCallback(
-    (answer: { reason?: string; error?: string }) =>
-      setError(t(REASON_KEYS[answer.reason ?? ''] ?? 'settings.chatgptPlan.errorFailed')),
+    (answer: { reason?: string; error?: string }) => {
+      const key = REASON_KEYS[answer.reason ?? ''];
+      setError(key ? t(key) : (answer.error ?? t('settings.chatgptPlan.errorFailed')));
+    },
     [t],
   );
 
   /** Make the provider's model list the account's. */
   const syncModels = useCallback(async () => {
+    setError('');
     setBusy('models');
     const answer = await call<{ models: ChatGPTPlanModel[] }>(CHATGPT_PLAN_API.models);
     setBusy(null);

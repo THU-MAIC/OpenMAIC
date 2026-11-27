@@ -1,3 +1,4 @@
+import { publicProviderFailure } from './llm-error-response';
 import { ModelAuthorizationError } from './model-config/model-authorization';
 import { NextResponse } from 'next/server';
 
@@ -13,6 +14,7 @@ export const API_ERROR_CODES = {
   UNAUTHENTICATED: 'UNAUTHENTICATED',
   ASSET_NOT_FOUND: 'ASSET_NOT_FOUND',
   ASSET_QUOTA_EXCEEDED: 'ASSET_QUOTA_EXCEEDED',
+  PROVIDER_ACTION_REQUIRED: 'PROVIDER_ACTION_REQUIRED',
   PROVIDER_DISABLED: 'PROVIDER_DISABLED',
   VOXCPM_AUTO_VOICE_REQUIRES_CONTEXT: 'VOXCPM_AUTO_VOICE_REQUIRES_CONTEXT',
   INVALID_URL: 'INVALID_URL',
@@ -90,4 +92,17 @@ export function modelAuthorizationResponse(error: unknown): NextResponse<ApiErro
     return apiError(error.code, error.httpStatus, error.message);
   }
   return undefined;
+}
+
+/** A provider's explicitly caller-safe recovery instruction, including its native reason if known. */
+export function publicProviderResponse(error: unknown): NextResponse<ApiErrorBody> | undefined {
+  const failure = publicProviderFailure(error);
+  if (failure)
+    return apiError(
+      'PROVIDER_ACTION_REQUIRED',
+      failure.statusCode,
+      failure.message,
+      undefined,
+      failure.reason,
+    );
 }

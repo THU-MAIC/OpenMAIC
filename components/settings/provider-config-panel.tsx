@@ -148,6 +148,9 @@ export function ProviderConfigPanel({
             .replace('{added}', String(additions.length))
             .replace('{total}', String(ids.length)),
         );
+      } else if (data.errorCode === 'PROVIDER_ACTION_REQUIRED') {
+        setFetchStatus('error');
+        setFetchMessage(data.error);
       } else if (response.status === 404) {
         setFetchStatus('error');
         setFetchMessage(t('settings.fetchModelsNoEndpoint'));

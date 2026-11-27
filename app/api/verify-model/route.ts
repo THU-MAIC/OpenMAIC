@@ -5,7 +5,7 @@ import {
   invalidOwnerCredentialResponse,
 } from '@/lib/server/identity/with-owner';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { publicProviderResponse, apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModel } from '@/lib/server/resolve-model';
 import {
   savedLanguageModel,
@@ -41,7 +41,8 @@ async function verify(req: NextRequest) {
       savedRef = savedProviderRef(body.provider, model);
       if (savedRef) languageModel = (await savedLanguageModel(req, savedRef)).model;
     } catch (error) {
-      const refused = savedProviderResponse(error, 'language model');
+      const refused =
+        publicProviderResponse(error) ?? savedProviderResponse(error, 'language model');
       if (refused) return refused;
       return apiError(
         'INVALID_REQUEST',
@@ -62,7 +63,8 @@ async function verify(req: NextRequest) {
         });
         languageModel = result.model;
       } catch (error) {
-        const refused = savedProviderResponse(error, 'language model');
+        const refused =
+          publicProviderResponse(error) ?? savedProviderResponse(error, 'language model');
         if (refused) return refused;
         return apiError(
           'INVALID_REQUEST',
@@ -94,6 +96,8 @@ async function verify(req: NextRequest) {
       response: text,
     });
   } catch (error) {
+    const provider = publicProviderResponse(error);
+    if (provider) return provider;
     log.error(`Model verification failed [model="${model ?? 'unknown'}"]:`, error);
 
     // Classify by the provider's HTTP status only. Error messages can carry the

@@ -3,6 +3,7 @@ import 'server-only';
 import { APICallError } from 'ai';
 
 import { CHATGPT_PLAN_PROVIDER_ID, CHATGPT_USAGE_SETTINGS_URL } from '@/lib/chatgpt-plan/shared';
+import { markPublicProviderFailure } from '@/lib/server/llm-error-response';
 import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 
 /**
@@ -66,13 +67,6 @@ export function connectionErrorStatus(error: ChatGPTPlanError): number {
   return CONNECTION_STATUS[error.code];
 }
 
-// Errors this module produced: the stream policy leaves them as they are.
-const planErrors = new WeakSet<object>();
-
-export function isPlanCallError(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && planErrors.has(error);
-}
-
 /** A connection failure met while sending a model request. */
 export function connectionCallError(error: ChatGPTPlanError, url: string): APICallError {
   const callError = new APICallError({
@@ -83,8 +77,7 @@ export function connectionCallError(error: ChatGPTPlanError, url: string): APICa
     isRetryable: error.code === 'upstream',
     cause: error,
   });
-  planErrors.add(callError);
-  return callError;
+  return markPublicProviderFailure(callError, CONNECTION_STATUS[error.code], error.code);
 }
 
 /** What an inference endpoint reported, read from its body or stream frame. */
@@ -180,6 +173,18 @@ export function isPlanUsageFailure(failure: UpstreamFailure): boolean {
 }
 
 function genericRule({ status, code }: UpstreamFailure): PlanRule {
+  if (code === 'openmaic_invalid_model_list')
+    return {
+      status: 502,
+      retryable: false,
+      message: 'ChatGPT returned an invalid model list. Refresh the model list in settings.',
+    };
+  if (code === 'response_incomplete')
+    return {
+      status: 502,
+      retryable: false,
+      message: 'The ChatGPT response was incomplete. Try again.',
+    };
   if (status === 413) return REQUEST_TOO_LARGE;
   if (code === ENDED_EARLY) return ENDED_EARLY_RULE;
   if (status === undefined) {
@@ -187,7 +192,7 @@ function genericRule({ status, code }: UpstreamFailure): PlanRule {
     return {
       status: 502,
       retryable: /server_error|rate_limit|overloaded|timeout|unavailable/.test(code ?? ''),
-      message: `The ChatGPT plan request failed${code && SAFE_TOKEN.test(code) ? ` (${code})` : ''}.`,
+      message: 'The ChatGPT plan request failed.',
     };
   }
   return {
@@ -226,8 +231,11 @@ export function planCallError(
       ? { cause: new ProviderQuotaExhaustedError(CHATGPT_PLAN_PROVIDER_ID, rule.message) }
       : {}),
   });
-  planErrors.add(callError);
-  return callError;
+  return markPublicProviderFailure(
+    callError,
+    rule.status,
+    isPlanUsageFailure(failure) && SAFE_TOKEN.test(failure.code ?? '') ? failure.code : undefined,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

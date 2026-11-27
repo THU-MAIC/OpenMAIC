@@ -19,6 +19,7 @@ import { pickThinkingEffort } from '@/lib/ai/thinking-config';
 import type { ThinkingCapability, ThinkingEffort } from '@/lib/types/provider';
 import { generateViaStreamMiddleware } from '@/lib/ai/generate-via-stream';
 import { CHATGPT_PLAN_PROVIDER_ID, type ChatGPTPlanModel } from '@/lib/chatgpt-plan/shared';
+import { publicProviderFailure } from '@/lib/server/llm-error-response';
 import { createLogger } from '@/lib/logger';
 
 import {
@@ -26,7 +27,6 @@ import {
   connectionCallError,
   ENDED_EARLY,
   failureFrom,
-  isPlanCallError,
   isPlanUsageFailure,
   planCallError,
   type UpstreamFailure,
@@ -249,7 +249,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** An error the stream reported, as a {@link planCallError}. */
 function streamError(error: unknown, url: string, requestId: string | undefined): unknown {
-  if (isPlanCallError(error)) return error;
+  if (publicProviderFailure(error)) return error;
   if (error instanceof Error && error.name === 'AbortError') return error;
   const frame = APICallError.isInstance(error) ? error.data : error;
   if (!isRecord(frame)) log.warn('ChatGPT plan stream failed:', error);
@@ -271,7 +271,9 @@ function chatGPTPlanPolicy(url: string, thinking?: ThinkingCapability): Language
       try {
         result = await doStream();
       } catch (error) {
-        throw APICallError.isInstance(error) && !isPlanCallError(error) && error.data !== undefined
+        throw APICallError.isInstance(error) &&
+          !publicProviderFailure(error) &&
+          error.data !== undefined
           ? streamError(error, url, undefined)
           : error;
       }
@@ -352,7 +354,23 @@ export async function listChatGPTPlanModels(): Promise<ChatGPTPlanModel[]> {
     headers: { accept: 'application/json' },
   });
   const body: unknown = await response.json().catch(() => undefined);
-  const listed = isRecord(body) && Array.isArray(body.models) ? body.models : [];
+  if (
+    !isRecord(body) ||
+    !Array.isArray(body.models) ||
+    body.models.some(
+      (entry) =>
+        !isRecord(entry) ||
+        typeof entry.slug !== 'string' ||
+        !entry.slug ||
+        typeof entry.visibility !== 'string',
+    )
+  ) {
+    throw planCallError(
+      { code: 'openmaic_invalid_model_list' },
+      { url: `${CHATGPT_PLAN_API_BASE}/models` },
+    );
+  }
+  const listed = body.models;
   return listed.flatMap((model): ChatGPTPlanModel[] => {
     if (!isRecord(model) || typeof model.slug !== 'string' || model.visibility !== 'list') {
       return [];
