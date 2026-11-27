@@ -10,6 +10,7 @@ import type { Queryable } from '@openmaic/storage/document/pg';
 
 import {
   CHATGPT_PLAN_CALLBACK_PATH,
+  type ChatGPTPlanAttemptOutcome,
   type ChatGPTPlanSignInStart,
   type ChatGPTPlanStatus,
 } from '@/lib/chatgpt-plan/shared';
@@ -40,7 +41,10 @@ import {
   saveReauthRequired,
   saveSignedIn,
   saveTokens,
-  takePendingSignIn,
+  readPendingSignIn,
+  attemptOutcome,
+  finishAttempt,
+  forgetRegistration,
 } from './store';
 
 const SIGN_IN_TTL_MS = 10 * 60 * 1000;
@@ -69,6 +73,9 @@ export async function chatGPTPlanStatus(): Promise<ChatGPTPlanStatus> {
   return {
     available: true,
     state: connection.state,
+    ...(connection.state === 'disconnected' && connection.clientId
+      ? { canForgetRegistration: true as const }
+      : {}),
     ...(connection.email ? { email: connection.email } : {}),
     noticeAcknowledged: connection.noticeAcknowledged,
   };
@@ -104,37 +111,46 @@ export async function beginChatGPTSignIn(
   locale?: PendingSignIn['locale'],
 ): Promise<ChatGPTPlanSignInStart> {
   assertAvailable();
-  const { pool } = await chatGPTPlanDatabase();
-  const connection = await readConnection(pool);
-  const port = loopbackPort(browserOrigin);
-  const redirectUri = `http://127.0.0.1:${port ?? randomInt(PASTE_PORTS.min, PASTE_PORTS.max)}${CHATGPT_PLAN_CALLBACK_PATH}`;
-  const secrets = newAuthorizationSecrets();
-  const clientId = connection.clientId ?? DYNAMIC_CLIENT_ID;
-  const url = await authorizationUrl({
-    clientId,
-    hostId: connection.hostId,
-    redirectUri,
-    secrets,
-    consent: connection.state === 'sharing-disabled',
-    ...(connection.state === 'reauth-required' && connection.email
-      ? { loginHint: connection.email }
-      : {}),
-  });
-  const expiresAt = Date.now() + SIGN_IN_TTL_MS;
-  await savePendingSignIn(
-    pool,
-    hashState(secrets.state),
-    {
-      ...(locale && { locale }),
-      verifier: secrets.verifier,
-      nonce: secrets.nonce,
-      redirectUri,
+  const { withTransaction } = await chatGPTPlanDatabase();
+  return withTransaction(async (q) => {
+    await lockTokens(q);
+    const connection = await readConnection(q);
+    const port = loopbackPort(browserOrigin);
+    const redirectUri = `http://127.0.0.1:${port ?? randomInt(PASTE_PORTS.min, PASTE_PORTS.max)}${CHATGPT_PLAN_CALLBACK_PATH}`;
+    const secrets = newAuthorizationSecrets();
+    const clientId = connection.clientId ?? DYNAMIC_CLIENT_ID;
+    const url = await authorizationUrl({
       clientId,
-      ...(port !== undefined && browserOrigin ? { returnTo: new URL(browserOrigin).origin } : {}),
-    },
-    new Date(expiresAt),
-  );
-  return { authorizationUrl: url, flow: port === undefined ? 'paste' : 'loopback', expiresAt };
+      hostId: connection.hostId,
+      redirectUri,
+      secrets,
+      consent: connection.state === 'sharing-disabled',
+      ...(connection.state === 'reauth-required' && connection.email
+        ? { loginHint: connection.email }
+        : {}),
+    });
+    const expiresAt = Date.now() + SIGN_IN_TTL_MS;
+    const attemptId = hashState(secrets.state);
+    await savePendingSignIn(
+      q,
+      attemptId,
+      {
+        ...(locale && { locale }),
+        verifier: secrets.verifier,
+        nonce: secrets.nonce,
+        redirectUri,
+        clientId,
+        ...(port !== undefined && browserOrigin ? { returnTo: new URL(browserOrigin).origin } : {}),
+      },
+      new Date(expiresAt),
+    );
+    return {
+      attemptId,
+      authorizationUrl: url,
+      flow: port === undefined ? 'paste' : 'loopback',
+      expiresAt,
+    };
+  });
 }
 
 /**
@@ -142,11 +158,13 @@ export async function beginChatGPTSignIn(
  * as the address the user pasted (`address`), which must be the redirect
  * the sign-in named.
  */
-export type ChatGPTPlanCallback = { params: URLSearchParams } | { address: string };
+export type ChatGPTPlanCallback =
+  | { params: URLSearchParams }
+  | { address: string; attemptId?: string };
 
 export async function completeChatGPTSignIn(
   callback: ChatGPTPlanCallback,
-): Promise<Pick<PendingSignIn, 'returnTo' | 'locale'>> {
+): Promise<Pick<PendingSignIn, 'returnTo' | 'locale'> & { sharingDisabled?: true }> {
   assertAvailable();
   let params: URLSearchParams;
   let pasted: URL | undefined;
@@ -162,18 +180,35 @@ export async function completeChatGPTSignIn(
   }
   const state = params.get('state');
   if (!state) throw new ChatGPTPlanError('invalid-callback');
+  const attemptId = hashState(state);
+  if ('address' in callback && callback.attemptId && callback.attemptId !== attemptId) {
+    throw new ChatGPTPlanError('invalid-callback');
+  }
 
   const { withTransaction } = await chatGPTPlanDatabase();
   const outcome = await withTransaction(async (q) => {
     await lockTokens(q);
-    const pending = await takePendingSignIn(q, hashState(state));
+    const pending = await readPendingSignIn(q, attemptId);
     if (!pending) throw new ChatGPTPlanError('sign-in-expired');
     try {
-      return await finishSignIn(q, pending, params, pasted);
+      const state = await finishSignIn(q, pending, params, pasted);
+      await finishAttempt(q, attemptId, state);
+      return {
+        ...(pending.returnTo && { returnTo: pending.returnTo }),
+        ...(pending.locale && { locale: pending.locale }),
+        ...(state === 'sharing-disabled' && { sharingDisabled: true as const }),
+      };
     } catch (error) {
       // Consume each attempt even on denial or failure. Keep its issued client
       // ID so an unsuccessful first exchange can be retried with a fresh code.
       if (error instanceof ChatGPTPlanError) {
+        const reason =
+          error.code === 'sign-in-denied' ||
+          error.code === 'invalid-callback' ||
+          error.code === 'sign-in-expired'
+            ? error.code
+            : 'sign-in-failed';
+        await finishAttempt(q, attemptId, reason);
         error.locale = pending.locale;
         return error;
       }
@@ -189,7 +224,7 @@ async function finishSignIn(
   pending: PendingSignIn,
   params: URLSearchParams,
   pasted?: URL,
-): Promise<Pick<PendingSignIn, 'returnTo' | 'locale'>> {
+): Promise<'connected' | 'sharing-disabled'> {
   if (pasted && `${pasted.origin}${pasted.pathname}` !== pending.redirectUri) {
     throw new ChatGPTPlanError('invalid-callback');
   }
@@ -226,15 +261,9 @@ async function finishSignIn(
   if (connection.subject && identity.subject !== connection.subject) {
     throw new ChatGPTPlanError('sign-in-failed');
   }
-  await saveSignedIn(q, {
-    identity,
-    tokens,
-    state: allowsPlanUsage(tokens) ? 'connected' : 'sharing-disabled',
-  });
-  return {
-    ...(pending.returnTo && { returnTo: pending.returnTo }),
-    ...(pending.locale && { locale: pending.locale }),
-  };
+  const state = allowsPlanUsage(tokens) ? 'connected' : 'sharing-disabled';
+  await saveSignedIn(q, { identity, tokens, state });
+  return state;
 }
 
 /** Every token rotation, and disconnecting, holds this lock across processes. */
@@ -257,9 +286,34 @@ export async function disconnectChatGPT(): Promise<{ revoked: boolean }> {
     const revoked =
       connection.tokens && connection.clientId
         ? await revokeRefreshToken(connection.clientId, connection.tokens.refreshToken)
-        : true;
+        : connection.state === 'disconnected';
     await saveDisconnected(q);
     return { revoked };
+  });
+}
+
+export async function forgetChatGPTRegistration(): Promise<void> {
+  assertAvailable();
+  const { withTransaction } = await chatGPTPlanDatabase();
+  await withTransaction(async (q) => {
+    await lockTokens(q);
+    const connection = await readConnection(q);
+    if (connection.state !== 'disconnected') throw new ChatGPTPlanError('disconnect-first');
+    await forgetRegistration(q);
+  });
+}
+
+export async function chatGPTSignInAttempt(
+  id: string,
+  cancel = false,
+): Promise<ChatGPTPlanAttemptOutcome> {
+  assertAvailable();
+  const { pool, withTransaction } = await chatGPTPlanDatabase();
+  if (!cancel) return attemptOutcome(pool, id);
+  return withTransaction(async (q) => {
+    await lockTokens(q);
+    await finishAttempt(q, id, 'sign-in-denied');
+    return attemptOutcome(q, id);
   });
 }
 

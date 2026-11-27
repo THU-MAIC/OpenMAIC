@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "Plan de ChatGPT (vista previa)"
     },
     "chatgptPlan": {
+      "differentAccount": "Usar otra cuenta",
+      "forgetConfirm": "¿Quieres borrar el registro de ChatGPT guardado en esta instalación? La próxima vez que inicies sesión se registrarán la cuenta y el espacio de trabajo que elijas.",
+      "callbackSharingDisabled": "El uso del plan de ChatGPT está desactivado",
       "usingPlan": "Usando el plan de ChatGPT",
       "callbackConnected": "ChatGPT está conectado",
       "callbackComplete": "Puedes cerrar esta pestaña y volver a OpenMAIC.",

@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "ChatGPT 訂閱（預覽）"
     },
     "chatgptPlan": {
+      "differentAccount": "使用其他帳號",
+      "forgetConfirm": "要忘記此部署儲存的 ChatGPT 註冊資訊嗎？下次登入時，將為你選擇的帳號和工作區重新註冊。",
+      "callbackSharingDisabled": "未啟用 ChatGPT 方案用量",
       "usingPlan": "正在使用 ChatGPT 方案",
       "callbackConnected": "已連線至 ChatGPT",
       "callbackComplete": "你可以關閉此分頁並返回 OpenMAIC。",

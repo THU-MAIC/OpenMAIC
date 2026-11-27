@@ -7,11 +7,15 @@ export const runtime = 'nodejs';
 /** POST /api/chatgpt-plan/callback — finish a sign-in with the address the user pasted. */
 export function POST(request: Request) {
   return chatGPTPlanRoute(request, async () => {
-    const { address } = await chatGPTPlanBody(request);
-    if (typeof address !== 'string' || !address.trim()) {
+    const { address, attemptId } = await chatGPTPlanBody(request);
+    if (
+      typeof address !== 'string' ||
+      !address.trim() ||
+      (attemptId !== undefined && typeof attemptId !== 'string')
+    ) {
       throw new ChatGPTPlanError('invalid-callback');
     }
-    await completeChatGPTSignIn({ address });
+    await completeChatGPTSignIn({ address, attemptId });
     return Response.json({ success: true });
   });
 }

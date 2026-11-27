@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "ChatGPT-Abo (Vorschau)"
     },
     "chatgptPlan": {
+      "differentAccount": "Anderes Konto verwenden",
+      "forgetConfirm": "Die gespeicherte ChatGPT-Registrierung dieser Installation entfernen? Bei der nächsten Anmeldung werden das gewählte Konto und der Arbeitsbereich neu registriert.",
+      "callbackSharingDisabled": "Die Nutzung des ChatGPT-Tarifs ist deaktiviert",
       "usingPlan": "ChatGPT-Tarif wird verwendet",
       "callbackConnected": "ChatGPT ist verbunden",
       "callbackComplete": "Du kannst diesen Tab schließen und zu OpenMAIC zurückkehren.",

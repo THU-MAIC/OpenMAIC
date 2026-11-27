@@ -14,6 +14,16 @@ describe('loopback callback page', () => {
     const local = await callbackPage(request, { ok: false });
     expect(await local.text()).toContain('lang="de-DE"');
   });
+  it('explains a sign-in that did not grant plan usage instead of announcing a connection', async () => {
+    const request = new NextRequest('http://127.0.0.1/auth/callback', {
+      headers: { 'accept-language': 'en-US' },
+    });
+    const response = await callbackPage(request, { ok: true, sharingDisabled: true });
+    const html = await response.text();
+    expect(html).toContain('Plan usage wasn&#39;t allowed');
+    expect(html).not.toContain('ChatGPT is connected');
+    expect(html).not.toContain('window.close()');
+  });
   it('uses the preferred supported language and keeps callback parameters out of the response', async () => {
     const request = new NextRequest(
       'http://localhost/auth/callback?code=private-code&state=private-state',

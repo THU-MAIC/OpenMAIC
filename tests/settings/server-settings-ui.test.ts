@@ -293,6 +293,125 @@ describe('Model Services → provider changes', () => {
     }
   });
 
+  it('warns when upstream revocation is unconfirmed and explicitly confirms a registration change', async () => {
+    const { toast } = await import('sonner');
+    let state = 'reauth-required';
+    let registered = true;
+    const fetchMock = vi.fn(async (path: string) => {
+      if (path.endsWith('/disconnect')) {
+        state = 'disconnected';
+        return Response.json({ success: true, revoked: false });
+      }
+      if (path.endsWith('/forget-registration')) registered = false;
+      return Response.json({
+        success: true,
+        status: {
+          available: true,
+          state,
+          noticeAcknowledged: true,
+          canForgetRegistration: state === 'disconnected' && registered,
+        },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const view = makeView({
+      presets: [{ ...chatPreset, id: 'chatgpt-plan', capabilities: { chat: { models: [] } } }],
+    });
+    mount(
+      createElement(ModelServicesPanel, {
+        view,
+        apply: recordingApply(() => view).apply,
+        tab: 'providers',
+        onTabChange: () => {},
+      }),
+    );
+    click(byText('ChatGPT'));
+    await flush();
+    click(byText('settings.chatgptPlan.disconnect'));
+    const dialogAction = () =>
+      document.querySelector<HTMLElement>('[role="alertdialog"] button:last-child')!;
+    click(dialogAction());
+    await flush();
+    expect(toast.warning).toHaveBeenCalledWith('settings.chatgptPlan.notRevoked');
+    expect(byText('settings.chatgptPlan.signIn').hasAttribute('data-oai-siwc-button')).toBe(true);
+    click(byText('settings.chatgptPlan.differentAccount'));
+    click(byText('common.cancel'));
+    expect(registered).toBe(true);
+    click(byText('settings.chatgptPlan.differentAccount'));
+    click(dialogAction());
+    await flush();
+    expect(registered).toBe(false);
+    expect(document.body.textContent).not.toContain('settings.chatgptPlan.differentAccount');
+  });
+  it.each(['sign-in-denied', 'sharing-disabled', 'cancel'])(
+    'ends a loopback retry whose account state does not change: %s',
+    async (outcome) => {
+      vi.spyOn(window, 'open').mockReturnValue(null);
+      const calls = vi.fn(async (path: string) =>
+        Response.json(
+          path.endsWith('/sign-in')
+            ? {
+                success: true,
+                signIn: {
+                  authorizationUrl: 'https://example.invalid/approve',
+                  attemptId: 'receipt',
+                  flow: 'loopback',
+                  expiresAt: Date.now() + 60000,
+                },
+              }
+            : { success: true, outcome: outcome === 'cancel' ? 'sign-in-denied' : outcome },
+        ),
+      );
+      vi.stubGlobal('fetch', calls);
+      const status = {
+        available: true,
+        state: 'sharing-disabled' as const,
+        noticeAcknowledged: true,
+      };
+      mount(
+        createElement(ChatGPTPlanAccount, {
+          save: vi.fn(),
+          account: { status, statusFailed: false, loadStatus: vi.fn(async () => status) },
+        }),
+      );
+      vi.useFakeTimers();
+      try {
+        await act(async () => {
+          byText('settings.chatgptPlan.signInAgain').click();
+        });
+        expect(document.body.textContent).toContain('settings.chatgptPlan.waiting');
+        if (outcome === 'cancel') {
+          await act(async () => {
+            byText('common.cancel').click();
+          });
+        } else {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(2000);
+          });
+        }
+        expect(calls).toHaveBeenCalledWith(
+          '/api/chatgpt-plan/attempt',
+          expect.objectContaining({
+            body: JSON.stringify(
+              outcome === 'cancel'
+                ? { attemptId: 'receipt', cancel: true }
+                : { attemptId: 'receipt' },
+            ),
+          }),
+        );
+        expect(document.body.textContent).not.toContain('settings.chatgptPlan.waiting');
+        expect(document.body.textContent).toContain(
+          outcome === 'sign-in-denied'
+            ? 'settings.chatgptPlan.errorDenied'
+            : 'settings.chatgptPlan.sharingDisabled',
+        );
+      } finally {
+        vi.useRealTimers();
+        vi.mocked(window.open).mockRestore();
+      }
+    },
+  );
+
   it('shows a failed welcome acknowledgement in the dialog and still lets the user reach disconnect', async () => {
     vi.stubGlobal(
       'fetch',

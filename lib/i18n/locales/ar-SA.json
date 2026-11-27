@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "خطة ChatGPT (معاينة)"
     },
     "chatgptPlan": {
+      "differentAccount": "استخدام حساب آخر",
+      "forgetConfirm": "هل تريد إزالة تسجيل ChatGPT المحفوظ لهذا التثبيت؟ عند تسجيل الدخول مجدداً سيُنشأ تسجيل للحساب ومساحة العمل اللذين تختارهما.",
+      "callbackSharingDisabled": "استخدام خطة ChatGPT غير مفعّل",
       "usingPlan": "يُستخدم اشتراك ChatGPT",
       "callbackConnected": "تم الاتصال بـ ChatGPT",
       "callbackComplete": "يمكنك إغلاق علامة التبويب هذه والعودة إلى OpenMAIC.",

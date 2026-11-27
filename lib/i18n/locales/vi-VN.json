@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "Gói ChatGPT (Xem trước)"
     },
     "chatgptPlan": {
+      "differentAccount": "Dùng tài khoản khác",
+      "forgetConfirm": "Xóa thông tin đăng ký ChatGPT đã lưu cho bản cài đặt này? Lần đăng nhập tiếp theo sẽ đăng ký tài khoản và không gian làm việc bạn chọn.",
+      "callbackSharingDisabled": "Chưa bật quyền sử dụng gói ChatGPT",
       "usingPlan": "Đang dùng gói ChatGPT",
       "callbackConnected": "Đã kết nối ChatGPT",
       "callbackComplete": "Bạn có thể đóng thẻ này và quay lại OpenMAIC.",

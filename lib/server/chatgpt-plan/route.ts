@@ -112,7 +112,10 @@ export function requestLocale(request: NextRequest): Locale {
  */
 export async function callbackPage(
   request: NextRequest,
-  result: ({ ok: true; returnTo?: string } | { ok: false; reason?: ChatGPTPlanError['code'] }) & {
+  result: (
+    | { ok: true; returnTo?: string; sharingDisabled?: true }
+    | { ok: false; reason?: ChatGPTPlanError['code'] }
+  ) & {
     locale?: Locale;
   },
 ): Promise<Response> {
@@ -120,9 +123,16 @@ export async function callbackPage(
   const resource = (await loadLocaleResource(locale)) as typeof en;
   const copy = resource.settings.chatgptPlan;
   const nonce = randomBytes(16).toString('base64');
-  const title = result.ok ? copy.callbackConnected : copy.callbackFailed;
+  const connected = result.ok && !result.sharingDisabled;
+  const title = connected
+    ? copy.callbackConnected
+    : result.ok
+      ? copy.callbackSharingDisabled
+      : copy.callbackFailed;
   const message = result.ok
-    ? copy.callbackComplete
+    ? result.sharingDisabled
+      ? copy.sharingDisabled
+      : copy.callbackComplete
     : result.reason === 'sign-in-expired'
       ? copy.errorExpired
       : result.reason === 'sign-in-denied'
@@ -153,7 +163,7 @@ h1{font-size:1.25rem;margin:0 0 .5rem}p{margin:.5rem 0}a{color:#0969da}
 <p>${escapeHtml(message)}</p>
 ${link}
 </main>
-<script nonce="${nonce}">history.replaceState(null, '', location.pathname);${result.ok ? 'setTimeout(function(){window.close()},1500);' : ''}</script>
+<script nonce="${nonce}">history.replaceState(null, '', location.pathname);${connected ? 'setTimeout(function(){window.close()},1500);' : ''}</script>
 </body>
 </html>`;
   return new Response(html, {

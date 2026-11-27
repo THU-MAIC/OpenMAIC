@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "ChatGPT プラン（プレビュー）"
     },
     "chatgptPlan": {
+      "differentAccount": "別のアカウントを使用",
+      "forgetConfirm": "この環境に保存された ChatGPT の登録情報を削除しますか？ 次回のサインイン時に、選択したアカウントとワークスペースで新しく登録します。",
+      "callbackSharingDisabled": "ChatGPT プランの使用が許可されていません",
       "usingPlan": "ChatGPT プランを使用中",
       "callbackConnected": "ChatGPT に接続しました",
       "callbackComplete": "このタブを閉じて OpenMAIC に戻れます。",

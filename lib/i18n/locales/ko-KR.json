@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "ChatGPT 요금제(미리 보기)"
     },
     "chatgptPlan": {
+      "differentAccount": "다른 계정 사용",
+      "forgetConfirm": "이 설치에 저장된 ChatGPT 등록 정보를 지울까요? 다음 로그인 시 선택한 계정과 워크스페이스로 새로 등록합니다.",
+      "callbackSharingDisabled": "ChatGPT 요금제 사용이 꺼져 있습니다",
       "usingPlan": "ChatGPT 요금제 사용 중",
       "callbackConnected": "ChatGPT에 연결되었습니다",
       "callbackComplete": "이 탭을 닫고 OpenMAIC로 돌아가세요.",

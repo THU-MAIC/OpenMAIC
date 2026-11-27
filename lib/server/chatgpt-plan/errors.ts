@@ -13,6 +13,7 @@ import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 export type ChatGPTPlanErrorCode =
   /** The provider is off here (`availability.ts`). */
   | 'unavailable'
+  | 'disconnect-first'
   | 'not-connected'
   /** Signed in without allowing plan usage on the consent screen. */
   | 'sharing-disabled'
@@ -29,6 +30,7 @@ export type ChatGPTPlanErrorCode =
 
 const MESSAGES: Record<ChatGPTPlanErrorCode, string> = {
   unavailable: 'The ChatGPT plan provider is not available on this installation.',
+  'disconnect-first': 'Disconnect the current ChatGPT account before forgetting its registration.',
   'not-connected': 'Connect a ChatGPT account in settings to use this provider.',
   'sharing-disabled':
     'The connected ChatGPT account has not allowed plan usage in OpenMAIC. Sign in again and allow it.',
@@ -55,6 +57,7 @@ export class ChatGPTPlanError extends Error {
 
 const CONNECTION_STATUS: Record<ChatGPTPlanErrorCode, number> = {
   unavailable: 403,
+  'disconnect-first': 409,
   'not-connected': 401,
   'sharing-disabled': 403,
   'reauth-required': 401,

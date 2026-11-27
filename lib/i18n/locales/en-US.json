@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "ChatGPT plan (Preview)"
     },
     "chatgptPlan": {
+      "differentAccount": "Use a different account",
+      "forgetConfirm": "Forget this installation’s saved ChatGPT registration? The next sign-in will register the account and workspace you choose.",
+      "callbackSharingDisabled": "ChatGPT plan usage is off",
       "usingPlan": "Using ChatGPT plan",
       "callbackConnected": "ChatGPT is connected",
       "callbackComplete": "You can close this tab and return to OpenMAIC.",

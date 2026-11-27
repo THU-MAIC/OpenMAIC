@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "Подписка ChatGPT (предварительная версия)"
     },
     "chatgptPlan": {
+      "differentAccount": "Использовать другую учётную запись",
+      "forgetConfirm": "Удалить сохранённую регистрацию ChatGPT для этой установки? При следующем входе вы выберете учётную запись и рабочее пространство для новой регистрации.",
+      "callbackSharingDisabled": "Расходование лимита ChatGPT отключено",
       "usingPlan": "Используется тариф ChatGPT",
       "callbackConnected": "Подключение к ChatGPT установлено",
       "callbackComplete": "Можно закрыть вкладку и вернуться в OpenMAIC.",

@@ -7,7 +7,10 @@ import 'server-only';
 import { randomUUID } from 'node:crypto';
 import type { Queryable } from '@openmaic/storage/document/pg';
 
-import type { ChatGPTPlanConnectionState } from '@/lib/chatgpt-plan/shared';
+import type {
+  ChatGPTPlanConnectionState,
+  ChatGPTPlanAttemptOutcome,
+} from '@/lib/chatgpt-plan/shared';
 import { provisionChatGPTPlanSchema } from '@/lib/persistence/chatgpt-plan';
 import { getServerPersistenceProvider } from '@/lib/persistence/server-provider';
 import {
@@ -152,12 +155,19 @@ export async function saveReauthRequired(q: Queryable): Promise<void> {
   );
 }
 
-/** Forget the account; the host ID and client registration stay for the next sign-in. */
+/** Clear the local credential and outstanding attempts, retaining the registration. */
 export async function saveDisconnected(q: Queryable): Promise<void> {
   await q.query(
     `UPDATE chatgpt_plan_connection SET state = 'disconnected', credential = NULL,
             email = NULL, updated_at = now() WHERE id = 1`,
   );
+  await q.query('DELETE FROM chatgpt_plan_sign_ins');
+}
+
+export async function forgetRegistration(q: Queryable): Promise<void> {
+  await q.query(`UPDATE chatgpt_plan_connection
+    SET client_id = NULL, subject = NULL, notice_acknowledged_at = NULL, updated_at = now()
+    WHERE id = 1`);
   await q.query('DELETE FROM chatgpt_plan_sign_ins');
 }
 
@@ -193,15 +203,35 @@ export async function savePendingSignIn(
   );
 }
 
-/** Take a pending sign-in: each one completes at most once. */
-export async function takePendingSignIn(
+/** The caller holds the connection lock through exchange and completion. */
+export async function readPendingSignIn(
   q: Queryable,
   stateHash: string,
 ): Promise<PendingSignIn | undefined> {
   const { rows } = await q.query<{ pending: unknown }>(
-    'DELETE FROM chatgpt_plan_sign_ins WHERE state_hash = $1 AND expires_at > now() RETURNING pending',
+    'SELECT pending FROM chatgpt_plan_sign_ins WHERE state_hash = $1 AND outcome IS NULL AND expires_at > now()',
     [stateHash],
   );
   const opened = openSealed(rows[0]?.pending, signInContext(stateHash));
   return opened === undefined ? undefined : (JSON.parse(opened) as PendingSignIn);
+}
+
+export async function finishAttempt(
+  q: Queryable,
+  id: string,
+  outcome: Exclude<ChatGPTPlanAttemptOutcome, 'pending'>,
+) {
+  await q.query(
+    `UPDATE chatgpt_plan_sign_ins SET pending = NULL, outcome = $2
+    WHERE state_hash = $1 AND outcome IS NULL AND expires_at > now()`,
+    [id, outcome],
+  );
+}
+
+export async function attemptOutcome(q: Queryable, id: string): Promise<ChatGPTPlanAttemptOutcome> {
+  const { rows } = await q.query<{ outcome: ChatGPTPlanAttemptOutcome | null }>(
+    'SELECT outcome FROM chatgpt_plan_sign_ins WHERE state_hash = $1 AND expires_at > now()',
+    [id],
+  );
+  return rows.length ? (rows[0].outcome ?? 'pending') : 'sign-in-expired';
 }

@@ -1389,6 +1389,9 @@
       "chatgpt-plan": "Forfait ChatGPT (aperçu)"
     },
     "chatgptPlan": {
+      "differentAccount": "Utiliser un autre compte",
+      "forgetConfirm": "Effacer l’enregistrement ChatGPT de cette installation ? Lors de la prochaine connexion, vous choisirez le compte et l’espace de travail à enregistrer.",
+      "callbackSharingDisabled": "L’utilisation du forfait ChatGPT est désactivée",
       "usingPlan": "Forfait ChatGPT utilisé",
       "callbackConnected": "ChatGPT est connecté",
       "callbackComplete": "Vous pouvez fermer cet onglet et revenir à OpenMAIC.",

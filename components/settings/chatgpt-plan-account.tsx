@@ -21,7 +21,7 @@ import {
   CHATGPT_USAGE_SETTINGS_URL,
   type ChatGPTPlanModel,
   type ChatGPTPlanSignInStart,
-  type ChatGPTPlanStatus,
+  type ChatGPTPlanAttemptOutcome,
 } from '@/lib/chatgpt-plan/shared';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
@@ -51,15 +51,15 @@ export function ChatGPTPlanAccount({
   save: (fields: ProviderFields) => Promise<unknown>;
 }) {
   const { t } = useI18n();
-  const [pending, setPending] = useState<
-    (ChatGPTPlanSignInStart & { from: ChatGPTPlanStatus['state'] }) | null
-  >(null);
+  const [pending, setPending] = useState<ChatGPTPlanSignInStart | null>(null);
   const [pasting, setPasting] = useState(false);
   const [address, setAddress] = useState('');
-  const [busy, setBusy] = useState<'sign-in' | 'paste' | 'models' | 'disconnect' | null>(null);
+  const [busy, setBusy] = useState<
+    'sign-in' | 'paste' | 'models' | 'disconnect' | 'cancel' | 'forget' | null
+  >(null);
   const [error, setError] = useState('');
   const [welcome, setWelcome] = useState<'open' | 'saving' | 'failed' | 'dismissed'>('open');
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [confirm, setConfirm] = useState<'disconnect' | 'forget' | null>(null);
 
   const failed = useCallback(
     (answer: { reason?: string; error?: string }) => {
@@ -97,16 +97,59 @@ export function ChatGPTPlanAccount({
     if (next?.state === 'connected') await syncModels();
   }, [loadStatus, syncModels]);
 
-  // A sign-in in another tab returns to this server: watch for it to land.
+  const finishAttempt = useCallback(
+    async (outcome: ChatGPTPlanAttemptOutcome, cancelled = false) => {
+      if (outcome === 'pending') return;
+      if (outcome === 'connected' || outcome === 'sharing-disabled') {
+        await connected();
+        return;
+      }
+      setPending(null);
+      setAddress('');
+      if (!cancelled) failed({ reason: outcome });
+    },
+    [connected, failed],
+  );
+
+  // Poll this attempt, even when a refused retry leaves the account in the same state.
   useEffect(() => {
     if (!pending || pending.flow !== 'loopback') return;
-    const timer = setInterval(async () => {
-      if (Date.now() > pending.expiresAt) return setPending(null);
-      const next = await loadStatus();
-      if (next && (next.state === 'connected' || next.state !== pending.from)) void connected();
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [pending, loadStatus, connected]);
+    const { attemptId, expiresAt } = pending;
+    let active = true;
+    let timer = setTimeout(check, 2000);
+    async function check() {
+      const answer = await callChatGPTPlan<{ outcome: ChatGPTPlanAttemptOutcome }>(
+        CHATGPT_PLAN_API.attempt,
+        { attemptId },
+      );
+      if (!active) return;
+      if (answer.ok && answer.data.outcome !== 'pending') {
+        await finishAttempt(answer.data.outcome);
+      } else if (Date.now() >= expiresAt) {
+        await finishAttempt('sign-in-expired');
+      } else {
+        if (!answer.ok) failed(answer);
+        timer = setTimeout(check, 2000);
+      }
+    }
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [pending, finishAttempt, failed]);
+
+  const cancelSignIn = async () => {
+    if (!pending) return;
+    setError('');
+    setBusy('cancel');
+    const answer = await callChatGPTPlan<{ outcome: ChatGPTPlanAttemptOutcome }>(
+      CHATGPT_PLAN_API.attempt,
+      { attemptId: pending.attemptId, cancel: true },
+    );
+    setBusy(null);
+    if (!answer.ok) return failed(answer);
+    await finishAttempt(answer.data.outcome, true);
+  };
 
   const acceptNotice = async () => {
     setWelcome('saving');
@@ -135,16 +178,28 @@ export function ChatGPTPlanAccount({
       tab.opener = null;
       tab.location.href = start.authorizationUrl;
     }
-    setPending({ ...start, from: status?.state ?? 'disconnected' });
+    setPending(start);
     setPasting(start.flow === 'paste');
   };
 
   const submitAddress = async () => {
+    if (!pending) return;
     setError('');
     setBusy('paste');
-    const answer = await callChatGPTPlan(CHATGPT_PLAN_API.callback, { address });
+    const { attemptId } = pending;
+    const answer = await callChatGPTPlan(CHATGPT_PLAN_API.callback, { address, attemptId });
     setBusy(null);
-    if (!answer.ok) return failed(answer);
+    if (!answer.ok) {
+      // A mistyped URL can be corrected; a consumed authorization needs a new sign-in.
+      const attempt = await callChatGPTPlan<{ outcome: ChatGPTPlanAttemptOutcome }>(
+        CHATGPT_PLAN_API.attempt,
+        { attemptId },
+      );
+      if (attempt.ok && attempt.data.outcome !== 'pending')
+        await finishAttempt(attempt.data.outcome);
+      else failed(answer);
+      return;
+    }
     await connected();
   };
 
@@ -155,6 +210,16 @@ export function ChatGPTPlanAccount({
     if (!answer.ok) return failed(answer);
     if (!answer.data.revoked) toast.warning(t('settings.chatgptPlan.notRevoked'));
     setPending(null);
+    await loadStatus();
+  };
+
+  const forgetRegistration = async () => {
+    setError('');
+    setBusy('forget');
+    const answer = await callChatGPTPlan(CHATGPT_PLAN_API.forget, {});
+    setBusy(null);
+    if (!answer.ok) return failed(answer);
+    setWelcome('open');
     await loadStatus();
   };
 
@@ -186,8 +251,18 @@ export function ChatGPTPlanAccount({
     </Button>
   );
   const signInButton = (label: string) => (
-    <Button size="sm" onClick={signIn} disabled={busy !== null}>
-      {busy === 'sign-in' && <Loader2 className="size-3.5 animate-spin" />}
+    <Button
+      data-oai-siwc-button=""
+      size="sm"
+      className="bg-black text-white hover:bg-black/85 dark:bg-white dark:text-black dark:hover:bg-white/85"
+      onClick={signIn}
+      disabled={busy !== null}
+    >
+      {busy === 'sign-in' ? (
+        <Loader2 className="size-3.5 animate-spin" />
+      ) : (
+        <img src="/logos/openai.svg" alt="" className="size-4 invert dark:invert-0" />
+      )}
       {label}
     </Button>
   );
@@ -195,7 +270,7 @@ export function ChatGPTPlanAccount({
     <Button
       variant="ghost"
       size="sm"
-      onClick={() => setConfirmDisconnect(true)}
+      onClick={() => setConfirm('disconnect')}
       disabled={busy !== null}
     >
       {t('settings.chatgptPlan.disconnect')}
@@ -234,7 +309,8 @@ export function ChatGPTPlanAccount({
           <button
             type="button"
             className="text-muted-foreground underline-offset-2 hover:underline"
-            onClick={() => setPending(null)}
+            onClick={cancelSignIn}
+            disabled={busy !== null}
           >
             {t('common.cancel')}
           </button>
@@ -305,7 +381,19 @@ export function ChatGPTPlanAccount({
     body = (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">{t('settings.chatgptPlan.noticeBody')}</p>
-        {signInButton(t('settings.chatgptPlan.signIn'))}
+        <div className="flex flex-wrap gap-2">
+          {signInButton(t('settings.chatgptPlan.signIn'))}
+          {status.canForgetRegistration && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirm('forget')}
+              disabled={busy !== null}
+            >
+              {t('settings.chatgptPlan.differentAccount')}
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -339,18 +427,37 @@ export function ChatGPTPlanAccount({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
+      <AlertDialog
+        open={confirm !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirm(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('settings.chatgptPlan.disconnect')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t(
+                confirm === 'forget'
+                  ? 'settings.chatgptPlan.differentAccount'
+                  : 'settings.chatgptPlan.disconnect',
+              )}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {t('settings.chatgptPlan.disconnectConfirm')}
+              {t(
+                confirm === 'forget'
+                  ? 'settings.chatgptPlan.forgetConfirm'
+                  : 'settings.chatgptPlan.disconnectConfirm',
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void disconnect()}>
-              {t('settings.chatgptPlan.disconnect')}
+            <AlertDialogAction onClick={confirm === 'forget' ? forgetRegistration : disconnect}>
+              {t(
+                confirm === 'forget'
+                  ? 'settings.chatgptPlan.differentAccount'
+                  : 'settings.chatgptPlan.disconnect',
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

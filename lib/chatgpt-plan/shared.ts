@@ -22,6 +22,8 @@ export const CHATGPT_PLAN_API = {
   signIn: '/api/chatgpt-plan/sign-in',
   callback: '/api/chatgpt-plan/callback',
   notice: '/api/chatgpt-plan/notice',
+  attempt: '/api/chatgpt-plan/attempt',
+  forget: '/api/chatgpt-plan/forget-registration',
   disconnect: '/api/chatgpt-plan/disconnect',
   models: '/api/chatgpt-plan/models',
 } as const;
@@ -50,6 +52,8 @@ export interface ChatGPTPlanStatus {
   email?: string;
   /** Whether the one-time notice about plan usage was acknowledged. */
   noticeAcknowledged: boolean;
+  /** A disconnected registration the owner may explicitly forget. */
+  canForgetRegistration?: true;
 }
 
 /**
@@ -57,7 +61,18 @@ export interface ChatGPTPlanStatus {
  * `127.0.0.1` callback; `paste` waits for the user to paste the redirect URL
  * the browser could not open (the server is on another machine).
  */
+export type ChatGPTPlanAttemptOutcome =
+  | 'pending'
+  | 'connected'
+  | 'sharing-disabled'
+  | 'sign-in-expired'
+  | 'sign-in-denied'
+  | 'sign-in-failed'
+  | 'invalid-callback';
+
 export interface ChatGPTPlanSignInStart {
+  /** Settings can check or cancel this attempt without sending OAuth state. */
+  attemptId: string;
   authorizationUrl: string;
   flow: 'loopback' | 'paste';
   /** Epoch ms after which the pending sign-in is discarded. */

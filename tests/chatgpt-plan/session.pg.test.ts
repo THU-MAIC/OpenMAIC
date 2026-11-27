@@ -7,6 +7,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import type { Locale } from '@/lib/i18n/types';
 import { Pool } from 'pg';
+import { applySchemaMigrations } from '@openmaic/storage/pg-migrations';
+import { CHATGPT_PLAN_MIGRATIONS } from '@/lib/persistence/chatgpt-plan';
 import { nodePostgresTransaction } from '@openmaic/storage/server/reference';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,6 +109,8 @@ vi.mock('@/lib/server/chatgpt-plan/http', () => ({
 import { resetDiscoveryForTests } from '@/lib/server/chatgpt-plan/oauth';
 import {
   acknowledgeChatGPTPlanNotice,
+  chatGPTSignInAttempt,
+  forgetChatGPTRegistration,
   beginChatGPTSignIn,
   chatGPTPlanAccessToken,
   chatGPTPlanStatus,
@@ -147,7 +151,17 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     vi.stubEnv('DATABASE_URL', 'fixture');
     vi.stubEnv('OPENMAIC_SECRET_KEY', 'pg-test-secret-only');
     resetDiscoveryForTests();
+    // Upgrade an installed v1 store containing an in-flight sign-in.
+    await applySchemaMigrations(pool, {
+      ...CHATGPT_PLAN_MIGRATIONS,
+      migrations: CHATGPT_PLAN_MIGRATIONS.migrations.slice(0, 1),
+    });
+    await pool.query(
+      "INSERT INTO chatgpt_plan_sign_ins VALUES ('legacy-attempt', '{}'::jsonb, now() + interval '5 minutes')",
+    );
+
     await chatGPTPlanStatus();
+    expect(await chatGPTSignInAttempt('legacy-attempt')).toBe('pending');
   });
   afterAll(async () => {
     if (pool) {
@@ -288,6 +302,103 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     await expect(chatGPTPlanAccessToken()).rejects.toMatchObject({ code: 'not-connected' });
     const next = await begin('http://localhost:3000');
     expect(next.params.get('client_id')).toBe('client-issued');
+  });
+
+  it('reports unconfirmed revocation when the stored grant cannot be read after key rotation', async () => {
+    await initialSignIn();
+    vi.stubEnv('OPENMAIC_SECRET_KEY', 'rotated-test-only');
+    try {
+      expect((await chatGPTPlanStatus()).state).toBe('reauth-required');
+      expect(await disconnectChatGPT()).toEqual({ revoked: false });
+      expect(server.revocations).toHaveLength(0);
+      expect(await disconnectChatGPT()).toEqual({ revoked: true });
+    } finally {
+      vi.stubEnv('OPENMAIC_SECRET_KEY', 'pg-test-secret-only');
+    }
+  });
+
+  it('uses a fresh registration on the same host only when explicitly forgotten after disconnect', async () => {
+    await initialSignIn();
+    await expect(forgetChatGPTRegistration()).rejects.toMatchObject({ code: 'disconnect-first' });
+    await disconnectChatGPT();
+    const ordinary = await begin('http://localhost:3000');
+    expect(ordinary.params.get('client_id')).toBe('client-issued');
+    await forgetChatGPTRegistration();
+    expect((await chatGPTPlanStatus()).canForgetRegistration).toBeUndefined();
+    await expect(
+      completeChatGPTSignIn({
+        params: new URLSearchParams({ code: 'late', state: ordinary.params.get('state')! }),
+      }),
+    ).rejects.toMatchObject({ code: 'sign-in-expired' });
+    const fresh = await begin('http://localhost:3000');
+    expect(fresh.params.get('client_id')).toBe('dynamic_agent_client');
+    expect(fresh.params.get('ext_agent_host_id')).toBe(ordinary.params.get('ext_agent_host_id'));
+    server.subject = 'another-user';
+    await completeChatGPTSignIn({
+      params: new URLSearchParams({
+        code: 'new',
+        state: fresh.params.get('state')!,
+        client_id: 'different-client',
+      }),
+    });
+    expect((await chatGPTPlanStatus()).state).toBe('connected');
+  });
+
+  it('reports cancellation, denial and declined sharing per attempt, including unchanged connection state', async () => {
+    const cancelled = await begin('http://localhost:3000');
+    expect(await chatGPTSignInAttempt(cancelled.start.attemptId, true)).toBe('sign-in-denied');
+    await expect(
+      completeChatGPTSignIn({
+        params: new URLSearchParams({
+          state: cancelled.params.get('state')!,
+          code: 'after-cancel',
+          client_id: 'never-registered',
+        }),
+      }),
+    ).rejects.toMatchObject({ code: 'sign-in-expired' });
+    const denied = await begin('http://localhost:3000');
+    await expect(
+      completeChatGPTSignIn({
+        params: new URLSearchParams({ state: denied.params.get('state')!, error: 'access_denied' }),
+      }),
+    ).rejects.toMatchObject({ code: 'sign-in-denied' });
+    expect(await chatGPTSignInAttempt(denied.start.attemptId)).toBe('sign-in-denied');
+    server.scope = 'openid profile email offline_access';
+    for (let i = 0; i < 2; i++) {
+      const attempt = await begin('http://localhost:3000');
+      expect(await chatGPTSignInAttempt(attempt.start.attemptId)).toBe('pending');
+      await completeChatGPTSignIn({
+        params: new URLSearchParams({
+          state: attempt.params.get('state')!,
+          code: 'declined-sharing',
+          client_id: 'client-issued',
+        }),
+      });
+      expect(await chatGPTSignInAttempt(attempt.start.attemptId)).toBe('sharing-disabled');
+    }
+  });
+
+  it('accepts only one registration when two first callbacks return different issued client IDs', async () => {
+    const [a, b] = await Promise.all([
+      begin('http://localhost:3000'),
+      begin('http://localhost:3000'),
+    ]);
+    const completed = await Promise.allSettled(
+      [a, b].map(({ params }, i) =>
+        completeChatGPTSignIn({
+          params: new URLSearchParams({
+            state: params.get('state')!,
+            client_id: 'issued-' + i,
+            code: 'code-' + i,
+          }),
+        }),
+      ),
+    );
+    expect(completed.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(server.tokenRequests).toHaveLength(1);
+    expect((await begin('http://localhost:3000')).params.get('client_id')).toBe(
+      server.tokenRequests[0].get('client_id'),
+    );
   });
 
   it('requires a granted plan scope in the first token response', async () => {

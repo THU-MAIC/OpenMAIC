@@ -42,6 +42,13 @@ CREATE TABLE IF NOT EXISTS chatgpt_plan_sign_ins (
   expires_at TIMESTAMPTZ NOT NULL
 );`,
     },
+    {
+      version: 2,
+      name: 'sign-in-outcomes',
+      transaction: true,
+      up: `ALTER TABLE chatgpt_plan_sign_ins ADD COLUMN outcome TEXT,
+           ALTER COLUMN pending DROP NOT NULL;`,
+    },
   ],
 };
 
