@@ -95,7 +95,7 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle, Camera, X } from 'lucide-react';
-import { ClassroomCameraTutorDrawer } from '@/components/live-tutor/classroom-camera-tutor-drawer';
+import { InlineQACameraPreview } from '@/components/live-tutor/inline-qa-camera-preview';
 import { VisuallyHidden } from 'radix-ui';
 import type { PPTElement } from '@openmaic/dsl';
 import {
@@ -2477,9 +2477,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               <Camera className="size-4" />
               <span>{t('liveTutor.classroomButton')}</span>
             </button>
-            <ClassroomCameraTutorDrawer
+            <InlineQACameraPreview
               open={mobileCameraTutorOpen}
-              onOpenChange={setMobileCameraTutorOpen}
+              onClose={() => setMobileCameraTutorOpen(false)}
             />
           </>
         )}

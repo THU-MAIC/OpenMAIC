@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from 'react';
 import {
   Archive,
-  Camera,
   Download,
   FileCode,
   FileDown,
@@ -48,7 +47,6 @@ import {
 import { cn } from '@/lib/utils';
 import type { StageMode } from '@/lib/types/stage';
 import { ClassroomModeSwitch } from '@/components/workbench/ClassroomModeSwitch';
-import { ClassroomCameraTutorDrawer } from '@/components/live-tutor/classroom-camera-tutor-drawer';
 
 interface ExportMenuItemProps {
   readonly icon: ReactNode;
@@ -147,7 +145,6 @@ export function HeaderControls({
   const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
-  const [cameraTutorOpen, setCameraTutorOpen] = useState(false);
 
   // Export plumbing — uses the stage / media task stores to check
   // readiness, then hands off to the export hooks. Available in both
@@ -592,34 +589,11 @@ export function HeaderControls({
         </label>
       )}
 
-      {mode !== 'edit' && (
-        <button
-          type="button"
-          data-testid="classroom-camera-tutor-button"
-          onClick={() => setCameraTutorOpen((v) => !v)}
-          title={t('liveTutor.classroomButtonHint')}
-          className={cn(
-            'inline-flex shrink-0 items-center gap-1.5 rounded-full border text-[12px] font-semibold transition-colors shadow-xs cursor-pointer',
-            cameraTutorOpen
-              ? 'border-violet-500 bg-violet-600 text-white'
-              : 'border-violet-300/70 dark:border-violet-600/50 bg-white/70 dark:bg-gray-800/70 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-900/30',
-            compact ? 'h-8 px-2.5' : 'h-9 px-3',
-          )}
-        >
-          <Camera className="size-4 shrink-0" />
-          <span className="hidden sm:inline whitespace-nowrap">
-            {t('liveTutor.classroomButton')}
-          </span>
-        </button>
-      )}
       {workbenchControls ? null : exportMenu}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       {videoExportEnabled && (
         <VideoExportDialog open={videoDialogOpen} onOpenChange={setVideoDialogOpen} />
-      )}
-      {mode !== 'edit' && (
-        <ClassroomCameraTutorDrawer open={cameraTutorOpen} onOpenChange={setCameraTutorOpen} />
       )}
     </div>
   );

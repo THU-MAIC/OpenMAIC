@@ -41,6 +41,7 @@ import { createLogger } from '@/lib/logger';
 import type { CleanupSource } from '@/lib/playback/auto-resume';
 import { nanoid } from 'nanoid';
 import { isWhiteboardReferenceAvailable } from '@/lib/whiteboard/element-reference';
+import { captureClassroomCameraSnapshot } from '@/lib/live-tutor/classroom-camera-bridge';
 import { refreshWhiteboardRuntimeProjection } from '@/lib/whiteboard/runtime/browser-projection';
 import { withAbort } from '@/lib/web-fetch/abort';
 
@@ -430,10 +431,15 @@ export async function runPiSingleRequest(
       throw new Error(t('chat.elementReference.whiteboardChanged'));
     }
   }
+  const cameraSnapshot = captureClassroomCameraSnapshot();
   const response = await fetch('/api/chat/pi', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...requestTemplate, ...(interactiveState ? { interactiveState } : {}) }),
+    body: JSON.stringify({
+      ...requestTemplate,
+      ...(interactiveState ? { interactiveState } : {}),
+      ...(cameraSnapshot ? { cameraSnapshot } : {}),
+    }),
     signal: controller.signal,
   });
 

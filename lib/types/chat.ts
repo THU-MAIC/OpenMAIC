@@ -375,6 +375,11 @@ export interface StatelessChatRequest {
   elementReference?: ElementReference;
   /** Request-scoped browser evidence, never a tool permission or static definition. */
   interactiveState?: InteractiveStateEvidence;
+  /** Transient notebook camera snapshot captured for the current student Q&A turn. */
+  cameraSnapshot?: {
+    data: string;
+    mimeType: 'image/jpeg' | 'image/png';
+  };
   /** Agent configuration */
   config: {
     agentIds: string[];
