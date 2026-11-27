@@ -1111,6 +1111,31 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     }
   });
 
+  it('preserves the slide chosen during the pause before automatic advance', async () => {
+    vi.useFakeTimers();
+    settingsState.autoPlayLecture = true;
+    const thirdScene = { ...secondScene, id: 'scene-3', order: 2 };
+    stageState.scenes = [scene, secondScene, thirdScene];
+
+    try {
+      await renderOwner();
+      act(() => mocks.engineOptions?.onComplete?.());
+
+      await act(async () => {
+        (mocks.roundtableProps?.onNextSlide as () => void)();
+      });
+      expect(stageState.currentSceneId).toBe(secondScene.id);
+      await rerenderOwner();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(stageState.currentSceneId).toBe(secondScene.id);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clears the owner draft after automatic playback advances the scene', async () => {
     vi.useFakeTimers();
     settingsState.autoPlayLecture = true;
