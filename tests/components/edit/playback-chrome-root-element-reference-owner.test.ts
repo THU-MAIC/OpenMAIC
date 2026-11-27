@@ -101,13 +101,19 @@ const interactiveScene = {
     html: '<label for="angle-slider">Angle</label><input id="angle-slider" type="range" min="0" max="90" value="45">',
   },
 };
+const quizScene = {
+  ...scene,
+  id: 'scene-quiz',
+  type: 'quiz',
+  content: { type: 'quiz', questions: [] },
+};
 
 const stageState = {
   mode: 'playback',
   stage: { id: 'stage-1', whiteboard: [] as import('@/lib/types/stage').Whiteboard[] },
   getCurrentScene: () =>
     stageState.scenes.find((candidate) => candidate.id === stageState.currentSceneId),
-  scenes: [scene, secondScene] as Array<typeof scene | typeof interactiveScene>,
+  scenes: [scene, secondScene] as Array<typeof scene | typeof interactiveScene | typeof quizScene>,
   currentSceneId: scene.id,
   setCurrentSceneId: vi.fn((sceneId: string) => {
     stageState.currentSceneId = sceneId;
@@ -402,6 +408,7 @@ import {
   PlaybackChromeRoot,
   type PlaybackChromeRootHandle,
 } from '@/components/edit/PlaybackChromeRoot';
+import { emitQuizReviewed } from '@/lib/classroom/quiz-reviewed';
 
 describe('PlaybackChromeRoot element-reference ownership', () => {
   let container: HTMLDivElement;
@@ -473,6 +480,41 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
       await Promise.resolve();
     });
   }
+
+  it.each([false, true])(
+    'opens course completion only if the learner stays on the quiz (stays: %s)',
+    async (stays) => {
+      vi.useFakeTimers();
+      vi.stubGlobal('matchMedia', () => ({
+        matches: false,
+        addListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }));
+      stageState.scenes = stays ? [quizScene] : [quizScene, secondScene];
+      stageState.currentSceneId = quizScene.id;
+
+      try {
+        await renderOwner();
+        act(() => emitQuizReviewed(quizScene.id));
+
+        if (!stays) {
+          await act(async () => {
+            (mocks.roundtableProps?.onNextSlide as () => void)();
+          });
+          expect(stageState.currentSceneId).toBe(secondScene.id);
+          await rerenderOwner();
+        }
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1500);
+        });
+        expect(Boolean(container.querySelector('[data-testid="course-end"]'))).toBe(stays);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('pauses playing narration when frame HTML media starts', async () => {
     mocks.engineMode = 'playing';
