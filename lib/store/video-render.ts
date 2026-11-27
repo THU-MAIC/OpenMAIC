@@ -39,6 +39,8 @@ const log = createLogger('VideoRenderStore');
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_ATTEMPTS = Math.ceil((60 * 60 * 1000) / POLL_INTERVAL_MS);
+const MAX_CONSECUTIVE_POLL_FAILURES = 3;
+const RETRYABLE_POLL_STATUSES = new Set([502, 503, 504]);
 /** Below this percent the extrapolated ETA is too noisy to show. */
 const ETA_MIN_PERCENT = 3;
 /**
@@ -290,6 +292,7 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
     // (surface the error instead of an unsolicited download). null = fetch threw.
     let submitStatus: number | null = null;
     let submitReason: string | undefined;
+    let consecutivePollFailures = 0;
 
     try {
       const form = new FormData();
@@ -322,9 +325,29 @@ export const useVideoRenderStore = create<VideoRenderState>()((set, get) => ({
           return { status: 'submitted', taskId: data.jobId };
         },
         poll: async (jobId) => {
-          const res = await fetch(`/api/export-video/render/${jobId}`);
+          // The accepted job can outlive a temporary loss of its status route.
+          const res = await fetch(`/api/export-video/render/${jobId}`).catch((error: unknown) => {
+            if (
+              error instanceof TypeError &&
+              ++consecutivePollFailures < MAX_CONSECUTIVE_POLL_FAILURES
+            ) {
+              return null;
+            }
+            throw error;
+          });
+          if (!res) return { status: 'pending' };
+
           const data = (await res.json().catch(() => ({}))) as JobStatusResponse;
-          if (!res.ok) return { status: 'failed', message: data.error || `HTTP ${res.status}` };
+          if (!res.ok) {
+            if (
+              RETRYABLE_POLL_STATUSES.has(res.status) &&
+              ++consecutivePollFailures < MAX_CONSECUTIVE_POLL_FAILURES
+            ) {
+              return { status: 'pending' };
+            }
+            return { status: 'failed', message: data.error || `HTTP ${res.status}` };
+          }
+          consecutivePollFailures = 0;
 
           const percent = Math.round((data.progress ?? 0) * 100);
 

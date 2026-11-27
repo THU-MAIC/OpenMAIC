@@ -166,7 +166,8 @@ describe('video render failure presentation and lifecycle', () => {
     });
     const pending = start();
     await vi.dynamicImportSettled();
-    await vi.advanceTimersByTimeAsync(kind === 'timeout' ? 3_600_000 : 3000);
+    const pollDelay = kind === 'poll-http-error' || kind === 'poll-network-error' ? 9000 : 3000;
+    await vi.advanceTimersByTimeAsync(kind === 'timeout' ? 3_600_000 : pollDelay);
     await pending;
     expect(fetchMock).toHaveBeenCalledWith('/api/export-video/render/job-1', { method: 'DELETE' });
     expect(mocks.error).toHaveBeenCalledWith('export.videoFailed', {
@@ -198,6 +199,29 @@ describe('video render failure presentation and lifecycle', () => {
     expect(fetchMock.mock.calls.filter((args) => args[1]?.method === 'DELETE')).toHaveLength(0);
     expect(useVideoRenderStore.getState()).toMatchObject({ status: 'succeeded', error: null });
     expect(mocks.success).toHaveBeenCalledWith('export.videoMp4Success', { id: 'render-toast' });
+    expect(mocks.saveAs).toHaveBeenCalledWith(expect.any(Blob), 'Example.mp4');
+  });
+
+  it('continues polling an accepted render after temporary network and gateway errors', async () => {
+    fetchMock
+      .mockResolvedValueOnce(Response.json({ jobId: 'job-retry' }, { status: 202 }))
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(new Response(null, { status: 502 }))
+      .mockResolvedValueOnce(Response.json({ status: 'running', progress: 0.4 }))
+      .mockResolvedValueOnce(Response.json({ status: 'succeeded', progress: 1 }))
+      .mockResolvedValueOnce(new Response(new Blob(['mp4 fixture'])));
+
+    const pending = start();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(9000);
+    expect(useVideoRenderStore.getState()).toMatchObject({ status: 'rendering', percent: 40 });
+    await vi.advanceTimersByTimeAsync(3000);
+    await pending;
+
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/export-video/render/job-retry', {
+      method: 'DELETE',
+    });
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
     expect(mocks.saveAs).toHaveBeenCalledWith(expect.any(Blob), 'Example.mp4');
   });
 
