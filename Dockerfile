@@ -131,4 +131,11 @@ USER nextjs
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# On Node 22, AsyncLocalStorage is built on async hooks by default: every new
+# promise copies every active store, so a server with many stores (Next.js
+# keeps about ten, the app adds its own) spends a large share of CPU on
+# context propagation under load. The async context frame implementation,
+# the default from Node 24, removes that per-promise work. It is set on the
+# command line rather than in NODE_OPTIONS so a deployment's NODE_OPTIONS
+# cannot drop it.
+CMD ["node", "--experimental-async-context-frame", "server.js"]
