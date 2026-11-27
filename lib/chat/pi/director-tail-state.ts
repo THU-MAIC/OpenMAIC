@@ -8,6 +8,7 @@ import type { AgentTurnSummary } from '@/lib/orchestration/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { WhiteboardRuntimeService } from '@/lib/whiteboard/runtime/store';
 import type { DirectorCompactionRuntime } from './director-compaction';
+import { getLatestLearnerText } from './prompts';
 
 const log = createLogger('DirectorTailState');
 export const DIRECTOR_STATE_PREFIX =
@@ -102,6 +103,12 @@ export function createDirectorTailStateTransform(opts: {
   getAgentResponses: () => AgentTurnSummary[];
   compaction: DirectorCompactionRuntime;
 }) {
+  const learnerText = getLatestLearnerText(opts.body.messages);
+  // The tag marks where the learner's text ends and the state data begins. A
+  // closing tag typed by the learner is neutralized so it cannot end it early.
+  const learnerBlock = learnerText?.trim()
+    ? `<latest_user_message>\n${learnerText.replace(/<\/(latest_user_message)/gi, '<\\/$1')}\n</latest_user_message>\n\n`
+    : '';
   let requestIndex = 0;
   const readMessage = async (signal?: AbortSignal): Promise<AgentMessage> => {
     signal?.throwIfAborted();
@@ -141,6 +148,7 @@ export function createDirectorTailStateTransform(opts: {
       (candidate) => candidate.id === opts.body.storeState.currentSceneId,
     );
     const content =
+      learnerBlock +
       DIRECTOR_STATE_PREFIX +
       JSON.stringify({
         requestStart: {

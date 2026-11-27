@@ -579,12 +579,11 @@ export function buildUserPrompt(
   body: StatelessChatRequest,
   elementReferenceSummary?: string,
 ): string {
-  const latestUserText = [...body.messages].reverse().find((message) => message.role === 'user');
   const discussion = body.config.discussionPrompt || body.config.discussionTopic;
   return [
     'Handle the latest classroom turn.',
     discussion ? `Discussion context: ${discussion}` : '',
-    `Latest user message: ${latestUserText ? extractMessageText(latestUserText) : '(none)'}`,
+    `Latest user message: ${getLatestLearnerText(body.messages) ?? '(none)'}`,
     elementReferenceSummary ?? '',
   ]
     .filter(Boolean)
@@ -623,6 +622,13 @@ export function toHistoryMessages(
       return null;
     })
     .filter((message): message is AgentMessage => Boolean(message));
+}
+
+export function getLatestLearnerText(
+  messages: StatelessChatRequest['messages'],
+): string | undefined {
+  const message = [...messages].reverse().find((entry) => entry.role === 'user');
+  return message && extractMessageText(message);
 }
 
 function extractMessageText(message: StatelessChatRequest['messages'][number]): string {
