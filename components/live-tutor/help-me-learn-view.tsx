@@ -21,7 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { WhiteboardFrame, WHITEBOARD_SHELL_CLASS } from '@/components/whiteboard/whiteboard-frame';
 import { LanguageSwitcher } from '@/components/language-switcher';
-import { SceneProvider } from '@/lib/contexts/scene-context';
+import { SceneProvider, type SceneDataController } from '@/lib/contexts/scene-context';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import {
@@ -37,6 +37,31 @@ import type {
   WhiteboardStepItem,
 } from '@/lib/live-tutor/types';
 import { LiveCameraPanel } from './live-camera-panel';
+
+const STANDALONE_WHITEBOARD_SCENE_DATA = {
+  type: 'slide' as const,
+  canvas: {
+    id: 'help-me-learn-whiteboard',
+    viewportSize: 1000,
+    viewportRatio: 0.5625,
+    elements: [],
+    theme: {
+      themeColors: ['#7c3aed', '#4f46e5', '#10b981', '#f59e0b'],
+      fontColor: '#1f2937',
+      fontName: 'Inter',
+      backgroundColor: '#ffffff',
+      shadow: { h: 0, v: 0, blur: 0, color: '#000000' },
+      outline: { width: 1, color: '#e5e7eb', style: 'solid' as const },
+    },
+  },
+};
+
+const STANDALONE_WHITEBOARD_CONTROLLER: SceneDataController = {
+  sceneId: 'help-me-learn-whiteboard',
+  sceneType: 'slide',
+  getSnapshot: () => STANDALONE_WHITEBOARD_SCENE_DATA,
+  updateSceneData: () => {},
+};
 
 export function HelpMeLearnView() {
   const { t, locale } = useI18n();
@@ -517,7 +542,7 @@ export function HelpMeLearnView() {
           >
             {/* Left: Native OpenMAIC Interactive Whiteboard */}
             <div className={cn(WHITEBOARD_SHELL_CLASS, 'lg:col-span-7 min-h-[380px] lg:min-h-0')}>
-              <SceneProvider>
+              <SceneProvider controller={STANDALONE_WHITEBOARD_CONTROLLER}>
                 <WhiteboardFrame
                   title={t('helpMeLearn.whiteboardTitle')}
                   whiteboard={whiteboard}
