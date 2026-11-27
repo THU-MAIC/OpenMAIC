@@ -431,6 +431,13 @@ const SHIPPED: readonly (readonly [
     true,
     '2da226996b0653223215f6f35d3195797709cada0bae94bec1a51a4a07b10c5b',
   ],
+  [
+    'chatgpt-plan',
+    2,
+    'sign-in-outcomes',
+    true,
+    'd47e3610f9b09b887fbf0d11ed6cb39f9254df599fb8a51d9a1ec5cd4d90988e',
+  ],
 ];
 
 /**
