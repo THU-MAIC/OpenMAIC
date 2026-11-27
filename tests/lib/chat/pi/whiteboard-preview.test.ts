@@ -223,7 +223,9 @@ describe('request-scoped optional whiteboard preview', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'text',
-          text: expect.stringMatching(/^Latest user message: Explain this board\./),
+          text: expect.stringMatching(
+            /^<latest_user_message>\nExplain this board\.\n<\/latest_user_message>\n\n/,
+          ),
         }),
         expect.objectContaining({ type: 'image', mimeType: 'image/png' }),
       ]),
