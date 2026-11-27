@@ -7,7 +7,11 @@
  * what to ask for (browser speech runs in the browser, for instance).
  */
 import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
-import { voiceAccountFor, type VoiceAccount } from '@/lib/audio/voice-account';
+import {
+  voiceAccountFor,
+  voiceRejectionScopeFor,
+  type VoiceAccount,
+} from '@/lib/audio/voice-account';
 import { deviceOwnerKey } from '@/lib/device-storage/owner-key';
 
 import {
@@ -35,7 +39,7 @@ export interface ModelCapabilities {
   tts: EffectiveTarget | null;
   /** The service behind private voice preferences, including a discovered unavailable pick. */
   ttsVoiceAccount?: VoiceAccount;
-  /** In-memory scope for voice rejections from a service with no account catalogue. */
+  /** In-memory scope when the speech provider ties rejected voices to the current settings view. */
   ttsVoiceRejectionScope?: string;
   asr: EffectiveTarget | null;
   image: EffectiveTarget | null;
@@ -89,30 +93,15 @@ function speechInput(view: ModelSettingsView | null | undefined): EffectiveTarge
   return !view || status === 'unassigned' ? BROWSER_SPEECH_RECOGNITION : null;
 }
 
-// Doubao speaker permissions can change when the service, key or resource changes.
-// The public view can mask those differences. Scope refusals to this read of the settings.
-const doubaoScopes = new WeakMap<ModelSettingsView, string>();
-let nextDoubaoScope = 0;
-
-function doubaoRejectionScope(view: ModelSettingsView): string {
-  let scope = doubaoScopes.get(view);
-  if (scope === undefined) {
-    scope = `doubao-view:${++nextDoubaoScope}`;
-    doubaoScopes.set(view, scope);
-  }
-  return scope;
-}
-
 export function modelCapabilities(view: ModelSettingsView | null | undefined): ModelCapabilities {
   const tts = effectiveTarget(view, 'tts');
   const ttsVoiceAccount = voiceAccountFor(view);
+  const ttsVoiceRejectionScope = voiceRejectionScopeFor(view, tts?.registryId);
   return {
     known: !!view,
     llm: effectiveTarget(view, 'llm'),
     tts,
-    ...(view && tts?.registryId === 'doubao-tts'
-      ? { ttsVoiceRejectionScope: doubaoRejectionScope(view) }
-      : {}),
+    ...(ttsVoiceRejectionScope ? { ttsVoiceRejectionScope } : {}),
     ...(ttsVoiceAccount ? { ttsVoiceAccount } : {}),
     asr: speechInput(view),
     image: effectiveTarget(view, 'image'),
