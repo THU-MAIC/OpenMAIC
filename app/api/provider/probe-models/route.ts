@@ -1,3 +1,4 @@
+import { APICallError } from 'ai';
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -9,12 +10,36 @@ import {
   savedProviderResponse,
 } from '@/lib/server/model-config/saved-provider';
 import { requestProvidersAllowed } from '@/lib/server/model-config/runtime';
+import {
+  serverLanguageModelAdapter,
+  type ServerLanguageModelAdapter,
+} from '@/lib/server/model-config/server-adapters';
 import { REQUEST_PROVIDERS_REFUSED } from '@/lib/server/resolve-model';
 
 const log = createLogger('ProbeModels');
 
 /** Model ids that are not chat models — filtered out of probe results. */
 const NON_CHAT_PATTERN = /(tts|asr|whisper|embedding|rerank|mineru|image|video|voxcpm|moderation)/i;
+
+async function adapterModels(adapter: ServerLanguageModelAdapter) {
+  const problem = adapter.problem();
+  if (problem) return apiError('PROVIDER_DISABLED', 403, problem);
+  try {
+    const models = await adapter.listModels();
+    return apiSuccess({ models, total: models.length, filtered: 0 });
+  } catch (error) {
+    // An adapter's errors carry fixed, caller-facing messages.
+    log.warn('Model listing failed:', error);
+    if (APICallError.isInstance(error) && error.statusCode !== undefined) {
+      return apiError(
+        error.statusCode === 401 ? 'INVALID_CREDENTIALS' : 'UPSTREAM_ERROR',
+        error.statusCode,
+        error.message,
+      );
+    }
+    return apiError('UPSTREAM_ERROR', 502, 'The provider could not list its models');
+  }
+}
 
 /**
  * POST /api/provider/probe-models
@@ -41,7 +66,11 @@ export async function POST(req: NextRequest) {
       try {
         const ref = savedProviderRef(saved);
         if (!ref) return apiError('MISSING_REQUIRED_FIELD', 400, 'provider is required');
-        ({ baseUrl, apiKey } = await savedChatEndpoint(req, ref));
+        const endpoint = await savedChatEndpoint(req, ref);
+        // A provider the server signs in to lists the signed-in account's models.
+        const adapter = serverLanguageModelAdapter(endpoint.registryId);
+        if (adapter) return await adapterModels(adapter);
+        ({ baseUrl, apiKey } = endpoint);
         modelsUrl = undefined;
       } catch (error) {
         const refused = savedProviderResponse(error, 'language model');

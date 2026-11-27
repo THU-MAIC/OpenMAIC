@@ -380,12 +380,22 @@ export function resolveFixedOwnerId(): string | undefined {
  * unset-`ACCESS_CODE` warning.
  */
 export function warnAboutOwnerIdentityConfiguration(): boolean {
+  warnIfPremintingWithoutAnonymousFallback(registry().configured);
+  return warnIfSingleUserIsUnprotected(isPersonalInstallation());
+}
+
+/**
+ * Whether this is a personal installation: its methods include the single-user
+ * method, from the environment or a host registration. Installation-wide, with
+ * no request behind it, and it does not mark the configuration in use, so boot
+ * checks may ask before a host registers; a route still checks
+ * {@link isPersonalInstallationOwner} for its principal.
+ */
+export function isPersonalInstallation(): boolean {
   const configured = registry().configured;
-  warnIfPremintingWithoutAnonymousFallback(configured);
-  const singleUserActive = configured
+  return configured
     ? configured.methods.some(isSingleUserAuthMethod)
     : !resolveSharedOwnerId() && resolveSingleUserOwnerId() !== undefined;
-  return warnIfSingleUserIsUnprotected(singleUserActive);
 }
 
 let warnedPremint = false;

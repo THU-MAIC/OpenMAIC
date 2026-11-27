@@ -35,6 +35,7 @@ import { PROVIDERS, type ProviderId } from '@/lib/ai/providers';
 import type { CatalogueModel } from '@/lib/config/provider-presets';
 import { formatContextWindow } from './utils';
 import { PROVIDER_SIGNUP_LINKS } from './provider-links';
+import { ChatGPTPlanAccount } from './chatgpt-plan-account';
 import { ModelEditDialog } from './model-edit-dialog';
 import {
   ApiKeyField,
@@ -175,9 +176,12 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
       {serverConfigured && <ServerConfiguredNotice view={view} capability="chat" />}
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
+      {/* A provider the server signs in to shows its account instead. */}
+      {editable && registry?.serverAdapter && <ChatGPTPlanAccount save={save} />}
+
       {/* The server's providers are the operator's: their key and endpoint
           are neither shown nor editable here. */}
-      {editable && (
+      {editable && !registry?.serverAdapter && (
         <>
           {/* 推广位（如 Kimi）：获取 API key 的国内/海外双链接。 */}
           {signupLinks && (

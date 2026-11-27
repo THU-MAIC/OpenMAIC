@@ -71,7 +71,12 @@ const log = createLogger('AIProviders');
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
 /** Provider IDs whose logos are monochrome-dark and need `dark:invert` in dark mode */
-export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'openrouter', 'ollama']);
+export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'openrouter',
+  'ollama',
+  'chatgpt-plan',
+]);
 
 /**
  * Provider registry
@@ -1583,6 +1588,20 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  // ChatGPT plan usage (preview): the server signs in with ChatGPT and sends
+  // Responses API requests on the user's plan. Its models come from the
+  // signed-in account (lib/server/chatgpt-plan), so the catalogue lists none.
+  'chatgpt-plan': {
+    id: 'chatgpt-plan',
+    name: 'ChatGPT plan (Preview)',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    requiresApiKey: false,
+    serverAdapter: true,
+    icon: '/logos/openai.svg',
+    models: [],
+  },
 };
 
 applyModelMetadata(PROVIDERS);
@@ -2343,6 +2362,12 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   let providerType = config.providerType;
   const provider = getProviderConfig(config.providerId);
   const requiresApiKey = config.requiresApiKey ?? provider?.requiresApiKey ?? true;
+
+  if (provider?.serverAdapter) {
+    throw new Error(
+      `${config.providerId} models are built on the server from its signed-in account, not from a key.`,
+    );
+  }
 
   if (provider && providerType && providerType !== provider.type) {
     throw new Error(

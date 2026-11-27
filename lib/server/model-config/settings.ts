@@ -49,6 +49,7 @@ import {
 } from '@/lib/config/official-endpoints';
 
 import { acceptsWorkspaceToolBaseUrl, isForceDisabled, isLocalEndpoint } from './media';
+import { serverLanguageModelAdapter } from './server-adapters';
 import {
   checkModelConfigShape,
   parseModelRef,
@@ -409,6 +410,10 @@ function workspacePresetProblem(preset: ProviderPreset): string | undefined {
   if (preset.capabilities.chat?.registryId === 'bedrock') {
     return 'Amazon Bedrock can only be configured by the deployment (openmaic.yml)';
   }
+  // A provider the server signs in to is offered where this installation can use it.
+  const adapter = serverLanguageModelAdapter(preset.capabilities.chat?.registryId ?? '');
+  const adapterProblem = adapter?.problem();
+  if (adapterProblem) return adapterProblem;
   // The settings take one key per provider; a key pair stays in openmaic.yml.
   if (preset.requiresCredentials) {
     return `${preset.name} authenticates with a key pair, which only the deployment (openmaic.yml) can configure`;

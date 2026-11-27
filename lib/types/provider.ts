@@ -25,7 +25,8 @@ export type BuiltInProviderId =
   | 'xiaomi'
   | 'tokendance'
   | 'lemonade'
-  | 'ollama';
+  | 'ollama'
+  | 'chatgpt-plan';
 
 /**
  * Provider ID (built-in or custom)
@@ -177,6 +178,12 @@ export interface ProviderConfig {
    */
   alternateBaseUrls?: { label: string; url: string }[];
   requiresApiKey: boolean;
+  /**
+   * The server builds this provider's models itself, from an account it signed
+   * in to rather than a key (`lib/server/model-config/server-adapters.ts`):
+   * `getModel` refuses it, and the settings show the adapter's own sign-in.
+   */
+  serverAdapter?: true;
   icon?: string;
   models: ModelInfo[];
 }

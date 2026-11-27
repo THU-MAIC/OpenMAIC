@@ -5,12 +5,12 @@
  * the model pickers, so a provider looks the same everywhere. Data only (no
  * panels), so the home toolbar can use it.
  */
-import { MONO_LOGO_PROVIDERS, PROVIDERS } from '@/lib/ai/providers';
+import { MONO_LOGO_PROVIDERS, PROVIDERS, type ProviderId } from '@/lib/ai/providers';
 import { ASR_PROVIDERS, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { resolveASRProviderName, resolveTTSProviderName } from '@/lib/audio/provider-display';
 import type { SlotCapability } from '@/lib/config/model-slots';
 import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
-import { tokenPlanPresetId } from '@/lib/config/preset-ids';
+import { presetIdFor, tokenPlanPresetId } from '@/lib/config/preset-ids';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import type { ModelSettingsView } from '@/lib/model-settings/client';
@@ -192,9 +192,19 @@ export function registryIdsFor(
   view: ModelSettingsView,
   capability: SlotCapability,
 ): readonly string[] {
-  return capability === 'webFetch'
-    ? (view.webFetchProviders ?? []).map((provider) => provider.id)
-    : REGISTRY_INFO[capability].ids;
+  if (capability === 'webFetch')
+    return (view.webFetchProviders ?? []).map((provider) => provider.id);
+  if (capability !== 'chat') return REGISTRY_INFO[capability].ids;
+  // A provider the server signs in to is listed where this installation offers
+  // it (or one is already set up), not as a service only the server could add.
+  return REGISTRY_INFO.chat.ids.filter((id) => {
+    if (!PROVIDERS[id as ProviderId]?.serverAdapter) return true;
+    const presetId = presetIdFor('chat', id);
+    return (
+      view.presets.some((preset) => preset.id === presetId) ||
+      view.providers.some((provider) => provider.preset === presetId)
+    );
+  });
 }
 
 export function registryInfoFor(view: ModelSettingsView, capability: SlotCapability): RegistryInfo {

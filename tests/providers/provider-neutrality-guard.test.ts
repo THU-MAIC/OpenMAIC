@@ -346,6 +346,7 @@ const GENERIC_ID_PARTS = new Set([
   'ocr',
   'pdf',
   'plain',
+  'plan',
   'search',
   'text',
   'tts',
