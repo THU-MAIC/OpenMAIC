@@ -8,19 +8,20 @@ import type { LanguageModel } from 'ai';
 
 import { chatGPTPlanAvailability } from '@/lib/server/chatgpt-plan/availability';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
-import type { ThinkingConfig } from '@/lib/types/provider';
+import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
 
 export interface ServerAdapterModel {
   id: string;
   name: string;
   contextWindow?: number;
   vision?: boolean;
+  thinking?: ThinkingCapability;
 }
 
 export interface ServerLanguageModelAdapter {
   /** Why this installation cannot use the provider (caller-facing), or undefined. */
   problem(): string | undefined;
-  languageModel(modelId: string): Promise<LanguageModel>;
+  languageModel(model: ServerAdapterModel): Promise<LanguageModel>;
   /** The models the signed-in account offers. */
   listModels(): Promise<ServerAdapterModel[]>;
 }
@@ -37,7 +38,8 @@ const ADAPTERS: Record<string, ServerLanguageModelAdapter> = {
         ? 'The ChatGPT plan provider is turned off (OPENMAIC_CHATGPT_PLAN_ENABLED).'
         : 'The ChatGPT plan provider is available on personal installations only.';
     },
-    languageModel: async (modelId) => (await chatGPTPlanModels()).chatGPTPlanLanguageModel(modelId),
+    languageModel: async (model) =>
+      (await chatGPTPlanModels()).chatGPTPlanLanguageModel(model.id, model.thinking),
     listModels: async () => (await chatGPTPlanModels()).listChatGPTPlanModels(),
   },
 };
@@ -64,12 +66,18 @@ export async function serverAdapterModel(
   const problem = adapter.problem();
   if (problem) throw new ServerAdapterUnavailableError(problem);
   const { registryId, modelId, thinkingConfig, contextWindow } = target;
+  const listed = (await adapter.listModels()).find((model) => model.id === modelId);
+  if (!listed)
+    throw new ServerAdapterUnavailableError(
+      `Model ${modelId} is unavailable for the connected account. Refresh the model list in settings.`,
+    );
   return {
-    model: await adapter.languageModel(modelId),
+    model: await adapter.languageModel(listed),
     modelInfo: {
       id: modelId,
-      name: modelId,
-      ...(contextWindow !== undefined ? { contextWindow } : {}),
+      name: listed.name,
+      contextWindow: contextWindow ?? listed.contextWindow,
+      capabilities: { vision: listed.vision, thinking: listed.thinking },
     },
     modelString: `${registryId}:${modelId}`,
     providerId: registryId,

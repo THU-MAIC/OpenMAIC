@@ -50,6 +50,8 @@ import { replayToolCallArguments, toolCallArguments } from './tool-call-argument
 import { requestStateTail } from './request-state-tail';
 import { hostStateTailMessage } from '@/lib/ai/request-state-tail';
 
+type ReasoningBlock = ThinkingContent & { providerMetadata?: ToolCallProviderMetadata };
+
 /**
  * Local re-implementation of pi-ai's `AssistantMessageEventStream` queue. pi
  * exports the class as a *type* only (the `createAssistantMessageEventStream`
@@ -231,6 +233,17 @@ export function createPartMapper(
       (partial.content[active.index] as ThinkingContent).thinking = active.buf;
       push({ type: 'thinking_delta', contentIndex: active.index, delta, partial });
     } else if (part.type === 'reasoning-end') {
+      // Stateless Responses calls can finish a reasoning item with only its
+      // encrypted payload. Keep the metadata even without a text delta.
+      const metadata = captureToolCallMetadata(part);
+      if (metadata) {
+        const block: ReasoningBlock =
+          active?.kind === 'thinking'
+            ? (partial.content[active.index] as ReasoningBlock)
+            : { type: 'thinking', thinking: '' };
+        block.providerMetadata = metadata;
+        if (active?.kind !== 'thinking') partial.content.push(block);
+      }
       if (active?.kind === 'thinking') closeActive();
     } else if (mapped?.type === 'tool-call') {
       closeActive();
@@ -584,7 +597,12 @@ export function toModelMessages(
       for (const c of m.content) {
         if (c.type === 'text') parts.push({ type: 'text', text: c.text });
         else if (c.type === 'thinking' && options.includeReasoning) {
-          parts.push({ type: 'reasoning', text: c.thinking });
+          const metadata = (c as ReasoningBlock).providerMetadata;
+          parts.push({
+            type: 'reasoning',
+            text: c.thinking,
+            ...(metadata ? { providerOptions: metadata } : {}),
+          });
         } else if (c.type === 'toolCall') {
           const part: Record<string, unknown> = {
             type: 'tool-call',

@@ -33,6 +33,17 @@ vi.mock('@/lib/server/chatgpt-plan/session', () => ({
   chatGPTPlanAccessToken: (rejected?: string) => accessToken(rejected),
 }));
 
+import { Type } from 'typebox';
+import { resolveEvalModel } from '@/eval/shared/resolve-model';
+import type { Message as PiMessage } from '@earendil-works/pi-ai';
+import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
+import { callLLM } from '@/lib/ai/llm';
+import { attachedModelFallback } from '@/lib/ai/model-fallbacks';
+import { slotLanguageModel } from '@/lib/server/model-config/llm';
+import { lookupFromLayers } from '@/lib/server/model-config/runtime';
+vi.mock('@/lib/server/chatgpt-plan/availability', () => ({
+  chatGPTPlanAvailability: () => ({ available: true }),
+}));
 import { CHATGPT_USAGE_SETTINGS_URL } from '@/lib/chatgpt-plan/shared';
 import { ChatGPTPlanError } from '@/lib/server/chatgpt-plan/errors';
 import { chatGPTPlanLanguageModel, listChatGPTPlanModels } from '@/lib/server/chatgpt-plan/model';
@@ -160,6 +171,147 @@ describe('ChatGPT plan requests', () => {
     );
   });
 
+  it('requires only the selected tool within the application namespace', async () => {
+    await generateText({
+      model: chatGPTPlanLanguageModel('plan-model'),
+      prompt: 'Make a slide.',
+      tools: { make_slide: makeSlide, other: makeSlide },
+      toolChoice: { type: 'tool', toolName: 'make_slide' },
+      maxRetries: 0,
+    });
+    expect(sent[0]!.body).toMatchObject({
+      tool_choice: 'required',
+      tools: [{ type: 'namespace', tools: [{ name: 'make_slide' }] }],
+    });
+  });
+
+  it('resolves a plan slot from the live catalogue and cannot switch billing on failure', async () => {
+    const resolution = lookupFromLayers('course.outline', {
+      workspace: null,
+      deployment: {
+        source: 'deployment',
+        config: {
+          providers: {
+            plan: { preset: 'chatgpt-plan' },
+            paid: { preset: 'openai', apiKey: 'test' },
+          },
+          slots: { 'course.outline': { model: 'plan:plan-model', fallback: 'paid:gpt-5.4' } },
+        },
+      },
+    });
+    if (resolution.status !== 'assigned') throw new Error('expected assigned plan');
+    answer = ({ url }) =>
+      url.endsWith('/models')
+        ? json(200, {
+            models: [
+              {
+                slug: 'plan-model',
+                visibility: 'list',
+                input_modalities: ['image', 'text'],
+                supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }],
+              },
+            ],
+          })
+        : sse(textEvents('ok'));
+    const built = await slotLanguageModel(resolution);
+    expect(built.modelInfo?.capabilities?.vision).toBe(true);
+    expect(await attachedModelFallback(built.model)?.()).toBeFalsy();
+    for (const effort of ['high', 'medium'] as const) {
+      await callLLM({ model: built.model, prompt: 'hello' }, 'scene-stream', undefined, { effort });
+    }
+    expect(sent[1]?.body?.reasoning).toMatchObject({ effort: 'high' });
+    expect(sent[2]?.body?.reasoning ?? {}).not.toHaveProperty('effort');
+    answer = () => json(429, { error: { code: 'subscription_sharing_usage_limit_exceeded' } });
+    await expect(
+      callLLM({ model: built.model, prompt: 'hello' }, 'scene-stream', { retries: 2 }),
+    ).rejects.toMatchObject({
+      statusCode: 429,
+      data: { code: 'subscription_sharing_usage_limit_exceeded' },
+    });
+    expect(sent).toHaveLength(4);
+  });
+
+  it('replays the first Pi turn’s encrypted reasoning and namespaced tool result on the second request', async () => {
+    const call = {
+      type: 'function_call',
+      id: 'fc_1',
+      name: 'make_slide',
+      namespace: 'openmaic',
+      call_id: 'call_1',
+      arguments: '{"title":"Intro"}',
+    };
+    answer = (_request, index) =>
+      index
+        ? sse(textEvents('Done'))
+        : sse([
+            created,
+            {
+              type: 'response.output_item.added',
+              output_index: 0,
+              item: { type: 'reasoning', id: 'rs_1', summary: [] },
+            },
+            {
+              type: 'response.output_item.done',
+              output_index: 0,
+              item: { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque' },
+            },
+            {
+              type: 'response.output_item.added',
+              output_index: 1,
+              item: { ...call, arguments: '' },
+            },
+            {
+              type: 'response.function_call_arguments.delta',
+              output_index: 1,
+              item_id: 'fc_1',
+              delta: call.arguments,
+            },
+            {
+              type: 'response.output_item.done',
+              output_index: 1,
+              item: { ...call, status: 'completed' },
+            },
+            { type: 'response.completed', response: { usage } },
+          ]);
+    const bridge = createCallLlmStreamFn({ languageModel: chatGPTPlanLanguageModel('plan-model') });
+    const messages: PiMessage[] = [{ role: 'user', content: 'Make a slide', timestamp: 0 }];
+    const run = async () =>
+      (
+        await bridge({ id: 'plan-model' } as never, {
+          messages,
+          tools: [
+            {
+              name: 'make_slide',
+              description: 'make slide',
+              parameters: Type.Object({ title: Type.String() }),
+            },
+          ],
+        })
+      ).result();
+    const first = await run();
+    expect(first.stopReason).toBe('toolUse');
+    messages.push(first, {
+      role: 'toolResult',
+      toolCallId: 'call_1',
+      toolName: 'make_slide',
+      content: [{ type: 'text', text: 'ok' }],
+      isError: false,
+      timestamp: 1,
+    });
+    expect((await run()).stopReason).toBe('stop');
+    expect(sent[1]?.body?.input).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'reasoning', encrypted_content: 'opaque' }),
+        expect.objectContaining({
+          type: 'function_call',
+          name: 'make_slide',
+          namespace: 'openmaic',
+        }),
+        expect.objectContaining({ type: 'function_call_output', call_id: 'call_1' }),
+      ]),
+    );
+  });
+
   it('streams text through streamText', async () => {
     const result = streamText({
       model: chatGPTPlanLanguageModel('plan-model'),
@@ -236,6 +388,11 @@ describe('ChatGPT plan failures', () => {
     expect(error.message).toBe('This ChatGPT account cannot use its plan in other apps.');
   });
 
+  it('preserves the documented 403 for a route that does not admit plan usage', async () => {
+    answer = () => json(403, { error: { code: 'subscription_sharing_route_not_supported' } });
+    expect(await failure(0)).toMatchObject({ statusCode: 403, isRetryable: false });
+  });
+
   it('names an unsupported capability by its field', async () => {
     answer = () =>
       json(400, {
@@ -260,6 +417,23 @@ describe('ChatGPT plan failures', () => {
     expect(error.cause).toBeInstanceOf(ProviderQuotaExhaustedError);
   });
 
+  it('rejects incomplete output and gives actionable size errors', async () => {
+    answer = () =>
+      sse([
+        ...textEvents('partial').slice(0, -1),
+        {
+          type: 'response.incomplete',
+          response: { incomplete_details: { reason: 'max_output_tokens' }, usage },
+        },
+      ]);
+    expect((await failure(0)).message).toMatch(/incomplete/i);
+    answer = () => json(413, {});
+    expect(await failure(0)).toMatchObject({
+      statusCode: 413,
+      message: expect.stringContaining('fewer attachments'),
+    });
+  });
+
   it('fails a stream that ends before the response completes', async () => {
     answer = () => sse(textEvents('partial').slice(0, 3));
     const error = await failure(0);
@@ -277,6 +451,18 @@ describe('ChatGPT plan failures', () => {
 });
 
 describe('ChatGPT plan models', () => {
+  it('resolves an eval model only when the current account lists it', async () => {
+    answer = ({ url }) =>
+      url.endsWith('/models')
+        ? json(200, { models: [{ slug: 'plan-model', visibility: 'list' }] })
+        : sse(textEvents('Eval result'));
+    const result = await resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:plan-model');
+    expect((await generateText({ model: result.model, prompt: 'Hello' })).text).toBe('Eval result');
+    await expect(resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:hidden')).rejects.toThrow(
+      /unavailable for the connected account/,
+    );
+  });
+
   it('lists the models the account offers, in server order', async () => {
     answer = () =>
       json(200, {

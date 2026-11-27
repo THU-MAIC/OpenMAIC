@@ -14,6 +14,9 @@ import {
   wrapLanguageModel,
 } from 'ai';
 
+import { thinkingContext } from '@/lib/ai/thinking-context';
+import { pickThinkingEffort } from '@/lib/ai/thinking-config';
+import type { ThinkingCapability, ThinkingEffort } from '@/lib/types/provider';
 import { generateViaStreamMiddleware } from '@/lib/ai/generate-via-stream';
 import { CHATGPT_PLAN_PROVIDER_ID, type ChatGPTPlanModel } from '@/lib/chatgpt-plan/shared';
 import { createLogger } from '@/lib/logger';
@@ -149,7 +152,7 @@ const unsupported = (feature: string): Warning => ({
   details: 'ChatGPT plan usage does not accept this setting; it was not sent.',
 });
 
-function shapeRequest(params: CallOptions): CallOptions {
+function shapeRequest(params: CallOptions, thinking?: ThinkingCapability): CallOptions {
   const { maxOutputTokens, temperature, topP, ...rest } = params;
   const warnings = Object.entries({ maxOutputTokens, temperature, topP })
     .filter(([, value]) => value !== undefined)
@@ -173,7 +176,18 @@ function shapeRequest(params: CallOptions): CallOptions {
       .map((message) => (message.role === 'system' ? message.content : '')),
   ].filter(Boolean);
 
-  const tools = rest.tools?.map((tool) => {
+  const config = thinkingContext.getStore();
+  const effort = thinking && config ? pickThinkingEffort(thinking, config) : openai.reasoningEffort;
+  delete openai.reasoningEffort;
+  if (thinking?.effortValues?.includes(effort as ThinkingEffort)) openai.reasoningEffort = effort;
+  // The SDK's named tool_choice refers to a top-level function. Require the
+  // selected namespace member by offering it as the sole available tool.
+  const choice = rest.toolChoice;
+  const allowedTools =
+    choice?.type === 'tool'
+      ? rest.tools?.filter((tool) => tool.name === choice.toolName)
+      : rest.tools;
+  const tools = allowedTools?.map((tool) => {
     if (tool.type !== 'function') {
       throw new UnsupportedFunctionalityError({
         functionality: `ChatGPT plan usage with provider tool ${tool.id}`,
@@ -210,6 +224,7 @@ function shapeRequest(params: CallOptions): CallOptions {
   const shaped: CallOptions = {
     ...rest,
     prompt,
+    ...(choice?.type === 'tool' ? { toolChoice: { type: 'required' as const } } : {}),
     ...(tools ? { tools } : {}),
     // Raw chunks show `response.failed`, which the SDK reports without an error.
     includeRawChunks: true,
@@ -244,12 +259,12 @@ function streamError(error: unknown, url: string, requestId: string | undefined)
 /**
  * Shapes each request to what plan usage accepts (warning about each setting
  * it leaves out) and checks each response stream: only `response.completed`
- * (or `response.incomplete`) ends one successfully.
+ * ends one successfully.
  */
-function chatGPTPlanPolicy(url: string): LanguageModelMiddleware {
+function chatGPTPlanPolicy(url: string, thinking?: ThinkingCapability): LanguageModelMiddleware {
   return {
     specificationVersion: 'v3',
-    transformParams: async ({ params }) => shapeRequest(params),
+    transformParams: async ({ params }) => shapeRequest(params, thinking),
     wrapStream: async ({ doStream, params }) => {
       const { warnings, rawRequested } = notes.get(params) ?? { warnings: [], rawRequested: false };
       let result;
@@ -278,7 +293,9 @@ function chatGPTPlanPolicy(url: string): LanguageModelMiddleware {
                 return;
               case 'raw': {
                 const event = isRecord(part.rawValue) ? part.rawValue.type : undefined;
-                if (event === 'response.completed' || event === 'response.incomplete') ended = true;
+                if (event === 'response.completed') ended = true;
+                if (event === 'response.incomplete' && !failed)
+                  enqueue(fail({ code: 'response_incomplete' }));
                 if (event === 'response.failed' && !failed) enqueue(fail(part.rawValue));
                 if (rawRequested) enqueue(part);
                 return;
@@ -307,7 +324,10 @@ function chatGPTPlanPolicy(url: string): LanguageModelMiddleware {
 // ── Models ───────────────────────────────────────────────────────────────────
 
 /** A ChatGPT plan model, by the slug `/v1/models` lists. */
-export function chatGPTPlanLanguageModel(modelId: string): LanguageModel {
+export function chatGPTPlanLanguageModel(
+  modelId: string,
+  thinking?: ThinkingCapability,
+): LanguageModel {
   const provider = createOpenAI({
     baseURL: CHATGPT_PLAN_API_BASE,
     // Replaced by the account's token in `planFetch`.
@@ -320,7 +340,7 @@ export function chatGPTPlanLanguageModel(modelId: string): LanguageModel {
     // Generate calls go through the stream, so the policy checks them too.
     middleware: [
       generateViaStreamMiddleware(),
-      chatGPTPlanPolicy(`${CHATGPT_PLAN_API_BASE}/responses`),
+      chatGPTPlanPolicy(`${CHATGPT_PLAN_API_BASE}/responses`, thinking),
     ],
     providerId: CHATGPT_PLAN_PROVIDER_ID,
   });
@@ -338,9 +358,29 @@ export async function listChatGPTPlanModels(): Promise<ChatGPTPlanModel[]> {
       return [];
     }
     if (model.supported_in_api === false) return [];
+    const effortValues: ThinkingEffort[] = Array.isArray(model.supported_reasoning_levels)
+      ? model.supported_reasoning_levels.flatMap((entry) => {
+          const effort = isRecord(entry) ? entry.effort : entry;
+          return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(effort)
+            ? [effort]
+            : [];
+        })
+      : [];
     return [
       {
         id: model.slug,
+        ...(effortValues.length
+          ? {
+              thinking: {
+                control: 'effort' as const,
+                requestAdapter: 'openai' as const,
+                effortValues,
+                ...(effortValues.includes(model.default_reasoning_level as ThinkingEffort)
+                  ? { defaultEffort: model.default_reasoning_level as ThinkingEffort }
+                  : {}),
+              },
+            }
+          : {}),
         name: typeof model.display_name === 'string' ? model.display_name : model.slug,
         ...(typeof model.context_window === 'number'
           ? { contextWindow: model.context_window }

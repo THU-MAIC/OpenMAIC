@@ -134,7 +134,7 @@ const PLAN_RULES: Record<string, PlanRule> = {
     message: 'ChatGPT plan usage does not support part of this request.',
   },
   route_not_supported: {
-    status: 400,
+    status: 403,
     retryable: false,
     message: 'ChatGPT plan usage does not support this request.',
   },
@@ -200,8 +200,7 @@ function genericRule({ status, code }: UpstreamFailure): PlanRule {
 /**
  * The error an inference failure surfaces as. The message is fixed text, never
  * the server's (it can echo the request); the request ID is kept for support.
- * Plan usage codes are not retried; an exhausted usage limit is reported as a
- * quota refusal, so a configured fallback model may still serve the request.
+ * An exhausted plan limit is reported as a quota refusal and stops the call.
  */
 export function planCallError(
   failure: UpstreamFailure,
@@ -209,6 +208,7 @@ export function planCallError(
 ): APICallError {
   const rule = planRule(failure.code) ?? genericRule(failure);
   let message = rule.message;
+  if (rule.quota && failure.code) message += ` (${failure.code})`;
   if (failure.code?.endsWith('unsupported_capability') && SAFE_TOKEN.test(failure.param ?? '')) {
     message += ` (unsupported: ${failure.param})`;
   }

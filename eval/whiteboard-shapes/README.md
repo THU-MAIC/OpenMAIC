@@ -91,7 +91,7 @@ capabilities automatically.
 Run with configured, authorized model IDs and credentials:
 
 ```sh
-node --env-file=.env.local --conditions=import --import tsx \
+node --env-file=.env.local --import tsx --import ./eval/shared/node-conditions.mjs \
   eval/whiteboard-shapes/runner.ts \
   --models openai:gpt-5.6-sol,openai:gpt-5.6-luna
 ```
@@ -120,7 +120,7 @@ dark 2px stroke, rather than treating the presence of `C` in a path as sufficien
 For a small composition batch:
 
 ```sh
-node --env-file=.env.local --conditions=import --import tsx \
+node --env-file=.env.local --import tsx --import ./eval/shared/node-conditions.mjs \
   eval/whiteboard-shapes/runner.ts --models deepseek:deepseek-flash \
   --cases composition --repetitions 12 --output /tmp/whiteboard-composition
 ```

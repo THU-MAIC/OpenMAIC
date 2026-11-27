@@ -1,3 +1,5 @@
+import type { ThinkingCapability } from '@/lib/types/provider';
+
 /**
  * ChatGPT plan provider (preview): what the browser and the server share.
  * The server side lives in `lib/server/chatgpt-plan`.
@@ -67,4 +69,5 @@ export interface ChatGPTPlanModel {
   name: string;
   contextWindow?: number;
   vision?: boolean;
+  thinking?: ThinkingCapability;
 }

@@ -53,6 +53,7 @@ async function drain(stream: AsyncIterable<unknown>): Promise<void> {
 }
 
 const providers = {
+  plan: { preset: 'chatgpt-plan' },
   openai: { preset: 'openai', apiKey: 'sk', models: ['gpt-5.6-luna'] },
   ac: { preset: 'atlascloud', apiKey: 'sk' },
 };
@@ -160,6 +161,17 @@ describe('agent driver model', () => {
   it('refuses a model the catalogue says cannot call tools', async () => {
     const resolve = await configure('ac:qwen/qwen3.5-flash');
     await expect(resolve()).rejects.toThrow('does not support tool calling');
+  });
+
+  it('uses the full plan model window for teaching when a paid fallback is configured', async () => {
+    const resolve = await configure({
+      model: 'plan:plan-model',
+      fallback: 'openai:unknown-window',
+    });
+    mocks.modelInfo = { contextWindow: 800_000, outputWindow: 32_000 };
+    const driver = await resolve();
+    expect(driver.teaching.piModel.contextWindow).toBe(800_000);
+    expect(driver.teaching.wireMaxOutputTokens).toBe(32_000);
   });
 
   it('defaults the pi API dialect and passes an explicit one through', async () => {

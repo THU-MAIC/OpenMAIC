@@ -196,6 +196,9 @@ export async function slotLanguageModel(
     throw new PiGeminiNativeRequiredError();
   }
   const resolved = await languageModelFor(resolution, resolution.thinking);
+  // A subscription authorizes calls on the connected account. Automatically
+  // switching to another provider would change who pays for the request.
+  if (serverLanguageModelAdapter(resolution.registryId)) return { ...resolved, resolution };
   // Retries go to the slot's fallback and nowhere else: none attached means none.
   const { fallback } = resolution;
   const fallbackUnmet =

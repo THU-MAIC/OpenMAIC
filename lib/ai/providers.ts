@@ -1659,6 +1659,7 @@ export interface ModelWithInfo {
  * two cannot drift apart again.
  */
 export function preservesReasoning(providerId: string, modelId: string): boolean {
+  if (providerId === 'chatgpt-plan') return true;
   if (providerId === 'kimi' && modelId === 'kimi-k3') return true;
   return getCatalogThinkingCapability(providerId, modelId)?.requestAdapter === 'deepseek';
 }

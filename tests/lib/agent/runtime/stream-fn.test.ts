@@ -52,6 +52,19 @@ describe('createPartMapper — reasoning/thinking channel', () => {
     expect(partial.content[0]).toEqual({ type: 'thinking', thinking: 'We think' });
   });
 
+  it('replays a reasoning item with encrypted content even without a visible summary', () => {
+    const partial = emptyPartial();
+    const mapper = createPartMapper(partial, () => {});
+    const providerMetadata = { openai: { itemId: 'rs_1', reasoningEncryptedContent: 'opaque' } };
+    mapper.handle({ type: 'reasoning-start' });
+    mapper.handle({ type: 'reasoning-end', providerMetadata });
+    expect(toModelMessages([partial], { includeReasoning: true })).toMatchObject([
+      {
+        content: [{ type: 'reasoning', text: '', providerOptions: providerMetadata }],
+      },
+    ]);
+  });
+
   it('emits thinking_end with the full reasoning when the reasoning part ends', () => {
     const partial = emptyPartial();
     const events: AssistantMessageEvent[] = [];
