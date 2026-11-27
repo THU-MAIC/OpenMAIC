@@ -22,14 +22,20 @@ function isEnabled(): boolean {
  */
 export function chatGPTPlanAvailability(): ChatGPTPlanAvailability {
   if (!isEnabled()) return { available: false, reason: 'disabled' };
-  if (!isPersonalInstallation()) return { available: false, reason: 'not-personal-installation' };
+  // Background model calls spend the same account as interactive requests.
+  if (!isPersonalInstallation({ soleMethod: true }))
+    return { available: false, reason: 'not-personal-installation' };
   return { available: true };
 }
 
 /** Startup check: explain why a requested provider stays off. */
 export function warnAboutChatGPTPlanConfiguration(): void {
   const availability = chatGPTPlanAvailability();
-  if (!availability.available && availability.reason === 'not-personal-installation') {
+  if (availability.available) {
+    log.warn(
+      'ChatGPT plan usage is enabled for this personal installation. Anyone with access to it, including anyone you share its ACCESS_CODE with, can spend the connected account’s plan allowance.',
+    );
+  } else if (availability.reason === 'not-personal-installation') {
     log.warn(
       'OPENMAIC_CHATGPT_PLAN_ENABLED is set, but this installation is not a personal one, so the ChatGPT plan provider stays off. It is available with single-user sign-in, where the person who owns the ChatGPT subscription is the only user.',
     );

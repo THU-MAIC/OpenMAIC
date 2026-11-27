@@ -7,7 +7,7 @@ OpenMAIC can use your ChatGPT plan for model requests instead of an API key. You
 
 ## Requirements
 
-- A personal installation: single-user sign-in (`OWNER_SINGLE_USER=true`). Plan usage belongs to the person who owns the subscription, so the provider is offered where that person is the only user.
+- A personal installation with single-user sign-in (`OWNER_SINGLE_USER=true`). If the host registers identity methods, `singleUser` must be the only one. Anyone you give access to this installation, including anyone who knows its `ACCESS_CODE`, can use the connected account’s plan.
 - `OPENMAIC_CHATGPT_PLAN_ENABLED=true` in the server environment.
 - PostgreSQL and the instance secret, as for every installation. The instance secret encrypts the stored sign-in.
 
@@ -27,7 +27,7 @@ When OpenMAIC runs on another machine (a VPS, a home server, a Docker host you r
 ## Usage and limits
 
 - Requests use the usage your plan allows for apps like OpenMAIC. **Manage usage** in the settings opens [chatgpt.com/settings/usage](https://chatgpt.com/settings/usage), where you can review it.
-- When the limit is reached, requests fail with a message that links there. They are not retried; a fallback model configured for the slot can serve them.
+- When the limit is reached, the request stops and links to ChatGPT usage settings. You can select another provider yourself.
 - Requests are streamed and sent with `store: false`, so OpenAI does not keep responses for later retrieval.
 - Settings that plan usage does not accept (temperature, top-p, maximum output length) are left out of the request, with a warning. Tools are sent as function tools in one namespace.
 

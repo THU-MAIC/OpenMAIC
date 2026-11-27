@@ -238,9 +238,8 @@ function readTokenSet(body: Record<string, unknown>, previous?: TokenSet): Token
     refreshToken,
     expiresAt: Date.now() + expires_in * 1000,
     ...(Number.isFinite(earliest) ? { earliestRefreshAt: earliest } : {}),
-    // An omitted scope is the one requested (or, on refresh, the one granted).
-    scopes:
-      typeof scope === 'string' ? scope.split(' ').filter(Boolean) : (previous?.scopes ?? SCOPES),
+    // Refresh can retain an existing grant. Initial consent must be explicit.
+    scopes: typeof scope === 'string' ? scope.split(' ').filter(Boolean) : (previous?.scopes ?? []),
   };
 }
 

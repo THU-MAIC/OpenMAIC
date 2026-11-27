@@ -31,7 +31,8 @@ const server = {
   authorizations: [] as URLSearchParams[],
   tokenRequests: [] as URLSearchParams[],
   revocations: [] as URLSearchParams[],
-  scope: 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct',
+  scope: undefined as string | undefined,
+  subject: 'user-1',
   refreshError: undefined as string | undefined,
   issued: 0,
 };
@@ -41,7 +42,7 @@ async function idToken(audience: string, nonce: string) {
     .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
     .setIssuer(ISSUER)
     .setAudience(audience)
-    .setSubject('user-1')
+    .setSubject(server.subject)
     .setIssuedAt()
     .setExpirationTime('1h')
     .sign(keys.privateKey);
@@ -73,9 +74,8 @@ vi.mock('@/lib/server/chatgpt-plan/http', () => ({
       await new Promise((resolve) => setTimeout(resolve, 50));
     } else {
       // The code is only good with the verifier of its challenge.
-      const authorization = server.authorizations.at(-1)!;
       const challenge = createHash('sha256').update(form.get('code_verifier')!).digest('base64url');
-      if (challenge !== authorization.get('code_challenge')) {
+      if (!server.authorizations.some((request) => request.get('code_challenge') === challenge)) {
         return Response.json({ error: 'invalid_grant' }, { status: 400 });
       }
     }
@@ -89,7 +89,13 @@ vi.mock('@/lib/server/chatgpt-plan/http', () => ({
         ? {
             id_token: await idToken(
               form.get('client_id')!,
-              server.authorizations.at(-1)!.get('nonce')!,
+              server.authorizations
+                .find(
+                  (request) =>
+                    request.get('code_challenge') ===
+                    createHash('sha256').update(form.get('code_verifier')!).digest('base64url'),
+                )!
+                .get('nonce')!,
             ),
           }
         : {}),
@@ -116,6 +122,17 @@ async function begin(origin: string) {
   return { start, params };
 }
 
+async function initialSignIn() {
+  const { params } = await begin('http://localhost:3000');
+  await completeChatGPTSignIn({
+    params: new URLSearchParams({
+      code: 'initial-code',
+      state: params.get('state')!,
+      client_id: 'client-issued',
+    }),
+  });
+}
+
 describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotation', () => {
   beforeAll(async () => {
     const admin = new Pool({ connectionString: process.env.PG_CONTRACT_URL });
@@ -128,6 +145,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     vi.stubEnv('DATABASE_URL', 'fixture');
     vi.stubEnv('OPENMAIC_SECRET_KEY', 'pg-test-secret-only');
     resetDiscoveryForTests();
+    await chatGPTPlanStatus();
   });
   afterAll(async () => {
     if (pool) {
@@ -136,8 +154,14 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     }
     vi.unstubAllEnvs();
   });
-  beforeEach(() => {
+  beforeEach(async () => {
+    await pool.query('TRUNCATE chatgpt_plan_sign_ins, chatgpt_plan_connection');
+    server.authorizations.length = 0;
     server.tokenRequests.length = 0;
+    server.revocations.length = 0;
+    server.issued = 0;
+    server.subject = 'user-1';
+    server.scope = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
     server.refreshError = undefined;
   });
 
@@ -181,6 +205,8 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
   });
 
   it('rotates a refused token once for every caller', async () => {
+    await initialSignIn();
+    server.tokenRequests.length = 0;
     const [first, second] = await Promise.all([
       chatGPTPlanAccessToken('access-1'),
       chatGPTPlanAccessToken('access-1'),
@@ -197,6 +223,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
   });
 
   it('signs in from another machine with the pasted address, reusing the registration', async () => {
+    await initialSignIn();
     const { start, params } = await begin('https://maic.example.com');
     expect(start.flow).toBe('paste');
     expect(params.get('client_id')).toBe('client-issued');
@@ -217,6 +244,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
   });
 
   it('asks to sign in again when the refresh token is spent', async () => {
+    await initialSignIn();
     server.refreshError = 'refresh_token_reused';
     const current = await chatGPTPlanAccessToken();
     await expect(chatGPTPlanAccessToken(current)).rejects.toMatchObject({
@@ -229,6 +257,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
   });
 
   it('keeps a sign-in that did not allow plan usage apart, and offers consent again', async () => {
+    await initialSignIn();
     server.scope = 'openid profile email offline_access';
     const { params } = await begin('http://localhost:3000');
     await completeChatGPTSignIn({
@@ -242,6 +271,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
   });
 
   it('disconnects: revokes the refresh token and keeps the registration', async () => {
+    await initialSignIn();
     const { params } = await begin('http://localhost:3000');
     await completeChatGPTSignIn({
       params: new URLSearchParams({ code: 'code-5', state: params.get('state')! }),
@@ -255,5 +285,36 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     await expect(chatGPTPlanAccessToken()).rejects.toMatchObject({ code: 'not-connected' });
     const next = await begin('http://localhost:3000');
     expect(next.params.get('client_id')).toBe('client-issued');
+  });
+
+  it('requires a granted plan scope in the first token response', async () => {
+    server.scope = undefined;
+    await initialSignIn();
+    expect((await chatGPTPlanStatus()).state).toBe('sharing-disabled');
+    await expect(chatGPTPlanAccessToken()).rejects.toMatchObject({ code: 'sharing-disabled' });
+  });
+
+  it('preserves the registered account across disconnect and checks it on reconnect', async () => {
+    await initialSignIn();
+    await disconnectChatGPT();
+    const { params } = await begin('http://localhost:3000');
+    server.subject = 'different-account';
+    await expect(
+      completeChatGPTSignIn({
+        params: new URLSearchParams({ code: 'returning-code', state: params.get('state')! }),
+      }),
+    ).rejects.toMatchObject({ code: 'sign-in-failed' });
+    expect((await chatGPTPlanStatus()).state).toBe('disconnected');
+  });
+
+  it('cancels a pending sign-in when the user disconnects', async () => {
+    await initialSignIn();
+    const { params } = await begin('http://localhost:3000');
+    await disconnectChatGPT();
+    await expect(
+      completeChatGPTSignIn({
+        params: new URLSearchParams({ code: 'older-code', state: params.get('state')! }),
+      }),
+    ).rejects.toMatchObject({ code: 'sign-in-expired' });
   });
 });

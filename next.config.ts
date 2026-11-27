@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   // Keep Next dev from creating or rewriting repository agent instructions.
   agentRules: false,
   output: 'standalone',
+  // The browser's OAuth callback carries a single-use code and state in its query.
+  logging: { incomingRequests: { ignore: [/^\/auth\/callback(?:[/?]|$)/] } },
   env: {
     INTERACTIVE_ASSET_BASE_URL:
       process.env.INTERACTIVE_ASSET_BASE_URL?.trim() || '/vendor/interactive',

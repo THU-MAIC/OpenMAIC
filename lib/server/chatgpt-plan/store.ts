@@ -39,6 +39,7 @@ export interface Connection {
   hostId: string;
   /** The client OpenAI registered for this installation, kept across sign-ins. */
   clientId?: string;
+  subject?: string;
   email?: string;
   state: ChatGPTPlanConnectionState;
   tokens?: TokenSet;
@@ -48,6 +49,7 @@ export interface Connection {
 interface ConnectionRow {
   host_id: string;
   client_id: string | null;
+  subject: string | null;
   email: string | null;
   state: ChatGPTPlanConnectionState;
   credential: unknown;
@@ -79,7 +81,7 @@ export async function readConnection(
 ): Promise<Connection> {
   const select = () =>
     q.query<ConnectionRow & Record<string, unknown>>(
-      `SELECT host_id, client_id, email, state, credential, notice_acknowledged_at
+      `SELECT host_id, client_id, subject, email, state, credential, notice_acknowledged_at
          FROM chatgpt_plan_connection WHERE id = 1${forUpdate ? ' FOR UPDATE' : ''}`,
     );
   let row = (await select()).rows[0];
@@ -96,6 +98,7 @@ export async function readConnection(
   return {
     hostId: row.host_id,
     ...(row.client_id ? { clientId: row.client_id } : {}),
+    ...(row.subject ? { subject: row.subject } : {}),
     ...(row.email ? { email: row.email } : {}),
     // Tokens that no longer open leave a connection that has to sign in again.
     state: needsTokens && !tokens ? 'reauth-required' : row.state,
@@ -152,9 +155,10 @@ export async function saveReauthRequired(q: Queryable): Promise<void> {
 /** Forget the account; the host ID and client registration stay for the next sign-in. */
 export async function saveDisconnected(q: Queryable): Promise<void> {
   await q.query(
-    `UPDATE chatgpt_plan_connection SET state = 'disconnected', credential = NULL, subject = NULL,
+    `UPDATE chatgpt_plan_connection SET state = 'disconnected', credential = NULL,
             email = NULL, updated_at = now() WHERE id = 1`,
   );
+  await q.query('DELETE FROM chatgpt_plan_sign_ins');
 }
 
 export async function saveNoticeAcknowledged(q: Queryable): Promise<void> {

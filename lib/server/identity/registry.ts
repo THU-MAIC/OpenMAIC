@@ -391,10 +391,11 @@ export function warnAboutOwnerIdentityConfiguration(): boolean {
  * checks may ask before a host registers; a route still checks
  * {@link isPersonalInstallationOwner} for its principal.
  */
-export function isPersonalInstallation(): boolean {
+export function isPersonalInstallation({ soleMethod = false } = {}): boolean {
   const configured = registry().configured;
   return configured
-    ? configured.methods.some(isSingleUserAuthMethod)
+    ? (!soleMethod || configured.methods.length === 1) &&
+        configured.methods.some(isSingleUserAuthMethod)
     : !resolveSharedOwnerId() && resolveSingleUserOwnerId() !== undefined;
 }
 

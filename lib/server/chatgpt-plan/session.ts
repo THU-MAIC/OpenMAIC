@@ -160,8 +160,29 @@ export async function completeChatGPTSignIn(
   const state = params.get('state');
   if (!state) throw new ChatGPTPlanError('invalid-callback');
 
-  const { pool } = await chatGPTPlanDatabase();
-  const pending = await takePendingSignIn(pool, hashState(state));
+  const { withTransaction } = await chatGPTPlanDatabase();
+  const outcome = await withTransaction(async (q) => {
+    await lockTokens(q);
+    try {
+      return await finishSignIn(q, state, params, pasted);
+    } catch (error) {
+      // Consume each attempt even on denial or failure. Keep its issued client
+      // ID so an unsuccessful first exchange can be retried with a fresh code.
+      if (error instanceof ChatGPTPlanError) return error;
+      throw error;
+    }
+  });
+  if (outcome instanceof ChatGPTPlanError) throw outcome;
+  return outcome;
+}
+
+async function finishSignIn(
+  q: Queryable,
+  state: string,
+  params: URLSearchParams,
+  pasted?: URL,
+): Promise<{ returnTo?: string }> {
+  const pending = await takePendingSignIn(q, hashState(state));
   if (!pending) throw new ChatGPTPlanError('sign-in-expired');
   if (pasted && `${pasted.origin}${pasted.pathname}` !== pending.redirectUri) {
     throw new ChatGPTPlanError('invalid-callback');
@@ -183,7 +204,11 @@ export async function completeChatGPTSignIn(
   if (!clientId || clientId === DYNAMIC_CLIENT_ID || (returned && returned !== clientId)) {
     throw new ChatGPTPlanError('sign-in-failed');
   }
-  await saveClientId(pool, clientId);
+  const connection = await readConnection(q, { forUpdate: true });
+  if (connection.clientId && connection.clientId !== clientId) {
+    throw new ChatGPTPlanError('sign-in-expired');
+  }
+  if (!connection.clientId) await saveClientId(q, clientId);
 
   const { tokens, identity } = await exchangeCode({
     clientId,
@@ -192,7 +217,10 @@ export async function completeChatGPTSignIn(
     redirectUri: pending.redirectUri,
     nonce: pending.nonce,
   });
-  await saveSignedIn(pool, {
+  if (connection.subject && identity.subject !== connection.subject) {
+    throw new ChatGPTPlanError('sign-in-failed');
+  }
+  await saveSignedIn(q, {
     identity,
     tokens,
     state: allowsPlanUsage(tokens) ? 'connected' : 'sharing-disabled',
