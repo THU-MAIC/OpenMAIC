@@ -47,10 +47,10 @@ class FakeRecognition {
     recognitions.push(this);
   }
   start() {}
-  stop() {
+  stop = vi.fn(() => {
     this.onend?.();
-  }
-  abort() {}
+  });
+  abort = vi.fn();
 }
 
 function mount(element: ReactElement) {
@@ -237,6 +237,38 @@ describe('speech consumers follow the current locale', () => {
         .click();
     });
     expect(recognitions.at(-1)?.lang).toBe('de-DE');
+  });
+
+  it('stops a browser recognition test when the settings Stop button is pressed', async () => {
+    const { host } = mount(
+      createElement(ASRSettings, {
+        view: modelSettingsViewFor({ asr: { registryId: 'browser-native' } }),
+        entry: { id: 'browser-native', registryId: 'browser-native', state: 'deployment' },
+        apply: vi.fn(),
+      }),
+    );
+    const button = host.querySelector('button')!;
+    await act(async () => button.click());
+    expect(button.textContent).toContain('settings.stopRecording');
+
+    await act(async () => button.click());
+    expect(recognitions.at(-1)?.stop).toHaveBeenCalledOnce();
+    expect(button.textContent).toContain('settings.startRecording');
+  });
+
+  it('aborts a browser recognition test when the settings panel is closed', async () => {
+    const { host, render } = mount(
+      createElement(ASRSettings, {
+        view: modelSettingsViewFor({ asr: { registryId: 'browser-native' } }),
+        entry: { id: 'browser-native', registryId: 'browser-native', state: 'deployment' },
+        apply: vi.fn(),
+      }),
+    );
+    const button = host.querySelector('button')!;
+    await act(async () => button.click());
+
+    render(createElement('div'));
+    expect(recognitions.at(-1)?.abort).toHaveBeenCalledOnce();
   });
 
   it('previews browser speech with the current UI fallback and preserves explicit voices', async () => {
