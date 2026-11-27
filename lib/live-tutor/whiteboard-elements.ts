@@ -70,6 +70,22 @@ export function sanitizeSvgDiagram(rawSvg: string): string | null {
   return svg;
 }
 
+/**
+ * Strips raw SVG/XML markup or fenced code blocks that Gemini Live occasionally
+ * echoes into text captions alongside a `draw_whiteboard_diagram` tool call.
+ */
+export function sanitizeLiveCaption(raw: string): string {
+  return raw
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/```[\s\S]*$/g, ' ')
+    .replace(/<svg\b[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<svg\b[\s\S]*$/gi, ' ')
+    .replace(/<\/?[a-z][a-z0-9:_-]*(?:\s[^>]*)?>/gi, ' ')
+    .replace(/<[a-z][a-z0-9:_-]*\s[^>]*$/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function svgToDataUrl(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

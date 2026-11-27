@@ -3,6 +3,7 @@ import {
   applyWhiteboardOps,
   buildWhiteboardFromSteps,
   renderSafeLatexHtml,
+  sanitizeLiveCaption,
   sanitizeSvgDiagram,
 } from '@/lib/live-tutor/whiteboard-elements';
 
@@ -85,5 +86,17 @@ describe('live-tutor whiteboard projection', () => {
     if (wb.elements[1].type === 'image') {
       expect(wb.elements[1].src).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
     }
+  });
+
+  it('strips raw SVG and XML markup from live tutor captions', () => {
+    expect(
+      sanitizeLiveCaption(
+        'Here is your right triangle <svg viewBox="0 0 600 340"><polygon points="0,0 10,10"/></svg> on the board.',
+      ),
+    ).toBe('Here is your right triangle on the board.');
+
+    expect(
+      sanitizeLiveCaption('Look at the angle <polygon points="100,280 460,280" stroke="#4f46e5"'),
+    ).toBe('Look at the angle');
   });
 });

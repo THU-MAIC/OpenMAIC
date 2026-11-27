@@ -6,6 +6,7 @@ import type {
   PracticeProblem,
   WhiteboardOp,
 } from '@/lib/live-tutor/types';
+import { sanitizeLiveCaption } from '@/lib/live-tutor/whiteboard-elements';
 
 interface UseLiveCameraTutorOptions {
   topic?: string;
@@ -337,6 +338,7 @@ export function useLiveCameraTutor({
       const cur = latestPropsRef.current;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
+        'Never claim you can see a notebook or written work unless it is actually visible in the camera frame; if you do not see a notebook yet, kindly ask the student to point the camera at their notebook.',
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
         'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters). Whenever a visual sketch (labeled right triangle, angle arc, light rays, forces, coordinate axes, shapes, or arrows) helps explain the concept, call draw_whiteboard_diagram with a clean SVG (viewBox="0 0 600 340", white/light background, clear dark strokes and readable labels).',
@@ -507,8 +509,8 @@ export function useLiveCameraTutor({
 
           const curProb = latestPropsRef.current.problem?.statement;
           const greetPrompt = curProb
-            ? `Greet the student warmly in one short sentence and invite them to start working on the assigned problem in their notebook: "${curProb}".`
-            : 'Greet the student warmly in one short sentence and let them know you can see their notebook and help step by step.';
+            ? `Greet the student warmly in one short sentence, invite them to start working on "${curProb}", and ask them to show their notebook to the camera when they are ready.`
+            : 'Greet the student warmly in one short sentence and ask them to show their notebook to the camera or tell you what question they would like help with.';
 
           ws.send(
             JSON.stringify({
@@ -578,6 +580,7 @@ export function useLiveCameraTutor({
               modelTurn?: {
                 parts?: Array<{
                   text?: string;
+                  thought?: boolean;
                   inlineData?: { mimeType?: string; data?: string };
                 }>;
               };
@@ -591,7 +594,7 @@ export function useLiveCameraTutor({
         if (serverContent.interrupted) {
           stopPlayback();
           if (tutorBufRef.current) {
-            appendMessage('assistant', tutorBufRef.current);
+            appendMessage('assistant', sanitizeLiveCaption(tutorBufRef.current));
             tutorBufRef.current = '';
           }
         }
@@ -600,19 +603,21 @@ export function useLiveCameraTutor({
           if (p.inlineData?.mimeType?.startsWith('audio/pcm') && p.inlineData.data) {
             playPcm24k(p.inlineData.data);
           }
-          if (p.text) {
+          if (p.text && !p.thought) {
             tutorBufRef.current += p.text;
-            setLiveCaption(tutorBufRef.current);
+            const cleaned = sanitizeLiveCaption(tutorBufRef.current);
+            if (cleaned) setLiveCaption(cleaned);
           }
         }
 
         if (serverContent.outputTranscription?.text) {
           tutorBufRef.current += serverContent.outputTranscription.text;
-          setLiveCaption(tutorBufRef.current);
+          const cleaned = sanitizeLiveCaption(tutorBufRef.current);
+          if (cleaned) setLiveCaption(cleaned);
         }
         if (serverContent.inputTranscription?.text) {
           userBufRef.current += serverContent.inputTranscription.text;
-          setLiveCaption(userBufRef.current);
+          setLiveCaption(userBufRef.current.trim());
         }
 
         if (serverContent.turnComplete) {
@@ -621,7 +626,7 @@ export function useLiveCameraTutor({
             userBufRef.current = '';
           }
           if (tutorBufRef.current) {
-            appendMessage('assistant', tutorBufRef.current);
+            appendMessage('assistant', sanitizeLiveCaption(tutorBufRef.current));
             tutorBufRef.current = '';
           }
         }
