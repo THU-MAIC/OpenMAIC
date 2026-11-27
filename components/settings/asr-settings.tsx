@@ -134,7 +134,9 @@ export function ASRSettings({ view, apply, entry }: ServicePanelProps) {
         stream.getTracks().forEach((track) => track.stop());
         setIsProcessing(true);
         try {
-          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          const audioBlob = new Blob(audioChunks, {
+            type: audioChunks[0]?.type || mediaRecorder.mimeType || 'audio/webm',
+          });
           const uploadAudio = await normalizeASRUploadAudio(providerId, audioBlob, use.modelId);
           const formData = new FormData();
           formData.append('audio', uploadAudio.blob, uploadAudio.fileName);

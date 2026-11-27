@@ -90,6 +90,34 @@ afterEach(async () => {
 });
 
 describe('recorder resource lifetime', () => {
+  it('records with the browser default when the browser cannot create WebM', async () => {
+    const mic = microphone();
+    class Mp4OnlyRecorder extends FakeRecorder {
+      static isTypeSupported = (type: string) => type === 'audio/mp4';
+      mimeType = 'audio/mp4';
+
+      constructor(stream: MediaStream, options?: MediaRecorderOptions) {
+        if (options?.mimeType === 'audio/webm') throw new DOMException('WebM not supported');
+        super(stream);
+      }
+    }
+    vi.stubGlobal('MediaRecorder', Mp4OnlyRecorder);
+    vi.stubGlobal('navigator', {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(mic.stream) },
+    });
+
+    await mount();
+    await act(async () => recorder.startRecording());
+    expect(recorder.isRecording).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    recorders[0].ondataavailable?.({ data: new Blob(['audio'], { type: 'audio/mp4' }) });
+    await act(async () => recorder.stopRecording());
+    await vi.waitFor(() => expect(onTranscription).toHaveBeenCalledWith('hello'));
+    const form = vi.mocked(fetch).mock.calls[0][1]?.body as FormData;
+    expect(form.get('audio')).toMatchObject({ type: 'audio/mp4' });
+  });
+
   it('stops the recorder, microphone and timer on unmount without uploading', async () => {
     const mic = microphone();
     vi.stubGlobal('navigator', {

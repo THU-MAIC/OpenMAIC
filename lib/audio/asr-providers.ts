@@ -634,7 +634,11 @@ async function transcribeAzureASR(
   }
 
   const formData = new FormData();
-  formData.append('audio', audioBlob, 'recording.webm');
+  formData.append(
+    'audio',
+    audioBlob,
+    (await isWavAudio(audioBlob)) ? 'recording.wav' : 'recording.webm',
+  );
 
   const localeMap: Record<string, string> = {
     en: 'en-US',
