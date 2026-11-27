@@ -31,6 +31,7 @@ import {
 import {
   chatGPTPlanDatabase,
   type Connection,
+  type PendingSignIn,
   readConnection,
   saveClientId,
   saveDisconnected,
@@ -100,6 +101,7 @@ function loopbackPort(browserOrigin: string | undefined): number | undefined {
  */
 export async function beginChatGPTSignIn(
   browserOrigin: string | undefined,
+  locale?: PendingSignIn['locale'],
 ): Promise<ChatGPTPlanSignInStart> {
   assertAvailable();
   const { pool } = await chatGPTPlanDatabase();
@@ -123,6 +125,7 @@ export async function beginChatGPTSignIn(
     pool,
     hashState(secrets.state),
     {
+      ...(locale && { locale }),
       verifier: secrets.verifier,
       nonce: secrets.nonce,
       redirectUri,
@@ -143,7 +146,7 @@ export type ChatGPTPlanCallback = { params: URLSearchParams } | { address: strin
 
 export async function completeChatGPTSignIn(
   callback: ChatGPTPlanCallback,
-): Promise<{ returnTo?: string }> {
+): Promise<Pick<PendingSignIn, 'returnTo' | 'locale'>> {
   assertAvailable();
   let params: URLSearchParams;
   let pasted: URL | undefined;
@@ -163,12 +166,17 @@ export async function completeChatGPTSignIn(
   const { withTransaction } = await chatGPTPlanDatabase();
   const outcome = await withTransaction(async (q) => {
     await lockTokens(q);
+    const pending = await takePendingSignIn(q, hashState(state));
+    if (!pending) throw new ChatGPTPlanError('sign-in-expired');
     try {
-      return await finishSignIn(q, state, params, pasted);
+      return await finishSignIn(q, pending, params, pasted);
     } catch (error) {
       // Consume each attempt even on denial or failure. Keep its issued client
       // ID so an unsuccessful first exchange can be retried with a fresh code.
-      if (error instanceof ChatGPTPlanError) return error;
+      if (error instanceof ChatGPTPlanError) {
+        error.locale = pending.locale;
+        return error;
+      }
       throw error;
     }
   });
@@ -178,12 +186,10 @@ export async function completeChatGPTSignIn(
 
 async function finishSignIn(
   q: Queryable,
-  state: string,
+  pending: PendingSignIn,
   params: URLSearchParams,
   pasted?: URL,
-): Promise<{ returnTo?: string }> {
-  const pending = await takePendingSignIn(q, hashState(state));
-  if (!pending) throw new ChatGPTPlanError('sign-in-expired');
+): Promise<Pick<PendingSignIn, 'returnTo' | 'locale'>> {
   if (pasted && `${pasted.origin}${pasted.pathname}` !== pending.redirectUri) {
     throw new ChatGPTPlanError('invalid-callback');
   }
@@ -225,7 +231,10 @@ async function finishSignIn(
     tokens,
     state: allowsPlanUsage(tokens) ? 'connected' : 'sharing-disabled',
   });
-  return pending.returnTo ? { returnTo: pending.returnTo } : {};
+  return {
+    ...(pending.returnTo && { returnTo: pending.returnTo }),
+    ...(pending.locale && { locale: pending.locale }),
+  };
 }
 
 /** Every token rotation, and disconnecting, holds this lock across processes. */

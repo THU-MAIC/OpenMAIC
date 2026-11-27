@@ -293,6 +293,44 @@ describe('Model Services → provider changes', () => {
     }
   });
 
+  it('welcomes the first successful connection once, even after disconnect and reconnect', async () => {
+    const preset = { ...chatPreset, id: 'chatgpt-plan', capabilities: { chat: { models: [] } } };
+    const view = makeView({ presets: [preset] });
+    let state = 'disconnected';
+    let acknowledged = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path) => {
+        if (path === '/api/chatgpt-plan/notice') acknowledged = true;
+        return Response.json({
+          success: true,
+          status: { available: true, state, noticeAcknowledged: acknowledged },
+        });
+      }),
+    );
+    const { apply } = recordingApply(() => view);
+    mount(
+      createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+    );
+    click(byText('ChatGPT'));
+    await flush();
+    expect(document.body.textContent).toContain('settings.chatgptPlan.signIn');
+    for (const next of ['sharing-disabled', 'connected', 'disconnected', 'connected']) {
+      state = next;
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flush();
+      const welcome = document.querySelector('[role="alertdialog"]');
+      if (next === 'connected' && !acknowledged) {
+        expect(welcome?.querySelector('a')?.href).toBe('https://chatgpt.com/settings/usage');
+        click(byText('settings.chatgptPlan.noticeAccept'));
+        await flush();
+        expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+      } else expect(welcome).toBeNull();
+    }
+  });
+
   it("shows the server's providers read-only and says what only the server can set up", () => {
     const view = makeView({
       providers: [{ ...workspaceProvider('operator'), source: 'deployment', key: undefined }],
@@ -534,8 +572,26 @@ describe("the server's providers wherever chat models are offered", () => {
     });
   });
 
-  it('links to usage next to the selected ChatGPT plan model in the home toolbar', () => {
-    const view = withLlm(makeView(), 'personal:gpt');
+  it('offers the assigned ChatGPT model and its usage link only while the account is connected', async () => {
+    const plan = {
+      ...chatPreset,
+      id: 'chatgpt-plan',
+      capabilities: { chat: { models: [{ id: 'gpt', name: 'Account model' }] } },
+    };
+    const view = withLlm(
+      makeView({ providers: [workspaceProvider('personal', plan)], presets: [plan] }),
+      'personal:gpt',
+    );
+    let state = 'connected';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          success: true,
+          status: { available: true, state, noticeAcknowledged: true },
+        }),
+      ),
+    );
     const llm = view.slots.find((slot) => slot.slot === 'llm')!.effective;
     if (llm.status !== 'assigned') throw new Error('Expected assigned model');
     llm.registryId = 'chatgpt-plan';
@@ -549,7 +605,36 @@ describe("the server's providers wherever chat models are offered", () => {
           onPdfError: () => {},
         }),
       );
-      expect(document.body.textContent).toContain('settings.chatgptPlan.usingPlan');
+      const { apply } = recordingApply(() => view);
+      mount(
+        createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+      );
+      expect(
+        vi.mocked(fetch).mock.calls.filter(([path]) => path === '/api/chatgpt-plan/status'),
+      ).toHaveLength(1);
+      await flush();
+      click(document.querySelector<HTMLElement>('button[aria-label$="/ gpt"]')!);
+      for (const next of [
+        'connected',
+        'disconnected',
+        'reauth-required',
+        'sharing-disabled',
+        'connected',
+      ]) {
+        state = next;
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+        });
+        await flush();
+        const active = next === 'connected';
+        expect(document.body.textContent?.includes('settings.chatgptPlan.usingPlan')).toBe(active);
+        expect(
+          [...document.querySelectorAll('[role="button"]')].some((el) =>
+            el.textContent?.includes('Account model'),
+          ),
+        ).toBe(active);
+        expect(modelSettingsClient.getState().view).toBe(view);
+      }
       expect(byText('settings.chatgptPlan.manageUsage', 'a').getAttribute('href')).toBe(
         'https://chatgpt.com/settings/usage',
       );

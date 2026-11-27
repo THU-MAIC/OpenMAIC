@@ -35,7 +35,8 @@ import { PROVIDERS, type ProviderId } from '@/lib/ai/providers';
 import type { CatalogueModel } from '@/lib/config/provider-presets';
 import { formatContextWindow } from './utils';
 import { PROVIDER_SIGNUP_LINKS } from './provider-links';
-import { ChatGPTPlanAccount, type PlanAccountState } from './chatgpt-plan-account';
+import { ChatGPTPlanAccount } from './chatgpt-plan-account';
+import type { PlanAccountState } from '@/lib/chatgpt-plan/client';
 import { ModelEditDialog } from './model-edit-dialog';
 import {
   ApiKeyField,

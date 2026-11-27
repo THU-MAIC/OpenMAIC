@@ -4,6 +4,9 @@
 // 「工作区可用的语言模型服务 + 套餐组置顶 + 组内套餐推荐序」逻辑。服务与模型
 // 来自服务端的模型设置视图（/api/model-config），浏览器不保存任何 provider。
 
+import { useChatGPTPlanStatus } from '@/lib/chatgpt-plan/client';
+import { CHATGPT_PLAN_PROVIDER_ID } from '@/lib/chatgpt-plan/shared';
+import type { ProviderView } from '@/lib/model-settings/client';
 import { useMemo } from 'react';
 import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
 import { tokenPlanPresetId } from '@/lib/config/preset-ids';
@@ -25,9 +28,12 @@ const PLAN_ORDER: ReadonlyMap<string, { rank: number; models: readonly string[] 
  * serves chat (the server's and the workspace's), plans first in the Token
  * Plan order, each plan's models in its recommended order.
  */
-export function llmPickerGroups(view: ModelSettingsView | null): ModelPickerGroup[] {
+export function llmPickerGroups(
+  view: ModelSettingsView | null,
+  providers = view ? providersFor(view, 'chat') : [],
+): ModelPickerGroup[] {
   if (!view) return [];
-  return providersFor(view, 'chat')
+  return providers
     .map((provider, index) => {
       const plan = PLAN_ORDER.get(provider.preset);
       const rank = plan ? new Map(plan.models.map((id, i) => [id, i] as const)) : null;
@@ -59,7 +65,22 @@ export function llmPickerGroups(view: ModelSettingsView | null): ModelPickerGrou
     .map(({ group: { planRank: _planRank, ...group } }) => group);
 }
 
-/** {@link llmPickerGroups}, memoized for a view. */
+function isAccountProvider(provider: ProviderView) {
+  return (provider.capabilities.chat?.registryId ?? provider.preset) === CHATGPT_PLAN_PROVIDER_ID;
+}
+
+/** Keep saved assignments, but only offer models the connected account can serve. */
+export function useChatPickerProviders(view: ModelSettingsView | null) {
+  const providers = useMemo(() => (view ? providersFor(view, 'chat') : []), [view]);
+  const { status } = useChatGPTPlanStatus(providers.some(isAccountProvider));
+  const connected = status?.available && status.state === 'connected';
+  return useMemo(
+    () => (connected ? providers : providers.filter((p) => !isAccountProvider(p))),
+    [connected, providers],
+  );
+}
+
 export function useLLMPickerGroups(view: ModelSettingsView | null): ModelPickerGroup[] {
-  return useMemo(() => llmPickerGroups(view), [view]);
+  const providers = useChatPickerProviders(view);
+  return useMemo(() => llmPickerGroups(view, providers), [view, providers]);
 }

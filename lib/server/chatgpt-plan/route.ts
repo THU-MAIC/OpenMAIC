@@ -6,7 +6,9 @@ import 'server-only';
 
 import { randomBytes } from 'node:crypto';
 
-import { resolveRequestLocale } from '@/lib/i18n/resolve-locale';
+import type { NextRequest } from 'next/server';
+import { supportedLocaleOf, type Locale } from '@/lib/i18n/types';
+import { LOCALE_COOKIE, resolveRequestLocale } from '@/lib/i18n/resolve-locale';
 import { loadLocaleResource } from '@/lib/i18n/load-resource';
 import type en from '@/lib/i18n/locales/en-US.json';
 import { createLogger } from '@/lib/logger';
@@ -97,15 +99,24 @@ const escapeHtml = (text: string) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char,
   );
 
+export function requestLocale(request: NextRequest): Locale {
+  return resolveRequestLocale({
+    cookie: request.cookies.get(LOCALE_COOKIE)?.value,
+    acceptLanguage: request.headers.get('accept-language'),
+  });
+}
+
 /**
  * The page the browser shows after a loopback sign-in. It takes the code and
  * state out of the address bar and the history, and sends no referrer.
  */
 export async function callbackPage(
-  request: Request,
-  result: { ok: true; returnTo?: string } | { ok: false; reason?: ChatGPTPlanError['code'] },
+  request: NextRequest,
+  result: ({ ok: true; returnTo?: string } | { ok: false; reason?: ChatGPTPlanError['code'] }) & {
+    locale?: Locale;
+  },
 ): Promise<Response> {
-  const locale = resolveRequestLocale({ acceptLanguage: request.headers.get('accept-language') });
+  const locale = supportedLocaleOf(result.locale) ?? requestLocale(request);
   const resource = (await loadLocaleResource(locale)) as typeof en;
   const copy = resource.settings.chatgptPlan;
   const nonce = randomBytes(16).toString('base64');

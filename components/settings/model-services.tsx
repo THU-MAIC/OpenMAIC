@@ -7,7 +7,7 @@ import { registryIdsFor } from '@/components/settings/service-display';
  * workspace's model configuration on the server; keys are written there and
  * never come back, and services the server configures are shown read-only.
  */
-import { useChatGPTPlanStatus } from './chatgpt-plan-account';
+import { useChatGPTPlanStatus } from '@/lib/chatgpt-plan/client';
 import { CHATGPT_PLAN_PROVIDER_ID } from '@/lib/chatgpt-plan/shared';
 import { useMemo, useState } from 'react';
 import {

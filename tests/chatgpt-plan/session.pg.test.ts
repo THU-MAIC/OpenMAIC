@@ -5,6 +5,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import type { Locale } from '@/lib/i18n/types';
 import { Pool } from 'pg';
 import { nodePostgresTransaction } from '@openmaic/storage/server/reference';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -105,6 +106,7 @@ vi.mock('@/lib/server/chatgpt-plan/http', () => ({
 
 import { resetDiscoveryForTests } from '@/lib/server/chatgpt-plan/oauth';
 import {
+  acknowledgeChatGPTPlanNotice,
   beginChatGPTSignIn,
   chatGPTPlanAccessToken,
   chatGPTPlanStatus,
@@ -115,8 +117,8 @@ import {
 const schema = 'chatgpt_plan_' + randomUUID().replaceAll('-', '');
 
 /** Start a sign-in and record what the authorization request carried. */
-async function begin(origin: string) {
-  const start = await beginChatGPTSignIn(origin);
+async function begin(origin: string, locale?: Locale) {
+  const start = await beginChatGPTSignIn(origin, locale);
   const params = new URL(start.authorizationUrl).searchParams;
   server.authorizations.push(params);
   return { start, params };
@@ -166,7 +168,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
   });
 
   it('signs in on this machine, registering a client for the installation', async () => {
-    const { start, params } = await begin('http://localhost:3000');
+    const { start, params } = await begin('http://localhost:3000', 'zh-TW');
     expect(start.flow).toBe('loopback');
     expect(Object.fromEntries(params)).toMatchObject({
       response_type: 'code',
@@ -186,6 +188,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     });
     expect(await completeChatGPTSignIn({ params: callback })).toEqual({
       returnTo: 'http://localhost:3000',
+      locale: 'zh-TW',
     });
     expect(server.tokenRequests[0]!.get('client_id')).toBe('client-issued');
     expect(await chatGPTPlanStatus()).toEqual({
@@ -224,7 +227,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
 
   it('signs in from another machine with the pasted address, reusing the registration', async () => {
     await initialSignIn();
-    const { start, params } = await begin('https://maic.example.com');
+    const { start, params } = await begin('https://maic.example.com', 'de-DE');
     expect(start.flow).toBe('paste');
     expect(params.get('client_id')).toBe('client-issued');
     expect(params.has('agent_name_hint')).toBe(false);
@@ -235,7 +238,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     const query = `?code=code-2&state=${params.get('state')}`;
     await expect(
       completeChatGPTSignIn({ address: `http://127.0.0.1:1/auth/callback${query}` }),
-    ).rejects.toMatchObject({ code: 'invalid-callback' });
+    ).rejects.toMatchObject({ code: 'invalid-callback', locale: 'de-DE' });
 
     const retry = await begin('https://maic.example.com');
     const address = `${retry.params.get('redirect_uri')}?code=code-3&state=${retry.params.get('state')}`;
@@ -292,6 +295,17 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     await initialSignIn();
     expect((await chatGPTPlanStatus()).state).toBe('sharing-disabled');
     await expect(chatGPTPlanAccessToken()).rejects.toMatchObject({ code: 'sharing-disabled' });
+  });
+
+  it('remembers dismissal of the welcome on a later successful connection', async () => {
+    await initialSignIn();
+    await acknowledgeChatGPTPlanNotice();
+    await disconnectChatGPT();
+    await initialSignIn();
+    expect(await chatGPTPlanStatus()).toMatchObject({
+      state: 'connected',
+      noticeAcknowledged: true,
+    });
   });
 
   it('preserves the registered account across disconnect and checks it on reconnect', async () => {

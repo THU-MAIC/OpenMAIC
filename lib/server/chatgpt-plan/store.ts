@@ -170,6 +170,7 @@ export async function saveNoticeAcknowledged(q: Queryable): Promise<void> {
 }
 
 export interface PendingSignIn {
+  locale?: import('@/lib/i18n/types').Locale;
   verifier: string;
   nonce: string;
   redirectUri: string;

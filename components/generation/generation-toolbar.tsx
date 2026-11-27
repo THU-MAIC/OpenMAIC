@@ -455,19 +455,22 @@ export function GenerationToolbar({
         )
       )}
 
-      {llm?.registryId === CHATGPT_PLAN_PROVIDER_ID && (
-        <span className="inline-flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-          {t('settings.chatgptPlan.usingPlan')}
-          <a
-            href={CHATGPT_USAGE_SETTINGS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-2"
-          >
-            {t('settings.chatgptPlan.manageUsage')}
-          </a>
-        </span>
-      )}
+      {llm?.registryId === CHATGPT_PLAN_PROVIDER_ID &&
+        llmPickerGroups.some(
+          (group) => group.id === providerId && group.models.some((model) => model.id === modelId),
+        ) && (
+          <span className="inline-flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+            {t('settings.chatgptPlan.usingPlan')}
+            <a
+              href={CHATGPT_USAGE_SETTINGS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              {t('settings.chatgptPlan.manageUsage')}
+            </a>
+          </span>
+        )}
 
       {materialView === 'entry' ? (
         materialTrigger

@@ -41,6 +41,9 @@ const MESSAGES: Record<ChatGPTPlanErrorCode, string> = {
 };
 
 export class ChatGPTPlanError extends Error {
+  /** Preferred language carried by a consumed sign-in, including a denied one. */
+  locale?: import('@/lib/i18n/types').Locale;
+
   constructor(
     readonly code: ChatGPTPlanErrorCode,
     options?: ErrorOptions,

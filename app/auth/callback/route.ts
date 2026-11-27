@@ -1,3 +1,4 @@
+import type { NextRequest } from 'next/server';
 import { ChatGPTPlanError } from '@/lib/server/chatgpt-plan/errors';
 import { callbackPage } from '@/lib/server/chatgpt-plan/route';
 import { completeChatGPTSignIn } from '@/lib/server/chatgpt-plan/session';
@@ -12,12 +13,12 @@ const log = createLogger('ChatGPT Plan');
  * sign-in (`http://127.0.0.1:<port>/auth/callback`). That origin has none of
  * the app's cookies: the sign-in's single-use `state` is what authorizes it.
  */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { returnTo } = await completeChatGPTSignIn({
+    const presentation = await completeChatGPTSignIn({
       params: new URL(request.url).searchParams,
     });
-    return callbackPage(request, { ok: true, ...(returnTo ? { returnTo } : {}) });
+    return callbackPage(request, { ok: true, ...presentation });
   } catch (error) {
     if (!(error instanceof ChatGPTPlanError)) log.error('ChatGPT sign-in callback failed:', error);
     else if (error.code === 'upstream' || error.code === 'sign-in-failed') {
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
     }
     return callbackPage(request, {
       ok: false,
-      reason: error instanceof ChatGPTPlanError ? error.code : undefined,
+      ...(error instanceof ChatGPTPlanError && { reason: error.code, locale: error.locale }),
     });
   }
 }

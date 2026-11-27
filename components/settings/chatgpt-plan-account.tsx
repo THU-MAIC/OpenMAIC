@@ -27,53 +27,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 
 import type { ProviderFields } from './server-settings';
 
-type Answer<T> = { ok: true; data: T } | { ok: false; reason?: string; error?: string };
-
-async function call<T>(path: string, body?: Record<string, unknown>): Promise<Answer<T>> {
-  try {
-    const response = await fetch(
-      path,
-      body === undefined
-        ? { cache: 'no-store' }
-        : {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          },
-    );
-    const data = await response.json().catch(() => ({}));
-    return response.ok && data.success
-      ? { ok: true, data: data as T }
-      : {
-          ok: false,
-          reason: data.reason,
-          error: data.errorCode === 'PROVIDER_ACTION_REQUIRED' ? data.error : undefined,
-        };
-  } catch {
-    return { ok: false };
-  }
-}
-
-export function useChatGPTPlanStatus(offered: boolean) {
-  const [status, setStatus] = useState<ChatGPTPlanStatus | null>(null);
-  const [statusFailed, setStatusFailed] = useState(false);
-  const loadStatus = useCallback(async () => {
-    const answer = await call<{ status: ChatGPTPlanStatus }>(CHATGPT_PLAN_API.status);
-    const next = answer.ok ? answer.data.status : null;
-    setStatus(next);
-    setStatusFailed(!answer.ok);
-    return next;
-  }, []);
-  useEffect(() => {
-    if (!offered) return;
-    void loadStatus();
-    window.addEventListener('focus', loadStatus);
-    return () => window.removeEventListener('focus', loadStatus);
-  }, [offered, loadStatus]);
-  return { status, statusFailed, loadStatus };
-}
-
-export type PlanAccountState = ReturnType<typeof useChatGPTPlanStatus>;
+import { callChatGPTPlan, type PlanAccountState } from '@/lib/chatgpt-plan/client';
 
 /** What the settings say for a failure the server reported with a code. */
 const REASON_KEYS: Record<string, string> = {
@@ -118,7 +72,7 @@ export function ChatGPTPlanAccount({
   const syncModels = useCallback(async () => {
     setError('');
     setBusy('models');
-    const answer = await call<{ models: ChatGPTPlanModel[] }>(CHATGPT_PLAN_API.models);
+    const answer = await callChatGPTPlan<{ models: ChatGPTPlanModel[] }>(CHATGPT_PLAN_API.models);
     setBusy(null);
     if (!answer.ok) {
       await loadStatus();
@@ -154,7 +108,7 @@ export function ChatGPTPlanAccount({
   }, [pending, loadStatus, connected]);
 
   const acceptNotice = async () => {
-    const answer = await call(CHATGPT_PLAN_API.notice, {});
+    const answer = await callChatGPTPlan(CHATGPT_PLAN_API.notice, {});
     if (!answer.ok) return failed(answer);
     await loadStatus();
   };
@@ -164,7 +118,10 @@ export function ChatGPTPlanAccount({
     setBusy('sign-in');
     // Opened within the click, so the browser lets it through; filled in below.
     const tab = window.open('', '_blank');
-    const answer = await call<{ signIn: ChatGPTPlanSignInStart }>(CHATGPT_PLAN_API.signIn, {});
+    const answer = await callChatGPTPlan<{ signIn: ChatGPTPlanSignInStart }>(
+      CHATGPT_PLAN_API.signIn,
+      {},
+    );
     setBusy(null);
     if (!answer.ok) {
       tab?.close();
@@ -182,7 +139,7 @@ export function ChatGPTPlanAccount({
   const submitAddress = async () => {
     setError('');
     setBusy('paste');
-    const answer = await call(CHATGPT_PLAN_API.callback, { address });
+    const answer = await callChatGPTPlan(CHATGPT_PLAN_API.callback, { address });
     setBusy(null);
     if (!answer.ok) return failed(answer);
     await connected();
@@ -190,7 +147,7 @@ export function ChatGPTPlanAccount({
 
   const disconnect = async () => {
     setBusy('disconnect');
-    const answer = await call<{ revoked: boolean }>(CHATGPT_PLAN_API.disconnect, {});
+    const answer = await callChatGPTPlan<{ revoked: boolean }>(CHATGPT_PLAN_API.disconnect, {});
     setBusy(null);
     if (!answer.ok) return failed(answer);
     if (!answer.data.revoked) toast.warning(t('settings.chatgptPlan.notRevoked'));
@@ -341,27 +298,33 @@ export function ChatGPTPlanAccount({
         </div>
       </div>
     );
-  } else if (!status.noticeAcknowledged) {
+  } else {
     body = (
       <div className="space-y-3">
-        <p className="text-sm font-medium">{t('settings.chatgptPlan.noticeTitle')}</p>
         <p className="text-sm text-muted-foreground">{t('settings.chatgptPlan.noticeBody')}</p>
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" onClick={acceptNotice}>
-            {t('settings.chatgptPlan.noticeAccept')}
-          </Button>
-          {usageLink}
-        </div>
+        {signInButton(t('settings.chatgptPlan.signIn'))}
       </div>
     );
-  } else {
-    body = signInButton(t('settings.chatgptPlan.signIn'));
   }
 
   return (
     <div className="space-y-3 rounded-lg border p-4">
       {body}
       {error && <p className="text-sm text-destructive">{error}</p>}
+      <AlertDialog open={status.state === 'connected' && !status.noticeAcknowledged}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.chatgptPlan.usingPlan')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('settings.chatgptPlan.noticeBody')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            {usageLink}
+            <AlertDialogAction onClick={acceptNotice}>
+              {t('settings.chatgptPlan.noticeAccept')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={confirmDisconnect} onOpenChange={setConfirmDisconnect}>
         <AlertDialogContent>
           <AlertDialogHeader>
