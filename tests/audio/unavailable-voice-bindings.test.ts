@@ -6,8 +6,6 @@ import {
   isVoiceBindingUnavailable,
   markVoiceBindingUnavailable,
   markVoiceBindingNoticeShown,
-  trackAssignedVoiceBinding,
-  voiceBindingKey,
 } from '@/lib/audio/unavailable-voice-bindings';
 
 describe('unavailable voice bindings', () => {
@@ -23,11 +21,8 @@ describe('unavailable voice bindings', () => {
     const oldBinding = { providerId: 'qwen-tts', voiceId: 'clone-a' };
     const oldKey = markVoiceBindingUnavailable(oldBinding);
     expect(markVoiceBindingNoticeShown(oldKey)).toBe(true);
-    const nextKey = trackAssignedVoiceBinding(voiceBindingKey(oldBinding), {
-      providerId: 'qwen-tts',
-      voiceId: 'clone-b',
-    });
-    expect(nextKey).toBe(voiceBindingKey({ providerId: 'qwen-tts', voiceId: 'clone-b' }));
+    const newBinding = { ...oldBinding, voiceId: 'clone-b' };
+    expect(isVoiceBindingUnavailable(newBinding)).toBe(false);
     expect(isVoiceBindingUnavailable(oldBinding)).toBe(true);
     expect(markVoiceBindingNoticeShown(oldKey)).toBe(false);
   });

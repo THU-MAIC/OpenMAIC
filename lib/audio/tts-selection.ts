@@ -131,13 +131,17 @@ export function voicePreference(): {
 
 /** Speech synthesis for these capabilities, or null when the `tts` slot resolves to nothing. */
 export function ttsSelection(
-  capabilities: Pick<ModelCapabilities, 'tts' | 'ttsVoiceAccount'> = currentModelCapabilities(),
+  capabilities: Pick<
+    ModelCapabilities,
+    'tts' | 'ttsVoiceAccount' | 'ttsVoiceRejectionScope'
+  > = currentModelCapabilities(),
   preference = voicePreference(),
   accountVoices?: AccountVoice[],
 ): TTSSelection | null {
   const target = capabilities.tts;
   if (!target) return null;
   const providerId = target.registryId as TTSProviderId;
+  const accountScope = capabilities.ttsVoiceRejectionScope ?? capabilities.ttsVoiceAccount?.scope;
   const model = slotTTSModel(target);
   // The user's voice applies while the slot names its provider and its model
   // can speak it (a voice kept from another model falls back).
@@ -157,9 +161,7 @@ export function ttsSelection(
       ? preference.voice
       : defaultVoiceFor(providerId, model, target.options, target.voices),
     speed: preference.speed,
-    ...(capabilities.ttsVoiceAccount?.scope
-      ? { accountScope: capabilities.ttsVoiceAccount.scope }
-      : {}),
+    ...(accountScope ? { accountScope } : {}),
     providersConfig: slotTTSProvidersConfig(target, accountVoices),
   };
 }

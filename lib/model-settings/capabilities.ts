@@ -35,6 +35,8 @@ export interface ModelCapabilities {
   tts: EffectiveTarget | null;
   /** The service behind private voice preferences, including a discovered unavailable pick. */
   ttsVoiceAccount?: VoiceAccount;
+  /** In-memory scope for voice rejections from a service with no account catalogue. */
+  ttsVoiceRejectionScope?: string;
   asr: EffectiveTarget | null;
   image: EffectiveTarget | null;
   video: EffectiveTarget | null;
@@ -87,12 +89,30 @@ function speechInput(view: ModelSettingsView | null | undefined): EffectiveTarge
   return !view || status === 'unassigned' ? BROWSER_SPEECH_RECOGNITION : null;
 }
 
+// Doubao speaker permissions can change when the service, key or resource changes.
+// The public view can mask those differences. Scope refusals to this read of the settings.
+const doubaoScopes = new WeakMap<ModelSettingsView, string>();
+let nextDoubaoScope = 0;
+
+function doubaoRejectionScope(view: ModelSettingsView): string {
+  let scope = doubaoScopes.get(view);
+  if (scope === undefined) {
+    scope = `doubao-view:${++nextDoubaoScope}`;
+    doubaoScopes.set(view, scope);
+  }
+  return scope;
+}
+
 export function modelCapabilities(view: ModelSettingsView | null | undefined): ModelCapabilities {
+  const tts = effectiveTarget(view, 'tts');
   const ttsVoiceAccount = voiceAccountFor(view);
   return {
     known: !!view,
     llm: effectiveTarget(view, 'llm'),
-    tts: effectiveTarget(view, 'tts'),
+    tts,
+    ...(view && tts?.registryId === 'doubao-tts'
+      ? { ttsVoiceRejectionScope: doubaoRejectionScope(view) }
+      : {}),
     ...(ttsVoiceAccount ? { ttsVoiceAccount } : {}),
     asr: speechInput(view),
     image: effectiveTarget(view, 'image'),

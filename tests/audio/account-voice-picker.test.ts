@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { useSlotTTSProvidersConfig, useTTSSelection } from '@/lib/audio/use-tts-selection';
 import { ttsSelection } from '@/lib/audio/tts-selection';
+import {
+  isVoiceBindingUnavailable,
+  markVoiceBindingUnavailable,
+} from '@/lib/audio/unavailable-voice-bindings';
 import { useAccountVoices } from '@/lib/audio/use-account-voices';
 import { voiceAccountFor } from '@/lib/audio/voice-account';
 import { getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
@@ -121,6 +125,34 @@ afterEach(() => {
   useSettingsStore.getState().setTTSVoice('default', '');
   useSettingsStore.getState().setAgentVoiceOverride('student', undefined);
   vi.unstubAllGlobals();
+});
+
+it('shares Doubao refusals for the active settings view without persisting or listing account voices', () => {
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  const view = modelSettingsViewFor({ tts: { registryId: 'doubao-tts' } });
+  modelSettingsClient.adopt(view);
+  function Reader() {
+    const selection = useTTSSelection();
+    return createElement('output', null, selection?.accountScope);
+  }
+  const host = mount(createElement(Reader));
+  const binding = { providerId: 'doubao-tts', voiceId: 'course-speaker' };
+  const scope = ttsSelection()?.accountScope;
+  expect(scope).toBeTruthy();
+  expect(host.textContent).toBe(scope);
+  markVoiceBindingUnavailable(binding, scope);
+  expect(isVoiceBindingUnavailable(binding, ttsSelection()?.accountScope)).toBe(true);
+
+  // A replaced key may have the same public mask and deployment revision.
+  act(() => modelSettingsClient.adopt({ ...view }));
+  const next = ttsSelection()?.accountScope;
+  expect(next).toBeTruthy();
+  expect(next).not.toBe(scope);
+  expect(host.textContent).toBe(next);
+  expect(isVoiceBindingUnavailable(binding, next)).toBe(false);
+  expect(voiceAccountFor(view)).toBeUndefined();
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 it('shares an account list across pickers, keeps the default, and drops late responses after a key change', async () => {
