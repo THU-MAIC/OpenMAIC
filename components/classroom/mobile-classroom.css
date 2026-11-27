@@ -889,10 +889,26 @@ body:has([data-classroom-stage][data-mobile='true']) {
 }
 
 /* Landscape is a reflow, never a new player or a second iframe. */
+.classroom-playback[data-mobile='true'][data-landscape='true'] {
+  display: grid;
+  grid-template:
+    'canvas' minmax(0, 1fr)
+    'dock' auto
+    / minmax(0, 1fr);
+}
 [data-mobile='true'][data-landscape='true'] .classroom-canvas-region {
-  flex: 1 1 0;
+  grid-area: canvas;
+  height: 100%;
   aspect-ratio: auto;
   max-height: none;
+}
+[data-mobile='true'][data-landscape='true'] .classroom-main > div:has(> .mobile-roundtable) {
+  grid-area: dock;
+  min-width: 0;
+}
+[data-mobile='true'][data-landscape='true'] .mobile-panel-backdrop {
+  grid-area: canvas;
+  inset: 0;
 }
 [data-mobile='true'][data-landscape='true'] .mobile-roundtable {
   display: flex;
@@ -990,7 +1006,8 @@ body:has([data-classroom-stage][data-mobile='true']) {
 [data-mobile='true'][data-landscape='true'] .classroom-chat[data-open='true'],
 [data-mobile='true'][data-landscape='true'] .classroom-directory[data-open='true'] {
   position: absolute;
-  inset: 0 0 calc(var(--mobile-nav-height) + var(--mobile-composer-height)) auto;
+  grid-area: canvas;
+  inset: 0 0 var(--mobile-composer-height) auto;
   width: min(400px, 85%);
   z-index: 200;
   border-radius: 16px 0 0 16px;
@@ -1001,8 +1018,13 @@ body:has([data-classroom-stage][data-mobile='true']) {
 }
 [data-mobile='true'][data-landscape='true'][data-materials-open='true'] .mobile-classroom-composer {
   display: flex;
+  grid-area: canvas;
+  inset: auto 0 0 auto;
   width: min(400px, 85%);
-  inset-inline-start: auto;
+  border-bottom-left-radius: 16px;
+}
+[data-mobile='true'][data-landscape='true'][data-mobile-panel='chat'] .classroom-chat {
+  border-bottom-left-radius: 0;
 }
 [data-mobile='true'][data-landscape='true'] .classroom-chat {
   flex: none;
@@ -1113,10 +1135,6 @@ body:has([data-classroom-stage][data-mobile='true']) {
 [data-mobile='true'][data-landscape='true'] .mobile-roundtable-status {
   display: none;
 }
-/* Landscape tabs live in the bottom bar: panels and their composer sit above it. */
-.classroom-playback[data-mobile='true'][data-landscape='true'] {
-  --mobile-nav-height: calc(52px + env(safe-area-inset-bottom));
-}
 [data-mobile='true'][data-landscape='true'][data-mobile-panel='lecture'] .mobile-classroom-composer,
 [data-mobile='true'][data-landscape='true'][data-mobile-panel='directory']
   .mobile-classroom-composer {
@@ -1126,5 +1144,5 @@ body:has([data-classroom-stage][data-mobile='true']) {
   .classroom-chat[data-open='true'],
 [data-mobile='true'][data-landscape='true'][data-mobile-panel='directory']
   .classroom-directory[data-open='true'] {
-  bottom: var(--mobile-nav-height);
+  bottom: 0;
 }
