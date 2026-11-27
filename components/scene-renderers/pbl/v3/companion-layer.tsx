@@ -102,6 +102,7 @@ export function CompanionLayer({
   const completion = stageCompletionCopy(view, t, disabled);
   return (
     <Narrated
+      roleVoices={view.roleVoices}
       conversation={conversation}
       // An accepted learner retry reopens a stopped input. A background takeover does not.
       stageKey={`${stageKey}:${acceptedRetry}`}

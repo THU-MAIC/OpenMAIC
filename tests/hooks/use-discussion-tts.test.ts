@@ -4,6 +4,7 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { EffectiveTarget } from '@/lib/model-settings/capabilities';
 import type { TTSSelection } from '@/lib/audio/tts-selection';
 import type { UseBrowserTTSOptions } from '@/lib/hooks/use-browser-tts';
 
@@ -73,7 +74,7 @@ vi.mock('@/lib/hooks/use-browser-tts', () => ({
   },
 }));
 
-import { PBL_NARRATORS } from '@/lib/pbl/v3/personas';
+import { pblNarrators } from '@/lib/pbl/v3/personas';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { clearUnavailableVoiceBindingsForTests } from '@/lib/audio/unavailable-voice-bindings';
 import { resetDiscussionAudioElementForTests } from '@/lib/audio/discussion-audio';
@@ -184,6 +185,14 @@ async function respond(index: number, body = { base64: btoa(`audio-${index}`), f
   await act(async () => requests[index].response.resolve(Response.json(body)));
 }
 
+async function rejectVoice(index: number) {
+  await act(async () =>
+    requests[index].response.resolve(
+      Response.json({ errorCode: 'TTS_VOICE_UNAVAILABLE' }, { status: 404 }),
+    ),
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   clearUnavailableVoiceBindingsForTests();
@@ -224,8 +233,15 @@ afterEach(() => {
 });
 
 describe('PBL tutor voices', () => {
+  const target: EffectiveTarget = {
+    providerId: 'speech',
+    registryId: 'openai-tts',
+    providerSource: 'deployment',
+    presetId: 'openai-tts',
+    modelId: 'tts-1',
+  };
   beforeEach(() => {
-    agents = PBL_NARRATORS;
+    agents = pblNarrators(undefined, target);
   });
   afterEach(() => {
     selection.providerId = mocks.settings.ttsProviderId;
@@ -242,6 +258,105 @@ describe('PBL tutor voices', () => {
       expect(mocks.speak).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps each project voice with its speaker during prefetch, including shared voices', async () => {
+    agents = pblNarrators(
+      {
+        mentor: { providerId: 'openai-tts', voiceId: 'nova' },
+        discussion: { providerId: 'openai-tts', voiceId: 'onyx' },
+        planner: { providerId: 'openai-tts', voiceId: 'onyx' },
+        coder: { providerId: 'openai-tts', modelId: 'tts-1', voiceId: 'echo' },
+      },
+      target,
+    );
+    act(() => root.render(createElement(Probe)));
+    await seal('intro', 'mentor');
+    await seal('question', 'discussion');
+    await seal('plan', 'planner');
+    await seal('code', 'coder');
+    for (const [i, voice] of ['nova', 'onyx', 'onyx', 'echo'].entries()) {
+      expect(requests[i].body.ttsVoice).toBe(voice);
+      await respond(i);
+      await act(() => FakeAudio.instances[0].end());
+    }
+    expect(requests).toHaveLength(4);
+  });
+
+  it.each([
+    {},
+    { coder: { providerId: 'openai-tts', modelId: 'tts-1-hd', voiceId: 'echo' } },
+    { coder: { providerId: 'not-installed', voiceId: 'another-voice' } },
+    { coder: { providerId: 'doubao-tts', voiceId: 'another-voice' } },
+  ])('falls back to the platform voice for an unbound or unavailable role', async (voices) => {
+    agents = pblNarrators(voices, target);
+    act(() => root.render(createElement(Probe)));
+    await seal('code', 'coder');
+    expect(requests.map((r) => r.body.ttsVoice)).toEqual(['alloy']);
+  });
+
+  it('retries a refused voice once and prefetches queued roles with their available voices', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const providerId = 'doubao-tts';
+    const unavailable = { providerId, voiceId: 'retired' };
+    selection = {
+      providerId,
+      voice: 'host-narrator',
+      speed: 1,
+      providersConfig: {
+        [providerId]: { enabled: true, isServerConfigured: true, apiKey: '', baseUrl: '' },
+      },
+    };
+    agents = pblNarrators(
+      {
+        planner: unavailable,
+        discussion: unavailable,
+        coder: { providerId, voiceId: 'builder' },
+      },
+      { ...target, registryId: providerId, modelId: 'seed-tts-2.0' },
+    );
+    act(() => root.render(createElement(Probe)));
+    await seal('A', 'planner');
+    await seal('B', 'discussion');
+    await seal('C', 'coder');
+    await rejectVoice(0);
+    expect(hook.shouldHold()).toEqual({ holding: true, segmentDone: 0 });
+    await respond(1); // B starts its lookahead after A's fallback is ready.
+    expect(requests[2].body.ttsVoice).toBe('host-narrator');
+    await respond(2);
+    await act(async () => FakeAudio.instances[0].end());
+    await respond(3);
+    await act(async () => FakeAudio.instances[0].end());
+    await seal('D', 'planner'); // A newly sealed line uses the same remembered refusal.
+    await respond(4);
+    await act(async () => FakeAudio.instances[0].end());
+    await act(async () => FakeAudio.instances[0].end());
+    expect(requests.map((r) => [r.body.audioId, r.body.ttsVoice])).toEqual([
+      ['A', 'retired'],
+      ['A', 'host-narrator'],
+      ['B', 'host-narrator'],
+      ['C', 'builder'],
+      ['D', 'host-narrator'],
+    ]);
+    expect(FakeAudio.instances[0].play).toHaveBeenCalledTimes(4);
+    expect(mocks.warning).toHaveBeenCalledOnce();
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 4 });
+  });
+
+  it('honors the host voice catalogue and the native provider default model', () => {
+    const voiceConfig = { providerId: 'doubao-tts', modelId: 'seed-tts-2.0', voiceId: 'speaker' };
+    const host = {
+      ...target,
+      registryId: 'doubao-tts',
+      modelId: undefined,
+      voices: [{ id: 'speaker', name: 'Speaker' }],
+    };
+    const roles = { mentor: voiceConfig };
+    expect(pblNarrators(roles, host)[0].voiceConfig).toEqual(voiceConfig);
+    expect(
+      pblNarrators(roles, { ...host, voices: [{ id: 'other', name: 'Other' }] })[0].voiceConfig,
+    ).toBeUndefined();
+    expect(pblNarrators(roles, null)[0].voiceConfig).toBeUndefined();
+  });
 
   it('uses browser speech when the platform selects it', async () => {
     selection.providerId = 'browser-native-tts';
@@ -281,14 +396,6 @@ describe('discussion TTS synthesis lookahead', () => {
     act(() => root.render(createElement(Probe)));
   }
 
-  async function rejectVoice(index: number) {
-    await act(async () =>
-      requests[index].response.resolve(
-        Response.json({ errorCode: 'TTS_VOICE_UNAVAILABLE' }, { status: 404 }),
-      ),
-    );
-  }
-
   it('attributes a queued line to the account that actually synthesized it', async () => {
     selectVoices('female-yujie');
     act(() => hook.pause());
@@ -306,6 +413,80 @@ describe('discussion TTS synthesis lookahead', () => {
     act(() => root.render(createElement(Probe)));
     await seal('next', 'student');
     expect(requests[2].body.ttsVoice).toBe(studentVoice);
+  });
+
+  it.each([false, true])(
+    'rechecks paused retries under the new account (also refused: %s)',
+    async (refused) => {
+      selectVoices('female-yujie');
+      await seal('first', 'student');
+      act(() => hook.pause());
+      await rejectVoice(0);
+      expect(mocks.warning).not.toHaveBeenCalled();
+      await seal('second', 'student');
+      expect(requests).toHaveLength(1);
+      selection = { ...selection, accountScope: 'different-account' };
+      act(() => root.render(createElement(Probe)));
+      await act(async () => hook.resume());
+      expect(requests[1].body.ttsVoice).toBe(studentVoice);
+      if (refused) await rejectVoice(1);
+      const firstSuccess = refused ? 2 : 1;
+      const expectedVoice = refused ? 'female-yujie' : studentVoice;
+      expect(requests[firstSuccess].body).toMatchObject({
+        audioId: 'first',
+        ttsVoice: expectedVoice,
+      });
+      await respond(firstSuccess);
+      expect(requests[firstSuccess + 1].body).toMatchObject({
+        audioId: 'second',
+        ttsVoice: expectedVoice,
+      });
+      await respond(firstSuccess + 1);
+      await act(async () => FakeAudio.instances[0].end());
+      await act(async () => FakeAudio.instances[0].end());
+      expect(mocks.warning).toHaveBeenCalledTimes(refused ? 1 : 0);
+      expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
+    },
+  );
+
+  it('retries the original on the active account when the previous account rejects its fallback late', async () => {
+    selectVoices('female-yujie');
+    await seal('first', 'student');
+    await rejectVoice(0);
+    expect(requests[1].body.ttsVoice).toBe('female-yujie');
+    selection = { ...selection, accountScope: 'different-account' };
+    act(() => root.render(createElement(Probe)));
+    await rejectVoice(1);
+    expect(requests[2].body).toMatchObject({ audioId: 'first', ttsVoice: studentVoice });
+    await respond(2);
+    await act(async () => FakeAudio.instances[0].end());
+    expect(FakeAudio.instances[0].play).toHaveBeenCalledOnce();
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 1 });
+  });
+
+  it('advances after the fallback is also refused and still voices the next valid role', async () => {
+    selectVoices('female-yujie');
+    agents = [
+      ...agents,
+      {
+        ...teacher,
+        id: 'other',
+        voiceConfig: { providerId: 'minimax-tts', voiceId: 'presenter_male' },
+      },
+    ];
+    act(() => root.render(createElement(Probe)));
+    await seal('broken', 'student');
+    await seal('healthy', 'other');
+    await rejectVoice(0);
+    await rejectVoice(1);
+    expect(requests.map((r) => [r.body.audioId, r.body.ttsVoice])).toEqual([
+      ['broken', studentVoice],
+      ['broken', 'female-yujie'],
+      ['healthy', 'presenter_male'],
+    ]);
+    await respond(2);
+    await act(async () => FakeAudio.instances[0].end());
+    expect(hook.shouldHold()).toEqual({ holding: false, segmentDone: 2 });
   });
 
   it('skips the rejected narrator when a student also needs a fallback', async () => {

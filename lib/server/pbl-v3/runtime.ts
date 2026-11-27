@@ -38,7 +38,7 @@ import { isAgentRuntimeConfigured } from '@/lib/config/feature-flags';
 import { assertWorkspaceModelsAuthorized } from '@/lib/server/model-config/runtime';
 import { stageStep } from '@/lib/pbl/v3/presentation';
 import { isPBLV3Reference, type LearningView } from '@/lib/pbl/v3/types';
-import type { AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
+import { agentRoleSchema, type AgentRole } from '@/lib/pbl/v3/domain/project/project-schema';
 import { currentStage, currentMilestone } from '@/lib/pbl/v3/domain/orchestration/state';
 import * as transitions from '@/lib/pbl/v3/domain/orchestration/transition';
 import { judgeQuiz } from '@/lib/pbl/v3/domain/orchestration/quiz';
@@ -1403,11 +1403,17 @@ export async function learningView(
     buildAvailable: !!project.buildCommand,
   });
   const duplicateMessages = handoffEchoes(messages);
+  const roleVoices: NonNullable<LearningView['roleVoices']> = {};
+  for (const speaker of agentRoleSchema.options) {
+    const voice = project.definition.agents[speaker].voiceConfig;
+    if (voice) roleVoices[speaker] = voice;
+  }
   return {
     id,
     revision: row.revision,
     onboardingCompleted: await store.hasSeenOnboarding(principal.ownerId),
     title: project.definition.title,
+    ...(Object.keys(roleVoices).length ? { roleVoices } : {}),
     ...(project.application
       ? {
           application: {

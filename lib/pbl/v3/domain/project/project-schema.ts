@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { voiceConfigSchema } from '@/lib/audio/voice-config-schema';
 
 export const agentRoleSchema = z.enum(['mentor', 'discussion', 'planner', 'coder']);
 export type AgentRole = z.infer<typeof agentRoleSchema>;
@@ -106,6 +107,11 @@ const agentDefinitionSchema = z.object({
   teachingSystemPrompt: nonEmptyString.optional(),
   tools: z.array(nonEmptyString),
   skillPaths: z.array(projectPath).default([]),
+  // Previously unknown agent metadata must not prevent an existing course from opening.
+  voiceConfig: voiceConfigSchema
+    .refine((voice) => Object.values(voice).every((id) => id === undefined || id.trim().length > 0))
+    .optional()
+    .catch(undefined),
 });
 
 const evaluationMetadataSchema = z.object({

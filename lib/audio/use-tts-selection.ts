@@ -19,7 +19,7 @@ export function useTTSSelection(): TTSSelection | null {
 
 /** The account can become known before or after its voice catalogue responds. */
 export function useTTSSelectionFor(
-  { tts, ttsVoiceAccount }: ModelCapabilities,
+  { tts, ttsVoiceAccount, ttsVoiceRejectionScope }: ModelCapabilities,
   voices: AccountVoice[],
 ) {
   const scope = useSyncExternalStore(
@@ -35,11 +35,21 @@ export function useTTSSelectionFor(
   return useMemo(
     () =>
       ttsSelection(
-        { tts, ttsVoiceAccount: { scope, missingVoice } },
+        { tts, ttsVoiceAccount: { scope, missingVoice }, ttsVoiceRejectionScope },
         { voice, providerId: voiceProviderId, speed, account },
         voices,
       ),
-    [tts, scope, missingVoice, voice, voiceProviderId, speed, account, voices],
+    [
+      tts,
+      scope,
+      missingVoice,
+      ttsVoiceRejectionScope,
+      voice,
+      voiceProviderId,
+      speed,
+      account,
+      voices,
+    ],
   );
 }
 

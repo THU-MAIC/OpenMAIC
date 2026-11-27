@@ -1373,6 +1373,29 @@ async function generateElevenLabsTTS(
 // Re-export from constants for convenience
 export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
 
+// Doubao shares business codes between speaker refusals, rate limits, and service errors.
+// Only the provider's explicit speaker messages identify a binding that can be replaced.
+function doubaoRefusedSpeaker(message: unknown): boolean {
+  if (typeof message !== 'string') return false;
+  switch (message.trim().toLowerCase()) {
+    case 'speaker not found':
+    case '[invalid argument] speaker not found':
+    case 'speaker permission denied: get resource id: access denied':
+    case 'resource id is mismatched with speaker related resource':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function doubaoHttpErrorMessage(body: string): unknown {
+  try {
+    return JSON.parse(body)?.message;
+  } catch {
+    return body;
+  }
+}
+
 /**
  * Doubao TTS 2.0 implementation (Volcengine Seed-TTS 2.0).
  *
@@ -1445,6 +1468,9 @@ async function generateDoubaoTTS(
   if (!response.ok) {
     throwIfTtsRateLimited('Doubao', response.status, response.headers?.get('retry-after'));
     const errorText = await response.text().catch(() => response.statusText);
+    if (doubaoRefusedSpeaker(doubaoHttpErrorMessage(errorText))) {
+      throw new TTSVoiceUnavailableError();
+    }
     throw new Error(`Doubao TTS API error (${response.status}): ${errorText}`);
   }
 
@@ -1468,6 +1494,7 @@ async function generateDoubaoTTS(
     } else if (chunk.code === 20000000) {
       break;
     } else if (chunk.code && chunk.code !== 0) {
+      if (doubaoRefusedSpeaker(chunk.message)) throw new TTSVoiceUnavailableError();
       if (chunk.code === 45000000 || chunk.code === 45000292) {
         throw new TTSRateLimitError('doubao-tts', chunk.message || 'concurrency quota exceeded');
       }

@@ -8891,6 +8891,13 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       });
       for (const milestone of descriptor.definition.milestones)
         descriptor.runtime.evaluations[milestone.id] = 'tests/private.json';
+      const replacementDescriptor = JSON.stringify(descriptor);
+      const mentorVoice = { providerId: 'custom-tts-studio', voiceId: 'guide' };
+      const coderVoice = { ...mentorVoice, voiceId: 'builder' };
+      if (!java) {
+        descriptor.definition.agents.mentor.voiceConfig = mentorVoice;
+        descriptor.definition.agents.coder.voiceConfig = coderVoice;
+      }
       bundle.files['project.json'] = JSON.stringify(descriptor);
       const projectRef = await installProjectPackage(
         principal.ownerId,
@@ -8933,6 +8940,7 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
         principal.ownerId,
         indexProjectFiles(importedId, selected.ref.version, {
           ...bundle.files,
+          'project.json': replacementDescriptor,
           'docs/0.md': 'Replacement course introduction; existing learners must keep their pin.',
         }),
       );
@@ -8946,6 +8954,9 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
       expect(reopened.id).toBe(created.id);
       expect(reopened.project_reference).toEqual(projectRef);
       expect(reopened.project?.coursePackage?.descriptor.id).toBe(importedId);
+      expect((await learningView(principal, reopened.id, { passive: true })).roleVoices).toEqual(
+        java ? undefined : { mentor: mentorVoice, coder: coderVoice },
+      );
       await expect(
         openStudy({ ...principal, ownerId: 'foreign-owner' }, stageId, 'scene'),
       ).rejects.toMatchObject({ status: 404 });

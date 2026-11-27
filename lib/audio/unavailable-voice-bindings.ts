@@ -23,13 +23,6 @@ export function clearVoiceBindingUnavailable(binding: VoiceBinding, accountScope
   noticedBindings.delete(key);
 }
 
-export function trackAssignedVoiceBinding(
-  _previousKey: string | undefined,
-  binding: VoiceBinding,
-): string {
-  return voiceBindingKey(binding);
-}
-
 export function markVoiceBindingNoticeShown(key: string): boolean {
   if (noticedBindings.has(key)) return false;
   noticedBindings.add(key);

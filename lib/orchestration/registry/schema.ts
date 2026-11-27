@@ -7,6 +7,7 @@
  * of them is part of it.
  */
 import { z } from 'zod';
+import { voiceConfigSchema } from '@/lib/audio/voice-config-schema';
 
 import type { AgentConfig } from './types';
 import { isBuiltInAgentId } from './built-in';
@@ -30,14 +31,6 @@ export const MAX_IMPORT_BATCH_AGENTS = MAX_CUSTOM_AGENTS * 2;
  * under it (any single schema-valid agent fits many times over).
  */
 export const MAX_IMPORT_BODY_BYTES = 8 * 1024 * 1024;
-
-const voiceConfigSchema = z
-  .object({
-    providerId: z.string().min(1).max(64),
-    modelId: z.string().min(1).max(128).optional(),
-    voiceId: z.string().min(1).max(256),
-  })
-  .strict();
 
 const voiceDesignSchema = z
   .object({

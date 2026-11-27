@@ -7,7 +7,11 @@
  * what to ask for (browser speech runs in the browser, for instance).
  */
 import { MODEL_SLOTS, type SlotId } from '@/lib/config/model-slots';
-import { voiceAccountFor, type VoiceAccount } from '@/lib/audio/voice-account';
+import {
+  voiceAccountFor,
+  voiceRejectionScopeFor,
+  type VoiceAccount,
+} from '@/lib/audio/voice-account';
 import { deviceOwnerKey } from '@/lib/device-storage/owner-key';
 
 import {
@@ -35,6 +39,8 @@ export interface ModelCapabilities {
   tts: EffectiveTarget | null;
   /** The service behind private voice preferences, including a discovered unavailable pick. */
   ttsVoiceAccount?: VoiceAccount;
+  /** In-memory scope when the speech provider ties rejected voices to the current settings view. */
+  ttsVoiceRejectionScope?: string;
   asr: EffectiveTarget | null;
   image: EffectiveTarget | null;
   video: EffectiveTarget | null;
@@ -88,11 +94,14 @@ function speechInput(view: ModelSettingsView | null | undefined): EffectiveTarge
 }
 
 export function modelCapabilities(view: ModelSettingsView | null | undefined): ModelCapabilities {
+  const tts = effectiveTarget(view, 'tts');
   const ttsVoiceAccount = voiceAccountFor(view);
+  const ttsVoiceRejectionScope = voiceRejectionScopeFor(view, tts?.registryId);
   return {
     known: !!view,
     llm: effectiveTarget(view, 'llm'),
-    tts: effectiveTarget(view, 'tts'),
+    tts,
+    ...(ttsVoiceRejectionScope ? { ttsVoiceRejectionScope } : {}),
     ...(ttsVoiceAccount ? { ttsVoiceAccount } : {}),
     asr: speechInput(view),
     image: effectiveTarget(view, 'image'),
