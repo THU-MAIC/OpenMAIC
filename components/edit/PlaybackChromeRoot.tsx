@@ -1791,6 +1791,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         if (isTextEntryTarget(event.target) || isTextEntryTarget(document.activeElement)) {
           return;
         }
+        // A focused video or audio element seeks and sets its own volume with the arrow keys.
+        if (event.key.startsWith('Arrow') && event.target instanceof HTMLMediaElement) return;
 
         switch (event.key) {
           case 'ArrowLeft':

@@ -904,6 +904,29 @@ describe('PlaybackChromeRoot element-reference ownership', () => {
     ).toBe(false);
   });
 
+  it('leaves the arrow keys to a focused video', async () => {
+    settingsState.setTTSVolume.mockClear();
+    await renderOwner();
+    const video = document.createElement('video');
+    container.appendChild(video);
+
+    for (const key of ['ArrowUp', 'ArrowDown']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      act(() => {
+        video.dispatchEvent(event);
+      });
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(settingsState.setTTSVolume).not.toHaveBeenCalled();
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(settingsState.setTTSVolume).toHaveBeenCalledTimes(1);
+  });
+
   it('freezes one Interactive identity for exactly one send and preserves it without a receipt', async () => {
     stageState.scenes = [interactiveScene];
     stageState.currentSceneId = interactiveScene.id;
