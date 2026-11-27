@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, memo } from 'react';
+import { useEffect, useRef, useCallback, memo, type RefCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { ChatSession, ChatMessageMetadata } from '@/lib/types/chat';
 import type { UIMessage } from 'ai';
@@ -28,6 +28,8 @@ interface ChatSessionProps {
   readonly isActive: boolean;
   readonly isStreaming?: boolean;
   readonly activeBubbleId?: string | null;
+  readonly quickReplyMessageId?: string | null;
+  readonly quickReplyHostRef?: RefCallback<HTMLDivElement>;
   readonly onEndSession?: (sessionId: string) => void;
   readonly onContinueSession?: (sessionId: string) => void;
 }
@@ -166,6 +168,8 @@ export function ChatSessionComponent({
   isActive,
   isStreaming,
   activeBubbleId,
+  quickReplyMessageId,
+  quickReplyHostRef,
   onEndSession,
   onContinueSession,
 }: ChatSessionProps) {
@@ -291,7 +295,8 @@ export function ChatSessionComponent({
                   : { duration: 0.3 }
               }
               className={cn(
-                'flex gap-2 px-1.5 py-1 rounded-lg border-l-[3px] border-l-transparent transition-[background-color,border-color] duration-300',
+                'flex rounded-lg border-l-[3px] border-l-transparent transition-[background-color,border-color] duration-300',
+                mobile ? 'gap-2.5 px-2.5 py-2' : 'gap-2 px-1.5 py-1',
                 isUser && 'flex-row-reverse',
                 isActiveBubble &&
                   'border-l-violet-500 dark:border-l-violet-400 bg-violet-50/50 dark:bg-violet-900/20',
@@ -332,10 +337,18 @@ export function ChatSessionComponent({
                   isLastMessage={isLastMessage}
                   isActive={isActive}
                 />
+                {quickReplyMessageId === message.id && (
+                  <div ref={quickReplyHostRef} className="mt-2 empty:hidden" />
+                )}
               </div>
             </motion.div>
           );
         })}
+
+        {/* A whiteboard projection can hand back the turn without a message bubble. */}
+        {quickReplyMessageId === null && (
+          <div ref={quickReplyHostRef} className="mt-2 px-2.5 empty:hidden" />
+        )}
 
         {/* Session ended indicator */}
         <AnimatePresence>

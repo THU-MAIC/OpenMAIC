@@ -8,6 +8,7 @@ import {
   useState,
   useMemo,
   useEffect,
+  type RefCallback,
 } from 'react';
 import type { SessionType } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
@@ -30,6 +31,11 @@ import { LectureNotesView } from './lecture-notes-view';
 
 interface ChatAreaProps {
   mobile?: boolean;
+  mobileQuickReply?: {
+    fromAgentId?: string;
+    host: HTMLDivElement | null;
+    onHostChange: RefCallback<HTMLDivElement>;
+  };
   onTabChange?: (tab: 'lecture' | 'chat') => void;
   className?: string;
   width?: number;
@@ -86,7 +92,7 @@ export interface ChatAreaRef {
   resumeBuffer: (sessionId: string) => void;
   pauseActiveLiveBuffer: () => boolean;
   resumeActiveLiveBuffer: () => void;
-  switchToTab: (tab: 'lecture' | 'chat') => void;
+  switchToTab: (tab: 'lecture' | 'chat', options?: { followLatest?: boolean }) => void;
 }
 
 const DEFAULT_WIDTH = 340;
@@ -97,6 +103,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
   (
     {
       mobile = false,
+      mobileQuickReply,
       onTabChange,
       className,
       width = DEFAULT_WIDTH,
@@ -127,6 +134,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     const scenes = useStageStore((s) => s.scenes);
     const {
       sessions,
+      activeSessionId,
       activeSessionType,
       expandedSessionIds,
       isStreaming,
@@ -172,25 +180,53 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     const followReplies = useRef(true);
     const lastFollowPosition = useRef(0);
     const touchingChat = useRef(false);
+    const scrollChatToBottom = useCallback(() => {
+      const panel = chatScrollRef.current;
+      if (panel) panel.scrollTop = panel.scrollHeight;
+      lastFollowPosition.current = panel?.scrollTop ?? 0;
+    }, []);
 
     // Derive lecture notes directly from scenes — updates reactively as scenes stream in.
     const lectureNotes = useMemo(() => buildLectureNotes(scenes), [scenes]);
 
     // Filter out lecture sessions for the Chat tab
     const chatSessions = useMemo(() => sessions.filter((s) => s.type !== 'lecture'), [sessions]);
+    const activeChatSession = mobileQuickReply
+      ? chatSessions.find((session) => session.id === activeSessionId)
+      : undefined;
+    const activeMessages = activeChatSession?.messages;
+    const currentAgentReplies = activeMessages
+      ?.slice(activeMessages.findLastIndex((message) => message.role === 'user') + 1)
+      .filter(
+        (message) =>
+          message.role === 'assistant' &&
+          message.parts.some(
+            (part) => (part.type === 'text' && part.text.trim()) || part.type.startsWith('action-'),
+          ),
+      );
+    const fromAgentId = mobileQuickReply?.fromAgentId;
+    const quickReplyMessageId =
+      (fromAgentId
+        ? currentAgentReplies?.findLast((message) => message.metadata?.agentId === fromAgentId)
+        : currentAgentReplies?.at(-1)
+      )?.id ?? null;
+    const quickReplyHost = mobileQuickReply?.host;
 
     // On phones the panel owns scrolling across sessions. Stream updates may
     // follow its bottom, but must not move it while someone reads older replies.
     useEffect(() => {
       const panel = chatScrollRef.current;
       if (!mobile || activeTab !== 'chat' || messageTarget || !panel || !panel.clientHeight) return;
-      // A stream render can land before the browser delivers the scroll event.
-      if (panel.scrollTop < lastFollowPosition.current - 2) followReplies.current = false;
-      if (followReplies.current && !touchingChat.current) {
-        panel.scrollTop = panel.scrollHeight;
-        lastFollowPosition.current = panel.scrollTop;
+      // A scroll event can arrive after this render. Allow the browser to clamp
+      // the previous position when the submitted reply buttons are removed.
+      const bottom = Math.max(0, panel.scrollHeight - panel.clientHeight);
+      if (panel.scrollTop < Math.min(lastFollowPosition.current, bottom) - 2) {
+        followReplies.current = false;
       }
-    }, [mobile, activeTab, chatSessions, messageTarget]);
+      if (followReplies.current && !touchingChat.current) {
+        scrollChatToBottom();
+      }
+    }, [mobile, activeTab, chatSessions, messageTarget, quickReplyHost, scrollChatToBottom]);
 
     // Whether there's an active discussion/QA session (for amber dot on Chat tab)
     const hasActiveChatSession = useMemo(
@@ -238,13 +274,17 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     }, [chatSessions, continueSoftClosingSession]);
 
     const switchToTab = useCallback(
-      (tab: 'lecture' | 'chat') => {
+      (tab: 'lecture' | 'chat', { followLatest = false }: { followLatest?: boolean } = {}) => {
+        if (mobile && tab === 'chat' && followLatest) {
+          followReplies.current = true;
+          scrollChatToBottom();
+        }
         setNoteTarget(null);
         setMessageTarget(null);
         setActiveTab(tab);
         onTabChange?.(tab);
       },
-      [onTabChange],
+      [mobile, onTabChange, scrollChatToBottom],
     );
 
     useImperativeHandle(ref, () => ({
@@ -409,6 +449,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               <div
                 ref={chatScrollRef}
                 onScroll={({ currentTarget: el }) => {
+                  if (el.scrollTop === lastFollowPosition.current) return;
                   followReplies.current = el.scrollHeight - el.clientHeight - el.scrollTop <= 3;
                   lastFollowPosition.current = el.scrollTop;
                 }}
@@ -447,6 +488,15 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                       expandedSessionIds={expandedSessionIds}
                       isStreaming={isStreaming}
                       activeBubbleId={messageTarget ?? activeBubbleId}
+                      quickReplyTarget={
+                        mobileQuickReply && activeChatSession
+                          ? {
+                              sessionId: activeChatSession.id,
+                              messageId: quickReplyMessageId,
+                              onHostChange: mobileQuickReply.onHostChange,
+                            }
+                          : undefined
+                      }
                       onToggleExpand={toggleSessionExpand}
                       onEndSession={handleEndSession}
                       onContinueSession={continueSoftClosingSession}
