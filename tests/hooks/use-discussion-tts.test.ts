@@ -4,6 +4,7 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { EffectiveTarget } from '@/lib/model-settings/capabilities';
 import type { TTSSelection } from '@/lib/audio/tts-selection';
 import type { UseBrowserTTSOptions } from '@/lib/hooks/use-browser-tts';
 
@@ -73,7 +74,7 @@ vi.mock('@/lib/hooks/use-browser-tts', () => ({
   },
 }));
 
-import { PBL_NARRATORS } from '@/lib/pbl/v3/personas';
+import { pblNarrators } from '@/lib/pbl/v3/personas';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { clearUnavailableVoiceBindingsForTests } from '@/lib/audio/unavailable-voice-bindings';
 import { resetDiscussionAudioElementForTests } from '@/lib/audio/discussion-audio';
@@ -224,8 +225,15 @@ afterEach(() => {
 });
 
 describe('PBL tutor voices', () => {
+  const target: EffectiveTarget = {
+    providerId: 'speech',
+    registryId: 'openai-tts',
+    providerSource: 'deployment',
+    presetId: 'openai-tts',
+    modelId: 'tts-1',
+  };
   beforeEach(() => {
-    agents = PBL_NARRATORS;
+    agents = pblNarrators(undefined, target);
   });
   afterEach(() => {
     selection.providerId = mocks.settings.ttsProviderId;
@@ -242,6 +250,57 @@ describe('PBL tutor voices', () => {
       expect(mocks.speak).not.toHaveBeenCalled();
     },
   );
+
+  it('keeps each project voice with its speaker during prefetch, including shared voices', async () => {
+    agents = pblNarrators(
+      {
+        mentor: { providerId: 'openai-tts', voiceId: 'nova' },
+        discussion: { providerId: 'openai-tts', voiceId: 'onyx' },
+        planner: { providerId: 'openai-tts', voiceId: 'onyx' },
+        coder: { providerId: 'openai-tts', modelId: 'tts-1', voiceId: 'echo' },
+      },
+      target,
+    );
+    act(() => root.render(createElement(Probe)));
+    await seal('intro', 'mentor');
+    await seal('question', 'discussion');
+    await seal('plan', 'planner');
+    await seal('code', 'coder');
+    for (const [i, voice] of ['nova', 'onyx', 'onyx', 'echo'].entries()) {
+      expect(requests[i].body.ttsVoice).toBe(voice);
+      await respond(i);
+      await act(() => FakeAudio.instances[0].end());
+    }
+    expect(requests).toHaveLength(4);
+  });
+
+  it.each([
+    {},
+    { coder: { providerId: 'openai-tts', modelId: 'tts-1-hd', voiceId: 'echo' } },
+    { coder: { providerId: 'not-installed', voiceId: 'another-voice' } },
+    { coder: { providerId: 'doubao-tts', voiceId: 'another-voice' } },
+  ])('falls back to the platform voice for an unbound or unavailable role', async (voices) => {
+    agents = pblNarrators(voices, target);
+    act(() => root.render(createElement(Probe)));
+    await seal('code', 'coder');
+    expect(requests.map((r) => r.body.ttsVoice)).toEqual(['alloy']);
+  });
+
+  it('honors the host voice catalogue and the native provider default model', () => {
+    const voiceConfig = { providerId: 'doubao-tts', modelId: 'seed-tts-2.0', voiceId: 'speaker' };
+    const host = {
+      ...target,
+      registryId: 'doubao-tts',
+      modelId: undefined,
+      voices: [{ id: 'speaker', name: 'Speaker' }],
+    };
+    const roles = { mentor: voiceConfig };
+    expect(pblNarrators(roles, host)[0].voiceConfig).toEqual(voiceConfig);
+    expect(
+      pblNarrators(roles, { ...host, voices: [{ id: 'other', name: 'Other' }] })[0].voiceConfig,
+    ).toBeUndefined();
+    expect(pblNarrators(roles, null)[0].voiceConfig).toBeUndefined();
+  });
 
   it('uses browser speech when the platform selects it', async () => {
     selection.providerId = 'browser-native-tts';

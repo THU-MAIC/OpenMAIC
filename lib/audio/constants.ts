@@ -951,7 +951,8 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     endpointPath: '/unidirectional',
     icon: '/logos/doubao.svg',
     models: [],
-    defaultModelId: '',
+    // Resource used by the native synthesis adapter when the host selects this provider.
+    defaultModelId: 'seed-tts-2.0',
     voices: [
       { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi 2.0', language: 'zh-CN', gender: 'female' },
       {

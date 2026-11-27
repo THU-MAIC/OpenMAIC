@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { useModelCapabilities } from '@/lib/model-settings/use-model-settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import {
@@ -18,7 +19,8 @@ import {
   type NarrationTarget,
   type NarrationStep,
 } from '@/lib/pbl/v3/narration';
-import { PBL_NARRATORS } from '@/lib/pbl/v3/personas';
+import type { LearningView } from '@/lib/pbl/v3/types';
+import { pblNarrators } from '@/lib/pbl/v3/personas';
 import type { LearningConversationEntry } from '@/lib/pbl/v3/conversation';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import { WB_DRAW_MS } from '@/lib/choreography/timing';
@@ -52,10 +54,12 @@ export function useNarration(
     onPoint,
     onBoard,
     onTold,
+    roleVoices,
     nextInstruction,
     nextActionLabel,
     completionConfirmation,
   }: {
+    roleVoices?: LearningView['roleVoices'];
     nextInstruction?: string;
     nextActionLabel?: string;
     completionConfirmation?: string;
@@ -71,9 +75,11 @@ export function useNarration(
   const acknowledgement = t('pblV3.journey.acceptedResponse');
   const ttsMuted = useSettingsStore((state) => state.ttsMuted);
   const [audio, setAudio] = useState<AudioIndicatorState>('idle');
+  const { tts: target } = useModelCapabilities();
+  const agents = useMemo(() => pblNarrators(roleVoices, target), [roleVoices, target]);
   const tts = useDiscussionTTS({
     enabled: !ttsMuted,
-    agents: PBL_NARRATORS,
+    agents,
     onAudioStateChange: (_agent, state) => setAudio(state),
   });
   const ttsRef = useRef(tts);
