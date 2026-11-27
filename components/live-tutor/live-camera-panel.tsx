@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import {
+  AlertTriangle,
   Camera,
   CameraOff,
   CheckCircle2,
   Eye,
+  Info,
   Lightbulb,
   Loader2,
   Mic,
@@ -19,6 +21,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
+import { getCameraTutorCapabilities } from '@/lib/live-tutor/model-capabilities';
 import { cn } from '@/lib/utils';
 import { renderSafeLatexHtml } from '@/lib/live-tutor/whiteboard-elements';
 import type { PracticeProblem, WhiteboardOp } from '@/lib/live-tutor/types';
@@ -46,6 +50,8 @@ export function LiveCameraPanel({
   compact = false,
 }: LiveCameraPanelProps) {
   const { t, locale } = useI18n();
+  const modelView = useModelSettingsView();
+  const caps = getCameraTutorCapabilities(modelView);
   const [showHint, setShowHint] = useState(false);
   const [textQuestion, setTextQuestion] = useState('');
 
@@ -223,6 +229,29 @@ export function LiveCameraPanel({
       {errorMessage && (
         <p className="text-xs text-red-600 dark:text-red-400 px-1">{errorMessage}</p>
       )}
+
+      {/* Model capability notices (Vision warning + Live vs Snapshot mode info) */}
+      {!caps.supportsVision && (
+        <div
+          data-testid="live-tutor-vision-warning"
+          className="flex items-start gap-2 rounded-xl border border-amber-300/70 dark:border-amber-700/60 bg-amber-50/80 dark:bg-amber-950/30 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 shrink-0"
+        >
+          <AlertTriangle className="size-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+          <span>{t('liveTutor.visionUnsupportedWarning')}</span>
+        </div>
+      )}
+
+      {caps.supportsVision &&
+        (transportMode === 'turn-based' ||
+          (!isLive && caps.providerPreset !== null && !caps.supportsLiveStreaming)) && (
+          <div
+            data-testid="live-tutor-snapshot-mode-notice"
+            className="flex items-start gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/90 dark:bg-slate-900/60 px-3 py-2 text-[11px] text-slate-600 dark:text-slate-300 shrink-0"
+          >
+            <Info className="size-3.5 shrink-0 mt-0.5 text-violet-600 dark:text-violet-400" />
+            <span>{t('liveTutor.snapshotModeNotice')}</span>
+          </div>
+        )}
 
       {/* Primary Camera & Voice Controls */}
       <div className="flex flex-wrap items-center gap-2 shrink-0">

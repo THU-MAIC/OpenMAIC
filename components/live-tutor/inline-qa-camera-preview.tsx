@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Camera, CameraOff, SwitchCamera, X } from 'lucide-react';
+import { AlertTriangle, Camera, CameraOff, Eye, Mic, SwitchCamera, X } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
+import { getCameraTutorCapabilities } from '@/lib/live-tutor/model-capabilities';
 import {
   registerClassroomCameraCapture,
   type ClassroomCameraSnapshot,
@@ -13,10 +15,25 @@ import { cn } from '@/lib/utils';
 interface InlineQACameraPreviewProps {
   readonly open: boolean;
   readonly onClose: () => void;
+  /** Toggles the classroom Q&A microphone directly from the camera preview. */
+  readonly onToggleVoice?: () => void;
+  readonly isVoiceOpen?: boolean;
+  readonly isRecording?: boolean;
+  /** Sends a quick notebook-check turn directly into the active classroom Q&A. */
+  readonly onQuickCheck?: () => void;
 }
 
-function InlineQACameraPreviewBody({ onClose }: { readonly onClose: () => void }) {
+function InlineQACameraPreviewBody({
+  onClose,
+  onToggleVoice,
+  isVoiceOpen = false,
+  isRecording = false,
+  onQuickCheck,
+}: Omit<InlineQACameraPreviewProps, 'open'>) {
   const { t } = useI18n();
+  const modelView = useModelSettingsView();
+  const caps = getCameraTutorCapabilities(modelView);
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -109,20 +126,31 @@ function InlineQACameraPreviewBody({ onClose }: { readonly onClose: () => void }
     return registerClassroomCameraCapture(captureSnapshot);
   }, [captureSnapshot]);
 
+  const micListening = isVoiceOpen || isRecording;
+
   return createPortal(
     <div
       data-testid="inline-qa-camera-preview"
-      className="fixed bottom-24 left-4 z-[60] w-[min(280px,calc(100vw-32px))] rounded-2xl overflow-hidden border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+      className="fixed bottom-24 left-4 z-[60] w-[min(300px,calc(100vw-32px))] rounded-2xl overflow-hidden border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl"
     >
       <div className="flex items-center justify-between gap-2 px-3 py-2 bg-black/50 border-b border-white/10">
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300 truncate">
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 text-[11px] font-semibold truncate',
+            micListening ? 'text-amber-300' : 'text-emerald-300',
+          )}
+        >
           <span
             className={cn(
               'size-2 rounded-full shrink-0',
-              ready && !paused ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400',
+              micListening
+                ? 'bg-amber-400 animate-ping'
+                : ready && !paused
+                  ? 'bg-emerald-400'
+                  : 'bg-gray-400',
             )}
           />
-          {t('liveTutor.watchingNotebook')}
+          {micListening ? t('liveTutor.micListeningStatus') : t('liveTutor.cameraReadyStatus')}
         </span>
         <div className="flex items-center gap-1 shrink-0">
           <button
@@ -181,6 +209,50 @@ function InlineQACameraPreviewBody({ onClose }: { readonly onClose: () => void }
           </p>
         )}
       </div>
+
+      {!caps.supportsVision && (
+        <div className="flex items-start gap-1.5 px-3 py-2 bg-amber-950/80 border-t border-amber-500/30 text-[11px] text-amber-200 leading-snug">
+          <AlertTriangle className="size-3.5 shrink-0 mt-0.5 text-amber-400" />
+          <span>{t('liveTutor.visionUnsupportedWarning')}</span>
+        </div>
+      )}
+
+      {/* Clear 1-tap actions so the student always knows how to trigger the teacher */}
+      <div className="p-2.5 bg-black/60 border-t border-white/10 space-y-1.5">
+        <div className="flex items-center gap-2">
+          {onToggleVoice && (
+            <button
+              type="button"
+              data-testid="inline-qa-camera-talk-button"
+              onClick={onToggleVoice}
+              className={cn(
+                'flex-1 h-8 rounded-xl px-2.5 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors',
+                micListening
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                  : 'bg-white/15 hover:bg-white/25 text-white',
+              )}
+            >
+              <Mic className="size-3.5" />
+              {micListening ? t('liveTutor.micListeningButton') : t('liveTutor.talkToTeacher')}
+            </button>
+          )}
+          {onQuickCheck && (
+            <button
+              type="button"
+              data-testid="inline-qa-camera-check-button"
+              disabled={paused || Boolean(error)}
+              onClick={onQuickCheck}
+              className="flex-1 h-8 rounded-xl px-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <Eye className="size-3.5" />
+              {t('liveTutor.checkWork')}
+            </button>
+          )}
+        </div>
+        <p className="text-[10px] text-gray-400 text-center leading-tight">
+          {t('liveTutor.cameraPopupHint')}
+        </p>
+      </div>
     </div>,
     document.body,
   );
@@ -192,7 +264,7 @@ function InlineQACameraPreviewBody({ onClose }: { readonly onClose: () => void }
  * callback with `classroom-camera-bridge` so every spoken or typed Q&A turn
  * automatically sends the student's notebook image to the same AI Teacher.
  */
-export function InlineQACameraPreview({ open, onClose }: InlineQACameraPreviewProps) {
-  if (!open || typeof document === 'undefined') return null;
-  return <InlineQACameraPreviewBody onClose={onClose} />;
+export function InlineQACameraPreview(props: InlineQACameraPreviewProps) {
+  if (!props.open || typeof document === 'undefined') return null;
+  return <InlineQACameraPreviewBody {...props} />;
 }

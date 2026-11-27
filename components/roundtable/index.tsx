@@ -2437,7 +2437,22 @@ export function Roundtable({
         </div>
         {/* close interaction row */}
       </div>
-      <InlineQACameraPreview open={isCameraOpen} onClose={() => setIsCameraOpen(false)} />
+      <InlineQACameraPreview
+        open={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onToggleVoice={asrEnabled ? handleToggleVoice : undefined}
+        isVoiceOpen={isVoiceOpen}
+        isRecording={isRecording}
+        onQuickCheck={() => {
+          if (isSendCooldownRef.current || canSendMessage?.() === false) return;
+          onInputActivate?.();
+          const prompt = t('liveTutor.quickCheckPrompt');
+          isSendCooldownRef.current = true;
+          setIsSendCooldown(true);
+          showLocalUserMessage(prompt);
+          onMessageSend?.(prompt);
+        }}
+      />
     </>
   );
 }
