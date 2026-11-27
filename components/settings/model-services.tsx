@@ -199,7 +199,14 @@ export function ModelServicesPanel({
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{name}</p>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <p className="truncate text-sm font-medium">{name}</p>
+              {capability === 'chat' && entry.registryId === CHATGPT_PLAN_PROVIDER_ID && (
+                <Badge variant="outline" className="text-muted-foreground">
+                  {t('settings.chatgptPlan.preview')}
+                </Badge>
+              )}
+            </div>
             <p className="text-[11px] text-muted-foreground">
               {configured
                 ? t('settings.modelServices.configuredHint')

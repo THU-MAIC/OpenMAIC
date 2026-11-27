@@ -277,11 +277,22 @@ describe('Model Services → provider changes', () => {
     mount(
       createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
     );
+    const serviceNames = [...document.querySelectorAll('button[aria-pressed] img')].map((icon) =>
+      icon.getAttribute('alt'),
+    );
+    expect(serviceNames).toContain('OpenAI');
+    expect(serviceNames[serviceNames.indexOf('OpenAI') + 1]).toBe('ChatGPT plan');
     click(byText('ChatGPT'));
     expect(document.body.textContent).not.toContain('settings.modelServices.ready');
     await flush();
     expect(document.body.textContent).toContain('settings.chatgptPlan.signIn');
+    expect(document.body.textContent).toContain('settings.chatgptPlan.signInHint');
+    expect(document.body.textContent).toContain('settings.chatgptPlan.preview');
     expect(document.body.textContent).not.toContain('settings.addNewModel');
+    const visibleLabels = [...document.querySelectorAll('label')].filter(
+      (el) => !el.closest('[hidden]'),
+    );
+    expect(visibleLabels.some((label) => label.textContent === 'settings.models')).toBe(false);
     for (state of ['connected', 'reauth-required', 'sharing-disabled', 'disconnected']) {
       act(() => {
         window.dispatchEvent(new Event('focus'));

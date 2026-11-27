@@ -79,6 +79,8 @@ export function ProviderConfigPanel({
     () => provider?.capabilities.chat?.models ?? entry.preset?.capabilities.chat?.models ?? [],
     [provider, entry.preset],
   );
+  const visibleModels =
+    registry?.serverAdapter && planAccount?.status?.state !== 'connected' ? [] : models;
   // A provider's own model list narrows (or names) what it serves.
   const pinned = !!provider?.models?.length;
   // Only the workspace's own endpoint may be changed, and only for chat services.
@@ -346,7 +348,7 @@ export function ProviderConfigPanel({
       )}
 
       {/* Models - No selection state, just list for management */}
-      <div className="space-y-3">
+      <div className="space-y-3" hidden={registry?.serverAdapter && visibleModels.length === 0}>
         {entry.registryId === 'azure' && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
             {t('settings.azureDeploymentHint')}
@@ -417,10 +419,7 @@ export function ProviderConfigPanel({
         )}
 
         <div className="space-y-1.5">
-          {(!registry?.serverAdapter || planAccount?.status?.state === 'connected'
-            ? models
-            : []
-          ).map((model, index) => {
+          {visibleModels.map((model, index) => {
             return (
               <div
                 key={model.id}

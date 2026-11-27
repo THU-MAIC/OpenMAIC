@@ -221,6 +221,20 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  // ChatGPT plan usage (preview): the server signs in with ChatGPT and sends
+  // Responses API requests on the user's plan. Its models come from the
+  // signed-in account (lib/server/chatgpt-plan), so the catalogue lists none.
+  'chatgpt-plan': {
+    id: 'chatgpt-plan',
+    name: 'ChatGPT plan',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    requiresApiKey: false,
+    serverAdapter: true,
+    icon: '/logos/openai.svg',
+    models: [],
+  },
+
   azure: {
     id: 'azure',
     name: 'Azure OpenAI',
@@ -1587,20 +1601,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: false },
       },
     ],
-  },
-
-  // ChatGPT plan usage (preview): the server signs in with ChatGPT and sends
-  // Responses API requests on the user's plan. Its models come from the
-  // signed-in account (lib/server/chatgpt-plan), so the catalogue lists none.
-  'chatgpt-plan': {
-    id: 'chatgpt-plan',
-    name: 'ChatGPT plan (Preview)',
-    type: 'openai',
-    defaultBaseUrl: 'https://api.openai.com/v1',
-    requiresApiKey: false,
-    serverAdapter: true,
-    icon: '/logos/openai.svg',
-    models: [],
   },
 };
 

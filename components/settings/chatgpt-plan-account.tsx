@@ -327,9 +327,10 @@ export function ChatGPTPlanAccount({
             <div className="flex gap-2">
               <Input
                 name="chatgpt-plan-callback"
+                aria-label={t('settings.chatgptPlan.returnAddress')}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="http://127.0.0.1:…/auth/callback?code=…"
+                placeholder="http://127.0.0.1:…"
                 value={address}
                 onChange={(event) => setAddress(event.target.value)}
               />
@@ -380,7 +381,7 @@ export function ChatGPTPlanAccount({
   } else {
     body = (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">{t('settings.chatgptPlan.noticeBody')}</p>
+        <p className="text-sm text-muted-foreground">{t('settings.chatgptPlan.signInHint')}</p>
         <div className="flex flex-wrap gap-2">
           {signInButton(t('settings.chatgptPlan.signIn'))}
           {status.canForgetRegistration && (
