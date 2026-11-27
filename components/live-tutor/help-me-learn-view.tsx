@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { WhiteboardFrame, WHITEBOARD_SHELL_CLASS } from '@/components/whiteboard/whiteboard-frame';
 import { LanguageSwitcher } from '@/components/language-switcher';
+import { SceneProvider } from '@/lib/contexts/scene-context';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import {
@@ -516,26 +517,28 @@ export function HelpMeLearnView() {
           >
             {/* Left: Native OpenMAIC Interactive Whiteboard */}
             <div className={cn(WHITEBOARD_SHELL_CLASS, 'lg:col-span-7 min-h-[380px] lg:min-h-0')}>
-              <WhiteboardFrame
-                title={t('helpMeLearn.whiteboardTitle')}
-                whiteboard={whiteboard}
-                onClose={() => {
-                  if (plan.slides.length > 0) setActiveStage('theory');
-                }}
-                actions={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setWbSteps([])}
-                    className="h-8 px-2.5 text-xs gap-1 text-gray-500 hover:text-red-600"
-                    title={t('helpMeLearn.clearBoard')}
-                  >
-                    <Eraser className="size-3.5" />
-                    <span className="hidden sm:inline">{t('helpMeLearn.clearBoard')}</span>
-                  </Button>
-                }
-              />
+              <SceneProvider>
+                <WhiteboardFrame
+                  title={t('helpMeLearn.whiteboardTitle')}
+                  whiteboard={whiteboard}
+                  onClose={() => {
+                    if (plan.slides.length > 0) setActiveStage('theory');
+                  }}
+                  actions={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setWbSteps([])}
+                      className="h-8 px-2.5 text-xs gap-1 text-gray-500 hover:text-red-600"
+                      title={t('helpMeLearn.clearBoard')}
+                    >
+                      <Eraser className="size-3.5" />
+                      <span className="hidden sm:inline">{t('helpMeLearn.clearBoard')}</span>
+                    </Button>
+                  }
+                />
+              </SceneProvider>
             </div>
 
             {/* Right: Live Notebook Camera & Voice Tutor */}

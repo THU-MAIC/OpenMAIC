@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Camera, Minimize2, PencilLine } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore, useCanvasStore } from '@/lib/store';
@@ -70,11 +71,12 @@ export function ClassroomCameraTutorDrawer({
     setEverOpened(true);
   }
   if (!everOpened && !open) return null;
+  if (typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <aside
       data-testid="classroom-camera-tutor-drawer"
-      className={`fixed top-4 right-4 bottom-4 z-50 w-[min(420px,calc(100vw-32px))] rounded-3xl bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl border border-violet-200/70 dark:border-violet-800/60 shadow-[0_24px_70px_-16px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden transition-all duration-200 ${
+      className={`fixed top-4 right-4 bottom-4 z-[60] w-[min(420px,calc(100vw-32px))] rounded-3xl bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl border border-violet-200/70 dark:border-violet-800/60 shadow-[0_24px_70px_-16px_rgba(0,0,0,0.3)] flex flex-col overflow-hidden transition-all duration-200 ${
         open
           ? 'opacity-100 translate-x-0 pointer-events-auto'
           : 'opacity-0 translate-x-8 pointer-events-none'
@@ -122,6 +124,7 @@ export function ClassroomCameraTutorDrawer({
           compact
         />
       </div>
-    </aside>
+    </aside>,
+    document.body,
   );
 }

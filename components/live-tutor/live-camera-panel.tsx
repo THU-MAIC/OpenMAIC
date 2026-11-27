@@ -93,7 +93,12 @@ export function LiveCameraPanel({
   return (
     <div className={cn('flex flex-col h-full min-h-0 gap-3', className)}>
       {/* Assigned Practice Problem Card */}
-      <div className="rounded-2xl border border-violet-200/70 dark:border-violet-800/60 bg-violet-50/60 dark:bg-violet-950/25 p-3.5 shrink-0">
+      <div
+        className={cn(
+          'rounded-2xl border border-violet-200/70 dark:border-violet-800/60 bg-violet-50/60 dark:bg-violet-950/25 p-3.5 shrink-0',
+          compact && 'max-h-[190px] overflow-y-auto',
+        )}
+      >
         <div className="flex items-center justify-between gap-2 mb-1.5">
           <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300">
             <Sparkles className="size-3.5" />
@@ -157,8 +162,8 @@ export function LiveCameraPanel({
       {/* Camera Viewport */}
       <div
         className={cn(
-          'relative flex-1 min-h-[200px] rounded-2xl overflow-hidden bg-gray-950 border border-gray-200 dark:border-gray-800 flex items-center justify-center',
-          compact ? 'max-h-[300px]' : '',
+          'relative flex-1 rounded-2xl overflow-hidden bg-gray-950 border border-gray-200 dark:border-gray-800 flex items-center justify-center',
+          compact ? 'min-h-[150px] max-h-[220px]' : 'min-h-[200px]',
         )}
       >
         <video
