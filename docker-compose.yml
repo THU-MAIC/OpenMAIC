@@ -68,6 +68,13 @@ services:
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
+    # On `docker compose down` or a redeploy, give running agent sessions time
+    # to finish their turn before SIGKILL (Docker's default grace is 10 s). The
+    # app exits once they have and open requests have had up to 10 s; the grace
+    # is only the upper bound.
+    # Pairs with OPENMAIC_AGENT_RUNTIME_STOP_TIMEOUT_MS in
+    # docker-compose.defaults.env, which must stay below it.
+    stop_grace_period: 30s
 
   # PostgreSQL for the app-embedded persistence API. Started by default; the
   # app waits for its health check. Its port is not published to the host here;

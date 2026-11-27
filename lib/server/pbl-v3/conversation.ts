@@ -19,6 +19,7 @@ import {
   AGENT_EXECUTION_IDLE_TIMEOUT,
   MODEL_REQUEST_IDLE_TIMEOUT,
 } from '@/lib/agent/runtime/request-failure';
+import { SESSION_INTERRUPT_REASONS } from '@/lib/agent-runtime/lifecycle';
 
 /** Never send provider diagnostics, addresses or credentials to a learner. */
 export function learningRunFailure(error: unknown): LearningRunFailure {
@@ -279,6 +280,15 @@ export function projectConversation(
       continue;
     }
     if (event.type === 'session_end' || event.type === 'session_interrupted') {
+      // A clean step-boundary handoff is not a failure: the previous step
+      // finished normally and another instance will continue. Keep the current
+      // assistant entry open so the continuation lands in the same reply.
+      if (
+        event.type === 'session_interrupted' &&
+        (data as { reason?: string }).reason === SESSION_INTERRUPT_REASONS.cleanHandoff
+      ) {
+        continue;
+      }
       settle(event.ts);
       getAssistant(event).status =
         event.type === 'session_interrupted'

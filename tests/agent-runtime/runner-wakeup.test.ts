@@ -76,7 +76,7 @@ const mocks = vi.hoisted(() => {
       deliveredUserMessageSeq = Math.max(deliveredUserMessageSeq, messageSeq);
       return true;
     }),
-    getCancelRequestedAt: vi.fn(async () => null),
+    getCancelRequestedAt: vi.fn(async (): Promise<number | null> => null),
     isCancelRequested: vi.fn(async () => false),
     listUserMessages: vi.fn(
       async (
@@ -105,6 +105,8 @@ const mocks = vi.hoisted(() => {
     store,
     bus,
     teachingClosed: false,
+    /** The teaching turn ended without its receipt (the runner repairs it once). */
+    teachingNeedsReceipt: false,
     /** Transcript the next run finds in its entry tree (a run cut off mid-turn). */
     entrySeed: [] as unknown[],
     history,
@@ -134,9 +136,10 @@ vi.mock('@/lib/server/pbl-v3/runner-tools', () => ({
     allowedToolNames: new Set(),
     thinkingConfig: { enabled: true, effort: 'low' },
     isTurnComplete: () => mocks.teachingClosed,
-    needsTurnReceipt: () => false,
+    needsTurnReceipt: () => mocks.teachingNeedsReceipt,
   })),
   withTeachingTurnBoundary: (stream: unknown) => stream,
+  prepareTeachingContinuation: vi.fn(() => true),
 }));
 
 vi.mock('@/lib/server/agent-runtime/event-notify-bus', () => ({
@@ -379,7 +382,7 @@ vi.mock('@earendil-works/pi-agent-core', async (importOriginal) => {
   return { ...actual, Agent: MockAgent };
 });
 
-import { runSession } from '@/lib/server/agent-runtime/runner';
+import { handOffRunningSessions, runSession } from '@/lib/server/agent-runtime/runner';
 
 const SESSION = {
   id: 'session-wake',
@@ -422,6 +425,7 @@ describe('runSession NOTIFY wakeup wiring', () => {
     fake.current.instance = undefined;
     mocks.resetWorker();
     mocks.teachingClosed = false;
+    mocks.teachingNeedsReceipt = false;
     mocks.bus.route = undefined;
     mocks.bus.wake = undefined;
     mocks.store.listUserMessages.mockResolvedValue([]);
@@ -685,6 +689,143 @@ describe('runSession NOTIFY wakeup wiring', () => {
 
     expect(mocks.bus.route).toEqual({ kind: 'session', sessionId: 'session-wake' });
     expect(mocks.bus.unsubscribeWakeup).toHaveBeenCalledOnce();
+  });
+
+  // While the runner drains for shutdown (ctx.shuttingDown, nothing aborted),
+  // the running turn finishes as it is; nothing new is steered into it.
+  const posted = {
+    seq: 2,
+    ts: 2,
+    text: 'Posted during the drain',
+    delivery: 'steer',
+    materials: [],
+  };
+  const settleTick = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('does not steer a message that arrives while the runner drains; the settle requeues it', async () => {
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, SESSION);
+    try {
+      await waitForReady();
+      ctx.shuttingDown = true;
+      mocks.store.listUserMessages.mockResolvedValue([posted]);
+      mocks.bus.wake?.();
+      await vi.waitFor(() => expect(mocks.store.getCancelRequestedAt).toHaveBeenCalled());
+      await settleTick();
+      expect(fake.current.instance?.steerCalls).toHaveLength(0);
+    } finally {
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.finishSession).toHaveBeenCalledWith(
+      'session-wake',
+      expect.any(String),
+      expect.objectContaining({ status: 'succeeded' }),
+    );
+    expect(mocks.store.markUserMessageDelivered.mock.calls.some((call) => call[3] === 2)).toBe(
+      false,
+    );
+    expect(mocks.store.requeueSession).toHaveBeenCalledOnce();
+  });
+
+  it('does not steer from a drain that was already reading when the runner started draining', async () => {
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, SESSION);
+    let finishRead: ((messages: (typeof posted)[]) => void) | undefined;
+    try {
+      await waitForReady();
+      mocks.store.listUserMessages.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve;
+          }),
+      );
+      mocks.bus.wake?.();
+      await vi.waitFor(() => expect(finishRead).toBeTypeOf('function'));
+      ctx.shuttingDown = true;
+      mocks.store.listUserMessages.mockResolvedValue([posted]);
+      finishRead!([posted]);
+      await settleTick();
+      expect(fake.current.instance?.steerCalls).toHaveLength(0);
+    } finally {
+      finishRead?.([posted]);
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.requeueSession).toHaveBeenCalledOnce();
+  });
+
+  it('keeps settling a cancel the run sees during the drain as cancelled', async () => {
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, SESSION);
+    try {
+      await waitForReady();
+      ctx.shuttingDown = true;
+      mocks.store.getCancelRequestedAt.mockResolvedValue(42);
+      // The cancel check aborts the run; the fake agent's abort ends its prompt.
+      mocks.bus.wake?.();
+      await run;
+    } finally {
+      mocks.store.getCancelRequestedAt.mockResolvedValue(null);
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.finishSession).toHaveBeenCalledWith(
+      'session-wake',
+      expect.any(String),
+      expect.objectContaining({ status: 'cancelled', consumeCancelRequestedAt: 42 }),
+    );
+    expect(mocks.store.releaseLease).not.toHaveBeenCalled();
+    expect(mocks.store.appendRunEvent.mock.calls.map((call) => call[2]?.type)).not.toContain(
+      'session_interrupted',
+    );
+  });
+
+  it('settles a cancel recorded but not yet seen as cancelled when the shutdown hands the run off', async () => {
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, SESSION);
+    try {
+      await waitForReady();
+      // Committed by the cancel route, but no wake or poll has delivered it.
+      mocks.store.getCancelRequestedAt.mockResolvedValue(42);
+      expect(handOffRunningSessions(ctx)).toBe(1);
+      await run;
+    } finally {
+      mocks.store.getCancelRequestedAt.mockResolvedValue(null);
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.finishSession).toHaveBeenCalledWith(
+      'session-wake',
+      expect.any(String),
+      expect.objectContaining({ status: 'cancelled', consumeCancelRequestedAt: 42 }),
+    );
+    expect(mocks.store.releaseLease).not.toHaveBeenCalled();
+    expect(mocks.store.appendRunEvent.mock.calls.map((call) => call[2]?.type)).not.toContain(
+      'session_interrupted',
+    );
+  });
+
+  it('still repairs a teaching turn that ended without its receipt while the runner drains', async () => {
+    const ctx = { running: new Map(), shuttingDown: false };
+    const run = runSession(ctx, teachingSession);
+    try {
+      await waitForReady();
+      ctx.shuttingDown = true;
+      mocks.teachingNeedsReceipt = true;
+      fake.current.instance?.releasePrompt();
+      // The repair continues the turn once; settling it unrepaired would fail it.
+      await vi.waitFor(() => expect(fake.current.instance?.promptCalls).toBe(2));
+      mocks.teachingNeedsReceipt = false;
+    } finally {
+      fake.current.instance?.releasePrompt();
+      await run;
+    }
+    expect(mocks.store.finishSession).toHaveBeenCalledWith(
+      'pbl-role-wake',
+      expect.any(String),
+      expect.objectContaining({ status: 'succeeded' }),
+    );
   });
 });
 

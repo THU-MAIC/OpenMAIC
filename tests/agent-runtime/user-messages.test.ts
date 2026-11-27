@@ -106,4 +106,71 @@ describe('readAgentMessageLog', () => {
       expect(await readAgentMessageLog(store, 'session-1')).toHaveProperty('openingMessageSeq', 1);
     },
   );
+
+  it('reports the interruption reason only when the log ENDS on that interruption', async () => {
+    const store = (events: PersistedAgentSessionEvent[]) => ({
+      readEventsAfter: vi.fn(async (_id: string, after: number) =>
+        events.filter((event) => event.id > after),
+      ),
+      listUserMessages: vi.fn(async () => []),
+    });
+    const boundary = (id: number, type: string, data: Record<string, unknown> = {}) => ({
+      id,
+      ts: id,
+      attempt: 1,
+      type,
+      data,
+    });
+
+    // A clean step-boundary handoff is the last thing written: the next claim
+    // resumes it silently.
+    expect(
+      await readAgentMessageLog(
+        store([
+          boundary(1, 'session_start', { prompt: 'p' }),
+          boundary(2, 'session_interrupted', { reason: 'clean handoff' }),
+        ]),
+        'session-1',
+      ),
+    ).toHaveProperty('lastInterruptedReason', 'clean handoff');
+
+    // A forced handoff keeps its own reason; the runner only special-cases the
+    // clean one.
+    expect(
+      await readAgentMessageLog(
+        store([boundary(1, 'session_interrupted', { reason: 'runner shutdown' })]),
+        'session-1',
+      ),
+    ).toHaveProperty('lastInterruptedReason', 'runner shutdown');
+
+    // A crash leaves NO event: the dead run's own `session_resumed` is the last
+    // boundary, so an OLDER clean handoff must not be mistaken for this one.
+    expect(
+      await readAgentMessageLog(
+        store([
+          boundary(1, 'session_interrupted', { reason: 'clean handoff' }),
+          boundary(2, 'session_resumed', { reason: 'clean_handoff' }),
+          boundary(3, 'user_message', { text: 'another turn' }),
+        ]),
+        'session-1',
+      ),
+    ).not.toHaveProperty('lastInterruptedReason');
+
+    // The same for a run that ended and then started another run.
+    expect(
+      await readAgentMessageLog(
+        store([
+          boundary(1, 'session_interrupted', { reason: 'clean handoff' }),
+          boundary(2, 'session_end', { status: 'succeeded' }),
+          boundary(3, 'session_start', { prompt: 'p' }),
+        ]),
+        'session-1',
+      ),
+    ).not.toHaveProperty('lastInterruptedReason');
+
+    // An interruption without a reason is not a clean handoff.
+    expect(
+      await readAgentMessageLog(store([boundary(1, 'session_interrupted', {})]), 'session-1'),
+    ).not.toHaveProperty('lastInterruptedReason');
+  });
 });

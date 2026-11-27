@@ -161,6 +161,41 @@ export const HOST_AGENT_LIFECYCLE = {
   mediaReady: 'media_ready',
 } as const;
 
+/**
+ * Interruption reasons written into {@link HOST_AGENT_LIFECYCLE.sessionInterrupted}
+ * events. Defined here so the runner (the writer) and the workbench fold /
+ * PBL projector (the readers) share one spelling. A bare string literal
+ * elsewhere degrades silently to "recovering" if it drifts — exactly what
+ * this change removes — so import these instead.
+ */
+export const SESSION_INTERRUPT_REASONS = {
+  /** The runner was force-aborted (drain window closed, cancel was lost). */
+  runnerShutdown: 'runner shutdown',
+  /** Another worker holds the lease. */
+  leaseLost: 'lease lost',
+  /** Runner emitted a non-lifecycle event before the first lifecycle frame. */
+  tripwire: 'runner event-order tripwire',
+  /**
+   * The runner parked mid-answer at a step boundary: the current step
+   * finished normally and another instance will continue it. Silent on the
+   * workbench — no "recovering" row, no "resumed" row.
+   */
+  cleanHandoff: 'clean handoff',
+} as const;
+
+/**
+ * Resume reasons written into {@link HOST_AGENT_LIFECYCLE.sessionResumed}
+ * events. Paired with {@link SESSION_INTERRUPT_REASONS}: a clean handoff
+ * resumes as `clean_handoff`, not `crash`.
+ */
+export const SESSION_RESUME_REASONS = {
+  followUp: 'follow_up',
+  /** A clean step-boundary handoff. */
+  cleanHandoff: 'clean_handoff',
+  /** A run that was cut off mid-step (the force abort, a lease loss, a crash). */
+  crash: 'crash',
+} as const;
+
 /** Every lifecycle event name the runner and control plane can write. */
 export type HostAgentLifecycleEventType =
   (typeof HOST_AGENT_LIFECYCLE)[keyof typeof HOST_AGENT_LIFECYCLE];

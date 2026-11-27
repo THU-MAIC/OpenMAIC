@@ -10,7 +10,13 @@
  * `register` must return before the server is ready, so nothing here may block
  * on I/O. Starting a timer does not.
  */
+import type { ExitHold } from '@/lib/server/exit-hold';
+
 const SCHEMA_RETIREMENT_TIMEOUT_MS = 30_000;
+/** How long a signal's shutdown may hold the process; a longer agent drain budget extends it. */
+const SIGNAL_EXIT_TIMEOUT_MS = 30_000;
+/** After a signal, how long Next.js may keep finishing open requests once the shutdown is done. */
+const HTTP_CLOSE_GRACE_MS = 10_000;
 
 export async function register(): Promise<void> {
   // Also invoked for the Edge runtime, which has neither `pg` nor timers we
@@ -106,9 +112,10 @@ export async function register(): Promise<void> {
     | undefined;
   let schemaMonitor: ReturnType<typeof startRuntimeSchemaMonitor> | undefined;
   let shutdownPromise: Promise<void> | undefined;
+  // Holds Next's exit on SIGTERM/SIGINT until the shutdown below has settled.
+  let exitHold: ExitHold | undefined;
   const shutdown = (): Promise<void> => {
     shutdownPromise ??= (async () => {
-      schemaMonitor?.stop();
       // Stop every worker from claiming immediately, then await all parks before
       // closing their shared pool. A busy extractor must not delay other stops.
       const workers = [
@@ -143,6 +150,9 @@ export async function register(): Promise<void> {
           }
         })(),
       ]);
+      // Watched until the workers have drained: a schema refusal while agent
+      // sessions finish their turn still hands them off at once.
+      schemaMonitor?.stop();
       try {
         // Started at boot with the agent runtime, or on demand by the first
         // stream that subscribes to it (a generation run's events).
@@ -183,6 +193,13 @@ export async function register(): Promise<void> {
   let schemaRetirement: Promise<void> | undefined;
   const retireOnSchemaRefusal = (error: unknown): Promise<void> => {
     schemaRetirement ??= (async () => {
+      // No session may keep running against the refused schema: hand them all
+      // off now, so the shutdown below has nothing to drain.
+      try {
+        runner?.handOff();
+      } catch (failure) {
+        console.error('[instrumentation] Agent runner handoff failed', failure);
+      }
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const timedOut = new Promise<void>((resolve) => {
         deadline = setTimeout(() => {
@@ -201,8 +218,20 @@ export async function register(): Promise<void> {
       } finally {
         clearTimeout(deadline);
       }
-      const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
-      await exitOnRuntimeSchemaRefusal(error);
+      // This retirement exits on its own from here, with its own code: release a
+      // signal's hold right before, and keep a later signal from installing one
+      // that would defer this exit.
+      try {
+        const { exitOnRuntimeSchemaRefusal } = await import('@/lib/server/boot-failure');
+        exitHold ??= { release: () => {} };
+        exitHold.release();
+        await exitOnRuntimeSchemaRefusal(error);
+      } catch (failure) {
+        console.error('[instrumentation] Schema retirement exit failed', failure);
+        exitHold ??= { release: () => {} };
+        exitHold.release();
+        process.exit(1);
+      }
     })();
     return schemaRetirement;
   };
@@ -289,8 +318,26 @@ export async function register(): Promise<void> {
     console.error('[instrumentation] Agent runtime startup failed', error);
   }
 
-  process.once('SIGTERM', () => void shutdown());
-  process.once('SIGINT', () => void shutdown());
+  // Next.js handles SIGTERM/SIGINT itself: it stops accepting connections,
+  // finishes open requests and exits, without waiting for the shutdown above,
+  // which would cut running agent sessions off instead of draining them. Its
+  // exit is therefore held until that shutdown has settled; a schema-refusal
+  // retirement under way exits with its own code instead.
+  const { holdProcessExit } = await import('@/lib/server/exit-hold');
+  const { agentRuntimeConfig } = await import('@/lib/server/agent-runtime/config');
+  const onSignal = (signalCode: number) => () => {
+    exitHold ??= holdProcessExit({
+      shutdown: shutdown().catch((error) =>
+        console.error('[instrumentation] Shutdown failed', error),
+      ),
+      signalCode,
+      httpGraceMs: HTTP_CLOSE_GRACE_MS,
+      deadlineMs: Math.max(SIGNAL_EXIT_TIMEOUT_MS, agentRuntimeConfig.stopTimeoutMs + 5_000),
+      exitOwnedElsewhere: () => schemaRetirement !== undefined,
+    });
+  };
+  process.once('SIGTERM', onSignal(143));
+  process.once('SIGINT', onSignal(130));
   // Generation and persistence remain active when the Agent feature is off.
   // Start after all handles exist, and never revive monitoring during retirement.
   if (!shutdownPromise) schemaMonitor = startRuntimeSchemaMonitor(retireOnSchemaRefusal);
