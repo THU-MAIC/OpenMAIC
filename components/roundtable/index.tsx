@@ -2440,18 +2440,14 @@ export function Roundtable({
       <InlineQACameraPreview
         open={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
-        onToggleVoice={asrEnabled ? handleToggleVoice : undefined}
-        isVoiceOpen={isVoiceOpen}
-        isRecording={isRecording}
-        onQuickCheck={() => {
-          if (isSendCooldownRef.current || canSendMessage?.() === false) return;
-          onInputActivate?.();
-          const prompt = t('liveTutor.quickCheckPrompt');
-          isSendCooldownRef.current = true;
-          setIsSendCooldown(true);
-          showLocalUserMessage(prompt);
-          onMessageSend?.(prompt);
-        }}
+        onActivateLive={onInputActivate}
+        recentClassroomSpeech={[
+          userMessage ? `Student: ${userMessage}` : '',
+          currentSpeech ? `AI Teacher: ${currentSpeech}` : '',
+          !currentSpeech && lectureSpeech ? `Lesson narration: ${lectureSpeech}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')}
       />
     </>
   );

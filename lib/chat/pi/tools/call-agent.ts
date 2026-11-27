@@ -821,17 +821,13 @@ export function buildCallAgentTool(opts: {
               spotlightElementIds,
             }),
             tools: nativeTools,
-            transformContext:
-              availableToolNames.includes('wb_read') || Boolean(opts.body.cameraSnapshot)
-                ? createChildTailStateTransform({
-                    preview: opts.whiteboardPreview,
-                    service: availableToolNames.includes('wb_read')
-                      ? opts.nativeWhiteboardService
-                      : undefined,
-                    stageId: opts.nativeWhiteboardStageId,
-                    cameraSnapshot: opts.body.cameraSnapshot,
-                  })
-                : undefined,
+            transformContext: availableToolNames.includes('wb_read')
+              ? createChildTailStateTransform({
+                  preview: opts.whiteboardPreview,
+                  service: opts.nativeWhiteboardService,
+                  stageId: opts.nativeWhiteboardStageId,
+                })
+              : undefined,
             allowedToolNames: new Set(availableToolNames),
             history: toHistoryMessages(opts.body.messages),
             abortSignal: childAbort.signal,
@@ -952,11 +948,6 @@ export function buildCallAgentTool(opts: {
             childTools.map((tool) => tool.name),
           ),
           tools: [],
-          transformContext: opts.body.cameraSnapshot
-            ? createChildTailStateTransform({
-                cameraSnapshot: opts.body.cameraSnapshot,
-              })
-            : undefined,
           allowedToolNames: new Set(),
           history: toHistoryMessages(opts.body.messages),
         });

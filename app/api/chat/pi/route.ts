@@ -87,21 +87,6 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
     }
 
-    if (body.cameraSnapshot !== undefined) {
-      const snap = body.cameraSnapshot;
-      const validMime = snap?.mimeType === 'image/jpeg' || snap?.mimeType === 'image/png';
-      if (
-        !snap ||
-        typeof snap !== 'object' ||
-        !validMime ||
-        typeof snap.data !== 'string' ||
-        snap.data.length === 0 ||
-        snap.data.length > 4_000_000
-      ) {
-        return apiError('INVALID_REQUEST', 400, 'Invalid cameraSnapshot payload');
-      }
-    }
-
     if (
       (body.elementReference !== undefined || body.interactiveState !== undefined) &&
       !isCoursewareReferenceEnabled()

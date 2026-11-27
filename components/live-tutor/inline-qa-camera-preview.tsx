@@ -1,257 +1,392 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, Camera, CameraOff, Eye, Mic, SwitchCamera, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Camera,
+  CameraOff,
+  CheckCircle2,
+  Eye,
+  Info,
+  Loader2,
+  Mic,
+  MicOff,
+  PencilLine,
+  Send,
+  SwitchCamera,
+  VideoOff,
+  X,
+} from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useCanvasStore, useStageStore } from '@/lib/store';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
 import { getCameraTutorCapabilities } from '@/lib/live-tutor/model-capabilities';
-import {
-  registerClassroomCameraCapture,
-  type ClassroomCameraSnapshot,
-} from '@/lib/live-tutor/classroom-camera-bridge';
+import { applyWhiteboardOps, buildWhiteboardFromSteps } from '@/lib/live-tutor/whiteboard-elements';
+import type { WhiteboardOp, WhiteboardStepItem } from '@/lib/live-tutor/types';
+import { useLiveCameraTutor } from './use-live-camera-tutor';
 import { cn } from '@/lib/utils';
 
 interface InlineQACameraPreviewProps {
   readonly open: boolean;
   readonly onClose: () => void;
-  /** Toggles the classroom Q&A microphone directly from the camera preview. */
-  readonly onToggleVoice?: () => void;
-  readonly isVoiceOpen?: boolean;
-  readonly isRecording?: boolean;
-  /** Sends a quick notebook-check turn directly into the active classroom Q&A. */
-  readonly onQuickCheck?: () => void;
+  /** Pauses classroom lecture/discussion audio when Gemini Live starts. */
+  readonly onActivateLive?: () => void;
+  /** Latest spoken/typed classroom Q&A lines for shared conversational context. */
+  readonly recentClassroomSpeech?: string;
 }
 
-function InlineQACameraPreviewBody({
+function collectVisibleChatTranscript(): string {
+  if (typeof document === 'undefined') return '';
+  try {
+    // Capture recent visible Q&A messages from the classroom chat panel if open
+    const chatNodes = document.querySelectorAll(
+      '[data-chat-message], [data-testid="chat-message"]',
+    );
+    if (chatNodes.length > 0) {
+      return Array.from(chatNodes)
+        .slice(-8)
+        .map((n) => (n.textContent || '').replace(/\s+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n')
+        .slice(0, 1400);
+    }
+  } catch {
+    // ignore DOM read issues
+  }
+  return '';
+}
+
+function InlineQACameraLiveBody({
   onClose,
-  onToggleVoice,
-  isVoiceOpen = false,
-  isRecording = false,
-  onQuickCheck,
+  onActivateLive,
+  recentClassroomSpeech,
 }: Omit<InlineQACameraPreviewProps, 'open'>) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const stageId = useStageStore((s) => s.stage?.id);
+  const stageName = useStageStore((s) => s.stage?.name);
+  const currentScene = useStageStore((s) => s.getCurrentScene());
   const modelView = useModelSettingsView();
   const caps = getCameraTutorCapabilities(modelView);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const [wbSteps, setWbSteps] = useState<WhiteboardStepItem[]>([]);
+  const [textQuestion, setTextQuestion] = useState('');
 
-  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
-  const [paused, setPaused] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-  const pausedRef = useRef(false);
+  const sceneContext = useMemo(() => {
+    const parts: string[] = [];
+    if (stageName) parts.push(`Course: ${stageName}`);
+    if (currentScene?.title) parts.push(`Current slide: ${currentScene.title}`);
+    if (currentScene?.type === 'quiz' && 'questions' in currentScene.content) {
+      const q = currentScene.content.questions?.[0];
+      if (q?.question) parts.push(`Current quiz question: ${q.question}`);
+    }
+    if (recentClassroomSpeech?.trim()) {
+      parts.push(`Recent classroom conversation:\n${recentClassroomSpeech.trim()}`);
+    }
+    const domTranscript = collectVisibleChatTranscript();
+    if (domTranscript) {
+      parts.push(`Classroom Q&A transcript:\n${domTranscript}`);
+    }
+    return parts.join('\n\n');
+  }, [currentScene, recentClassroomSpeech, stageName]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const stopTracks = () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
+  const syncStepsToClassroomWhiteboard = useCallback(
+    (nextSteps: WhiteboardStepItem[]) => {
+      if (!stageId) return;
+      const wb = buildWhiteboardFromSteps(nextSteps, `classroom-live-wb-${stageId}`);
+      useCanvasStore.setState((prev) => ({
+        whiteboardOpen: true,
+        runtimeWhiteboardProjection: {
+          stageId,
+          lastSeq: (prev.runtimeWhiteboardProjection?.lastSeq ?? 0) + 1,
+          whiteboard: wb,
+        },
+        runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
+      }));
+    },
+    [stageId],
+  );
 
-    const boot = async () => {
-      stopTracks();
-      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-        if (!cancelled) setError('Camera is not supported in this browser.');
-        return;
-      }
-      try {
-        let stream: MediaStream;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: facingMode },
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-            audio: false,
-          });
-        } catch {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        }
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {});
-        }
-        if (!cancelled) {
-          setError(null);
-          setReady(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setReady(false);
-          setError('Camera permission is required so the teacher can see your notebook.');
-        }
-      }
-    };
+  const handleWhiteboardOps = useCallback(
+    (ops: WhiteboardOp[]) => {
+      setWbSteps((prev) => {
+        const next = applyWhiteboardOps(prev, ops);
+        syncStepsToClassroomWhiteboard(next);
+        return next;
+      });
+    },
+    [syncStepsToClassroomWhiteboard],
+  );
 
-    void boot();
-    return () => {
-      cancelled = true;
-      stopTracks();
-    };
-  }, [facingMode]);
+  const {
+    videoRef,
+    canvasRef,
+    status,
+    transportMode,
+    errorMessage,
+    micMuted,
+    camPaused,
+    micLevel,
+    liveCaption,
+    turnBusy,
+    startSession,
+    stopSession,
+    sendStudentTurn,
+    toggleMic,
+    toggleCam,
+    flipCamera,
+  } = useLiveCameraTutor({
+    topic: currentScene?.title || stageName,
+    sceneContext,
+    whiteboardStepsText: wbSteps.map((s) => s.content),
+    language: locale,
+    onWhiteboardOps: handleWhiteboardOps,
+  });
 
-  const captureSnapshot = useCallback((): ClassroomCameraSnapshot | null => {
-    if (pausedRef.current) return null;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || !video.videoWidth || !video.videoHeight) return null;
-    const maxDim = 960;
-    const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight));
-    canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
-    canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
-    const data = dataUrl.split(',')[1];
-    if (!data) return null;
-    return { data, mimeType: 'image/jpeg' };
-  }, []);
+  const isLive = status === 'live';
+  const isConnecting = status === 'connecting';
 
-  useEffect(() => {
-    return registerClassroomCameraCapture(captureSnapshot);
-  }, [captureSnapshot]);
+  const handleStart = () => {
+    onActivateLive?.();
+    void startSession();
+  };
 
-  const micListening = isVoiceOpen || isRecording;
+  const handleClose = () => {
+    stopSession();
+    onClose();
+  };
+
+  const handleSendText = () => {
+    const trimmed = textQuestion.trim();
+    if (!trimmed) return;
+    setTextQuestion('');
+    void sendStudentTurn(trimmed);
+  };
 
   return createPortal(
     <div
       data-testid="inline-qa-camera-preview"
-      className="fixed bottom-24 left-4 z-[60] w-[min(300px,calc(100vw-32px))] rounded-2xl overflow-hidden border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_20px_50px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl"
+      className="fixed bottom-24 left-4 z-[60] w-[min(350px,calc(100vw-32px))] rounded-2xl overflow-hidden border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.55)] backdrop-blur-xl flex flex-col"
     >
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 bg-black/50 border-b border-white/10">
         <span
           className={cn(
             'inline-flex items-center gap-1.5 text-[11px] font-semibold truncate',
-            micListening ? 'text-amber-300' : 'text-emerald-300',
+            isLive ? 'text-emerald-300' : 'text-violet-300',
           )}
         >
           <span
             className={cn(
               'size-2 rounded-full shrink-0',
-              micListening
-                ? 'bg-amber-400 animate-ping'
-                : ready && !paused
-                  ? 'bg-emerald-400'
-                  : 'bg-gray-400',
+              isLive ? 'bg-emerald-400 animate-pulse' : 'bg-violet-400',
             )}
           />
-          {micListening ? t('liveTutor.micListeningStatus') : t('liveTutor.cameraReadyStatus')}
+          {isLive
+            ? transportMode === 'gemini-live'
+              ? t('liveTutor.settingsBadgeLive')
+              : t('liveTutor.settingsBadgeSnapshot')
+            : t('liveTutor.classroomTitle')}
         </span>
+
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => {
-              setReady(false);
-              setFacingMode((f) => (f === 'environment' ? 'user' : 'environment'));
-            }}
-            title={t('liveTutor.flipCamera')}
-            className="p-1 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+            onClick={() => useCanvasStore.setState((s) => ({ whiteboardOpen: !s.whiteboardOpen }))}
+            title={t('liveTutor.toggleWhiteboard')}
+            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
           >
-            <SwitchCamera className="size-3.5" />
+            <PencilLine className="size-3.5" />
           </button>
           <button
             type="button"
-            onClick={() => {
-              setPaused((p) => {
-                const next = !p;
-                pausedRef.current = next;
-                return next;
-              });
-            }}
-            title={paused ? t('liveTutor.resumeCamera') : t('liveTutor.pauseCamera')}
-            className={cn(
-              'p-1 rounded-lg transition-colors',
-              paused
-                ? 'text-amber-300 bg-amber-500/20'
-                : 'text-gray-300 hover:text-white hover:bg-white/10',
-            )}
-          >
-            {paused ? <CameraOff className="size-3.5" /> : <Camera className="size-3.5" />}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
+            onClick={handleClose}
             title={t('common.close')}
-            className="p-1 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="size-3.5" />
           </button>
         </div>
       </div>
 
-      <div className="relative aspect-[4/3] bg-gray-950 flex items-center justify-center">
+      {/* Camera Viewport */}
+      <div className="relative aspect-[4/3] bg-gray-950 flex items-center justify-center overflow-hidden">
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className={cn('w-full h-full object-cover', (paused || error) && 'opacity-25')}
+          className={cn(
+            'w-full h-full object-cover',
+            !isLive && 'hidden',
+            camPaused && 'opacity-30',
+          )}
         />
         <canvas ref={canvasRef} className="hidden" />
-        {error && (
-          <p className="absolute inset-0 flex items-center justify-center p-3 text-center text-[11px] text-red-300">
-            {error}
-          </p>
+
+        {!isLive && (
+          <div className="flex flex-col items-center justify-center text-center px-5 py-4">
+            <div className="size-10 rounded-2xl bg-violet-500/20 text-violet-300 flex items-center justify-center mb-2">
+              <Camera className="size-5" />
+            </div>
+            <p className="text-xs font-semibold text-white mb-1">
+              {t('liveTutor.cameraPlaceholderTitle')}
+            </p>
+            <p className="text-[11px] text-gray-400 leading-relaxed">
+              {t('liveTutor.cameraPlaceholderDesc')}
+            </p>
+          </div>
+        )}
+
+        {/* Mic level meter when Gemini Live is active */}
+        {isLive && transportMode === 'gemini-live' && (
+          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 rounded-full bg-black/65 backdrop-blur-md px-2.5 py-1 border border-white/10 pointer-events-none">
+            <Mic className="size-3 text-emerald-400" />
+            <div className="w-10 h-1.5 rounded-full bg-gray-700 overflow-hidden">
+              <div
+                className="h-full bg-emerald-400 transition-all duration-75"
+                style={{ width: `${micLevel}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Live caption overlay */}
+        {isLive && liveCaption && (
+          <div className="absolute bottom-2.5 left-2.5 right-2.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 px-3 py-2 text-[11px] text-gray-100 max-h-20 overflow-y-auto leading-snug">
+            {liveCaption}
+          </div>
         )}
       </div>
 
+      {/* Capability notices & errors */}
+      {errorMessage && (
+        <p className="px-3 py-1.5 text-[11px] text-red-300 bg-red-950/60 border-t border-red-500/30">
+          {errorMessage}
+        </p>
+      )}
       {!caps.supportsVision && (
-        <div className="flex items-start gap-1.5 px-3 py-2 bg-amber-950/80 border-t border-amber-500/30 text-[11px] text-amber-200 leading-snug">
+        <div className="flex items-start gap-1.5 px-3 py-1.5 bg-amber-950/80 border-t border-amber-500/30 text-[10px] text-amber-200 leading-snug">
           <AlertTriangle className="size-3.5 shrink-0 mt-0.5 text-amber-400" />
           <span>{t('liveTutor.visionUnsupportedWarning')}</span>
         </div>
       )}
+      {caps.supportsVision &&
+        (transportMode === 'turn-based' ||
+          (!isLive && caps.providerPreset && !caps.supportsLiveStreaming)) && (
+          <div className="flex items-start gap-1.5 px-3 py-1.5 bg-slate-900/90 border-t border-white/10 text-[10px] text-gray-300 leading-snug">
+            <Info className="size-3.5 shrink-0 mt-0.5 text-violet-400" />
+            <span>{t('liveTutor.snapshotModeNotice')}</span>
+          </div>
+        )}
 
-      {/* Clear 1-tap actions so the student always knows how to trigger the teacher */}
-      <div className="p-2.5 bg-black/60 border-t border-white/10 space-y-1.5">
-        <div className="flex items-center gap-2">
-          {onToggleVoice && (
-            <button
-              type="button"
-              data-testid="inline-qa-camera-talk-button"
-              onClick={onToggleVoice}
-              className={cn(
-                'flex-1 h-8 rounded-xl px-2.5 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors',
-                micListening
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                  : 'bg-white/15 hover:bg-white/25 text-white',
+      {/* Controls */}
+      <div className="p-2.5 bg-black/60 border-t border-white/10 space-y-2">
+        {!isLive ? (
+          <button
+            type="button"
+            data-testid="inline-qa-start-live-button"
+            disabled={isConnecting}
+            onClick={handleStart}
+            className="w-full h-9 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+          >
+            {isConnecting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Camera className="size-4" />
+            )}
+            {isConnecting ? t('liveTutor.connecting') : t('liveTutor.startCameraHelp')}
+          </button>
+        ) : (
+          <>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="inline-qa-camera-check-button"
+                disabled={turnBusy}
+                onClick={() => void sendStudentTurn()}
+                className="flex-1 h-8 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
+              >
+                {turnBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Eye className="size-3.5" />
+                )}
+                {t('liveTutor.checkWork')}
+              </button>
+              {transportMode === 'gemini-live' && (
+                <button
+                  type="button"
+                  onClick={toggleMic}
+                  title={micMuted ? t('liveTutor.unmuteMic') : t('liveTutor.muteMic')}
+                  className={cn(
+                    'size-8 rounded-xl border flex items-center justify-center transition-colors',
+                    micMuted
+                      ? 'border-red-400/60 bg-red-500/20 text-red-300'
+                      : 'border-white/15 bg-white/10 text-white hover:bg-white/20',
+                  )}
+                >
+                  {micMuted ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
+                </button>
               )}
-            >
-              <Mic className="size-3.5" />
-              {micListening ? t('liveTutor.micListeningButton') : t('liveTutor.talkToTeacher')}
-            </button>
-          )}
-          {onQuickCheck && (
-            <button
-              type="button"
-              data-testid="inline-qa-camera-check-button"
-              disabled={paused || Boolean(error)}
-              onClick={onQuickCheck}
-              className="flex-1 h-8 rounded-xl px-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <Eye className="size-3.5" />
-              {t('liveTutor.checkWork')}
-            </button>
-          )}
-        </div>
-        <p className="text-[10px] text-gray-400 text-center leading-tight">
-          {t('liveTutor.cameraPopupHint')}
-        </p>
+              <button
+                type="button"
+                onClick={toggleCam}
+                title={camPaused ? t('liveTutor.resumeCamera') : t('liveTutor.pauseCamera')}
+                className={cn(
+                  'size-8 rounded-xl border flex items-center justify-center transition-colors',
+                  camPaused
+                    ? 'border-amber-400/60 bg-amber-500/20 text-amber-300'
+                    : 'border-white/15 bg-white/10 text-white hover:bg-white/20',
+                )}
+              >
+                {camPaused ? (
+                  <CameraOff className="size-3.5" />
+                ) : (
+                  <CheckCircle2 className="size-3.5" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => void flipCamera()}
+                title={t('liveTutor.flipCamera')}
+                className="size-8 rounded-xl border border-white/15 bg-white/10 text-white hover:bg-white/20 flex items-center justify-center transition-colors"
+              >
+                <SwitchCamera className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={stopSession}
+                title={t('liveTutor.stopSession')}
+                className="size-8 rounded-xl bg-red-600/85 hover:bg-red-600 text-white flex items-center justify-center transition-colors"
+              >
+                <VideoOff className="size-3.5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={textQuestion}
+                onChange={(e) => setTextQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSendText();
+                }}
+                placeholder={t('liveTutor.askPlaceholder')}
+                className="flex-1 h-8 rounded-xl border border-white/15 bg-white/10 px-2.5 text-[11px] text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+              />
+              <button
+                type="button"
+                disabled={!textQuestion.trim() || turnBusy}
+                onClick={handleSendText}
+                aria-label={t('liveTutor.sendQuestion')}
+                className="size-8 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-40 text-white flex items-center justify-center shrink-0 transition-colors"
+              >
+                <Send className="size-3.5" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>,
     document.body,
@@ -259,12 +394,13 @@ function InlineQACameraPreviewBody({
 }
 
 /**
- * Compact live notebook camera preview rendered while the student has Camera
- * toggled ON inside Classroom Q&A / Discussion. Registers its frame capture
- * callback with `classroom-camera-bridge` so every spoken or typed Q&A turn
- * automatically sends the student's notebook image to the same AI Teacher.
+ * Classroom Gemini Live Camera & Voice Tutor popup triggered from the inline
+ * camera button next to Mic and Chat in the Classroom Roundtable dock.
+ * Streams real-time audio + 1 fps notebook video to Gemini Live (with automatic
+ * turn-based fallback on non-Google providers) and projects steps/equations
+ * directly onto OpenMAIC's native Classroom Whiteboard.
  */
 export function InlineQACameraPreview(props: InlineQACameraPreviewProps) {
   if (!props.open || typeof document === 'undefined') return null;
-  return <InlineQACameraPreviewBody {...props} />;
+  return <InlineQACameraLiveBody {...props} />;
 }
