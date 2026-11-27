@@ -9,16 +9,15 @@
  * this module's purity boundary. The math is ~15 lines and must stay identical
  * to the runtime's, so it is mirrored here rather than imported.
  *
- * The runtime uses a fixed 1000px width base and a 16:9 (0.5625) height ratio,
- * independent of a slide's own `viewportSize`/`viewportRatio`, so we do the same
- * — the spotlight/laser overlays position against this same base.
+ * Like the runtime, the base is the slide's own `viewportSize`/`viewportRatio`,
+ * defaulting to 1000px and 16:9 (0.5625).
  *
  * Pure: type-only import from `@openmaic/dsl`.
  */
 import type { PPTElement } from '@openmaic/dsl';
 import type { PercentageGeometry } from './ir';
 
-/** Height ratio the runtime derives the vertical base from (16:9). */
+/** Default height ratio (16:9), for a slide that states none. */
 const VIEWPORT_RATIO = 0.5625;
 
 /**
@@ -29,6 +28,7 @@ const VIEWPORT_RATIO = 0.5625;
 export function getElementPercentageGeometry(
   element: PPTElement,
   viewportSize = 1000,
+  viewportRatio = VIEWPORT_RATIO,
 ): PercentageGeometry | null {
   if (
     !('left' in element) ||
@@ -42,9 +42,9 @@ export function getElementPercentageGeometry(
   const { left, top, width, height } = element;
 
   const x = (left / viewportSize) * 100;
-  const y = (top / (viewportSize * VIEWPORT_RATIO)) * 100;
+  const y = (top / (viewportSize * viewportRatio)) * 100;
   const w = (width / viewportSize) * 100;
-  const h = (height / (viewportSize * VIEWPORT_RATIO)) * 100;
+  const h = (height / (viewportSize * viewportRatio)) * 100;
 
   return { x, y, w, h, centerX: x + w / 2, centerY: y + h / 2 };
 }
@@ -57,10 +57,11 @@ export function findElementGeometry(
   elements: PPTElement[],
   elementId: string,
   viewportSize = 1000,
+  viewportRatio = VIEWPORT_RATIO,
 ): PercentageGeometry | null {
   const element = elements.find((el) => el.id === elementId);
   if (!element) return null;
-  return getElementPercentageGeometry(element, viewportSize);
+  return getElementPercentageGeometry(element, viewportSize, viewportRatio);
 }
 
 /** An element's placement: percentage geometry + rotation (degrees). */
@@ -79,10 +80,11 @@ export function findElementPlacement(
   elements: PPTElement[],
   elementId: string,
   viewportSize = 1000,
+  viewportRatio = VIEWPORT_RATIO,
 ): ElementPlacement | null {
   const element = elements.find((el) => el.id === elementId);
   if (!element) return null;
-  const geometry = getElementPercentageGeometry(element, viewportSize);
+  const geometry = getElementPercentageGeometry(element, viewportSize, viewportRatio);
   if (!geometry) return null;
   const rotate = 'rotate' in element && typeof element.rotate === 'number' ? element.rotate : 0;
   return { geometry, rotate };

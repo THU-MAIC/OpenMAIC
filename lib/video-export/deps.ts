@@ -37,7 +37,7 @@ import type { InteractiveHtmlFailure } from './interactive-static';
  */
 export interface CompilerSceneContent {
   type?: string;
-  canvas?: { elements?: PPTElement[] };
+  canvas?: { elements?: PPTElement[]; viewportSize?: number; viewportRatio?: number };
   /** Quiz authored content; kept structural so the pure compiler needs no app types. */
   questions?: readonly unknown[];
   /** App-owned PBL payloads enter as unknown and are narrowed by the pure visual pass. */
@@ -129,7 +129,7 @@ export interface InteractiveHtmlSource {
  * actually paints, not just its authored box.
  *
  * The pure geometry helper ({@link findElementGeometry}) reads the element's
- * authored `left/top/width/height` against a fixed 1000×562.5 base. That is the
+ * authored `left/top/width/height` against the slide's viewport. That is the
  * element's **outer box**, but the live overlays (and the slide-snapshot frame)
  * measure the element's `.element-content` box — which differs for auto-sized
  * text (horizontal text has `height:auto`) and its 10px content padding. So a
