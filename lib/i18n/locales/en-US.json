@@ -3454,8 +3454,9 @@
       "failed": "Could not load history. Please retry.",
       "empty": "No saved messages in this page."
     },
-    "decisionResponse": "Your decision",
+    "decisionResponse": "Decision",
     "decisionRationale": "Why did you choose this?",
+    "decisionRationaleInput": "Reason",
     "submitDecision": "Submit decision",
     "decisionSaved": "Response saved",
     "decisionUnsaved": "Unsaved changes",

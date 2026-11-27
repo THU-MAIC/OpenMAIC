@@ -1078,15 +1078,22 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
     }
   });
 
-  it.each([false, true])(
-    'persists literal text decisions through summaries and reports (option collision: %s)',
-    async (collision) => {
+  it.each([
+    {
+      collision: false,
+      labels: { responseLabel: 'What should the rule do?', rationaleLabel: 'Why this rule?' },
+    },
+    { collision: true, labels: {} },
+  ])(
+    'persists literal text decisions through summaries and reports (option collision: $collision)',
+    async ({ collision, labels }) => {
       const bundle = packageBuiltin(project);
       const descriptor: ProjectDescriptor = JSON.parse(bundle.files['project.json']);
       descriptor.id = descriptor.definition.id = `open-response-${randomUUID()}`;
       const decision = descriptor.definition.decisions[0]!;
       decision.responseType = 'text';
       decision.requiresRationale = true;
+      Object.assign(decision, labels);
       if (!collision) decision.options = [];
       bundle.files['project.json'] = JSON.stringify(descriptor);
       const ref = await installProjectPackage(
@@ -1201,10 +1208,15 @@ describe.skipIf(!url)('PBL v3 teaching runtime with real PG', () => {
           )
         ).rows[0].n,
       ).toBe(1);
-      const view = await learningView(principal, row.id);
-      expect(view.decisions[0]).toMatchObject({
+      const reopened = await openStudy(principal, stageId, 'response');
+      expect(reopened.id).toBe(row.id);
+      const view = await learningView(principal, reopened.id);
+      expect(view.decisions[0]).toEqual({
+        id: decision.id,
+        prompt: decision.decisionPrompt,
         responseType: 'text',
         requiresRationale: true,
+        ...labels,
         options: decision.options.map(({ id, label }) => ({ id, label })),
       });
       await send('decide', {

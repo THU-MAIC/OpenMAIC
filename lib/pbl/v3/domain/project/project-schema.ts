@@ -114,13 +114,18 @@ const evaluationMetadataSchema = z.object({
   rubricRefs: z.array(nonEmptyString).default([]),
 });
 
+// Older packages could carry arbitrary values under these previously unknown keys.
+const optionalDecisionLabel = z.string().trim().min(1).max(80).optional().catch(undefined);
+
 const decisionDefinitionSchema = z.object({
   id: nonEmptyString,
   kind: decisionKindSchema.default('architecture'),
   desc: nonEmptyString,
   decisionPrompt: nonEmptyString,
   responseType: z.enum(['choice', 'text']).optional(),
+  responseLabel: optionalDecisionLabel,
   requiresRationale: z.boolean().optional(),
+  rationaleLabel: optionalDecisionLabel,
   options: z.array(
     z.object({
       id: nonEmptyString,

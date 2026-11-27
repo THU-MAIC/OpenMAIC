@@ -49,7 +49,9 @@ export function DecisionResponseForm({
       <legend className="whitespace-pre-wrap text-sm font-medium">{decision.prompt}</legend>
       {textResponse ? (
         <label className="grid gap-1 text-sm">
-          {t('pblV3.decisionResponse')}
+          <span className="[overflow-wrap:anywhere]">
+            {decision.responseLabel ?? t('pblV3.decisionResponse')}
+          </span>
           <textarea
             className="min-h-28 w-full rounded-md border bg-background p-3 text-sm"
             rows={4}
@@ -88,7 +90,9 @@ export function DecisionResponseForm({
       )}
       {decision.requiresRationale && (
         <label className="grid gap-1 text-sm">
-          {t('pblV3.decisionRationale')}
+          <span className="[overflow-wrap:anywhere]">
+            {decision.rationaleLabel ?? t('pblV3.decisionRationaleInput')}
+          </span>
           <textarea
             className="min-h-20 w-full rounded-md border bg-background p-3 text-sm"
             rows={3}

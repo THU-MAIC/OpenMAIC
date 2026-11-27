@@ -99,7 +99,9 @@ export interface LearningView {
     id: string;
     prompt: string;
     responseType?: 'choice' | 'text';
+    responseLabel?: string;
     requiresRationale?: boolean;
+    rationaleLabel?: string;
     options: { id: string; label: string }[];
   }[];
   decisionSummary?: { id: string; prompt: string; choice: string; rationale?: string }[];

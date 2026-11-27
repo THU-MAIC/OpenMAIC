@@ -3456,6 +3456,7 @@
     },
     "decisionResponse": "Your decision",
     "decisionRationale": "Why did you choose this?",
+    "decisionRationaleInput": "Why did you choose this?",
     "submitDecision": "Submit decision",
     "decisionSaved": "Response saved",
     "decisionUnsaved": "Unsaved changes",
