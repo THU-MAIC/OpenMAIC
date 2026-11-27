@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ChevronDown, Circle, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import type { RefCallback } from 'react';
 import { ChatSessionComponent } from './chat-session';
 
 interface SessionListProps {
@@ -14,6 +15,11 @@ interface SessionListProps {
   expandedSessionIds: Set<string>;
   isStreaming: boolean;
   activeBubbleId?: string | null;
+  quickReplyTarget?: {
+    readonly sessionId: string;
+    readonly messageId: string | null;
+    readonly onHostChange: RefCallback<HTMLDivElement>;
+  };
   onToggleExpand: (sessionId: string) => void;
   onEndSession: (sessionId: string) => Promise<void>;
   onContinueSession: (sessionId: string) => boolean;
@@ -52,6 +58,7 @@ export function SessionList({
   expandedSessionIds,
   isStreaming,
   activeBubbleId,
+  quickReplyTarget,
   onToggleExpand,
   onEndSession,
   onContinueSession,
@@ -62,6 +69,8 @@ export function SessionList({
       {sessions.map((session) => {
         const isExpanded = expandedSessionIds.has(session.id);
         const isActive = session.status === 'active' || session.status === 'soft-closing';
+        const sessionQuickReply =
+          quickReplyTarget?.sessionId === session.id ? quickReplyTarget : undefined;
         const firstQuestion =
           mobile && session.type === 'qa'
             ? session.messages
@@ -160,6 +169,8 @@ export function SessionList({
                       isActive={isActive}
                       isStreaming={isStreaming && isActive}
                       activeBubbleId={activeBubbleId}
+                      quickReplyMessageId={sessionQuickReply?.messageId}
+                      quickReplyHostRef={sessionQuickReply?.onHostChange}
                       onEndSession={onEndSession}
                       onContinueSession={onContinueSession}
                     />
