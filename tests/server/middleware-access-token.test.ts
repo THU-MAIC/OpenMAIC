@@ -1,5 +1,5 @@
 import { createHmac } from 'crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 import { middleware } from '@/middleware';
@@ -100,5 +100,69 @@ describe('middleware access-token gate for the retired POST /api/chat', () => {
     const response = await middleware(legacyChatRequest());
 
     expect(response.headers.get('x-middleware-next')).toBe('1');
+  });
+});
+
+describe('retired provider request headers', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(['x-api-key', 'x-model', 'x-model-routes', 'x-image-model', 'x-video-provider'])(
+    'returns 400 with migration instructions for %s',
+    async (name) => {
+      vi.stubEnv('ACCESS_CODE', '');
+      const request = new NextRequest('http://localhost/api/generate/image', {
+        method: 'POST',
+        headers: { [name]: 'not-for-the-response' },
+      });
+      const response = await middleware(request);
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toContain(name);
+      expect(body.error).toContain('#migrating-from-the-legacy-configuration');
+      expect(body.error).not.toContain('not-for-the-response');
+    },
+  );
+
+  it.each(['/api/access-code/verify'])(
+    'keeps %s public while rejecting deprecated headers with or without an access code',
+    async (path) => {
+      for (const code of ['', CODE]) {
+        vi.stubEnv('ACCESS_CODE', code);
+        const url = new URL(path, 'http://localhost');
+        const clean = await middleware(new NextRequest(url));
+        expect(clean.headers.get('x-middleware-next')).toBe('1');
+        const stale = await middleware(new NextRequest(url, { headers: { 'x-model': 'old' } }));
+        expect(stale.status).toBe(400);
+        expect((await stale.json()).error).toContain('#migrating-from-the-legacy-configuration');
+      }
+    },
+  );
+
+  it.each(['', CODE])('ignores legacy provider headers on the health probe (%s)', async (code) => {
+    vi.stubEnv('ACCESS_CODE', code);
+    const request = new NextRequest('http://localhost/api/health', {
+      headers: { 'x-api-key': 'old', 'x-model': 'old' },
+    });
+    expect((await middleware(request)).headers.get('x-middleware-next')).toBe('1');
+  });
+
+  it('checks access before reporting deprecated headers on protected routes', async () => {
+    vi.stubEnv('ACCESS_CODE', CODE);
+    const request = new NextRequest('http://localhost/api/chat/pi', {
+      headers: { 'x-model': 'old' },
+    });
+    expect((await middleware(request)).status).toBe(401);
+  });
+
+  it('checks the migration after accepting a valid access cookie', async () => {
+    vi.stubEnv('ACCESS_CODE', CODE);
+    const request = new NextRequest('http://localhost/api/chat/pi', {
+      method: 'POST',
+      headers: {
+        cookie: `openmaic_access=${tokenFor(Date.now())}`,
+        'X-Model': '',
+      },
+    });
+    expect((await middleware(request)).status).toBe(400);
   });
 });

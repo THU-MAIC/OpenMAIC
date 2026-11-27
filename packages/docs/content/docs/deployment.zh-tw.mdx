@@ -57,9 +57,9 @@ services:
       - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-不要掛載主機上不存在的路徑：Docker 會在該位置建立一個目錄，導致服務拒絕啟動。使用 `docker run` 時，加上 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改檔案後需要重新啟動容器。`openmaic.yml` 已列入 `.dockerignore`，不會被打包進從儲存庫建置的映像檔：請在執行時掛載它。沒有 `openmaic.yml` 時，仍會從 `/app/server-providers.yml` 讀取舊版的 `server-providers.yml`。
+不要掛載主機上不存在的路徑：Docker 會在該位置建立一個目錄，導致服務拒絕啟動。使用 `docker run` 時，加上 `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"`。修改檔案後需要重新啟動容器。`openmaic.yml` 已列入 `.dockerignore`，不會被打包進從儲存庫建置的映像檔：請在執行時掛載它。
 
-Docker 容器中的 `localhost` 指向容器本身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 執行在主機上，請使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常還需要為 `openmaic` 服務加上 `extra_hosts: ["host.docker.internal:host-gateway"]`。在 `openmaic.yml`（或舊版變數）中宣告的供應商由伺服器端管理，其端點可以位於主機或內網，不需要 `ALLOW_LOCAL_NETWORKS`。該變數只影響使用者自行填寫的端點：在 **設定 → 模型服務** 中新增的對話 Base URL，以及已棄用的請求欄位。
+Docker 容器中的 `localhost` 指向容器本身。若 Ollama、Lemonade、VoxCPM 或 ComfyUI 執行在主機上，請使用 `host.docker.internal`，例如 `http://host.docker.internal:11434/v1` 或 `http://host.docker.internal:8188`。Linux Docker 通常還需要為 `openmaic` 服務加上 `extra_hosts: ["host.docker.internal:host-gateway"]`。在 `openmaic.yml` 中宣告的供應商由伺服器端管理，其端點可以位於主機或內網，不需要 `ALLOW_LOCAL_NETWORKS`。該變數只影響使用者自行填寫的端點：在 **設定 → 模型服務** 中新增的對話 Base URL，以及已棄用的請求欄位。
 
 ## 自建 VM
 
@@ -131,7 +131,7 @@ PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 | 部署方式 | 操作 |
 | --- | --- |
-| `docker compose` | 拉取新版本，執行 `docker compose up --build`。把模型設定移到 `openmaic.yml` 或 **設定 → 模型**（沒有 `openmaic.yml` 時，供應商環境變數仍然有效），並把 `MODEL_ROUTES` 改寫為插槽：設定了它卻沒有 `openmaic.yml` 的服務會拒絕啟動。在每個存有本機課程的瀏覽器中開啟一次應用程式，完成匯入。 如果 `.env.local` 設定了 `PERSISTENCE_SHARED_OWNER_ID`，還要設定 `OWNER_SINGLE_USER=false`：Compose 現在預設以單一使用者模式啟動。先前的伺服器端部署中屬於匿名擁有者的課程不會自動合併給單一使用者，需要在建立它們的每個瀏覽器中用 `POST /api/identity/claim` 認領（開啟瀏覽器只會匯入它在本機儲存的資料）。 |
+| `docker compose` | 拉取新版本，執行 `docker compose up --build`。透過 `openmaic.yml` 或模型設定來設定供應商及插槽。 在每個存有本機課程的瀏覽器中開啟一次應用程式，完成匯入。 如果 `.env.local` 設定了 `PERSISTENCE_SHARED_OWNER_ID`，還要設定 `OWNER_SINGLE_USER=false`：Compose 現在預設以單一使用者模式啟動。先前的伺服器端部署中屬於匿名擁有者的課程不會自動合併給單一使用者，需要在建立它們的每個瀏覽器中用 `POST /api/identity/claim` 認領（開啟瀏覽器只會匯入它在本機儲存的資料）。 |
 | `pnpm start` + 自己的 PostgreSQL | 停止服務，拉取新版本，執行 `pnpm install` 和 `pnpm build`，然後在同一個工作目錄裡用 `pnpm start` 重新啟動，這樣會保留 `data/`。設定 `DATABASE_URL`、身分模式；多個實例共用資料庫時設定 `OPENMAIC_SECRET_KEY`，並且多個實例還需要共用同一個資料目錄（見[必要設定](#必要設定)）。模型設定、`MODEL_ROUTES` 和瀏覽器中的課程同上一列。 |
 | Vercel | 留在 1.1.x，或遷移到使用同一資料庫的常駐主機（見下文）。 |
 | Skill / API | 依更新後的 `openmaic` skill 操作：以同一擁有者上傳資料、提交並輪詢。 |
@@ -140,7 +140,7 @@ PostgreSQL 資料儲存在 `openmaic-postgres` volume 中。`PERSISTENCE_POSTGRE
 
 - **保留資料目錄。** 啟動 1.2.0 時，工作目錄裡要有原本的 `data/`（或使用相同的 `OPENMAIC_CLASSROOMS_DIR`）；使用 Compose 時沿用同一個 `openmaic-data` 卷。1.1.x 以檔案形式儲存在 `data/classrooms` 下的課堂，會在啟動後於背景匯入資料庫一次；沒有這個目錄的伺服器沒有可匯入的內容。
 - **先設定身分模式。** 匯入時，這些課堂歸屬於那次啟動時設定的擁有者：設定了單一使用者（`OWNER_SINGLE_USER=true`）或團隊共用擁有者（`PERSISTENCE_SHARED_OWNER_ID`）時歸它們所有；否則（匿名模式）歸專用擁有者 `system:legacy-classrooms`，此時它們只能透過原連結以唯讀方式開啟，也不會出現在任何課程庫中。每個課堂只匯入一次，所以在匿名模式下匯入的課堂，之後即使再設定身分模式，也仍然屬於 `system:legacy-classrooms`。
-- **列出模型。** 每個使用伺服器端託管憑證、並把所選模型送往上游的供應商（對話、圖像、影片、語音合成、語音辨識、基於模型的網路搜尋）都需要明確的模型清單（`*_MODELS`，或 `openmaic.yml`、`server-providers.yml` 中該供應商下的 `models`）。沒有清單時，只有預設模型、備援模型和槽位引用的模型獲得授權；啟動日誌會逐一列出這類缺少清單的供應商。Tavily、文件解析器等沒有模型選擇的服務不需要清單。請見[模型授權](./configuration.mdx#伺服器端託管供應商的模型授權)。
+- **列出模型。** 每個使用伺服器端託管憑證、並把所選模型送往上游的供應商（對話、圖像、影片、語音合成、語音辨識、基於模型的網路搜尋）都需要明確的模型清單(`openmaic.yml`: `providers.<id>.models`)。沒有清單時，只有預設模型、備援模型和槽位引用的模型獲得授權；啟動日誌會逐一列出這類缺少清單的供應商。Tavily、文件解析器等沒有模型選擇的服務不需要清單。請見[模型授權](./configuration.mdx#伺服器端託管供應商的模型授權)。
 - **算繪服務與應用程式一起升級。** 如果使用 MP4 影片匯出，請在升級應用程式的同時或之前升級所有 render-service 執行個體：算繪工作綁定到擁有者，新舊版本混用時會安全失敗（拒絕請求）。
 - **檢查課堂互動模型。** Pi 課堂對話會拒絕內建模型目錄標明不支援工具呼叫的模型（`tool_calling_required`），也會拒絕 Google 的 OpenAI 相容 Gemini 端點（`gemini_native_required`）。Gemini 請使用原生 `google` 預設，請見 [LLM 供應商](./configuration.mdx#llm-供應商)。
 

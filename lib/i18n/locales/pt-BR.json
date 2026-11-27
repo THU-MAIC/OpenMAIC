@@ -2103,7 +2103,7 @@
     "resetConfirmDescription": "Isto removerá todos os modelos personalizados e restaurará a lista padrão. Chave de API e URL base serão preservadas.",
     "resetToDefault": "Restaurar Padrão",
     "saveModel": "Salvar",
-    "searxngServerOnlyNotice": "O SearXNG deve ser configurado no servidor. Defina a variável de ambiente SEARXNG_BASE_URL (ou a seção web-search em server-providers.yml). URLs de instância fornecidas pelo cliente não são aceitas.",
+    "searxngServerOnlyNotice": "Em openmaic.yml, declare um provedor com preset: searxng e sua baseUrl. Atribua o ID do provedor a slots.webSearch.",
     "serverConfigured": "Servidor",
     "serverConfiguredNotice": "Este provedor é gerenciado pelo servidor e não pode ser editado aqui.",
     "startRecording": "Iniciar Gravação",

@@ -33,9 +33,9 @@ vi.mock('@/lib/persistence/schema-boot-check', () => ({
   startRuntimeSchemaMonitor: vi.fn(),
 }));
 vi.mock('@/lib/persistence/asset-collector-schedule', () => ({ startAssetCollectorSchedule }));
-vi.mock('@/lib/server/config-validation', () => ({ validateServerConfig: vi.fn() }));
 vi.mock('@/lib/config/feature-flags', () => ({
   isAgentRuntimeConfigured: () => false,
+  isAgentRuntimeEnabled: () => false,
   isServerPersistenceConfigured: () => false,
 }));
 
@@ -61,6 +61,7 @@ beforeEach(async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(process, 'once').mockReturnValue(process);
   vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+  vi.stubEnv('ANTHROPIC_BASE_URL', '');
   vi.stubEnv('ACCESS_CODE', 'demo-code-that-is-long-enough');
   vi.stubEnv('DATABASE_URL', 'postgres://boot/openmaic');
 });
@@ -103,17 +104,21 @@ describe('model configuration at boot', () => {
     expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
   });
 
-  it('refuses to start with MODEL_ROUTES and no configuration file', async () => {
+  it('reports MODEL_ROUTES at error level and completes startup without a config file', async () => {
     vi.stubEnv('OPENMAIC_CONFIG', '');
     vi.spyOn(process, 'cwd').mockReturnValue(dir);
     vi.stubEnv('MODEL_ROUTES', '{"scene-content":"openai:gpt-5.6"}');
     const { register } = await import('@/instrumentation');
 
-    await expect(register()).rejects.toThrow(/MODEL_ROUTES does not carry over/);
+    vi.stubEnv('LOG_LEVEL', 'error');
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(register()).resolves.toBeUndefined();
 
-    expect(exit).toHaveBeenCalledWith(1);
-    expect(stderr[0]).toContain('write the per-stage models as slots in openmaic.yml');
-    expect(startAssetCollectorSchedule).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+    expect(logError.mock.calls.flat().join(' ')).toContain(
+      'Deprecated provider settings detected: MODEL_ROUTES',
+    );
+    expect(startAssetCollectorSchedule).toHaveBeenCalledOnce();
   });
 
   it('boots with MODEL_ROUTES left over next to a configuration file', async () => {

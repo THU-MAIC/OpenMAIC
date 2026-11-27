@@ -6,30 +6,17 @@
  *
  * POST /api/generate/video
  *
- * The provider comes from the video slot of the model configuration. The
- * headers below are deprecated and count only while the slot is unassigned:
- *   x-video-provider, x-video-model, x-api-key, x-base-url
- *
  * Body: { prompt, duration?, aspectRatio?, resolution? }
  * Response: { success: boolean, result?: VideoGenerationResult, error?: string }
  */
 import { modelAuthorizationResponse } from '@/lib/server/api-response';
 
 import { NextRequest } from 'next/server';
-import {
-  isServerConfiguredProvider,
-  isServerProviderDisabled,
-  resolveVideoApiKey,
-  resolveVideoBaseUrl,
-  resolveVideoModel,
-} from '@/lib/server/provider-config';
-import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types';
+import type { VideoGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, type ApiErrorCode } from '@/lib/server/api-response';
-import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import {
   mediaResolutionResponse,
-  RequestedProviderRefusedError,
   resolveMediaSlot,
   type MediaConnection,
 } from '@/lib/server/model-config/media';
@@ -56,13 +43,10 @@ export async function POST(request: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing prompt');
     }
 
-    // The video slot decides; the provider a request names (x-video-provider
-    // with its key and base URL, deprecated) counts only when it is unassigned.
     let connection: MediaConnection;
     try {
       connection = await resolveMediaSlot('video', {
         workspaceId: await requestWorkspaceId(request),
-        legacyRequest: () => requestedVideoProvider(request),
       });
     } catch (error) {
       const refused = mediaResolutionResponse(error, 'Video generation');
@@ -75,7 +59,6 @@ export async function POST(request: NextRequest) {
         {
           options: body,
           connection,
-          requestedModel: request.headers.get('x-video-model')?.trim() || undefined,
         },
         { log },
       );
@@ -105,43 +88,4 @@ export async function POST(request: NextRequest) {
     log.error(`Video generation failed: ${message}`, error);
     return apiError('INTERNAL_ERROR', 500, 'Video generation failed');
   }
-}
-
-/**
- * The provider the request names with x-video-provider (deprecated), with the
- * key, base URL and model headers, or undefined when it names none.
- */
-async function requestedVideoProvider(request: NextRequest): Promise<MediaConnection | undefined> {
-  const providerId = request.headers.get('x-video-provider')?.trim() as VideoProviderId | undefined;
-  if (!providerId) return undefined;
-  // A force-disabled provider is off for everyone (#665).
-  if (isServerProviderDisabled('video', providerId)) {
-    throw new RequestedProviderRefusedError(
-      apiError('PROVIDER_DISABLED', 403, 'This video provider is disabled by the server'),
-    );
-  }
-  // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
-  const managed = isServerConfiguredProvider('video', providerId);
-  const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
-  const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
-  if (clientBaseUrl) {
-    const ssrfError = await validateClientBaseUrl(clientBaseUrl);
-    if (ssrfError) throw new RequestedProviderRefusedError(apiError('INVALID_URL', 403, ssrfError));
-  }
-  // A managed provider may pin its model list server-side
-  // (VIDEO_<PREFIX>_MODELS): an allowlisted client choice wins, otherwise the
-  // first pinned entry is the managed default.
-  const model = resolveVideoModel(
-    providerId,
-    request.headers.get('x-video-model')?.trim() || undefined,
-  );
-  return {
-    providerId,
-    apiKey: resolveVideoApiKey(providerId, clientApiKey),
-    ...(model ? { modelId: model } : {}),
-    baseUrl: resolveVideoBaseUrl(providerId, clientBaseUrl),
-    managed,
-    userEndpoint: Boolean(clientBaseUrl),
-    origin: 'request',
-  };
 }

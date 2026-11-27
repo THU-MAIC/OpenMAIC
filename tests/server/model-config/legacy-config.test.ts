@@ -398,7 +398,7 @@ describe('translateLegacyConfig output', () => {
   });
 });
 
-it('loads the real legacy Google compatible env through translation, slots and Pi resolution', async () => {
+it('reports old Google-compatible provider settings without assigning a Pi model', async () => {
   const snapshot = { ...process.env };
   const exists = fs.existsSync.bind(fs);
   const boundary = vi
@@ -408,7 +408,7 @@ it('loads the real legacy Google compatible env through translation, slots and P
     );
   let runtime: typeof import('@/lib/server/model-config/runtime') | undefined;
   try {
-    // Hermetic env and file boundary: the production env loader and translation stay real.
+    // Hermetic env and file boundary: the production warning and slot lookup stay real.
     for (const name of Object.keys(process.env)) {
       if (
         /(?:_API_KEY|_BASE_URL|_MODELS|_ENABLED|_PROXY)$/.test(name) ||
@@ -430,28 +430,13 @@ it('loads the real legacy Google compatible env through translation, slots and P
     runtime = await import('@/lib/server/model-config/runtime');
     runtime.setDeploymentConfigForTests();
     const loaded = runtime.deploymentConfig();
-    expect(loaded).toMatchObject({
-      legacy: true,
-      layer: {
-        config: {
-          providers: { openai: { baseUrl: process.env.OPENAI_BASE_URL } },
-          slots: { llm: 'openai:gemini-3.8-flash' },
-        },
-      },
-    });
-    expect(await runtime.lookupStage('chat-adapter', null)).toMatchObject({
-      status: 'assigned',
-      registryId: 'openai',
-      modelId: 'gemini-3.8-flash',
-      baseUrl: process.env.OPENAI_BASE_URL,
-    });
-    const { resolveModel } = await import('@/lib/server/resolve-model');
-    await expect(
-      resolveModel({ stage: 'chat-adapter', requireToolCalling: true }),
-    ).rejects.toMatchObject({ name: 'PiGeminiNativeRequiredError' });
-    await expect(resolveModel({ stage: 'quiz-grade' })).resolves.toMatchObject({
-      modelId: 'gemini-3.8-flash',
-    });
+    expect(loaded.layer).toBeNull();
+    expect(loaded.legacy).toBe(false);
+    expect(loaded.notices.join(' ')).toContain(
+      'DEFAULT_MODEL, OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODELS',
+    );
+    expect(loaded.notices.join(' ')).not.toContain('test-placeholder-key');
+    expect(await runtime.lookupStage('chat-adapter', null)).toMatchObject({ status: 'unassigned' });
   } finally {
     runtime?.setDeploymentConfigForTests();
     boundary.mockRestore();

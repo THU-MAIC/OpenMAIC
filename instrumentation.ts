@@ -52,6 +52,9 @@ export async function register(): Promise<void> {
     await import('@/lib/server/workbench-flag-deprecation');
   warnIfDeprecatedWorkbenchFlagIsUsed();
 
+  const { validateServerConfig } = await import('@/lib/server/config-validation');
+  validateServerConfig();
+
   // Every store's recorded schema versions, read in the background: a database
   // this release must not run against (upgraded by a newer release) stops the
   // process here rather than failing every request that touches the store
@@ -83,14 +86,6 @@ export async function register(): Promise<void> {
   const learningLifecycle = startLearningLifecycle();
   const { startTeachingExecutionWatchdog } = await import('@/lib/server/pbl-v3/execution-watchdog');
   const teachingWatchdog = startTeachingExecutionWatchdog();
-
-  // Warn-first boot-time validation of model routing config (MODEL_ROUTES,
-  // DEFAULT_MODEL, <PREFIX>_MODELS). Cheap and non-throwing: broken config
-  // surfaces here as [config] warnings instead of failing at request time.
-  // Imported dynamically so the Edge bundle never pulls in the fs/js-yaml
-  // backed provider config it reads.
-  const { validateServerConfig } = await import('@/lib/server/config-validation');
-  validateServerConfig();
 
   let runner: import('@/lib/server/agent-runtime/runner').AgentRunnerHandle | undefined;
   let extractionRunner:
@@ -304,7 +299,7 @@ export async function register(): Promise<void> {
 /**
  * The fatal boot validations: each throws on a configuration the server must
  * not start with, and the throw stops the process (see `register`). Warnings (the unset ACCESS_CODE warning, the model-routing
- * checks in `validateServerConfig`) are not here and never stop the process.
+ * checks) are not here and never stop the process.
  */
 async function validateBootConfiguration(): Promise<void> {
   // Each check runs through runConfigurationCheck, so only what the check
@@ -325,11 +320,10 @@ async function validateBootConfiguration(): Promise<void> {
   runConfigurationCheck(() => pblArchiveFailureGraceMs());
 
   // The deployment's model configuration: openmaic.yml (or the file named by
-  // OPENMAIC_CONFIG), else the legacy provider variables translated. A
+  // OPENMAIC_CONFIG), or workspace settings. A
   // malformed file, an unset `${VAR}` or a slot pointing at an undeclared
-  // provider is refused here with every problem listed, and so is a
-  // MODEL_ROUTES left without openmaic.yml, rather than discovered by the
-  // first generation. Loaded once; the notices are printed here.
+  // provider is refused here with every problem listed. Deprecated provider
+  // settings are reported once without preventing startup.
   const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
   runConfigurationCheck(deploymentConfig);
 

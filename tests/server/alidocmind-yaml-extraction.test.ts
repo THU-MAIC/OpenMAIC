@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DocumentExtractorInput, DocumentExtractorProvider } from '@/lib/document';
 
-// Only server-providers.yml is faked; every other file read is real.
+// Only openmaic.yml is faked; every other file read is real.
 const yaml = vi.hoisted(() => ({ content: null as string | null }));
-vi.mock('fs', async (importOriginal) => {
+vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
-  const isYaml = (p: unknown) => typeof p === 'string' && p.endsWith('server-providers.yml');
+  const isYaml = (p: unknown) => typeof p === 'string' && p.endsWith('/openmaic.yml');
   const existsSync = (p: string) => (isYaml(p) ? yaml.content !== null : actual.existsSync(p));
   const readFileSync = (p: string, ...args: unknown[]) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,12 +17,14 @@ vi.mock('fs', async (importOriginal) => {
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 describe('YAML-only AliDocMind for classroom materials', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     for (const key of ['ALIDOCMIND_ACCESS_KEY_ID', 'ALIDOCMIND_ACCESS_KEY_SECRET']) {
       vi.stubEnv(key, '');
     }
-    yaml.content = 'pdf:\n  alidocmind:\n    accessKeyId: yaml-ak\n    accessKeySecret: yaml-sk\n';
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests();
+    yaml.content =
+      'providers:\n  docs:\n    preset: alidocmind\n    credentials:\n      accessKeyId: yaml-ak\n      accessKeySecret: yaml-sk\nslots:\n  document: docs\n';
   });
 
   it('is advertised as extractable and extraction receives the managed key pair', async () => {

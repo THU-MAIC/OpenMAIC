@@ -137,8 +137,8 @@ The slots you write are the server's defaults; users can change them, or connect
 | --- | --- |
 | Slots, presets, fallbacks, `lock`, `allowUserKeys`, `OPENMAIC_SECRET_KEY` | [Configuration](packages/docs/content/docs/configuration.mdx) |
 | Every provider preset and model ID | [Supported models](packages/docs/content/docs/supported-models.mdx) |
-| Upgrading: provider variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_FALLBACK` still work without `openmaic.yml`; `MODEL_ROUTES` must become slots | [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration) |
-| Which models users may pick: a provider whose key the server holds and that selects an upstream model offers only the models in its `models` list (`*_MODELS`), plus the slot, default and fallback models | [Model authorization](packages/docs/content/docs/configuration.mdx#model-authorization-for-server-managed-providers) |
+| Upgrading: migrate provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings | [Migrating from the legacy configuration](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration) |
+| Which models users may pick: a provider whose key the server holds and that selects an upstream model offers only the models in its `models` list, plus the slot, default and fallback models | [Model authorization](packages/docs/content/docs/configuration.mdx#model-authorization-for-server-managed-providers) |
 
 **Providers:** OpenAI, Azure OpenAI, Anthropic, Amazon Bedrock, Google Gemini, DeepSeek, Qwen, Kimi, MiniMax, Grok (xAI), OpenRouter, TokenDance, Doubao, Tencent Hunyuan/TokenHub, Xiaomi MiMo, GLM (Zhipu), Ollama, [Lemonade](#lemonade-local-ai) and [FunASR](#funasr-local-asr) (local), and any OpenAI-compatible API.
 
@@ -426,8 +426,6 @@ slots:
   image: lemonade-image
 ```
 
-With the legacy variables, the same is `LEMONADE_BASE_URL`, `TTS_LEMONADE_BASE_URL`, `ASR_LEMONADE_BASE_URL` and `IMAGE_LEMONADE_BASE_URL`.
-
 <a id="funasr-local-asr"></a>
 
 ### Optional: FunASR (Local Speech Recognition)
@@ -453,8 +451,6 @@ providers:
 slots:
   asr: funasr
 ```
-
-(Legacy variable: `ASR_FUNASR_BASE_URL=http://localhost:8000/v1`.)
 
 Use `funasr-server --device cpu --model sensevoice` for a CPU-only setup. See the [FunASR deployment guide](https://github.com/modelscope/FunASR#deploy) for production options.
 
@@ -492,8 +488,6 @@ slots:
   document: mineru
 ```
 
-Without `openmaic.yml`, the legacy variables `PDF_MINERU_CLOUD_API_KEY` or `PDF_MINERU_BASE_URL` in `.env.local` still work.
-
 ### Optional: MiniCPM-OCR (Document Parsing)
 
 [MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) is a compact open-source OCR model from OpenBMB for text, tables, formulas and layout. Use the hosted API with an API key, or point `baseUrl` at the MiniCPM-OCR web demo from the official SDK (its routes live under `/api`).
@@ -507,8 +501,6 @@ providers:
 slots:
   document: minicpm-ocr
 ```
-
-Without `openmaic.yml`, set `PDF_MINICPM_OCR_API_KEY` (hosted) or `PDF_MINICPM_OCR_BASE_URL` (self-hosted) in `.env.local`.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 
@@ -539,8 +531,6 @@ slots:
 ```
 
 Voice registration works only on the `vllm-omni` backend; `python-api` and `nano-vllm` send the voice prompt with each request.
-
-Without `openmaic.yml`, the legacy `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` sets the endpoint but cannot choose a backend.
 
 **3. Manage voices.** With VoxCPM2 assigned to the `tts` slot, open **Settings → Model Services → Text-to-Speech → VoxCPM2** (the voice manager appears only when `tts` resolves to a `voxcpm-tts` provider). Three voice modes:
 

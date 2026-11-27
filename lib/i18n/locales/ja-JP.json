@@ -2103,7 +2103,7 @@
     "resetConfirmDescription": "すべてのカスタムモデルが削除され、組み込みのデフォルトモデルリストに復元されます。APIキーとベースURLは保持されます。",
     "resetToDefault": "デフォルトに戻す",
     "saveModel": "保存",
-    "searxngServerOnlyNotice": "SearXNG はサーバー側で設定する必要があります。SEARXNG_BASE_URL 環境変数（または server-providers.yml の web-search セクション）を設定してください。クライアントからのインスタンス URL は受け付けません。",
+    "searxngServerOnlyNotice": "openmaic.yml で preset: searxng と baseUrl を指定してプロバイダーを宣言し、その ID を slots.webSearch に設定します。",
     "serverConfigured": "サーバー",
     "serverConfiguredNotice": "このプロバイダーはサーバーで管理されており、ここでは編集できません。",
     "startRecording": "録音を開始",

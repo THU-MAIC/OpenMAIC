@@ -57,9 +57,9 @@ services:
       - ./openmaic.yml:/app/openmaic.yml:ro
 ```
 
-ホストに存在しないパスはマウントしないでください。Docker がその場所にディレクトリを作成し、サーバーが起動を拒否します。`docker run` では `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"` を追加します。ファイルを編集したらコンテナを再起動してください。`openmaic.yml` は `.dockerignore` に含まれているため、リポジトリからビルドしたイメージに焼き込まれることはありません。実行時にマウントしてください。`openmaic.yml` がない場合は、旧来の `server-providers.yml` が引き続き `/app/server-providers.yml` から読み込まれます。
+ホストに存在しないパスはマウントしないでください。Docker がその場所にディレクトリを作成し、サーバーが起動を拒否します。`docker run` では `-v "$PWD/openmaic.yml:/app/openmaic.yml:ro"` を追加します。ファイルを編集したらコンテナを再起動してください。`openmaic.yml` は `.dockerignore` に含まれているため、リポジトリからビルドしたイメージに焼き込まれることはありません。実行時にマウントしてください。
 
-Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は、`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188` のように `host.docker.internal` を使ってください。Linux の Docker では通常、`openmaic` サービスに `extra_hosts: ["host.docker.internal:host-gateway"]` も必要です。`openmaic.yml`（または旧来の変数）で宣言したプロバイダーはサーバー管理なので、そのエンドポイントは `ALLOW_LOCAL_NETWORKS` なしでホストやプライベートネットワーク上に置けます。この変数が関係するのはユーザーが入力するエンドポイント、つまり **設定 → モデルサービス** で追加したチャットの Base URL と、非推奨のリクエストフィールドだけです。
+Docker コンテナ内の `localhost` はコンテナ自身を指します。ホスト上で Ollama、Lemonade、VoxCPM、ComfyUI を動かしている場合は、`http://host.docker.internal:11434/v1` や `http://host.docker.internal:8188` のように `host.docker.internal` を使ってください。Linux の Docker では通常、`openmaic` サービスに `extra_hosts: ["host.docker.internal:host-gateway"]` も必要です。`openmaic.yml`で宣言したプロバイダーはサーバー管理なので、そのエンドポイントは `ALLOW_LOCAL_NETWORKS` なしでホストやプライベートネットワーク上に置けます。この変数が関係するのはユーザーが入力するエンドポイント、つまり **設定 → モデルサービス** で追加したチャットの Base URL と、非推奨のリクエストフィールドだけです。
 
 ## 自前の仮想マシンでのセルフホスト
 
@@ -131,7 +131,7 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 
 | デプロイ | 手順 |
 | --- | --- |
-| `docker compose` | 新しいリリースを取得し、`docker compose up --build` を実行します。モデル設定を `openmaic.yml` または **設定 → モデル** に移し（`openmaic.yml` がない間はプロバイダーの環境変数も引き続き使えます）、`MODEL_ROUTES` をスロットとして書き直してください。`openmaic.yml` なしで `MODEL_ROUTES` を設定したサーバーは起動を拒否します。ローカルに授業があるブラウザでは、インポートのためにアプリを一度開いてください。 `.env.local` で `PERSISTENCE_SHARED_OWNER_ID` を設定している場合は、`OWNER_SINGLE_USER=false` も設定してください（Compose はシングルユーザーモードで起動するようになりました）。以前のサーバー側デプロイで匿名オーナーが持っていた授業は、シングルユーザーに自動では統合されません。それらを作成した各ブラウザから `POST /api/identity/claim` で引き継いでください（ブラウザを開いてインポートされるのは、そのブラウザがローカルに保存していたデータだけです）。 |
+| `docker compose` | 新しいリリースを取得し、`docker compose up --build` を実行します。`openmaic.yml` またはモデル設定でプロバイダーとスロットを設定してください。 ローカルに授業があるブラウザでは、インポートのためにアプリを一度開いてください。 `.env.local` で `PERSISTENCE_SHARED_OWNER_ID` を設定している場合は、`OWNER_SINGLE_USER=false` も設定してください（Compose はシングルユーザーモードで起動するようになりました）。以前のサーバー側デプロイで匿名オーナーが持っていた授業は、シングルユーザーに自動では統合されません。それらを作成した各ブラウザから `POST /api/identity/claim` で引き継いでください（ブラウザを開いてインポートされるのは、そのブラウザがローカルに保存していたデータだけです）。 |
 | `pnpm start` と自前の PostgreSQL | サーバーを停止し、新しいリリースを取得して `pnpm install` と `pnpm build` を実行し、同じ作業ディレクトリで `pnpm start` で再起動します。こうすると `data/` が引き継がれます。`DATABASE_URL` と ID モードを設定し、複数インスタンスでデータベースを共有する場合は `OPENMAIC_SECRET_KEY` も設定します。複数インスタンスには共有のデータディレクトリも 1 つ必要です（[必須の設定](#必須の設定)を参照）。モデル設定、`MODEL_ROUTES`、ブラウザの授業は上の行と同じです。 |
 | Vercel | 1.1.x にとどまるか、同じデータベースを使う常駐ホストに移行します（下記）。 |
 | Skill / API | 更新された `openmaic` skill に従い、同じオーナーとして資料をアップロード、送信、ポーリングします。 |
@@ -140,7 +140,7 @@ PostgreSQL のデータは `openmaic-postgres` ボリュームに保存されま
 
 - **データディレクトリを残してください。** 1.2.0 は作業ディレクトリに同じ `data/` がある状態で（または同じ `OPENMAIC_CLASSROOMS_DIR` で）起動します。Compose では同じ `openmaic-data` ボリュームを使います。1.1.x が `data/classrooms` にファイルとして保存した授業は、起動後にバックグラウンドで一度だけデータベースへインポートされます。このディレクトリなしで起動したサーバーにはインポートするものがありません。
 - **ID モードを先に設定してください。** インポートされた授業は、その起動時に設定されているオーナーのものになります。シングルユーザー（`OWNER_SINGLE_USER=true`）またはチーム共有オーナー（`PERSISTENCE_SHARED_OWNER_ID`）が設定されていればそのオーナー、そうでなければ（匿名モード）専用オーナー `system:legacy-classrooms` です。後者の場合、授業は以前のリンクから読み取り専用で開け、どのライブラリにも表示されません。各授業のインポートは一度だけなので、匿名モードでインポートされた授業は、後から ID モードを設定しても `system:legacy-classrooms` のままです。
-- **モデルを列挙してください。** サーバー管理の認証情報を使い、選択されたモデルを上流へ送るプロバイダー（チャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索）には、明示的なモデルリスト（`*_MODELS`、または `openmaic.yml`・`server-providers.yml` のプロバイダー配下の `models`）が必要です。リストがない場合、認可されるのは既定・フォールバック・スロットで参照されるモデルだけで、リストのないこうしたプロバイダーは起動ログに表示されます。Tavily やドキュメントパーサーなど、モデル選択のないサービスにリストは不要です。[モデル認可](./configuration.mdx#サーバー管理プロバイダーのモデル認可)を参照してください。
+- **モデルを列挙してください。** サーバー管理の認証情報を使い、選択されたモデルを上流へ送るプロバイダー（チャット、画像、動画、音声合成、音声認識、モデルベースの Web 検索）には、明示的なモデルリスト(`openmaic.yml`: `providers.<id>.models`)が必要です。リストがない場合、認可されるのは既定・フォールバック・スロットで参照されるモデルだけで、リストのないこうしたプロバイダーは起動ログに表示されます。Tavily やドキュメントパーサーなど、モデル選択のないサービスにリストは不要です。[モデル認可](./configuration.mdx#サーバー管理プロバイダーのモデル認可)を参照してください。
 - **render-service はアプリと一緒に更新してください。** MP4 動画エクスポートを使っている場合は、すべての render-service インスタンスをアプリと同時か、それより先に更新してください。レンダリングジョブはオーナーに紐づき、新旧バージョンが混在すると安全側に失敗します（リクエストを拒否します）。
 - **教室のモデルを確認してください。** Pi 教室チャットは、組み込みカタログでツール呼び出し非対応とされているモデル（`tool_calling_required`）と、Google の OpenAI 互換 Gemini エンドポイント（`gemini_native_required`）を拒否します。Gemini はネイティブの `google` プリセットで設定してください。[LLM プロバイダー](./configuration.mdx#llm-プロバイダー)を参照してください。
 

@@ -50,12 +50,6 @@ slots:
 
 The provider's `options.backend` applies to every request on the `tts` slot. Voice registration is available only on the `vllm-omni` backend; with `python-api` and `nano-vllm`, the voice prompt is sent with each request.
 
-Without `openmaic.yml`, the legacy variable configures the endpoint but cannot choose a backend, so use `openmaic.yml` for `python-api` or `nano-vllm`:
-
-```bash
-TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
-```
-
 Because the provider is server-managed, its endpoint may be on a private network without `ALLOW_LOCAL_NETWORKS`, and users cannot override it.
 
 ## 3. Voice management

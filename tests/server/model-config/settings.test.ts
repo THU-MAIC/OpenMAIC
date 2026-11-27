@@ -43,6 +43,68 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+it('recovers stale workspace slots while adding a replacement provider', async () => {
+  const current: ModelConfigLayer['config'] = {
+    providers: { retired: { preset: 'veo' } },
+    slots: {
+      'course.research': 'former:old-model',
+      'course.outline': { model: 'operator:deepseek-v4-pro', fallback: 'former:old-model' },
+      classroom: 'operator:deepseek-v4-pro',
+      video: 'retired:veo-3.1-generate-preview',
+    },
+  };
+  const next = await applyModelSettingsChange(current, {
+    kind: 'provider',
+    id: 'replacement',
+    preset: 'openai',
+    apiKey: 'example-key',
+  });
+  expect(next.providers?.replacement?.preset).toBe('openai');
+  expect(next.slots).toEqual({
+    'course.outline': { model: 'operator:deepseek-v4-pro' },
+    classroom: 'operator:deepseek-v4-pro',
+  });
+  await expect(
+    applyModelSettingsChange(next, {
+      kind: 'slots',
+      set: { 'course.research': 'former:old-model' },
+    }),
+  ).rejects.toMatchObject({ code: 'INVALID_ASSIGNMENT' });
+});
+
+it.each([undefined, { preset: 'veo' }])(
+  'preserves saved slots when restoring the original provider id (%j)',
+  async (previous) => {
+    const slots = {
+      classroom: 'restored:gpt-5.5',
+      'course.outline': { model: 'operator:deepseek-v4-pro', fallback: 'restored:gpt-5.5' },
+    };
+    const next = await applyModelSettingsChange(
+      { providers: previous ? { restored: previous } : {}, slots },
+      { kind: 'provider', id: 'restored', preset: 'openai', apiKey: 'example-key' },
+    );
+    expect(next.slots).toEqual(slots);
+    expect(next.providers?.restored.preset).toBe('openai');
+  },
+);
+
+it('repairs missing builtin references only outside the webFetch slot', async () => {
+  const next = await applyModelSettingsChange(
+    {
+      slots: {
+        classroom: 'builtin:old-model',
+        'course.outline': { model: 'operator:deepseek-v4-pro', fallback: 'builtin:old-model' },
+        webFetch: 'builtin',
+      },
+    },
+    { kind: 'provider', id: 'replacement', preset: 'openai', apiKey: 'example-key' },
+  );
+  expect(next.slots).toEqual({
+    'course.outline': { model: 'operator:deepseek-v4-pro' },
+    webFetch: 'builtin',
+  });
+});
+
 describe('modelSettingsView', () => {
   it('offers only deployment slot models when the provider has no model list', async () => {
     const config: ModelConfigLayer['config'] = {

@@ -249,14 +249,13 @@ describe('legacy TTS_GOOGLE_* configuration', () => {
     ]);
   });
 
-  it('reads TTS_GOOGLE_API_KEY and TTS_GOOGLE_BASE_URL into the tts section', async () => {
-    vi.resetModules();
+  it('warns about old Google TTS settings without assigning a slot', async () => {
     vi.stubEnv('TTS_GOOGLE_API_KEY', 'env-gemini-key');
     vi.stubEnv('TTS_GOOGLE_BASE_URL', 'https://gemini-proxy.example/v1beta');
-    const { getServerProviderConfig } = await import('@/lib/server/provider-config');
-    expect(getServerProviderConfig().tts['google-tts']).toMatchObject({
-      apiKey: 'env-gemini-key',
-      baseUrl: 'https://gemini-proxy.example/v1beta',
-    });
+    const { loadDeploymentLayer } = await import('@/lib/server/model-config/deployment-layer');
+    const { layer, notices } = loadDeploymentLayer();
+    expect(layer?.config.slots?.tts).toBeUndefined();
+    expect(notices.join(' ')).toContain('TTS_GOOGLE_API_KEY, TTS_GOOGLE_BASE_URL');
+    expect(notices.join(' ')).not.toContain('env-gemini-key');
   });
 });

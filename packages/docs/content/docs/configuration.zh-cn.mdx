@@ -13,7 +13,7 @@ OpenMAIC 有三个配置来源，各自只负责一件事：
 
 `DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
-早期版本只能通过服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_ROUTES` 配置模型。除 `MODEL_ROUTES` 外，这些方式目前仍然可用，但已弃用，见[从旧配置迁移](#从旧配置迁移)。
+从 1.6.0 起，请通过模型设置或 `openmaic.yml` 配置服务商和槽位。 [从旧配置迁移](#从旧配置迁移)
 
 ## 模型与服务商
 
@@ -27,7 +27,7 @@ OpenMAIC 有三个配置来源，各自只负责一件事：
 
 ### openmaic.yml
 
-服务端从启动目录（仓库根目录；Docker 镜像中为 `/app`）读取 `openmaic.yml`。设置 `OPENMAIC_CONFIG` 可以改用其他路径；相对路径同样相对于启动目录解析，且此时文件必须存在。没有该文件时，服务端使用 Web 端的设置，以及仍在设置中的[旧版变量](#从旧配置迁移)。
+服务端从启动目录（仓库根目录；Docker 镜像中为 `/app`）读取 `openmaic.yml`。设置 `OPENMAIC_CONFIG` 可以改用其他路径；相对路径同样相对于启动目录解析，且此时文件必须存在。没有该文件时，服务端使用 Web 端的模型设置。
 
 该文件只在启动时读取一次，修改后需要重启服务。服务启动前会完整校验文件：未设置的 `${VAR}`、未知的预设或槽位、引用了未声明的服务商，或服务商不提供槽位所需的能力，都会让服务拒绝启动，并逐条列出问题所在的位置：
 
@@ -106,7 +106,7 @@ allowUserKeys: false               # 用户只能在这些服务商中选择，�
 
 大多数预设只覆盖一种能力，与内置 registry 一一对应：`openai` 预设只有对话，OpenAI 的图像、语音合成和语音识别分别是 `openai-image`、`openai-tts` 和 `openai-whisper` 预设。每种能力声明一个服务商；同一个 key 覆盖多种能力时，引用同一个 `${VAR}` 即可。**Token Plan 预设**（`minimax`、`tokendance`、`volcengine-ark`、`kimi-coding-plan`）用一个 key 覆盖多种能力，每种能力使用该套餐自己的端点。服务商上的 `baseUrl` 会替换它覆盖的所有能力的端点，因此只有当 Token Plan 的全部能力都一起迁移时，才给它设置 `baseUrl`。
 
-Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境变量、profile 或 role）签名请求，区域取自 `BEDROCK_REGION`、`AWS_REGION` 或 `AWS_DEFAULT_REGION`；`apiKey` 是可选的 bearer token。
+Amazon Bedrock（`preset: bedrock`）使用服务端的 AWS 凭证链（环境变量、profile 或 role）签名请求，区域取自 `BEDROCK_REGION`、`AWS_REGION` 或 `AWS_DEFAULT_REGION`；已声明的 Bedrock 服务商可使用 `AWS_BEARER_TOKEN_BEDROCK`，或显式设置其 `apiKey`。如需继续接受请求体中写明 `bedrock:<model>` 的现有请求，请把部署服务商声明为 `providers.bedrock`，并授权该模型。
 
 ### 槽位
 
@@ -227,7 +227,7 @@ Web 端的模型设置读写当前工作区的同一棵树：
 allowUserKeys: false
 ```
 
-`allowUserKeys`（默认 `true`）决定用户能否添加自己的服务商、Key 和 Token Plan。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为未锁定的槽位选择模型：不显示 Token Plan 和添加服务入口，工作区之前添加的服务商也不再使用。请求自带的模型、密钥或端点（已弃用的 `x-model`、`x-api-key`、`x-base-url` 请求头以及媒体接口的服务商字段）也会被忽略，服务商测试按钮的请求头形式会被拒绝。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
+`allowUserKeys`（默认 `true`）决定用户能否添加自己的服务商、Key 和 Token Plan。设为 `false` 时，用户只能在 `openmaic.yml` 声明的服务商中，为未锁定的槽位选择模型：不显示 Token Plan 和添加服务入口，工作区之前添加的服务商也不再使用。媒体请求体中的服务商字段会被忽略。由部署方承担全部费用的多用户部署通常会设置它，并锁定需要固定的槽位。
 
 ### 密钥与 OPENMAIC_SECRET_KEY
 
@@ -262,23 +262,23 @@ OPENMAIC_CONFIG=/etc/openmaic/openmaic.yml   # 可选：openmaic.yml 的其他�
 
 生成请求不再需要携带 key 或模型选择：`/api/generate-classroom` 等无浏览器 API 调用会按调用方所在的工作区，通过与 Web 端相同的槽位解析模型。
 
-旧的请求头 `x-model`、`x-api-key`、`x-base-url`、`x-provider-type`、`x-model-routes`、`x-image-provider`、`x-image-model`、`x-video-provider`、`x-video-model`，以及语音、搜索和文档接口中对应的请求体字段，均已弃用。只有当它们会影响的槽位没有分配，或者在仍通过旧变量配置的服务端上只有由旧变量转换得到的默认值时（`DEFAULT_MODEL` 一直排在请求指定的模型之后），才会生效；`openmaic.yml` 中的默认值、工作区自己的选择和锁定的槽位优先，设为 `null` 的槽位无论请求写了什么都会拒绝。设置 `allowUserKeys: false` 时，它们一律被忽略。请求第一次使用这些字段时，服务端会记录一条警告。它们将在上述模型设置发布两个次版本后移除。
+带有弃用请求头（如 `x-model` 或 `x-api-key`）的请求返回 HTTP 400，并附有迁移说明。请移除这些请求头。`/api/health` 会忽略这些旧请求头，健康检查可继续运行。
 
 ### 从旧配置迁移
 
-没有 `openmaic.yml` 时，服务端会在启动时转换旧配置，记录一条弃用提示，并为每个无法转换的条目各记录一条提示：
+启动时会记录检测到的旧设置名称和迁移链接。服务继续启动，尚未配置模型的工作区可使用首次设置向导。
 
-| 旧配置 | 转换结果 |
+| 旧配置 | `openmaic.yml` |
 | --- | --- |
 | 服务商变量（`OPENAI_API_KEY`、`TTS_MINIMAX_API_KEY` 等）和 `server-providers.yml` | 部署服务商（在模型设置中只读）。服务商 ID 就是预设 ID，与旧的 provider ID 相同，只有联网搜索的 MiniMax（`minimax-search`）、联网搜索的豆包（`doubao-search`）和 Lemonade 图像（`lemonade-image`）例外 |
 | `<PREFIX>_MODELS` | 服务商的 `models` |
-| `DEFAULT_MODEL` | `llm` 的分配，作为工作区可以覆盖的默认值（不锁定）。`agent` 槽位和以前一样保持关闭 |
-| `MODEL_FALLBACK` | `DEFAULT_MODEL` 的回退模型。没有 `DEFAULT_MODEL` 时会被丢弃并给出提示 |
-| 第一个配置的 TTS、ASR、图像、视频和文档服务商，以及按旧优先级选出的联网搜索服务商 | 该能力的默认分配（图像服务商由 `DEFAULT_IMAGE_PROVIDER` 指定） |
-| `MODEL_ROUTES` | **不转换。** 服务拒绝启动（见下文） |
+| `DEFAULT_MODEL` | 在 `slots.llm` 设置工作区可覆盖的默认模型。若要保持智能体关闭，请设为 `slots.agent: null`。 |
+| `MODEL_FALLBACK` | 在 `slots.llm.model` 指定主模型，并在 `slots.llm.fallback` 指定回退模型。 |
+| 第一个配置的 TTS、ASR、图像、视频和文档服务商，以及按旧优先级选出的联网搜索服务商 | 在 `slots` 中显式分配各服务商。原由 `DEFAULT_IMAGE_PROVIDER` 选择的服务商填入 `slots.image`。 |
+| `MODEL_ROUTES` | 把各阶段模型分配到对应槽位。 |
 | `<CAP>_<VENDOR>_ENABLED=false` | 仍然生效：无论谁分配，该服务商都保持关闭 |
 
-存在 `openmaic.yml` 时，服务商变量、`server-providers.yml`、`DEFAULT_MODEL`、`MODEL_FALLBACK` 和 `MODEL_ROUTES` 都不再参与模型解析，并会给出提示。`<CAP>_<VENDOR>_ENABLED=false` 仍然生效；要关闭某项能力，请改为把它的槽位设为 `null`。
+从 1.6.0 起，请通过模型设置或 `openmaic.yml` 配置服务商和槽位。
 
 **环境变量。** 迁移前：
 
@@ -287,7 +287,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -301,9 +307,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -312,11 +331,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-之后删除 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。`<PREFIX>_BASE_URL` 对应服务商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接写 URL，或在变量仍然设置时写 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 对应它的 `models` 列表。与转换得到的 `DEFAULT_MODEL` 一样，这里写出的 `llm` 是工作区可以修改的服务端默认值；如需对所有人固定，请加上 `lock: [llm]`。与转换结果不同，`agent` 现在会沿用 `llm`：如需保持工作台智能体关闭，请写 `agent: null`。
+这个示例沿用旧版 OpenAI 图像回退行为，让对话和图像生成共用 `OPENAI_API_KEY`。如果图像有独立密钥或端点，请在 `openai-image` 中通过 `IMAGE_OPENAI_API_KEY` 或 `IMAGE_OPENAI_BASE_URL` 设置。对每个选择模型的媒体槽位，请在槽位引用中填写旧部署实际使用的模型。
+
+将模型列表写入 YAML 后，删除旧的 `*_MODELS` 环境变量，以及 `DEFAULT_MODEL` 和 `MODEL_FALLBACK`。服务商变量可以保留，作为 `${VAR}` 引用的来源。`<PREFIX>_BASE_URL` 对应服务商的 `baseUrl`（`OPENAI_BASE_URL` → `openai` 下的 `baseUrl`；直接写 URL，或在变量仍然设置时写 `${OPENAI_BASE_URL}`），`<PREFIX>_MODELS` 对应它的 `models` 列表。与转换得到的 `DEFAULT_MODEL` 一样，这里写出的 `llm` 是工作区可以修改的服务端默认值；如需对所有人固定，请加上 `lock: [llm]`。与转换结果不同，`agent` 现在会沿用 `llm`：如需保持工作台智能体关闭，请写 `agent: null`。
 
 **server-providers.yml。** 迁移前：
 
@@ -360,12 +385,6 @@ slots:
 ```
 
 `server-providers.yml` 的每个分组都对应使用相应预设的服务商（`providers` → 对话预设，`tts`、`asr`、`pdf` → 文档，`image`、`video`、`web-search`），`accessKeyId`/`accessKeySecret` 移到 `credentials` 下。
-
-**MODEL_ROUTES。** 设置了 `MODEL_ROUTES` 但没有 `openmaic.yml` 的服务不会启动：
-
-```text
-MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
-```
 
 按阶段的路由与槽位并非一一对应，因此不会自动转换。请把每条路由改写成该阶段所属的槽位：
 
@@ -491,7 +510,7 @@ LLM_THINKING_DISABLED=false
 
 ## 旧版服务商环境变量
 
-这些变量和 `server-providers.yml` 是早期版本的配置方式。在没有 `openmaic.yml` 时它们仍然有效（见[从旧配置迁移](#从旧配置迁移)），但已弃用，将在模型设置发布两个次版本后移除。使用 `openmaic.yml` 时，它们只作为 `${VAR}` 引用的来源。`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 见迁移一节；`MODEL_ROUTES` 已不再读取。
+升级前的配置示例，仅供迁移参考。 从 1.6.0 起，请通过模型设置或 `openmaic.yml` 配置服务商和槽位。
 
 ### LLM 提供方
 
@@ -763,9 +782,8 @@ Brave 和 SearXNG 不需要 API key。联网搜索没有逐次生成的开关：
 
 ### server-providers.yml
 
-已被 `openmaic.yml` 取代。两者同时存在时，只有 `openmaic.yml` 用于配置模型。
+从 1.6.0 起，服务端只从此文件读取受支持能力分组中的强制关闭条目（`enabled: false`）。服务商及槽位分配请迁至 `openmaic.yml`。以下旧格式示例供迁移时参考。
 
-除了环境变量，你也可以把代码中已注册 provider 的配置放在项目根目录下的 `server-providers.yml` 文件里。服务端启动时加载，结构与环境变量分类对应：
 
 ```yaml title="server-providers.yml"
 providers:
@@ -811,13 +829,12 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名必须使用代码中已注册的 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`alidocmind`、`seedream`、`seedance`、`exa`、`tavily` 或 `searxng`；未知 ID 不能在这里注册为自定义 LLM provider。
 
 ## 服务端托管服务商的模型授权
 
-对于使用部署凭据把所选模型发往上游的服务商，请在 `openmaic.yml` 中设置显式的 `models` 列表（`providers.<id>.models`），或设置对应的 `*_MODELS` 环境变量 / `server-providers.yml` 中该部分的 `models` 列表。这适用于对话、图像、视频、语音合成、语音识别和基于模型的联网搜索。模型 ID 在加载配置时去掉首尾空白后精确匹配，区分大小写。确定性的适配器别名按声明的模型 ID 授权。请求未列出的模型会返回 HTTP 403，错误码 `PROVIDER_DISABLED`，消息为“This model is not authorized for server-managed credentials”。
+对于使用部署凭据把所选模型发往上游的服务商，请在 `openmaic.yml` 中设置显式的 `models` 列表（`providers.<id>.models`）。这适用于对话、图像、视频、语音合成、语音识别和基于模型的联网搜索。模型 ID 在加载配置时去掉首尾空白后精确匹配，区分大小写。确定性的适配器别名按声明的模型 ID 授权。请求未列出的模型会返回 HTTP 403，错误码 `PROVIDER_DISABLED`，消息为“This model is not authorized for server-managed credentials”。
 
-**破坏性变更：** 没有显式列表时，只能使用部署的默认/回退模型，以及该能力的槽位所引用的主模型/回退模型。在旧版配置下，`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 授权对话模型。只写服务商的媒体槽位只授权该适配器的默认模型，不授权该预设的整个模型目录。工作区的分配无法扩大部署的授权范围。音色注册和合成也必须授权为音色兼容性而选择的模型。
+**破坏性变更：** 没有显式列表时，只能使用部署的默认/回退模型，以及该能力的槽位所引用的主模型/回退模型。只写服务商的媒体槽位只授权该适配器的默认模型，不授权该预设的整个模型目录。工作区的分配无法扩大部署的授权范围。音色注册和合成也必须授权为音色兼容性而选择的模型。
 
 迁移时，列出用户应能选择的每个模型，重启服务，并更新不再获授权的工作区选择。对于有凭据但没有列表的服务商，启动日志会指出需要添加的设置。用户自己的服务商凭据，以及 Ollama、Lemonade 这类无需 key 的本地服务商不受影响。未配置凭据的服务商不受限制，因此不要把它指向会自行添加上游凭据的网关（例如内部的 OpenAI 兼容代理）：请给该网关一个 key，把它配置为带 `models` 列表的有凭据服务商，或在网关本身限制模型。没有模型选择的文档解析器和搜索服务（如 Tavily）不需要模型列表。
 
@@ -831,13 +848,11 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-旧版等价写法：`OPENAI_API_KEY=...` 和 `OPENAI_MODELS=gpt-5.4-mini`。媒体能力使用能力前缀，例如 `IMAGE_SEEDREAM_MODELS`、`VIDEO_SEEDANCE_MODELS`、`TTS_OPENAI_MODELS`、`ASR_OPENAI_MODELS` 和 `WEB_SEARCH_CLAUDE_MODELS`。
-
 ### DeepSeek 联网搜索与网页抓取
 
 `deepseek` 预设在对话、联网搜索和托管 Markdown 提取之间共享 `DEEPSEEK_API_KEY` 和 API 基础地址。搜索使用 `POST /v1/tools/search`，最多返回 50 条结果，查询按 Unicode code point 截断到 128 个字符，优先使用 `summary`，为空时回退到 `snippet`。抓取使用 `POST /v1/tools/fetch`，读取 `content` 和非空的可选 `title`。
 
-旧版配置需要设置 `WEB_SEARCH_DEEPSEEK_ENABLED=true`，或在 `server-providers.yml` 中显式添加 `web-search.deepseek`。仅配置对话凭据不会启用搜索或替换已有搜索默认项。`WEB_SEARCH_DEEPSEEK_ENABLED=false` 会强制禁用搜索。存在 `openmaic.yml` 时，旧版变量不能指定槽位，必须显式声明服务商并指定 `webSearch` 和/或 `webFetch`。
+在 `openmaic.yml` 中声明服务商，并把它分配给 `webSearch` / `webFetch`。 `WEB_SEARCH_DEEPSEEK_ENABLED=false` 仍可强制禁用搜索。
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -868,12 +883,12 @@ slots:
   webSearch: kimi
 ```
 
-使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。开放平台和 Coding Plan 密钥必须使用各自对应的基础 URL。 在旧版配置中，只有显式启用后，`KIMI_API_KEY` 和可选的 `KIMI_BASE_URL` 才会为搜索提供凭据：设置 `WEB_SEARCH_KIMI_ENABLED=true`，或在 `server-providers.yml` 中添加 `web-search.kimi`（例如设置 `enabled: true`）。仅有对话凭据不会启用搜索，也不会改变默认搜索服务商。即使槽位已分配给 Kimi，`WEB_SEARCH_KIMI_ENABLED=false` 仍会禁用 Kimi 搜索。`WEB_SEARCH_KIMI_ENABLED` 是 Kimi 搜索的唯一开关。 `KIMI_MODELS` 仅适用于对话。旧版对话和搜索账号冲突时会产生警告，并跳过搜索条目；如需使用不同账号，请在 `openmaic.yml` 中声明不同的服务商 ID。 存在 `openmaic.yml` 时，请显式声明服务商并分配槽位。设置和首次使用向导允许通过同一账号使用两项能力。
+使用 Coding Plan 密钥时，请设置 `preset: kimi-coding-plan` 和 `llm: kimi:kimi-for-coding`；其默认地址为 `https://api.kimi.com/coding/v1`。 在 `openmaic.yml` 中声明服务商，并把它分配给 `llm` / `webSearch`。 `WEB_SEARCH_KIMI_ENABLED=false` 仍可强制禁用搜索。
 
 
 端点选择取决于基础路径：去掉末尾斜杠后，以 `/coding/v1` 结尾的路径使用 `/search`，其他路径使用 `/tools/search_pro`。部署配置的自定义代理必须保留这一布局。向导只为官方账号地址推荐搜索，因此工作区自定义对话代理不会自动获得搜索分配。
 
-存在 `openmaic.yml` 时，请声明 `providers.<id>: { preset: kimi }` 并分配 `slots.webSearch: <id>`；旧版变量 `WEB_SEARCH_KIMI_ENABLED` 无法分配该槽位。
+为部署配置 Kimi 搜索时，请在 `openmaic.yml` 中声明 `providers.<id>: { preset: kimi }`，并设置 `slots.webSearch: <id>`。
 
 ## 网页抓取服务槽位
 

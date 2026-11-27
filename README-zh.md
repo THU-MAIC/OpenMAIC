@@ -137,8 +137,8 @@ slots:
 | --- | --- |
 | 槽位、预设、回退模型、`lock`、`allowUserKeys`、`OPENMAIC_SECRET_KEY` | [配置说明](packages/docs/content/docs/configuration.zh-cn.mdx) |
 | 所有服务商预设与模型 ID | [支持的模型](packages/docs/content/docs/supported-models.zh-cn.mdx) |
-| 升级：没有 `openmaic.yml` 时，服务商环境变量、`server-providers.yml`、`DEFAULT_MODEL` 和 `MODEL_FALLBACK` 仍然有效；`MODEL_ROUTES` 需改写为槽位 | [从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移) |
-| 用户可选哪些模型：由服务端持有 key、并选择上游模型的服务商只提供其 `models` 列表（`*_MODELS`）中的模型，以及槽位、默认和回退模型 | [模型授权](packages/docs/content/docs/configuration.zh-cn.mdx#服务端托管服务商的模型授权) |
+| 升级：将旧服务商配置和模型路由迁移到 `openmaic.yml` 或模型设置 | [从旧配置迁移](packages/docs/content/docs/configuration.zh-cn.mdx#从旧配置迁移) |
+| 用户可选哪些模型：由服务端持有 key、并选择上游模型的服务商只提供其 `models` 列表中的模型，以及槽位、默认和回退模型 | [模型授权](packages/docs/content/docs/configuration.zh-cn.mdx#服务端托管服务商的模型授权) |
 
 **支持的服务商：** OpenAI、Azure OpenAI、Anthropic、Amazon Bedrock、Google Gemini、DeepSeek、通义千问 Qwen、Kimi、MiniMax、Grok (xAI)、OpenRouter、TokenDance、豆包、腾讯混元 / TokenHub、小米 MiMo、智谱 GLM、Ollama、[Lemonade](#lemonade-local-ai) 与 [FunASR](#funasr-local-asr)（本地），以及任何兼容 OpenAI API 的服务。
 
@@ -384,8 +384,6 @@ slots:
   image: lemonade-image
 ```
 
-旧版环境变量的等价写法是 `LEMONADE_BASE_URL`、`TTS_LEMONADE_BASE_URL`、`ASR_LEMONADE_BASE_URL` 和 `IMAGE_LEMONADE_BASE_URL`。
-
 <a id="funasr-local-asr"></a>
 
 ### 可选：FunASR（本地语音识别）
@@ -411,8 +409,6 @@ providers:
 slots:
   asr: funasr
 ```
-
-（旧版环境变量写法：`ASR_FUNASR_BASE_URL=http://localhost:8000/v1`。）
 
 纯 CPU 环境可运行 `funasr-server --device cpu --model sensevoice`。生产部署方式参见 [FunASR 部署指南](https://github.com/modelscope/FunASR#deploy)。
 
@@ -444,8 +440,6 @@ slots:
   document: mineru
 ```
 
-没有 `openmaic.yml` 时，在 `.env.local` 中设置旧版变量 `PDF_MINERU_CLOUD_API_KEY` 或 `PDF_MINERU_BASE_URL` 仍然有效。
-
 ### 可选：MiniCPM-OCR（文档解析）
 
 [MiniCPM-OCR](https://github.com/OpenBMB/MiniCPM-OCR) 是 OpenBMB 推出的轻量开源 OCR 模型，支持文字、表格、公式和版面解析。可以使用托管 API（需要 API Key），也可以把 `baseUrl` 指向官方 SDK 提供的 MiniCPM-OCR Web Demo（路由位于 `/api` 下）。
@@ -459,8 +453,6 @@ providers:
 slots:
   document: minicpm-ocr
 ```
-
-没有 `openmaic.yml` 时，在 `.env.local` 中设置 `PDF_MINICPM_OCR_API_KEY`（托管）或 `PDF_MINICPM_OCR_BASE_URL`（自托管）即可。
 
 ### 可选：VoxCPM2（自托管 TTS，支持音色克隆）
 
@@ -491,8 +483,6 @@ slots:
 ```
 
 音色注册只在 `vllm-omni` 后端可用；`python-api` 和 `nano-vllm` 会随每次请求发送音色提示。
-
-没有 `openmaic.yml` 时，旧版的 `TTS_VOXCPM_BASE_URL=http://localhost:8000/v1` 可以设置端点，但无法选择后端。
 
 **3. 管理音色。** 把 VoxCPM2 分配给 `tts` 槽位后，打开 **设置 → 模型服务 → 语音合成 → VoxCPM2**（只有 `tts` 解析到 `voxcpm-tts` 服务商时才会出现音色管理）。三种音色模式：
 

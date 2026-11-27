@@ -16,8 +16,7 @@
 #   Set models for each provider with credentials; restart after changes.
 #   A provider with neither has no authorized models. SDK catalogues and
 #   workspace assignments never grant access to additional server-paid models.
-#   These rules also apply to connection tests. With legacy configuration,
-#   use <PREFIX>_MODELS and/or DEFAULT_MODEL / MODEL_FALLBACK.
+#   These rules also apply to connection tests.
 # - slots: which provider and model each use of AI gets by default. Users
 #   may change them in the model settings; slots left out are theirs to set.
 # - lock: the slots fixed for everyone, each with its whole subtree.

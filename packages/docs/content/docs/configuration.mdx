@@ -13,7 +13,7 @@ OpenMAIC has three configuration sources, and each has one job:
 
 `DATABASE_URL` is required; other environment variables are optional (see [Deployment](./deployment.mdx)). Providers that use server credentials for model selection also need authorized model lists, as described below. See [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) for environment variables, [`openmaic.example.yml`](https://github.com/THU-MAIC/OpenMAIC/blob/main/openmaic.example.yml) for a sample model configuration, and [Supported models](./supported-models.mdx) for preset and model IDs.
 
-Earlier releases configured models only through provider environment variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_ROUTES`. Those still work for now, with the exception of `MODEL_ROUTES`, and are deprecated; see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration).
+Earlier releases configured models only through provider environment variables, `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_ROUTES`. Since 1.6.0, use Model Settings or `openmaic.yml`; see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration).
 
 ## Models and providers
 
@@ -27,7 +27,7 @@ A capability is available exactly when its slot resolves to an assignment. There
 
 ### openmaic.yml
 
-The server reads `openmaic.yml` from the directory it starts in (the repository root; `/app` in the Docker image). Set `OPENMAIC_CONFIG` to use another path; a relative path is resolved against the same directory, and the file must then exist. Without the file, the server uses the web settings and, while they are still set, the [legacy variables](#migrating-from-the-legacy-configuration).
+The server reads `openmaic.yml` from the directory it starts in (the repository root; `/app` in the Docker image). Set `OPENMAIC_CONFIG` to use another path; a relative path is resolved against the same directory, and the file must then exist. Without the file, the server uses the web settings.
 
 The file is read once at startup: restart the server after changing it. It is validated completely before the server starts. An unset `${VAR}`, an unknown preset or slot, a reference to a provider that is not declared, or a provider that does not offer a slot's capability stops the server, and each problem is listed with its location:
 
@@ -106,7 +106,7 @@ Each entry under `providers` declares one provider. The key is its id, which slo
 
 Most presets cover one capability, following the built-in registries: the `openai` preset is chat only, and OpenAI images and speech are the `openai-image`, `openai-tts` and `openai-whisper` presets. Declare one provider per capability, and reference the same `${VAR}` when one key covers several. **Token plan presets** (`minimax`, `tokendance`, `volcengine-ark`, `kimi-coding-plan`) cover several capabilities with one key, each at the plan's own endpoint. A `baseUrl` on a provider replaces the endpoint for every capability that provider covers, so give a token plan a `baseUrl` only when all of its capabilities move with it.
 
-Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; `apiKey` is an optional bearer token.
+Amazon Bedrock (`preset: bedrock`) signs requests with the AWS credential chain of the server (environment, profile or role) and reads the region from `BEDROCK_REGION`, `AWS_REGION` or `AWS_DEFAULT_REGION`; use `AWS_BEARER_TOKEN_BEDROCK` for a declared Bedrock provider or set its `apiKey` explicitly. To keep accepting an existing request body that names `bedrock:<model>`, declare the deployment provider as `providers.bedrock` and authorize that model.
 
 ### Slots
 
@@ -277,7 +277,7 @@ sign-in, keep the caps and `lifetimeMs` low, and set a budget at the sandbox pro
 allowUserKeys: false
 ```
 
-`allowUserKeys` (default `true`) decides whether users may add providers, keys and token plans of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it does not lock: Token Plan and adding services are not shown, and providers a workspace added earlier are no longer used. Requests that still name their own model, key or endpoint (the deprecated `x-model`, `x-api-key` and `x-base-url` headers, and the provider fields of the media routes) are ignored then, and the header form of the provider test buttons is refused. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
+`allowUserKeys` (default `true`) decides whether users may add providers, keys and token plans of their own. With `false`, users only choose among the providers `openmaic.yml` declares, for the slots it does not lock: Token Plan and adding services are not shown, and providers a workspace added earlier are no longer used. Provider fields in media request bodies are ignored under this setting. Deprecated provider headers return HTTP 400 regardless of this setting. A multi-user deployment that pays for all usage typically sets it and locks the slots it wants fixed.
 
 ### Secrets and OPENMAIC_SECRET_KEY
 
@@ -312,23 +312,23 @@ A deployment that wants users to reach internal services declares those provider
 
 Generation requests no longer need to carry keys or model choices: browserless API calls such as `/api/generate-classroom` resolve through the same slots as the web app, for the workspace of the caller.
 
-The older request headers `x-model`, `x-api-key`, `x-base-url`, `x-provider-type`, `x-model-routes`, `x-image-provider`, `x-image-model`, `x-video-provider` and `x-video-model`, and the equivalent body fields of the speech, search and document routes, are deprecated. They are honoured only while the slot they would affect has nothing assigned or, on a server still configured through the legacy variables, only a default those translate to (as `DEFAULT_MODEL` always ranked below the model a request named); a default in `openmaic.yml`, the workspace's own choice and a locked slot win, and a slot set to `null` refuses the request whatever it names. With `allowUserKeys: false` they are ignored altogether. The server logs a warning the first time a request uses them. They will be removed two minor versions after the model settings described above ship.
+Starting in 1.6.0, requests with deprecated provider headers such as `x-model` or `x-api-key` return HTTP 400. Remove the headers and configure the provider and slots through Model Settings or `openmaic.yml`. Use `/api/generate-classroom/capabilities` for course-generation capability discovery and `/api/health` for the scene concurrency value previously returned by `/api/server-providers`. The `/api/health` endpoint ignores deprecated provider headers so health probes keep working.
 
 ### Migrating from the legacy configuration
 
-When `openmaic.yml` is absent, the server translates the legacy configuration at startup and logs a deprecation notice, plus a notice for each entry that could not carry over:
+Starting in 1.6.0, startup logs the names of detected legacy provider settings at error level and continues. A workspace with no saved configuration or configured model can use first-run setup. To migrate operator-managed providers, declare them and their assignments in `openmaic.yml` as follows.
 
-| Legacy setting | Becomes |
+| Legacy setting | `openmaic.yml` |
 | --- | --- |
 | Provider variables (`OPENAI_API_KEY`, `TTS_MINIMAX_API_KEY`, …) and `server-providers.yml` | Deployment providers (read-only in the model settings). The provider id is the preset id, which is the legacy provider id except for web search MiniMax (`minimax-search`), web search Doubao (`doubao-search`) and Lemonade images (`lemonade-image`) |
 | `<PREFIX>_MODELS` | The provider's `models` |
-| `DEFAULT_MODEL` | The `llm` assignment, as a default a workspace can override (not locked). The `agent` slot stays off, as before |
-| `MODEL_FALLBACK` | The fallback of `DEFAULT_MODEL`. Without `DEFAULT_MODEL` it is dropped with a notice |
-| The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | The default assignment of that capability (`DEFAULT_IMAGE_PROVIDER` picks the image provider) |
-| `MODEL_ROUTES` | **Not translated.** The server refuses to start (see below) |
+| `DEFAULT_MODEL` | Set a workspace-overridable default in `slots.llm`. Set `slots.agent: null` to keep the agent off. |
+| `MODEL_FALLBACK` | Set `slots.llm.fallback` when declaring the primary model in `slots.llm.model`. |
+| The first configured TTS, ASR, image, video and document provider, and web search in the old priority order | Assign each provider explicitly under `slots`. Use `slots.image` for the provider previously chosen by `DEFAULT_IMAGE_PROVIDER`. |
+| `MODEL_ROUTES` | Rewrite the per-stage selections as slots (see below) |
 | `<CAP>_<VENDOR>_ENABLED=false` | Still honoured: the provider stays off whatever assigns it |
 
-When `openmaic.yml` exists, the provider variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` are ignored for model resolution, with a notice. `<CAP>_<VENDOR>_ENABLED=false` still applies; to turn a capability off, set its slot to `null` instead.
+Provider variables and `server-providers.yml` no longer assign models or supply credentials automatically. Keep environment variables referenced as `${VAR}` in the new file. Existing operator force-off settings still apply.
 
 **Environment variables.** Before:
 
@@ -337,7 +337,13 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 DEFAULT_MODEL=openai:gpt-5.5
 MODEL_FALLBACK=anthropic:claude-sonnet-4-6
+IMAGE_OPENAI_MODELS=gpt-image-1-mini
 TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_MODELS=speech-2.8-turbo
+ASR_OPENAI_API_KEY=sk-...
+ASR_OPENAI_MODELS=whisper-1
+VIDEO_SEEDANCE_API_KEY=...
+VIDEO_SEEDANCE_MODELS=doubao-seedance-2-0-mini-260615
 TAVILY_API_KEY=tvly-...
 ```
 
@@ -351,9 +357,22 @@ providers:
   anthropic:
     preset: anthropic
     apiKey: ${ANTHROPIC_API_KEY}
+  openai-image:
+    preset: openai-image
+    apiKey: ${OPENAI_API_KEY}
+    models: [gpt-image-1-mini]
   minimax-tts:
     preset: minimax-tts
     apiKey: ${TTS_MINIMAX_API_KEY}
+    models: [speech-2.8-turbo]
+  openai-whisper:
+    preset: openai-whisper
+    apiKey: ${ASR_OPENAI_API_KEY}
+    models: [whisper-1]
+  seedance:
+    preset: seedance
+    apiKey: ${VIDEO_SEEDANCE_API_KEY}
+    models: [doubao-seedance-2-0-mini-260615]
   tavily:
     preset: tavily
     apiKey: ${TAVILY_API_KEY}
@@ -362,11 +381,17 @@ slots:
   llm:
     model: openai:gpt-5.5
     fallback: anthropic:claude-sonnet-4-6
-  tts: minimax-tts
+  agent: null
+  image: openai-image:gpt-image-1-mini
+  tts: minimax-tts:speech-2.8-turbo
+  asr: openai-whisper:whisper-1
+  video: seedance:doubao-seedance-2-0-mini-260615
   webSearch: tavily
 ```
 
-Remove `DEFAULT_MODEL` and `MODEL_FALLBACK` afterwards. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the workbench agent off.
+The example reuses `OPENAI_API_KEY` for chat and image generation, as the legacy OpenAI image fallback did. If images had their own key or endpoint, set them on `openai-image` using `IMAGE_OPENAI_API_KEY` or `IMAGE_OPENAI_BASE_URL`. For each media slot that selects a model, copy the exact model the old deployment used into the slot reference.
+
+After copying the model lists into YAML, unset the old `*_MODELS` variables along with `DEFAULT_MODEL` and `MODEL_FALLBACK`. The provider variables can stay as the source of the `${VAR}` references. A `<PREFIX>_BASE_URL` becomes the provider's `baseUrl` (`OPENAI_BASE_URL` → `baseUrl` under `openai`; write the URL, or `${OPENAI_BASE_URL}` while the variable stays set), and `<PREFIX>_MODELS` becomes its `models` list. As with the translated `DEFAULT_MODEL`, the `llm` written here is a server default workspaces may change; add `lock: [llm]` to fix it for everyone. Unlike the translation, `agent` now follows `llm`: write `agent: null` to keep the workbench agent off.
 
 **server-providers.yml.** Before:
 
@@ -411,13 +436,7 @@ slots:
 
 Each section of `server-providers.yml` becomes providers with the matching preset (`providers` → chat presets, `tts`, `asr`, `pdf` → document, `image`, `video`, `web-search`), and `accessKeyId`/`accessKeySecret` move under `credentials`.
 
-**MODEL_ROUTES.** A server that sets `MODEL_ROUTES` without `openmaic.yml` does not start:
-
-```text
-MODEL_ROUTES does not carry over to the model configuration: write the per-stage models as slots in openmaic.yml (or the file named by OPENMAIC_CONFIG) and remove MODEL_ROUTES
-```
-
-Per-stage routes do not map one to one onto slots, so they are not translated. Rewrite each route as the slot its stage belongs to:
+**MODEL_ROUTES.** Per-stage routes do not map one to one onto slots, so they are not translated. Rewrite each route as the slot its stage belongs to:
 
 | `MODEL_ROUTES` stage | Slot |
 | --- | --- |
@@ -541,7 +560,7 @@ LLM_THINKING_DISABLED=false
 
 ## Legacy provider environment variables
 
-These variables and `server-providers.yml` are the configuration of earlier releases. They still work when there is no `openmaic.yml` (see [Migrating from the legacy configuration](#migrating-from-the-legacy-configuration)) and are deprecated: they will be removed two minor versions after the model settings ship. With `openmaic.yml`, use them only as the source of `${VAR}` references. `DEFAULT_MODEL` and `MODEL_FALLBACK` are covered in the migration section; `MODEL_ROUTES` is no longer read.
+These reference tables describe the legacy names for migration. Declare providers and slots in `openmaic.yml` and use `${VAR}` references for values held in the environment.
 
 ### LLM providers
 
@@ -814,9 +833,7 @@ Brave and SearXNG do not require an API key. Web search has no per-generation sw
 
 ### server-providers.yml
 
-Deprecated in favour of `openmaic.yml`. When both exist, only `openmaic.yml` configures models.
-
-In addition to environment variables, place configuration for providers registered in the code in `server-providers.yml` at the project root. The server loads it at startup, and its structure follows the environment variable categories:
+Starting in 1.6.0, the server reads this file only for operator force-off entries (`enabled: false` in supported capability sections). Move providers and slot assignments to `openmaic.yml`. The example below shows the old file for migration reference.
 
 ```yaml title="server-providers.yml"
 providers:
@@ -864,13 +881,12 @@ web-search:
     baseUrl: http://localhost:8080
 ```
 
-Environment variables override matching YAML provider fields one by one. Keys must use provider IDs registered in the code, such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `alidocmind`, `minicpm-ocr`, `seedream`, `seedance`, `exa`, `tavily`, or `searxng`. Unknown IDs cannot register custom LLM providers here.
 
 ## Model authorization for server-managed providers
 
-For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`), or the corresponding `*_MODELS` environment variable / `server-providers.yml` section's `models` list. This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
+For providers that use deployment credentials to send a selected model upstream, set an explicit `models` list in `openmaic.yml` (`providers.<id>.models`). This applies to chat, image, video, text to speech, speech recognition and model-based web search. Model ids match exactly, including case, after surrounding whitespace is removed at configuration load. Deterministic adapter aliases use the declared model id for authorization. Requests for unlisted models return HTTP 403 with `PROVIDER_DISABLED` and the message “This model is not authorized for server-managed credentials”.
 
-**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. `DEFAULT_MODEL` and `MODEL_FALLBACK` grant chat models on legacy deployments. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
+**Breaking change:** without an explicit list, only deployment default/fallback models and the primary/fallback models referenced by slots for that capability are usable. A provider-only media slot grants its single adapter default model; it does not grant the preset's catalogue. Workspace assignments cannot expand the deployment's authorized set. Voice registration and synthesis must also authorize any model selected for voice compatibility.
 
 To migrate, list every model users should be able to select, restart the server, and update any workspace selections that are no longer authorized. Startup logs name the setting to add for each provider that has credentials but no list. Users' own provider credentials and keyless local providers such as Ollama and Lemonade are unaffected. A provider configured without credentials is not restricted, so do not point one at a gateway that adds its own upstream credential (for example an internal OpenAI-compatible proxy): give that gateway a key and configure it as a credentialed provider with a `models` list, or restrict models in the gateway itself. Document parsers and search services without model selection (such as Tavily) need no model list.
 
@@ -884,13 +900,11 @@ slots:
   llm: openai:gpt-5.4-mini
 ```
 
-Legacy equivalent: `OPENAI_API_KEY=...` and `OPENAI_MODELS=gpt-5.4-mini`. For media, use the capability prefix, for example `IMAGE_SEEDREAM_MODELS`, `VIDEO_SEEDANCE_MODELS`, `TTS_OPENAI_MODELS`, `ASR_OPENAI_MODELS` and `WEB_SEARCH_CLAUDE_MODELS`.
-
 ### DeepSeek web search and fetch
 
 The `deepseek` preset shares `DEEPSEEK_API_KEY` and the API base across chat, web search and hosted Markdown extraction. Search uses `POST /v1/tools/search`, returns up to 50 results, truncates queries to 128 Unicode code points, and uses `summary` with `snippet` as a fallback. Fetch uses `POST /v1/tools/fetch` and reads `content` and an optional nonempty `title`.
 
-In legacy configuration, opt in with `WEB_SEARCH_DEEPSEEK_ENABLED=true` or an explicit `web-search.deepseek` entry in `server-providers.yml`. Chat credentials alone never enable search or replace another search default. `WEB_SEARCH_DEEPSEEK_ENABLED=false` force-disables search. When `openmaic.yml` exists, the legacy variable cannot assign a slot: explicitly declare the provider and assign `webSearch` and/or `webFetch`.
+Declare the provider and assign `webSearch` and/or `webFetch` in `openmaic.yml`. `WEB_SEARCH_DEEPSEEK_ENABLED=false` still force-disables search.
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -921,12 +935,12 @@ slots:
   webSearch: kimi
 ```
 
-For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-coding`; its default base is `https://api.kimi.com/coding/v1`. The Open Platform and Coding Plan keys must be paired with their matching base URL. In legacy configuration, `KIMI_API_KEY` and optional `KIMI_BASE_URL` supply search credentials only after explicit opt-in: set `WEB_SEARCH_KIMI_ENABLED=true` or add `web-search.kimi` in `server-providers.yml` (for example, with `enabled: true`). Chat credentials alone do not enable search or change the default search provider. `WEB_SEARCH_KIMI_ENABLED=false` disables Kimi search even when a slot assigns it. `WEB_SEARCH_KIMI_ENABLED` is the only Kimi search switch. `KIMI_MODELS` applies only to chat. Conflicting legacy chat and search accounts produce a warning and the search entry is skipped; declare separate provider ids in `openmaic.yml` when separate accounts are needed. When `openmaic.yml` exists, declare the provider and assign the slots explicitly. Settings and the first-run wizard offer both capabilities through the same account.
+For a Coding Plan key, use `preset: kimi-coding-plan` and `llm: kimi:kimi-for-coding`; its default base is `https://api.kimi.com/coding/v1`. The Open Platform and Coding Plan keys must be paired with their matching base URL. `WEB_SEARCH_KIMI_ENABLED=false` disables Kimi search even when a slot assigns it. Settings and the first-run wizard offer both capabilities through the same account.
 
 
 Endpoint selection follows the base path: after removing trailing slashes, a path ending in `/coding/v1` uses `/search`; otherwise it uses `/tools/search_pro`. Custom proxies configured by the deployment must preserve that path layout. The wizard recommends search only for official account bases, so a custom workspace chat proxy does not automatically acquire a search assignment.
 
-When `openmaic.yml` is present, declare `providers.<id>: { preset: kimi }` and assign `slots.webSearch: <id>`; the legacy `WEB_SEARCH_KIMI_ENABLED` variable cannot assign that slot.
+To configure Kimi search for a deployment, declare `providers.<id>: { preset: kimi }` in `openmaic.yml` and set `slots.webSearch: <id>`.
 
 ## Web fetch provider slot
 

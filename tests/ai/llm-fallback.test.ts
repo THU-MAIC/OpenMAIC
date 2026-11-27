@@ -11,7 +11,6 @@ const usageMock = vi.hoisted(() => ({
 }));
 
 const fallbackMock = vi.hoisted(() => ({
-  resolveFallbackModel: vi.fn(),
   isRetryableLlmError: vi.fn(),
   shouldFallbackFor: vi.fn(),
   logFallbackFired: vi.fn(),
@@ -45,7 +44,6 @@ function okResult(): GenerateTextResult<never, never> {
 describe('callLLM retryable-failure fallback', () => {
   beforeEach(() => {
     aiMock.generateText.mockReset();
-    fallbackMock.resolveFallbackModel.mockReset();
     fallbackMock.isRetryableLlmError.mockReset();
     fallbackMock.shouldFallbackFor.mockReset();
     fallbackMock.logFallbackFired.mockReset();
@@ -81,10 +79,6 @@ describe('callLLM retryable-failure fallback', () => {
 
   it("retries on the model's attached slot fallback, never MODEL_FALLBACK", async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
-      model: 'global-fallback' as never,
-      modelString: 'openai:global',
-    });
     const primary = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as never;
     attachModelFallback(primary, async () => ({
       model: 'slot-fallback' as never,
@@ -105,7 +99,6 @@ describe('callLLM retryable-failure fallback', () => {
     );
     expect(aiMock.generateText).toHaveBeenCalledTimes(2);
     expect(aiMock.generateText.mock.calls[1]?.[0]?.model).toBe('slot-fallback');
-    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
   });
 
   it('arms a slot fallback without the serverManaged stamp (PBL callers pass none)', async () => {
@@ -125,10 +118,6 @@ describe('callLLM retryable-failure fallback', () => {
 
   it('does not retry a slot model whose slot has no fallback, even with MODEL_FALLBACK', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
-      model: 'global-fallback' as never,
-      modelString: 'openai:global',
-    });
     const primary = { provider: 'deepseek', modelId: 'deepseek-v4-pro' } as never;
     attachModelFallback(primary, async () => null);
     aiMock.generateText.mockRejectedValueOnce(
@@ -141,12 +130,10 @@ describe('callLLM retryable-failure fallback', () => {
       }),
     ).rejects.toMatchObject({ statusCode: 429 });
     expect(aiMock.generateText).toHaveBeenCalledTimes(1);
-    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
   });
 
-  it('does not fall back when resolveFallbackModel returns null', async () => {
+  it('does not fall back without a slot fallback', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue(null);
     aiMock.generateText.mockRejectedValueOnce(
       Object.assign(new Error('upstream timeout'), { statusCode: 408 }),
     );
@@ -166,17 +153,18 @@ describe('callLLM retryable-failure fallback', () => {
 
   it('falls back once on a retryable error and returns the fallback result', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
-    });
+    }));
     aiMock.generateText
       .mockRejectedValueOnce(Object.assign(new Error('quota exceeded'), { statusCode: 429 }))
       .mockResolvedValueOnce(okResult());
 
     const result = await callLLM(
       {
-        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        model: primary,
         prompt: 'hi',
       } as never,
       'scene-content',
@@ -194,18 +182,19 @@ describe('callLLM retryable-failure fallback', () => {
 
   it('only runs the fallback once when it also fails', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
-    });
-    const primary = Object.assign(new Error('timeout'), { statusCode: 408 });
+    }));
+    const primaryFailure = Object.assign(new Error('timeout'), { statusCode: 408 });
     const fallbackFail = Object.assign(new Error('still down'), { statusCode: 503 });
-    aiMock.generateText.mockRejectedValueOnce(primary).mockRejectedValueOnce(fallbackFail);
+    aiMock.generateText.mockRejectedValueOnce(primaryFailure).mockRejectedValueOnce(fallbackFail);
 
     await expect(
       callLLM(
         {
-          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          model: primary,
           prompt: 'hi',
         } as never,
         'scene-content',
@@ -219,10 +208,11 @@ describe('callLLM retryable-failure fallback', () => {
 
   it('does not fall back when fallback is disabled for the call', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
-    });
+    }));
     aiMock.generateText.mockRejectedValueOnce(
       Object.assign(new Error('timeout'), { statusCode: 408 }),
     );
@@ -230,7 +220,7 @@ describe('callLLM retryable-failure fallback', () => {
     await expect(
       callLLM(
         {
-          model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+          model: primary,
           prompt: 'hi',
         } as never,
         'verify-model',
@@ -240,7 +230,6 @@ describe('callLLM retryable-failure fallback', () => {
       ),
     ).rejects.toMatchObject({ statusCode: 408 });
     expect(aiMock.generateText).toHaveBeenCalledTimes(1);
-    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
   });
 
   it('falls back on an empty-output validation failure when retries are set and exhausted', async () => {
@@ -249,10 +238,11 @@ describe('callLLM retryable-failure fallback', () => {
       (error: unknown, text: string | null | undefined) =>
         error !== undefined ? false : !text || text.trim().length === 0,
     );
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
-    });
+    }));
     aiMock.generateText
       .mockResolvedValueOnce({ ...okResult(), text: '   ' })
       .mockResolvedValueOnce({ ...okResult(), text: '   ' })
@@ -260,7 +250,7 @@ describe('callLLM retryable-failure fallback', () => {
 
     const result = await callLLM(
       {
-        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        model: primary,
         prompt: 'hi',
       } as never,
       'scene-content',
@@ -275,9 +265,7 @@ describe('callLLM retryable-failure fallback', () => {
   });
 
   it('does not arm the fallback when the primary is not server-managed', async () => {
-    // resolveModel stamps serverManaged on its result; a caller that does not
-    // pass it through (a client-supplied x-model) must never reach the
-    // operator's fallback key, even when the primary fails retryably.
+    // A request-body model without a slot fallback must never use an operator fallback key.
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
     aiMock.generateText.mockRejectedValueOnce(
       Object.assign(new Error('quota exceeded'), { statusCode: 429 }),
@@ -293,7 +281,6 @@ describe('callLLM retryable-failure fallback', () => {
       ),
     ).rejects.toMatchObject({ statusCode: 429 });
     expect(aiMock.generateText).toHaveBeenCalledTimes(1);
-    expect(fallbackMock.resolveFallbackModel).not.toHaveBeenCalled();
     expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
   });
 
@@ -304,10 +291,11 @@ describe('callLLM retryable-failure fallback', () => {
       (error: unknown, text: string | null | undefined) =>
         error !== undefined ? false : !text || text.trim().length === 0,
     );
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
-    });
+    }));
     aiMock.generateText.mockResolvedValue({
       ...okResult(),
       text: '',
@@ -316,7 +304,7 @@ describe('callLLM retryable-failure fallback', () => {
 
     const result = await callLLM(
       {
-        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        model: primary,
         prompt: 'hi',
       } as never,
       'scene-content',
@@ -337,7 +325,6 @@ describe('callLLM retryable-failure fallback', () => {
 
   it('keeps existing behaviour when no fallback configured', async () => {
     fallbackMock.shouldFallbackFor.mockReturnValue(true);
-    fallbackMock.resolveFallbackModel.mockResolvedValue(null);
     aiMock.generateText
       .mockRejectedValueOnce(Object.assign(new Error('timeout'), { statusCode: 408 }))
       .mockResolvedValueOnce(okResult());
@@ -363,16 +350,17 @@ describe('callLLM retryable-failure fallback', () => {
       (error: unknown, text: string | null | undefined) =>
         error !== undefined ? false : !text || text.trim().length === 0,
     );
-    fallbackMock.resolveFallbackModel.mockResolvedValue({
+    const primary = { provider: 'openai.responses', modelId: 'gpt-5.4' } as never;
+    attachModelFallback(primary, async () => ({
       model: 'fallback-model' as never,
       modelString: 'qwen:deepseek-v4-pro',
-    });
+    }));
     const badOutput = { ...okResult(), text: '[not valid json]' };
     aiMock.generateText.mockResolvedValue(badOutput);
 
     const result = await callLLM(
       {
-        model: { provider: 'openai.responses', modelId: 'gpt-5.4' } as never,
+        model: primary,
         prompt: 'hi',
       } as never,
       'scene-content',
@@ -380,9 +368,7 @@ describe('callLLM retryable-failure fallback', () => {
     );
 
     expect(result.text).toBe('[not valid json]');
-    // Primary + same-model retry only. The up-front resolveFallbackModel call
-    // is a config probe (it also arms the empty-output gate), but no fallback
-    // round runs and no fallback log fires.
+    // The primary retries without invoking the fallback model.
     expect(aiMock.generateText).toHaveBeenCalledTimes(2);
     expect(fallbackMock.logFallbackFired).not.toHaveBeenCalled();
     const calledModels = aiMock.generateText.mock.calls.map(

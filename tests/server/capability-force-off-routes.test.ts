@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import type { ModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 
 // Force-off route guards (#665): mirror the TTS contract — a server-disabled
 // provider is rejected with 403 PROVIDER_DISABLED before any credential or
@@ -79,6 +80,15 @@ function clearCapabilityEnv() {
   }
 }
 
+async function deployment(config: ModelConfigFile | null) {
+  const { setDeploymentConfigForTests } = await import('@/lib/server/model-config/runtime');
+  setDeploymentConfigForTests({
+    layer: config && { source: 'deployment', config },
+    legacy: false,
+    notices: [],
+  });
+}
+
 function jsonRequest(
   url: string,
   body: Record<string, unknown>,
@@ -102,10 +112,11 @@ function transcriptionRequest(providerId: string): NextRequest {
 }
 
 describe('capability force-off route guards (#665)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.unstubAllEnvs();
     clearCapabilityEnv();
+    await deployment(null);
     mocks.generateImage.mockReset().mockResolvedValue({ url: 'https://example.com/img.png' });
     mocks.testImageConnectivity.mockReset().mockResolvedValue({ success: true, message: 'ok' });
     mocks.generateVideo.mockReset().mockResolvedValue({
@@ -120,16 +131,15 @@ describe('capability force-off route guards (#665)', () => {
 
   describe('image', () => {
     it('POST /api/generate/image returns 403 PROVIDER_DISABLED for a force-disabled provider', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
+      await deployment({
+        providers: { media: { preset: 'openai-image', apiKey: 'key' } },
+        slots: { image: 'media:gpt-image-2' },
+      });
       vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
       const { POST } = await import('@/app/api/generate/image/route');
 
       const res = await POST(
-        jsonRequest(
-          'http://localhost/api/generate/image',
-          { prompt: 'a cat' },
-          { 'x-image-provider': 'openai-image' },
-        ),
+        jsonRequest('http://localhost/api/generate/image', { prompt: 'a cat' }),
       );
       const json = await res.json();
 
@@ -138,19 +148,21 @@ describe('capability force-off route guards (#665)', () => {
       expect(mocks.generateImage).not.toHaveBeenCalled();
     });
 
-    it('force-off beats a client key on an unmanaged provider', async () => {
+    it('rejects a retired header before a disabled provider can be called', async () => {
       vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
-      const { POST } = await import('@/app/api/generate/image/route');
-
-      const res = await POST(
+      vi.stubEnv('ACCESS_CODE', '');
+      const { middleware } = await import('@/middleware');
+      const response = await middleware(
         jsonRequest(
           'http://localhost/api/generate/image',
           { prompt: 'a cat' },
-          { 'x-image-provider': 'openai-image', 'x-api-key': 'client-key' },
+          {
+            'x-image-provider': 'openai-image',
+            'x-api-key': 'client-key',
+          },
         ),
       );
-
-      expect(res.status).toBe(403);
+      expect(response.status).toBe(400);
       expect(mocks.generateImage).not.toHaveBeenCalled();
     });
 
@@ -172,16 +184,17 @@ describe('capability force-off route guards (#665)', () => {
     });
 
     it('normalizes GPT Image 2 requests before calling the image provider', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
-      vi.stubEnv('IMAGE_OPENAI_MODELS', 'gpt-image-2');
+      await deployment({
+        providers: { media: { preset: 'openai-image', apiKey: 'key' } },
+        slots: { image: 'media:gpt-image-2' },
+      });
       const { POST } = await import('@/app/api/generate/image/route');
 
       const res = await POST(
-        jsonRequest(
-          'http://localhost/api/generate/image',
-          { prompt: 'a plant', aspectRatio: '16:9' },
-          { 'x-image-provider': 'openai-image' },
-        ),
+        jsonRequest('http://localhost/api/generate/image', {
+          prompt: 'a plant',
+          aspectRatio: '16:9',
+        }),
       );
 
       expect(res.status).toBe(200);
@@ -192,16 +205,17 @@ describe('capability force-off route guards (#665)', () => {
     });
 
     it('POST /api/verify-image-provider returns 403 for a force-disabled provider', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
+      await deployment({
+        providers: { media: { preset: 'openai-image', apiKey: 'key', models: ['gpt-image-2'] } },
+      });
       vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
       const { POST } = await import('@/app/api/verify-image-provider/route');
 
       const res = await POST(
-        jsonRequest(
-          'http://localhost/api/verify-image-provider',
-          {},
-          { 'x-image-provider': 'openai-image' },
-        ),
+        jsonRequest('http://localhost/api/verify-image-provider', {
+          provider: 'media',
+          model: 'gpt-image-2',
+        }),
       );
       const json = await res.json();
 
@@ -213,16 +227,15 @@ describe('capability force-off route guards (#665)', () => {
 
   describe('video', () => {
     it('POST /api/generate/video returns 403 PROVIDER_DISABLED for a force-disabled provider', async () => {
-      vi.stubEnv('VIDEO_GROK_API_KEY', 'xai-video');
+      await deployment({
+        providers: { media: { preset: 'grok-video', apiKey: 'key' } },
+        slots: { video: 'media:grok-imagine-video' },
+      });
       vi.stubEnv('VIDEO_GROK_ENABLED', 'false');
       const { POST } = await import('@/app/api/generate/video/route');
 
       const res = await POST(
-        jsonRequest(
-          'http://localhost/api/generate/video',
-          { prompt: 'a cat' },
-          { 'x-video-provider': 'grok-video' },
-        ),
+        jsonRequest('http://localhost/api/generate/video', { prompt: 'a cat' }),
       );
       const json = await res.json();
 
@@ -247,16 +260,19 @@ describe('capability force-off route guards (#665)', () => {
     });
 
     it('POST /api/verify-video-provider returns 403 for a force-disabled provider', async () => {
-      vi.stubEnv('VIDEO_GROK_API_KEY', 'xai-video');
+      await deployment({
+        providers: {
+          media: { preset: 'grok-video', apiKey: 'key', models: ['grok-imagine-video'] },
+        },
+      });
       vi.stubEnv('VIDEO_GROK_ENABLED', 'false');
       const { POST } = await import('@/app/api/verify-video-provider/route');
 
       const res = await POST(
-        jsonRequest(
-          'http://localhost/api/verify-video-provider',
-          {},
-          { 'x-video-provider': 'grok-video' },
-        ),
+        jsonRequest('http://localhost/api/verify-video-provider', {
+          provider: 'media',
+          model: 'grok-imagine-video',
+        }),
       );
       const json = await res.json();
 
@@ -305,7 +321,10 @@ describe('capability force-off route guards (#665)', () => {
     it('uses an enabled server ASR backend when the client omits providerId', async () => {
       vi.stubEnv('ASR_OPENAI_API_KEY', 'sk-openai');
       vi.stubEnv('ASR_OPENAI_ENABLED', 'false');
-      vi.stubEnv('ASR_QWEN_API_KEY', 'sk-qwen');
+      await deployment({
+        providers: { speech: { preset: 'qwen-asr', apiKey: 'sk-qwen' } },
+        slots: { asr: 'speech:qwen3-asr-flash' },
+      });
       const { POST } = await import('@/app/api/transcription/route');
 
       const form = new FormData();

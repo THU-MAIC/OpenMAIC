@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
 import type { ModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 
-// /api/chat/pi resolves the chat-adapter stage from the request body, the
-// user's per-stage routes in `x-model-routes`, and the deployment's slots. The
+// /api/chat/pi uses the deployment's classroom slot or the request-body model. The
 // real resolveModel is used (with its provider plumbing stubbed) so these
 // tests assert the model the route actually hands to the Pi runtime.
 
@@ -46,7 +45,7 @@ vi.mock('@/lib/chat/pi/director-loop', () => ({
 function makeRequest(model: string, modelRoutes?: Record<string, unknown>): NextRequest {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (modelRoutes) headers['x-model-routes'] = JSON.stringify(modelRoutes);
-  return new Request('http://localhost/api/chat/pi', {
+  return new NextRequest('http://localhost/api/chat/pi', {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -62,7 +61,7 @@ function makeRequest(model: string, modelRoutes?: Record<string, unknown>): Next
       apiKey: 'body-key',
       providerType: 'openai',
     }),
-  }) as unknown as NextRequest;
+  });
 }
 
 async function deployment(config: ModelConfigFile | null) {
@@ -100,33 +99,30 @@ describe('POST /api/chat/pi — classroom model precedence', () => {
     (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests();
   });
 
-  it('resolves chat-adapter from the user route over the body model', async () => {
-    const response = await post(
-      makeRequest('openai:gpt-5.4-mini', {
-        'chat-adapter': { model: 'anthropic:claude-sonnet-4' },
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(mocks.getModelCalls.at(-1)).toMatchObject({
-      providerId: 'anthropic',
-      modelId: 'claude-sonnet-4',
-      apiKey: 'server-key',
-    });
-    expectRuntimeModel('claude-sonnet-4');
+  it('rejects retired route headers before invoking the classroom model', async () => {
+    const { middleware } = await import('@/middleware');
+    vi.stubEnv('ACCESS_CODE', '');
+    try {
+      const response = await middleware(
+        makeRequest('openai:gpt-5.4-mini', {
+          'chat-adapter': { model: 'anthropic:claude-sonnet-4' },
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain('x-model-routes');
+      expect(mocks.getModelCalls).toHaveLength(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it('lets a locked classroom slot win over the user route', async () => {
+  it('lets a locked classroom slot win over a body model', async () => {
     await deployment({
       providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } },
       slots: { classroom: 'openai:gpt-5.4' },
       lock: ['classroom'],
     });
-    const response = await post(
-      makeRequest('openai:gpt-5.4-mini', {
-        'chat-adapter': { model: 'anthropic:claude-sonnet-4' },
-      }),
-    );
+    const response = await post(makeRequest('openai:gpt-5.4-mini'));
 
     expect(response.status).toBe(200);
     expect(mocks.getModelCalls.at(-1)).toMatchObject({
@@ -137,12 +133,8 @@ describe('POST /api/chat/pi — classroom model precedence', () => {
     expectRuntimeModel('gpt-5.4');
   });
 
-  it('falls back to the body model when no user route matches the stage', async () => {
-    const response = await post(
-      makeRequest('openai:gpt-5.4-mini', {
-        'quiz-grade': { model: 'anthropic:claude-sonnet-4' },
-      }),
-    );
+  it('uses the body model when the slot is unassigned', async () => {
+    const response = await post(makeRequest('openai:gpt-5.4-mini'));
 
     expect(response.status).toBe(200);
     expect(mocks.getModelCalls.at(-1)).toMatchObject({
@@ -152,15 +144,13 @@ describe('POST /api/chat/pi — classroom model precedence', () => {
     expectRuntimeModel('gpt-5.4-mini');
   });
 
-  it('retains the locked classroom model despite unlisted body and user-route models', async () => {
+  it('retains the locked classroom model despite an unlisted body model', async () => {
     await deployment({
       providers: { openai: { preset: 'openai', apiKey: 'sk-operator', models: ['allowed'] } },
       slots: { classroom: 'openai:primary' },
       lock: ['classroom'],
     });
-    const response = await post(
-      makeRequest('openai:unlisted', { 'chat-adapter': { model: 'openai:unlisted' } }),
-    );
+    const response = await post(makeRequest('openai:unlisted'));
 
     expect(response.status).toBe(200);
     expect(mocks.getModelCalls.at(-1)).toMatchObject({

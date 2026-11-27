@@ -2103,7 +2103,7 @@
     "resetConfirmDescription": "Это удалит все пользовательские модели и восстановит встроенный список. API-ключ и Base URL будут сохранены.",
     "resetToDefault": "Сбросить на стандартные",
     "saveModel": "Сохранить",
-    "searxngServerOnlyNotice": "SearXNG должен быть настроен на сервере. Установите переменную окружения SEARXNG_BASE_URL (или раздел web-search в server-providers.yml). URL экземпляра от клиента не принимаются.",
+    "searxngServerOnlyNotice": "В openmaic.yml объявите провайдера с preset: searxng и его baseUrl, затем укажите его ID в slots.webSearch.",
     "serverConfigured": "Сервер",
     "serverConfiguredNotice": "Этот провайдер управляется сервером и не редактируется здесь.",
     "startRecording": "Начать запись",

@@ -51,6 +51,7 @@ import {
 import { acceptsWorkspaceToolBaseUrl, isForceDisabled, isLocalEndpoint } from './media';
 import {
   checkModelConfigShape,
+  parseModelRef,
   thinkingEffortIssue,
   type ModelConfigFile,
   type SlotAssignment,
@@ -60,6 +61,8 @@ import {
   findAssignment,
   lockingNode,
   resolveSlot,
+  retiredProviderIds,
+  withoutAssignmentsNaming,
   SlotResolutionError,
   type ModelConfigLayer,
   type ResolvedModelTarget,
@@ -919,6 +922,34 @@ export async function applyModelSettingsChange(
     delete providers[change.id];
     // Assignments that named it lose it and follow their parents again.
     dropAssignmentsNaming(slots, change.id);
+  }
+
+  const nextLayers: ModelConfigLayer[] = [
+    ...(deployment ? [deployment] : []),
+    { source: 'workspace', config: next },
+  ];
+  const retired = retiredProviderIds(nextLayers);
+  // Repair saved references against the edited providers. Newly submitted
+  // assignments still go through normal validation below.
+  for (const [slot, assignment] of Object.entries(slots)) {
+    if (change.kind === 'slots' && Object.hasOwn(change.set ?? {}, slot)) continue;
+    const stale = new Set(retired);
+    const refs =
+      typeof assignment === 'string' ? [assignment] : [assignment?.model, assignment?.fallback];
+    for (const ref of refs) {
+      if (!ref) continue;
+      const { providerId } = parseModelRef(ref);
+      if (
+        !Object.hasOwn(deploymentProviders, providerId) &&
+        !Object.hasOwn(providers, providerId) &&
+        !(slot === 'webFetch' && providerId === defaultWebFetchProviderId(nextLayers))
+      ) {
+        stale.add(providerId);
+      }
+    }
+    const repaired = withoutAssignmentsNaming({ [slot]: assignment }, stale);
+    if (Object.hasOwn(repaired, slot)) slots[slot] = repaired[slot];
+    else delete slots[slot];
   }
 
   if (!Object.keys(slots).length) delete next.slots;

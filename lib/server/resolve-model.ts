@@ -27,12 +27,7 @@ import {
 import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
-import {
-  getUserStageRoute,
-  parseUserStageRoutes,
-  type LlmStage,
-  type UserStageRoute,
-} from '@/lib/server/model-routes';
+import { getUserStageRoute, type LlmStage, type UserStageRoute } from '@/lib/server/model-routes';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -191,8 +186,25 @@ export async function resolveRequestedModel(
   const effectiveProviderType = (clientProviderType || registeredProviderType) as
     | ProviderType
     | undefined;
-  if (effectiveProviderType === 'bedrock' && (providerId !== 'bedrock' || !managed)) {
-    throw new Error('Amazon Bedrock must be enabled by the server operator before it can be used.');
+  if (effectiveProviderType === 'bedrock') {
+    const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
+    const deployment = deploymentConfig().layer;
+    if (
+      providerId !== 'bedrock' ||
+      !deployment ||
+      deployment.config.providers?.[providerId]?.preset !== effectiveProviderType
+    ) {
+      throw new Error(
+        'Amazon Bedrock must be enabled by the server operator before it can be used.',
+      );
+    }
+    // Resolve only the operator's provider and enforce its model allowlist.
+    const { resolveModelReference } = await import('@/lib/server/model-config/resolve-slot');
+    const { languageModelFor } = await import('@/lib/server/model-config/llm');
+    return languageModelFor(
+      resolveModelReference(`${providerId}:${modelId}`, 'chat', [deployment]),
+      params.thinkingConfig,
+    );
   }
   const clientBaseUrl = managed ? undefined : clientBaseUrlParam || undefined;
   // The caller picked this model, so an unmanaged provider's endpoint is the
@@ -263,13 +275,7 @@ function getThinkingConfigFromBody(body: unknown): ThinkingConfig | undefined {
   return config && typeof config === 'object' ? (config as ThinkingConfig) : undefined;
 }
 
-/**
- * Resolve a language model from standard request headers.
- *
- * Reads: x-model, x-api-key, x-base-url, x-provider-type, x-model-routes
- * Note: requiresApiKey is derived server-side from the provider registry,
- * never from client headers, to prevent auth bypass.
- */
+/** Resolve the stage for the owner of this request. */
 export async function resolveModelFromHeaders(
   req: NextRequest,
   stage?: LlmStage,
@@ -278,20 +284,15 @@ export async function resolveModelFromHeaders(
   const { requestWorkspaceId } = await import('@/lib/server/model-config/runtime');
   return resolveModel({
     workspaceId: stage ? await requestWorkspaceId(req) : null,
-    modelString: req.headers.get('x-model') || undefined,
     stage,
-    userRoutes: parseUserStageRoutes(req.headers.get('x-model-routes')),
-    apiKey: req.headers.get('x-api-key') || undefined,
-    baseUrl: req.headers.get('x-base-url') || undefined,
-    providerType: req.headers.get('x-provider-type') || undefined,
     thinkingConfig,
   });
 }
 
 /**
- * Resolve a language model from standard request headers plus body fields.
+ * Resolve a stage model and read its thinking settings from the request body.
  *
- * Reads model credentials from headers and per-request thinking config from
+ * Reads per-request thinking config from
  * the JSON body field `thinkingConfig` (or legacy/eval field `thinking`).
  */
 export async function resolveModelFromRequest(

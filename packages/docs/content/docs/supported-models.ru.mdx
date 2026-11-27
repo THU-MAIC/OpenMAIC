@@ -119,7 +119,7 @@ description: Встроенные модели и список провайде�
 
 Модель Google TTS по умолчанию — `gemini-3.8-flash-lite-tts`. Явно выбранные модели сохраняются. Google указывает **17 ноября 2026 года** как [самую раннюю дату отключения](https://ai.google.dev/gemini-api/docs/deprecations) трёх предварительных моделей выше. До отключения выберите модель 3.8; при использовании учётных данных сервера также обновите слот `tts` или список разрешённых `models` провайдера в `openmaic.yml`. WAV от Gemini 3.8 сохраняется без изменений, а PCM от старых моделей по-прежнему преобразуется в WAV для воспроизведения.
 
-В управляемых развёртываниях сохраните разрешение на `qwen3-tts-flash` вместе с целевой моделью клонирования: например, `TTS_QWEN_MODELS=qwen3-tts-flash,cosyvoice-v3.5-plus`, либо укажите обе модели в списке `models` провайдера в `openmaic.yml`. Если указать только модель клонирования, она заменит неявное разрешение на модель каталожных голосов, и запросы к ним будут возвращать HTTP 403. Сохраните также разрешения на остальные используемые модели.
+В управляемых развёртываниях укажите в списке `models` провайдера в `openmaic.yml` обе модели: `qwen3-tts-flash` и модель клонирования, например `cosyvoice-v3.5-plus`. Если указать только модель клонирования, она заменит неявное разрешение на модель каталожных голосов, и запросы к ним будут возвращать HTTP 403. Сохраните также разрешения на остальные используемые модели.
 
 ### Пользовательские голоса MiniMax
 
@@ -174,7 +174,7 @@ description: Встроенные модели и список провайде�
 
 Пресет `deepseek` использует общие `DEEPSEEK_API_KEY` и базовый URL API для чата, веб-поиска и размещённого извлечения Markdown. Поиск вызывает `POST /v1/tools/search`, возвращает до 50 результатов и обрезает запрос до 128 кодовых точек Unicode. Текст берётся из `summary`, а при его отсутствии — из `snippet`. Загрузка вызывает `POST /v1/tools/fetch` и читает `content` и необязательный непустой `title`.
 
-В старой конфигурации включите `WEB_SEARCH_DEEPSEEK_ENABLED=true` или явно добавьте `web-search.deepseek` в `server-providers.yml`. Одни учётные данные чата не включают поиск и не заменяют текущий поисковый сервис по умолчанию. `WEB_SEARCH_DEEPSEEK_ENABLED=false` принудительно отключает поиск. При наличии `openmaic.yml` старая переменная не назначает слот: явно объявите провайдера и назначьте `webSearch` и/или `webFetch`.
+В `openmaic.yml` объявите провайдера и назначьте его слотам `webSearch` / `webFetch`. `WEB_SEARCH_DEEPSEEK_ENABLED=false` по-прежнему отключает поиск.
 
 The default API base is `https://api.deepseek.com/v1`. On `api.deepseek.com`, every base path (including `/beta`) is normalized to `/v1` before appending `/tools/search` or `/tools/fetch`. Custom gateway bases preserve their configured path prefix; a bare root gets `/v1` first. Custom endpoints belong in deployment configuration, while client and workspace overrides remain restricted to official endpoints. The default fetch reader remains `builtin`. See [DeepSeek official pricing](https://api-docs.deepseek.com/quick_start/pricing) for current request charges. Failed requests and searches with no results are not billed.
 
@@ -195,11 +195,11 @@ slots:
 
 Базовые URL Open Platform `https://api.moonshot.cn/v1` и `https://api.moonshot.ai/v1` используют `/tools/search_pro`. Текст результата собирается из фрагментов страницы; если их нет, используется краткое описание. Базовые URL coding plan `https://api.kimi.com/coding/v1` и `https://api.kimi.ai/coding/v1` используют `/search` с включённой загрузкой страниц. Предпочтение отдаётся тексту страницы, затем краткому описанию. Один запрос возвращает не более 20 результатов.
 
-В старой конфигурации учётные данные чата сами по себе не включают поиск. Установите `WEB_SEARCH_KIMI_ENABLED=true` или явно добавьте запись `web-search.kimi` в `server-providers.yml`. В `openmaic.yml` явно назначьте слот `webSearch`. Мастер настройки рекомендует поиск только для аккаунтов с официальным базовым URL.
+Настройте провайдеров и слоты в `openmaic.yml` или в настройках моделей. Мастер настройки рекомендует поиск только для аккаунтов с официальным базовым URL.
 
 Эндпоинт выбирается по пути базового URL: после удаления завершающих косых черт путь, оканчивающийся на `/coding/v1`, использует `/search`; все остальные используют `/tools/search_pro`. Пользовательские прокси, настроенные в `openmaic.yml`, должны сохранять эту структуру пути.
 
-Если есть `openmaic.yml`, объявите `providers.<id>: { preset: kimi }` и задайте `slots.webSearch: <id>`: переменная старой конфигурации `WEB_SEARCH_KIMI_ENABLED` не назначает этот слот.
+Чтобы настроить поиск Kimi для развёртывания, объявите `providers.<id>: { preset: kimi }` в `openmaic.yml` и задайте `slots.webSearch: <id>`. `WEB_SEARCH_KIMI_ENABLED=false` по-прежнему принудительно отключает поиск Kimi.
 
 ## Загрузка веб-страниц
 

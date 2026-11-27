@@ -47,14 +47,9 @@ slots:
   llm: openai:gpt-5.5
 ```
 
-`openmaic.example.yml` 就是这个起点，另外附有已注释的可选服务商和槽位。不使用该文件时，旧版服务商变量仍然有效，前提是用 `DEFAULT_MODEL` 指定模型：
+`openmaic.example.yml` 就是这个起点，另外附有已注释的可选服务商和槽位。
 
-```bash title=".env.local"
-ANTHROPIC_API_KEY=sk-ant-...
-DEFAULT_MODEL=anthropic:claude-sonnet-4-6
-```
-
-两者都不想配置的话，启动应用后在 **设置 → Token Plan** 中填入套餐 key，或在 **设置 → 模型服务** 中填入某个服务的 key。既没有 `openmaic.yml`、也没有 `DEFAULT_MODEL`、也没有在那里配置服务时，没有任何可用模型，生成会失败。
+也可启动应用，在 **设置 → Token Plan** 或 **设置 → 模型服务** 中输入密钥。
 
 完整的 provider、图像/视频生成、TTS、ASR、文档解析、联网搜索、访问控制和 feature flag 配置见[配置说明](./configuration.mdx)。
 

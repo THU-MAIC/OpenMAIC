@@ -100,28 +100,7 @@ it.each(['ollama', 'lemonade', 'openai-compatible'])(
     );
   },
 );
-it('keyless legacy Ollama remains usable in slot and request resolution without a model list', async () => {
-  vi.stubEnv('OLLAMA_BASE_URL', 'http://localhost:11434');
-  vi.stubEnv('DEFAULT_MODEL', 'ollama:llama3');
-  const runtime = await import('@/lib/server/model-config/runtime');
-  runtime.setWorkspaceLayerLoaderForTests(async () => ({
-    source: 'workspace',
-    config: { slots: { llm: 'ollama:qwen2' } },
-  }));
-  const { resolveRequestedModel } = await import('@/lib/server/resolve-model');
-  expect(await resolveRequestedModel({ modelString: 'ollama:qwen2' })).toMatchObject({
-    modelId: 'qwen2',
-    apiKey: '',
-  });
-  const { lookupSlot } = await import('@/lib/server/model-config/runtime');
-  expect(await lookupSlot('course.content', 'owner')).toMatchObject({ modelId: 'qwen2' });
-  const { modelSettingsView } = await import('@/lib/server/model-config/settings');
-  const { presetModels, getProviderPreset } = await import('@/lib/config/provider-presets');
-  expect(modelSettingsView(null).providers[0].capabilities.chat?.models).toEqual(
-    presetModels(getProviderPreset('ollama')!, 'chat'),
-  );
-});
-it('Bedrock credential chain is guarded in slots, legacy requests and picker', async () => {
+it('Bedrock credential chain is guarded in slots, request-body models and picker', async () => {
   const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
   const config = { providers: { bedrock: { preset: 'bedrock', models: ['allowed'] } } };
   expect(() =>
@@ -130,18 +109,16 @@ it('Bedrock credential chain is guarded in slots, legacy requests and picker', a
       { source: 'workspace', config: { slots: { llm: 'bedrock:unlisted' } } },
     ]),
   ).toThrow(/not authorized/);
-  vi.stubEnv('BEDROCK_BASE_URL', 'https://bedrock.example');
   const runtime = await import('@/lib/server/model-config/runtime');
   runtime.setDeploymentConfigForTests({
     layer: { source: 'deployment', config },
-    legacy: true,
+    legacy: false,
     notices: [],
   });
   const { resolveRequestedModel } = await import('@/lib/server/resolve-model');
-  await expect(resolveRequestedModel({ modelString: 'bedrock:unlisted' })).rejects.toMatchObject({
-    code: 'PROVIDER_DISABLED',
-    httpStatus: 403,
-  });
+  await expect(resolveRequestedModel({ modelString: 'bedrock:unlisted' })).rejects.toThrow(
+    /not authorized/,
+  );
   const { modelSettingsView } = await import('@/lib/server/model-config/settings');
   expect(modelSettingsView(null).providers[0].capabilities.chat?.models.map((m) => m.id)).toEqual([
     'allowed',
@@ -180,47 +157,9 @@ it('startup warns only for credentialed model selection in YAML and legacy confi
     ],
   );
   fs.unlinkSync(path.join(dir, 'openmaic.yml'));
-  vi.stubEnv('TAVILY_API_KEY', 'key');
-  vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'key');
-  vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'key');
-  vi.stubEnv('TTS_AZURE_API_KEY', 'key');
-  vi.stubEnv('ASR_AZURE_API_KEY', 'key');
-  vi.resetModules();
-  const loader = await import('@/lib/server/model-config/deployment-layer');
-  expect(
-    loader.loadDeploymentLayer().notices.filter((n) => n.includes('no explicit model list')),
-  ).toEqual([expect.stringContaining('WEB_SEARCH_CLAUDE_MODELS')]);
-});
-it('empty legacy model fields select capability defaults before authorization', async () => {
-  for (const key of [
-    'TTS_OPENAI_API_KEY',
-    'ASR_OPENAI_API_KEY',
-    'IMAGE_MINIMAX_API_KEY',
-    'VIDEO_MINIMAX_API_KEY',
-    'WEB_SEARCH_CLAUDE_API_KEY',
-    'TTS_AZURE_API_KEY',
-    'ASR_AZURE_API_KEY',
-  ])
-    vi.stubEnv(key, 'server-key');
-  const pc = await import('@/lib/server/provider-config');
-  expect(pc.resolveTTSModel('openai-tts', '')).toBe('gpt-4o-mini-tts');
-  expect(pc.resolveASRModel('openai-whisper', '')).toBe('gpt-4o-mini-transcribe');
-  expect(pc.resolveImageModel('minimax-image', '')).toBe('image-01');
-  expect(pc.resolveVideoModel('minimax-video', '')).toBe('MiniMax-Hailuo-2.3');
-  expect(pc.resolveWebSearchModel('claude', '')).toBe('claude-sonnet-5');
-});
-
-it('normalizes legacy default and fallback model ids at configuration load', async () => {
-  vi.stubEnv('OPENAI_API_KEY', 'server-key');
-  vi.stubEnv('DEFAULT_MODEL', 'openai: allowed \u00a0');
-  vi.stubEnv('MODEL_FALLBACK', 'openai: fallback ');
-  const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
-  expect(deploymentConfig().layer?.config.slots?.llm).toEqual({
-    model: 'openai:allowed',
-    fallback: 'openai:fallback',
-  });
-  const { resolveStageModel } = await import('@/lib/server/model-config/llm');
-  const resolved = await resolveStageModel({ stage: 'scene-content', workspaceId: null });
-  expect(resolved.modelId).toBe('allowed');
-  expect((resolved.model as { modelId: string }).modelId).toBe('allowed');
+  vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'legacy-key');
+  const { layer, notices } = loadDeploymentLayer();
+  expect(layer).toBeNull();
+  expect(notices).toEqual([expect.stringContaining('WEB_SEARCH_CLAUDE_API_KEY')]);
+  expect(notices[0]).not.toContain('legacy-key');
 });

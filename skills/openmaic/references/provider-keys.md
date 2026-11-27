@@ -9,7 +9,7 @@ OpenMAIC resolves every model and key on the server, from its own model configur
 - `openmaic.yml` (written by the operator; path overridable with `OPENMAIC_CONFIG`) declares providers and assigns models to capability slots. Keys stay in `.env.local` and are referenced from the file as `${VAR}`.
 - The model settings in the OpenMAIC web app (**Settings → Token Plan**, **Model Services** and **Course Model Config**) edit the slots and providers `openmaic.yml` leaves open, for the current workspace.
 
-This skill does not rely on runtime overrides for model, provider, API key, base URL, or provider type. The old request headers (`x-model`, `x-api-key`, `x-base-url`, `x-model-routes`, `x-*-provider`, …) are deprecated and ignored once a slot is configured; never use them as a workaround.
+This skill does not rely on runtime overrides for model, provider, API key, base URL, or provider type. The old request headers (`x-model`, `x-api-key`, `x-base-url`, `x-model-routes`, `x-*-provider`, …) return HTTP 400 starting in 1.6.0.
 
 If the user wants to change the model or provider, they edit `openmaic.yml` (and `.env.local` for the key) or use the model settings in the web app.
 
@@ -98,7 +98,7 @@ For a personal install where the user does not want to edit files: start OpenMAI
 
 ### 4. Existing Environment-Variable Setups
 
-A deployment configured through provider variables (`OPENAI_API_KEY`, …), `server-providers.yml`, `DEFAULT_MODEL` and `MODEL_FALLBACK` still works while there is no `openmaic.yml`; the server translates it at startup and logs a deprecation notice. Recommend moving to `openmaic.yml` when the user touches the configuration anyway. `MODEL_ROUTES` is no longer read: a server that sets it without `openmaic.yml` refuses to start, and the per-stage models must be written as slots (see the Configuration docs, "Migrating from the legacy configuration").
+Starting in 1.6.0, the server warns about detected legacy provider settings and continues startup. Configure providers and slots in `openmaic.yml`, or use first-run setup. Environment variables referenced from YAML as `${VAR}` remain supported. Rewrite `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` as slot assignments using the Configuration guide's migration section.
 
 ## Model Reference Rule
 

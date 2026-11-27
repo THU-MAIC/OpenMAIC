@@ -197,7 +197,7 @@ it.each([true, false])(
 );
 
 it.each(['image', 'video'] as const)(
-  'MiniMax %s verification sends the selected model on saved and legacy paths',
+  'MiniMax %s verification sends the selected model for a saved provider',
   async (capability) => {
     const preset = `minimax-${capability}`;
     const model = capability === 'image' ? 'image-01-live' : 'MiniMax-Hailuo-02';
@@ -212,29 +212,6 @@ it.each(['image', 'video'] as const)(
       (await POST(req(`verify-${capability}-provider`, { provider: 'selected', model }))).status,
     ).toBe(200);
     expect(captures.calls).toEqual([{ model, key: 'Bearer server-key' }]);
-    vi.stubEnv(`${capability.toUpperCase()}_MINIMAX_API_KEY`, 'legacy-key');
-    vi.stubEnv(`${capability.toUpperCase()}_MINIMAX_MODELS`, model);
-    vi.resetModules();
-    await deployment(
-      { providers: { [preset]: { preset, apiKey: 'legacy-key', models: [model] } } },
-      true,
-    );
-    const route =
-      capability === 'image'
-        ? await import('@/app/api/verify-image-provider/route')
-        : await import('@/app/api/verify-video-provider/route');
-    expect(
-      (
-        await route.POST(
-          req(
-            `verify-${capability}-provider`,
-            {},
-            { [`x-${capability}-provider`]: preset, [`x-${capability}-model`]: model },
-          ),
-        )
-      ).status,
-    ).toBe(200);
-    expect(captures.calls[1]).toEqual({ model, key: 'Bearer legacy-key' });
   },
 );
 it.each([
@@ -255,8 +232,11 @@ it.each([
   expect(response.status).toBe(status);
   expect(await response.json()).toMatchObject({ errorCode });
 });
-it('empty legacy TTS model selects the authorized default', async () => {
-  vi.stubEnv('TTS_OPENAI_API_KEY', 'server-key');
+it('empty request-body TTS model selects the slot model', async () => {
+  await deployment({
+    providers: { speech: { preset: 'openai-tts', apiKey: 'server-key' } },
+    slots: { tts: 'speech:gpt-4o-mini-tts' },
+  });
   const { POST } = await import('@/app/api/generate/tts/route');
   const response = await POST(
     req('generate/tts', {

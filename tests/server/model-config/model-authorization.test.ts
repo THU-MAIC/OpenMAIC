@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { NextRequest } from 'next/server';
+import { NextRequest } from 'next/server';
+import { middleware } from '@/middleware';
 import type { ModelConfigFile } from '@/lib/server/model-config/openmaic-yml';
 import {
   assertDeploymentModelAuthorized,
@@ -63,14 +64,14 @@ function deployment(config: ModelConfigFile, legacy = false) {
   });
 }
 function request(body: unknown, routes?: unknown) {
-  return new Request('http://localhost/api/test', {
+  return new NextRequest('http://localhost/api/test', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       ...(routes ? { 'x-model-routes': JSON.stringify(routes) } : {}),
     },
     body: JSON.stringify(body),
-  }) as NextRequest;
+  });
 }
 function chatBody(model: string) {
   return {
@@ -165,11 +166,9 @@ describe('operator model authorization', () => {
       expect(mocks.getModel).not.toHaveBeenCalled();
     },
   );
-  it('retains the locked classroom model despite body and header overrides', async () => {
+  it('retains the locked classroom model despite a body override', async () => {
     deployment({ ...config, slots: { classroom: 'openai:primary' }, lock: ['classroom'] });
-    const response = await pi(
-      request(chatBody('openai:unlisted'), { 'chat-adapter': 'openai:unlisted' }),
-    );
+    const response = await pi(request(chatBody('openai:unlisted')));
     await response.text();
     expect(response.status).toBe(200);
     expect(mocks.getModel).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'primary' }));
@@ -198,16 +197,14 @@ describe('operator model authorization', () => {
     );
     expect(mocks.getModel).not.toHaveBeenCalled();
   });
-  it('rejects chat model and header substitution before generation', async () => {
-    for (const routed of [false, true]) {
-      const response = await pi(
-        request(
-          chatBody(routed ? 'openai:allowed' : 'openai:unlisted'),
-          routed ? { 'chat-adapter': 'openai:unlisted' } : undefined,
-        ),
-      );
-      expect(response.status).toBe(403);
-    }
+  it('rejects a forbidden body model or a retired route header before generation', async () => {
+    vi.stubEnv('ACCESS_CODE', '');
+    expect((await pi(request(chatBody('openai:unlisted')))).status).toBe(403);
+    const response = await middleware(
+      request(chatBody('openai:allowed'), { 'chat-adapter': 'openai:unlisted' }),
+    );
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain('x-model-routes');
     expect(mocks.getModel).not.toHaveBeenCalled();
     expect(mocks.pi).not.toHaveBeenCalled();
   });
@@ -297,16 +294,10 @@ describe('Pi classroom tool requirement through real model resolution', () => {
     expect(mocks.getModel).toHaveBeenCalledWith(expect.objectContaining({ modelId: model }));
   });
 
-  it.each([false, true])('checks a request model or stage override (routed=%s)', async (routed) => {
-    deployment({}, true);
+  it('checks tool support for the request-body model while the slot is unassigned', async () => {
+    deployment({});
     const response = await pi(
-      request(
-        {
-          ...chatBody(routed ? 'custom:unknown' : 'ollama:deepseek-r1'),
-          requireToolCalling: false,
-        },
-        routed ? { 'chat-adapter': { model: 'ollama:deepseek-r1' } } : undefined,
-      ),
+      request({ ...chatBody('ollama:deepseek-r1'), requireToolCalling: false }),
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ reason: 'tool_calling_required' });
@@ -454,38 +445,11 @@ describe('Pi Google native migration through real model resolution', () => {
       await refused(await pi(request(body())));
     },
   );
-  it.each([false, true])(
-    'checks body/custom provider or selected x-model-routes (routed=%s)',
-    async (routed) => {
-      deployment({});
-      await refused(
-        await pi(
-          request(
-            routed ? { ...body(), baseUrl: 'https://example.com/v1' } : body(),
-            routed
-              ? {
-                  'chat-adapter': {
-                    model: 'custom:alias',
-                    apiKey: 'own',
-                    providerType: 'openai',
-                    baseUrl: endpoint,
-                  },
-                }
-              : undefined,
-          ),
-        ),
-      );
-    },
-  );
-  it('ignores body endpoint when a native user route is selected', async () => {
+  it('checks a compatible provider sent in the body while the slot is unassigned', async () => {
     deployment({});
-    const response = await pi(
-      request(body(), { 'chat-adapter': { model: 'google:gemini-3.8-flash', apiKey: 'own' } }),
-    );
-    expect(response.status).toBe(200);
-    await response.text();
-    expect(mocks.getModel).toHaveBeenCalledWith(expect.objectContaining({ providerId: 'google' }));
+    await refused(await pi(request(body())));
   });
+
   it.each([false, true])(
     'keeps YAML authoritative with allowUserKeys=%s',
     async (allowUserKeys) => {

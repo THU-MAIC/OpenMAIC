@@ -2103,7 +2103,7 @@
     "resetConfirmDescription": "此作業將清除所有自訂模型，恢復到內建的預設模型清單。API 密鑰和 Base URL 將被保留。",
     "resetToDefault": "重設為預設設定",
     "saveModel": "儲存",
-    "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
+    "searxngServerOnlyNotice": "在 openmaic.yml 中宣告供應商，設定 preset: searxng 和 baseUrl，再將供應商 ID 填入 slots.webSearch。",
     "serverConfigured": "服務端",
     "serverConfiguredNotice": "此供應商由伺服器端管理，無法在此編輯。",
     "startRecording": "開始錄音",

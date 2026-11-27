@@ -122,22 +122,9 @@ describe('provider-config', () => {
       expect(resolveApiKey('openai', 'sk-client')).toBe('sk-client');
     });
 
-    it('returns server key from env when no client key', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-server');
-      const { resolveApiKey } = await import('@/lib/server/provider-config');
-      expect(resolveApiKey('openai')).toBe('sk-server');
-    });
-
     it('returns empty string when neither client nor server key exists', async () => {
       const { resolveApiKey } = await import('@/lib/server/provider-config');
       expect(resolveApiKey('openai')).toBe('');
-    });
-
-    it('ignores client key for a server-managed provider (server is authoritative)', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-server');
-      const { resolveApiKey } = await import('@/lib/server/provider-config');
-      // openai is server-configured ⇒ managed ⇒ client override is ignored.
-      expect(resolveApiKey('openai', 'sk-client')).toBe('sk-server');
     });
 
     it('uses the client key for an unmanaged provider', async () => {
@@ -146,48 +133,9 @@ describe('provider-config', () => {
       expect(resolveApiKey('openai', 'sk-client')).toBe('sk-client');
     });
 
-    it('resolves non-OpenAI providers via their env prefix', async () => {
-      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
-      const { resolveApiKey } = await import('@/lib/server/provider-config');
-      expect(resolveApiKey('anthropic')).toBe('sk-anthropic');
-    });
-
-    it('resolves Azure OpenAI via its dedicated env prefix', async () => {
-      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
-      const { resolveApiKey } = await import('@/lib/server/provider-config');
-      expect(resolveApiKey('azure')).toBe('azure-key');
-    });
-
     it('returns empty string for unknown provider with no env var', async () => {
       const { resolveApiKey } = await import('@/lib/server/provider-config');
       expect(resolveApiKey('nonexistent-provider')).toBe('');
-    });
-  });
-
-  describe('startup log', () => {
-    async function loadedLine(): Promise<string | undefined> {
-      const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
-      try {
-        const { getServerProviderConfig } = await import('@/lib/server/provider-config');
-        getServerProviderConfig();
-        return consoleLog.mock.calls
-          .map(([line]) => String(line))
-          .find((line) => line.includes('[ServerProviderConfig] Loaded'));
-      } finally {
-        consoleLog.mockRestore();
-      }
-    }
-
-    it('names environment variables alone when there is no server-providers.yml', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-server');
-      expect(await loadedLine()).toContain('Loaded (environment variables): 1 LLM');
-    });
-
-    it('names the file too when server-providers.yml has content', async () => {
-      yamlOverride = 'providers:\n  openai:\n    apiKey: sk-yaml\n';
-      expect(await loadedLine()).toContain(
-        'Loaded (server-providers.yml and environment variables): 1 LLM',
-      );
     });
   });
 
@@ -232,23 +180,6 @@ describe('provider-config', () => {
       expect(resolveBaseUrl('openai', 'https://custom.api.com')).toBe('https://custom.api.com');
     });
 
-    it('ignores client URL for a server-managed provider', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-server');
-      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');
-      const { resolveBaseUrl } = await import('@/lib/server/provider-config');
-      // Managed ⇒ server URL wins, client override is dropped.
-      expect(resolveBaseUrl('openai', 'https://client.example.com')).toBe(
-        'https://proxy.example.com/v1',
-      );
-    });
-
-    it('returns server URL from env when no client URL', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-test');
-      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');
-      const { resolveBaseUrl } = await import('@/lib/server/provider-config');
-      expect(resolveBaseUrl('openai')).toBe('https://proxy.example.com/v1');
-    });
-
     it('returns undefined when neither client nor server URL exists', async () => {
       const { resolveBaseUrl } = await import('@/lib/server/provider-config');
       expect(resolveBaseUrl('openai')).toBeUndefined();
@@ -260,266 +191,12 @@ describe('provider-config', () => {
       const { resolveProxy } = await import('@/lib/server/provider-config');
       expect(resolveProxy('openai')).toBeUndefined();
     });
-
-    it('returns proxy URL from YAML config', async () => {
-      yamlOverride = `
-providers:
-  openai:
-    apiKey: sk-yaml
-    proxy: http://proxy.internal:8080
-`;
-      const { resolveProxy } = await import('@/lib/server/provider-config');
-      expect(resolveProxy('openai')).toBe('http://proxy.internal:8080');
-    });
-  });
-
-  describe('getServerProviders', () => {
-    it('returns empty object when no providers configured', async () => {
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      expect(getServerProviders()).toEqual({});
-    });
-
-    it('returns allowed models but never the API key or base URL', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-secret');
-      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.com/v1');
-      vi.stubEnv('OPENAI_MODELS', 'gpt-4o,gpt-4o-mini');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.openai).toBeDefined();
-      expect(providers.openai.models).toEqual(['gpt-4o', 'gpt-4o-mini']);
-      // Neither the API key nor the base URL may leak to the client.
-      expect((providers.openai as Record<string, unknown>).apiKey).toBeUndefined();
-      expect((providers.openai as Record<string, unknown>).baseUrl).toBeUndefined();
-    });
-
-    it('lists multiple providers', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
-      vi.stubEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(Object.keys(providers)).toContain('openai');
-      expect(Object.keys(providers)).toContain('anthropic');
-    });
-
-    it('maps OpenRouter env prefix to provider ID', async () => {
-      vi.stubEnv('OPENROUTER_API_KEY', 'sk-openrouter');
-      vi.stubEnv('OPENROUTER_MODELS', 'deepseek/deepseek-v4-pro,deepseek/deepseek-v4-flash');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.openrouter.models).toEqual([
-        'deepseek/deepseek-v4-pro',
-        'deepseek/deepseek-v4-flash',
-      ]);
-    });
-
-    it('maps Azure deployment names to the built-in provider', async () => {
-      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
-      vi.stubEnv('AZURE_OPENAI_BASE_URL', 'https://test-resource.openai.azure.com/openai');
-      vi.stubEnv('AZURE_OPENAI_MODELS', 'course-gpt-4o,course-gpt-5');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.azure.models).toEqual(['course-gpt-4o', 'course-gpt-5']);
-    });
-
-    it('maps Atlas Cloud env vars to the built-in OpenAI-compatible provider', async () => {
-      vi.stubEnv('ATLASCLOUD_API_KEY', 'sk-atlas');
-      vi.stubEnv('ATLASCLOUD_BASE_URL', 'https://api.atlascloud.ai/v1');
-      vi.stubEnv('ATLASCLOUD_MODELS', 'qwen/qwen3.5-flash,deepseek-ai/deepseek-v4-pro');
-      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.atlascloud.models).toEqual([
-        'qwen/qwen3.5-flash',
-        'deepseek-ai/deepseek-v4-pro',
-      ]);
-      expect(resolveBaseUrl('atlascloud')).toBe('https://api.atlascloud.ai/v1');
-      expect((providers.atlascloud as Record<string, unknown>).apiKey).toBeUndefined();
-      expect((providers.atlascloud as Record<string, unknown>).baseUrl).toBeUndefined();
-    });
-
-    it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
-      vi.stubEnv('TENCENT_HUNYUAN_API_KEY', 'sk-tencent');
-      vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3,hy3-202608');
-      vi.stubEnv('MIMO_API_KEY', 'sk-mimo');
-      vi.stubEnv('MIMO_MODELS', 'mimo-v2.5-pro');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers['tencent-hunyuan'].models).toEqual(['hy3', 'hy3-202608']);
-      expect(providers.xiaomi.models).toEqual(['mimo-v2.5-pro']);
-    });
-
-    it('maps TokenDance env vars to the built-in OpenAI-compatible provider', async () => {
-      vi.stubEnv('TOKENDANCE_API_KEY', 'sk-td');
-      vi.stubEnv('TOKENDANCE_BASE_URL', 'https://tokendance.space/gateway/v1');
-      vi.stubEnv('TOKENDANCE_MODELS', 'deepseek-v4.1-flash,glm-5.3');
-      const { getServerProviders, resolveBaseUrl } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.tokendance.models).toEqual(['deepseek-v4.1-flash', 'glm-5.3']);
-      expect(resolveBaseUrl('tokendance')).toBe('https://tokendance.space/gateway/v1');
-    });
-
-    it('does not treat HY3 as an env prefix', async () => {
-      vi.stubEnv('HY3_API_KEY', 'sk-hy3');
-      vi.stubEnv('HY3_MODELS', 'hy3');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers['tencent-hunyuan']).toBeUndefined();
-    });
-
-    it('omits providers without API key', async () => {
-      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.com/v1');
-      // No OPENAI_API_KEY set
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.openai).toBeUndefined();
-    });
-
-    it('includes Bedrock from env without an API key', async () => {
-      vi.stubEnv('BEDROCK_REGION', 'us-east-1');
-      vi.stubEnv('BEDROCK_MODELS', ' us.anthropic.claude-sonnet-5 , us.anthropic.claude-opus-4-8 ');
-      const { getServerProviders, resolveApiKey, resolveBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.bedrock).toEqual({
-        models: ['us.anthropic.claude-sonnet-5', 'us.anthropic.claude-opus-4-8'],
-      });
-      expect(resolveApiKey('bedrock')).toBe('');
-      expect(resolveBaseUrl('bedrock')).toBeUndefined();
-    });
-
-    it('does not enable Bedrock for whitespace-only region and models', async () => {
-      vi.stubEnv('BEDROCK_REGION', '   ');
-      vi.stubEnv('BEDROCK_MODELS', ' , ');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-
-      expect(getServerProviders().bedrock).toBeUndefined();
-    });
-
-    it('includes Bedrock from YAML with only models configured', async () => {
-      yamlOverride = `
-providers:
-  bedrock:
-    models:
-      - us.anthropic.claude-sonnet-5
-      - us.anthropic.claude-opus-4-8
-`;
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.bedrock.models).toEqual([
-        'us.anthropic.claude-sonnet-5',
-        'us.anthropic.claude-opus-4-8',
-      ]);
-    });
-  });
-
-  describe('env var model parsing', () => {
-    it('splits comma-separated models and trims whitespace', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-test');
-      vi.stubEnv('OPENAI_MODELS', ' gpt-4o , gpt-4o-mini , ');
-      const { getServerProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerProviders();
-
-      expect(providers.openai.models).toEqual(['gpt-4o', 'gpt-4o-mini']);
-    });
   });
 
   describe('resolveWebSearchApiKey', () => {
     it('returns client key first', async () => {
       const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
       expect(resolveWebSearchApiKey('client-key')).toBe('client-key');
-    });
-
-    it('falls back to TAVILY_API_KEY env var', async () => {
-      vi.stubEnv('TAVILY_API_KEY', 'tvly-bare-env');
-      const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
-      expect(resolveWebSearchApiKey()).toBe('tvly-bare-env');
-    });
-
-    it('resolves Bocha API key and base URL from env vars (managed flag only, no URL exposed)', async () => {
-      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
-      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
-      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchApiKey('bocha', undefined)).toBe('bocha-env-key');
-      expect(resolveWebSearchBaseUrl('bocha')).toBe('https://proxy.example.com/bocha');
-      // The map exposes only the managed flag (presence) — not the base URL.
-      expect(getServerWebSearchProviders().bocha).toEqual({});
-    });
-
-    it('resolves Exa API key and base URL from env vars', async () => {
-      vi.stubEnv('EXA_API_KEY', 'exa-env-key');
-      vi.stubEnv('EXA_BASE_URL', 'https://proxy.example.com/exa');
-      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchApiKey('exa', undefined)).toBe('exa-env-key');
-      expect(resolveWebSearchBaseUrl('exa')).toBe('https://proxy.example.com/exa');
-      expect(getServerWebSearchProviders().exa).toEqual({});
-    });
-
-    it('resolves Firecrawl API key and base URL from env vars', async () => {
-      vi.stubEnv('FIRECRAWL_API_KEY', 'fc-env-key');
-      vi.stubEnv('FIRECRAWL_BASE_URL', 'https://firecrawl.internal');
-      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchApiKey('firecrawl', undefined)).toBe('fc-env-key');
-      expect(resolveWebSearchBaseUrl('firecrawl')).toBe('https://firecrawl.internal');
-      expect(getServerWebSearchProviders().firecrawl).toEqual({});
-    });
-
-    it('ignores client key and base URL for a server-managed Bocha provider', async () => {
-      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
-      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
-      const { resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      // Managed ⇒ server config is authoritative, client overrides dropped.
-      expect(resolveWebSearchApiKey('bocha', 'bocha-client-key')).toBe('bocha-env-key');
-      expect(resolveWebSearchBaseUrl('bocha', 'https://client.example.com')).toBe(
-        'https://proxy.example.com/bocha',
-      );
-    });
-
-    it('resolves MiniMax web search API key and base URL from dedicated env vars', async () => {
-      vi.stubEnv('WEB_SEARCH_MINIMAX_API_KEY', 'minimax-env-key');
-      vi.stubEnv('WEB_SEARCH_MINIMAX_BASE_URL', 'https://proxy.example.com/minimax');
-      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchApiKey('minimax', undefined)).toBe('minimax-env-key');
-      expect(resolveWebSearchBaseUrl('minimax')).toBe('https://proxy.example.com/minimax');
-      expect(getServerWebSearchProviders().minimax).toEqual({});
-    });
-
-    it('resolves Claude web search key, base URL, and pinned model from dedicated env vars', async () => {
-      vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude-env-key');
-      vi.stubEnv('WEB_SEARCH_CLAUDE_BASE_URL', 'https://proxy.example.com/anthropic');
-      vi.stubEnv('WEB_SEARCH_CLAUDE_MODELS', 'claude-sonnet-5,claude-opus-5');
-      const {
-        getServerWebSearchProviders,
-        resolveWebSearchApiKey,
-        resolveWebSearchBaseUrl,
-        resolveWebSearchModel,
-      } = await import('@/lib/server/provider-config');
-
-      expect(resolveWebSearchApiKey('claude', undefined)).toBe('claude-env-key');
-      expect(resolveWebSearchBaseUrl('claude')).toBe('https://proxy.example.com/anthropic');
-      // Only listed models may use this credential.
-      expect(() => resolveWebSearchModel('claude', 'claude-haiku-4-5')).toThrow('not authorized');
-      expect(resolveWebSearchModel('claude', 'claude-opus-5')).toBe('claude-opus-5');
-      expect(getServerWebSearchProviders().claude).toEqual({});
     });
 
     it('lets the client model win when no Claude model is pinned server-side', async () => {
@@ -530,171 +207,7 @@ providers:
     });
   });
 
-  describe('baseUrl-only providers (e.g. mineru)', () => {
-    it('includes PDF provider from YAML when only baseUrl is configured (no apiKey)', async () => {
-      yamlOverride = `
-pdf:
-  mineru:
-    baseUrl: http://localhost:8888
-`;
-      const { getServerPDFProviders, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers.mineru).toBeDefined();
-      expect(resolvePDFBaseUrl('mineru')).toBe('http://localhost:8888');
-    });
-
-    it('includes provider from env when only BASE_URL is set (no API_KEY)', async () => {
-      vi.stubEnv('PDF_MINERU_BASE_URL', 'http://localhost:8888');
-      const { getServerPDFProviders, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers.mineru).toBeDefined();
-      expect(resolvePDFBaseUrl('mineru')).toBe('http://localhost:8888');
-    });
-
-    it('excludes PDF provider when only apiKey is configured (no baseUrl)', async () => {
-      yamlOverride = `
-pdf:
-  mineru:
-    apiKey: sk-fake
-`;
-      const { getServerPDFProviders } = await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers.mineru).toBeUndefined();
-    });
-
-    it('includes MinerU Cloud from env when only API key is configured', async () => {
-      vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'mineru-cloud-key');
-      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers['mineru-cloud']).toBeDefined();
-      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-key');
-      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
-    });
-
-    it('includes DeepSeek OCR from env when only API key is configured', async () => {
-      vi.stubEnv('PDF_DEEPSEEK_OCR_API_KEY', 'sk-ds-ocr');
-      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(getServerPDFProviders()['deepseek-ocr']).toBeDefined();
-      expect(resolvePDFApiKey('deepseek-ocr')).toBe('sk-ds-ocr');
-      expect(resolvePDFBaseUrl('deepseek-ocr')).toBeUndefined();
-    });
-
-    it('maps the DeepSeek speech env prefixes to their providers', async () => {
-      vi.stubEnv('TTS_DEEPSEEK_API_KEY', 'sk-ds-tts');
-      vi.stubEnv('ASR_DEEPSEEK_API_KEY', 'sk-ds-asr');
-      const { getServerTTSProviders, getServerASRProviders } =
-        await import('@/lib/server/provider-config');
-
-      expect(getServerTTSProviders()['deepseek-tts']).toBeDefined();
-      expect(getServerASRProviders()['deepseek-asr']).toBeDefined();
-    });
-
-    it('includes MinerU Cloud from YAML when only API key is configured', async () => {
-      yamlOverride = `
-pdf:
-  mineru-cloud:
-    apiKey: mineru-cloud-yaml-key
-`;
-      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
-        await import('@/lib/server/provider-config');
-      const providers = getServerPDFProviders();
-
-      expect(providers['mineru-cloud']).toBeDefined();
-      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-yaml-key');
-      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
-    });
-  });
-
-  describe('image and video provider metadata', () => {
-    it('uses standard OpenAI env vars for OpenAI image generation fallback', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
-      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');
-      const { getServerImageProviders, resolveImageApiKey, resolveImageBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      const providers = getServerImageProviders();
-      // No base URL exposed; resolution still works server-side.
-      expect(providers['openai-image']).toEqual({});
-      expect(resolveImageApiKey('openai-image')).toBe('sk-openai');
-      expect(resolveImageBaseUrl('openai-image')).toBe('https://proxy.example.com/v1');
-    });
-
-    it('maps IMAGE_OPENAI and exposes image baseUrl', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-openai-image');
-      vi.stubEnv('IMAGE_OPENAI_BASE_URL', 'https://proxy.example.com/v1');
-      const { getServerImageProviders, resolveImageBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      const providers = getServerImageProviders();
-      expect(providers['openai-image']).toEqual({});
-      expect(resolveImageBaseUrl('openai-image')).toBe('https://proxy.example.com/v1');
-    });
-
-    it('exposes video provider baseUrl', async () => {
-      vi.stubEnv('VIDEO_GROK_API_KEY', 'xai-secret');
-      vi.stubEnv('VIDEO_GROK_BASE_URL', 'https://proxy.example.com/video');
-      const { getServerVideoProviders, resolveVideoBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      const providers = getServerVideoProviders();
-      expect(providers['grok-video']).toEqual({});
-      expect(resolveVideoBaseUrl('grok-video')).toBe('https://proxy.example.com/video');
-    });
-
-    it('exposes server-pinned image models in getServerImageProviders', async () => {
-      vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
-      vi.stubEnv('IMAGE_SEEDREAM_MODELS', 'doubao-seedream-5.0-lite,doubao-seedream-5.0-pro');
-      const { getServerImageProviders } = await import('@/lib/server/provider-config');
-
-      const providers = getServerImageProviders();
-      expect(providers.seedream).toEqual({
-        models: ['doubao-seedream-5.0-lite', 'doubao-seedream-5.0-pro'],
-      });
-    });
-
-    it('exposes server-pinned video models in getServerVideoProviders', async () => {
-      vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
-      vi.stubEnv('VIDEO_SEEDANCE_MODELS', 'doubao-seedance-2-0,doubao-seedance-3-0');
-      const { getServerVideoProviders } = await import('@/lib/server/provider-config');
-
-      const providers = getServerVideoProviders();
-      expect(providers.seedance).toEqual({
-        models: ['doubao-seedance-2-0', 'doubao-seedance-3-0'],
-      });
-    });
-
-    it('activates keyless image providers (lemonade) from a base URL alone', async () => {
-      vi.stubEnv('IMAGE_LEMONADE_BASE_URL', 'http://localhost:13305/v1');
-      const { getServerImageProviders, resolveImageApiKey, isServerConfiguredProvider } =
-        await import('@/lib/server/provider-config');
-
-      expect(isServerConfiguredProvider('image', 'lemonade')).toBe(true);
-      expect(getServerImageProviders().lemonade).toBeDefined();
-      expect(resolveImageApiKey('lemonade')).toBe('');
-    });
-  });
-
   describe('media model resolution', () => {
-    it('allowlists the client image model against IMAGE_<PREFIX>_MODELS', async () => {
-      vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
-      vi.stubEnv('IMAGE_SEEDREAM_MODELS', 'model-a,model-b');
-      const { resolveImageModel } = await import('@/lib/server/provider-config');
-      // Allowlisted client choice wins over the managed default.
-      expect(resolveImageModel('seedream', 'model-b')).toBe('model-b');
-      // Unlisted client models are refused before using the server credential.
-      expect(() => resolveImageModel('seedream', 'client-model')).toThrow('not authorized');
-      expect(resolveImageModel('seedream')).toBe('model-a');
-    });
-
     it('lets the client image model win when nothing is pinned server-side', async () => {
       const { resolveImageModel } = await import('@/lib/server/provider-config');
       expect(resolveImageModel('seedream', 'client-model')).toBe('client-model');
@@ -705,27 +218,9 @@ pdf:
       expect(resolveImageModel('seedream')).toBeUndefined();
     });
 
-    it('resolves the default image provider as the first server-configured one', async () => {
-      vi.stubEnv('IMAGE_SEEDREAM_API_KEY', 'sk-seedream');
-      vi.stubEnv('IMAGE_GROK_API_KEY', 'sk-grok');
-      const { resolveServerImageProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerImageProviderId()).toBe('seedream');
-    });
-
     it('returns undefined for the default image provider when none is configured', async () => {
       const { resolveServerImageProviderId } = await import('@/lib/server/provider-config');
       expect(resolveServerImageProviderId()).toBeUndefined();
-    });
-
-    it('pins the video model from server config and allowlists the client choice', async () => {
-      vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
-      vi.stubEnv('VIDEO_SEEDANCE_MODELS', 'v1,v2');
-      const { resolveVideoModel } = await import('@/lib/server/provider-config');
-      // Allowlisted client choice wins over the managed default.
-      expect(resolveVideoModel('seedance', 'v2')).toBe('v2');
-      // Unlisted client models are refused before using the server credential.
-      expect(() => resolveVideoModel('seedance', 'not-allowed')).toThrow('not authorized');
-      expect(resolveVideoModel('seedance')).toBe('v1');
     });
 
     it('lets the client video model win when nothing is pinned server-side', async () => {
@@ -738,54 +233,9 @@ pdf:
       expect(resolveVideoModel('seedance')).toBeUndefined();
     });
 
-    it('normalizes YAML model lists like env (trim + drop empties, never a garbage pin)', async () => {
-      yamlOverride = `
-video:
-  seedance:
-    apiKey: sk-yaml-seedance
-    models:
-      - " doubao-seedance-2-0-260128 "
-      - ""
-      - "   "
-  kling:
-    apiKey: sk-yaml-kling
-    models:
-      - ""
-`;
-      const { resolveVideoModel } = await import('@/lib/server/provider-config');
-
-      // Whitespace-trimmed real entries survive; empty entries are dropped.
-      expect(resolveVideoModel('seedance')).toBe('doubao-seedance-2-0-260128');
-      // The stored list is trimmed, so an exact-match client choice is allowlisted.
-      expect(resolveVideoModel('seedance', 'doubao-seedance-2-0-260128')).toBe(
-        'doubao-seedance-2-0-260128',
-      );
-      // A garbage-only `models: [""]` list normalizes to no pin at all — it must
-      // never become a truthy pin of "" (the YAML path used to copy it verbatim).
-      expect(() => resolveVideoModel('kling')).toThrow('not authorized');
-    });
-
-    it('resolves the default video provider as the first server-configured one', async () => {
-      vi.stubEnv('VIDEO_SEEDANCE_API_KEY', 'sk-seedance');
-      vi.stubEnv('VIDEO_KLING_API_KEY', 'sk-kling');
-      const { resolveServerVideoProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerVideoProviderId()).toBe('seedance');
-    });
-
     it('returns undefined for the default video provider when none is configured', async () => {
       const { resolveServerVideoProviderId } = await import('@/lib/server/provider-config');
       expect(resolveServerVideoProviderId()).toBeUndefined();
-    });
-
-    it('allowlists the client ASR model against ASR_<PREFIX>_MODELS', async () => {
-      vi.stubEnv('ASR_OPENAI_API_KEY', 'sk-asr');
-      vi.stubEnv('ASR_OPENAI_MODELS', 'whisper-x,whisper-y');
-      const { resolveASRModel } = await import('@/lib/server/provider-config');
-      // Allowlisted client choice wins over the managed default.
-      expect(resolveASRModel('openai-whisper', 'whisper-y')).toBe('whisper-y');
-      // Unlisted client models are refused before using the server credential.
-      expect(() => resolveASRModel('openai-whisper', 'client-model')).toThrow('not authorized');
-      expect(resolveASRModel('openai-whisper')).toBe('whisper-x');
     });
 
     it('lets the client ASR model win when nothing is pinned server-side', async () => {
@@ -800,18 +250,6 @@ video:
   });
 
   describe('isServerConfiguredProvider', () => {
-    it('is true only for operator-configured providers, per section', async () => {
-      vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
-      vi.stubEnv('VIDEO_GROK_API_KEY', 'xai-secret');
-      const { isServerConfiguredProvider } = await import('@/lib/server/provider-config');
-
-      expect(isServerConfiguredProvider('providers', 'openai')).toBe(true);
-      expect(isServerConfiguredProvider('providers', 'anthropic')).toBe(false);
-      expect(isServerConfiguredProvider('video', 'grok-video')).toBe(true);
-      // section-scoped: an LLM provider id is not a video provider
-      expect(isServerConfiguredProvider('video', 'openai')).toBe(false);
-    });
-
     it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
       'does not treat the inherited property name %s as a configured provider',
       async (providerId) => {
@@ -852,12 +290,6 @@ video:
       expect(getServerTTSProviders()).toEqual({});
     });
 
-    it('marks an env-configured TTS provider as managed (no disabled flag)', async () => {
-      vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-tts');
-      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
-      expect(getServerTTSProviders()['openai-tts']).toEqual({});
-    });
-
     it('force-disables a provider via TTS_<P>_ENABLED=false even when it has a key', async () => {
       vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-tts');
       vi.stubEnv('TTS_OPENAI_ENABLED', 'false');
@@ -881,8 +313,8 @@ video:
       yamlOverride = 'tts:\n  openai-tts:\n    enabled: false\n    apiKey: sk-yaml\n';
       vi.stubEnv('TTS_OPENAI_ENABLED', 'true');
       const { getServerTTSProviders } = await import('@/lib/server/provider-config');
-      // Re-enabled by env, and configured via YAML key ⇒ managed, not disabled.
-      expect(getServerTTSProviders()['openai-tts']).toEqual({});
+      // The env switch clears the YAML force-off policy.
+      expect(getServerTTSProviders()['openai-tts']).toBeUndefined();
     });
 
     it('an empty TTS_<P>_ENABLED does NOT override a YAML disable', async () => {
@@ -902,12 +334,6 @@ video:
   });
 
   describe('per-capability force-disable (#665)', () => {
-    it('image: marks an env-configured provider as managed (no disabled flag)', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
-      const { getServerImageProviders } = await import('@/lib/server/provider-config');
-      expect(getServerImageProviders()['openai-image']).toEqual({});
-    });
-
     it('image: force-disables via IMAGE_<P>_ENABLED=false even when it has a key', async () => {
       vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-img');
       vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
@@ -941,7 +367,7 @@ video:
       yamlOverride = 'image:\n  openai-image:\n    enabled: false\n    apiKey: sk-yaml\n';
       vi.stubEnv('IMAGE_OPENAI_ENABLED', 'true');
       const { getServerImageProviders } = await import('@/lib/server/provider-config');
-      expect(getServerImageProviders()['openai-image']).toEqual({});
+      expect(getServerImageProviders()['openai-image']).toBeUndefined();
     });
 
     it('image: an empty IMAGE_<P>_ENABLED does NOT override a YAML disable', async () => {
@@ -1025,78 +451,6 @@ video:
     });
   });
 
-  describe('server defaults skip force-disabled providers (#665)', () => {
-    it('resolveServerImageProviderId skips a disabled provider', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-1');
-      vi.stubEnv('IMAGE_GROK_API_KEY', 'sk-2');
-      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
-      const { resolveServerImageProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerImageProviderId()).toBe('grok-image');
-    });
-
-    it('resolveServerImageProviderId returns undefined when every configured provider is disabled', async () => {
-      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-1');
-      vi.stubEnv('IMAGE_OPENAI_ENABLED', 'false');
-      const { resolveServerImageProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerImageProviderId()).toBeUndefined();
-    });
-
-    it('resolveServerVideoProviderId skips a disabled provider', async () => {
-      vi.stubEnv('VIDEO_GROK_API_KEY', 'sk-1');
-      vi.stubEnv('VIDEO_KLING_API_KEY', 'sk-2');
-      vi.stubEnv('VIDEO_GROK_ENABLED', 'false');
-      const { resolveServerVideoProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerVideoProviderId()).toBe('kling');
-    });
-
-    it('resolveServerASRProviderId skips a disabled provider', async () => {
-      vi.stubEnv('ASR_OPENAI_API_KEY', 'sk-1');
-      vi.stubEnv('ASR_QWEN_API_KEY', 'sk-2');
-      vi.stubEnv('ASR_OPENAI_ENABLED', 'false');
-      const { resolveServerASRProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerASRProviderId()).toBe('qwen-asr');
-    });
-
-    it('web-search preference chain skips disabled providers', async () => {
-      vi.stubEnv('TAVILY_API_KEY', 'tvly');
-      vi.stubEnv('BOCHA_API_KEY', 'bocha');
-      vi.stubEnv('TAVILY_ENABLED', 'false');
-      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-      // Tavily is the preferred default but disabled ⇒ bocha is chosen.
-      expect(resolveServerWebSearchProviderId()).toBe('bocha');
-    });
-
-    it('web-search preference chain honors an enabled preferred provider', async () => {
-      vi.stubEnv('TAVILY_API_KEY', 'tvly');
-      vi.stubEnv('BOCHA_API_KEY', 'bocha');
-      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerWebSearchProviderId()).toBe('tavily');
-    });
-
-    it('web-search preference chain keeps existing providers ahead of Firecrawl', async () => {
-      vi.stubEnv('FIRECRAWL_API_KEY', 'fc');
-      vi.stubEnv('WEB_SEARCH_CLAUDE_API_KEY', 'claude');
-      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerWebSearchProviderId()).toBe('claude');
-      expect(resolveServerWebSearchProviderId('firecrawl')).toBe('firecrawl');
-    });
-
-    it('web-search preference chain skips a disabled client-preferred provider', async () => {
-      vi.stubEnv('TAVILY_API_KEY', 'tvly');
-      vi.stubEnv('BOCHA_API_KEY', 'bocha');
-      vi.stubEnv('TAVILY_ENABLED', 'false');
-      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerWebSearchProviderId('tavily')).toBe('bocha');
-    });
-
-    it('web-search preference chain returns undefined when every configured provider is disabled', async () => {
-      vi.stubEnv('TAVILY_API_KEY', 'tvly');
-      vi.stubEnv('TAVILY_ENABLED', 'false');
-      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-      expect(resolveServerWebSearchProviderId()).toBeUndefined();
-    });
-  });
-
   describe('enabledProviderIds resolver (#665)', () => {
     it('returns only non-disabled entries of a capability listing', async () => {
       const { enabledProviderIds } = await import('@/lib/server/provider-config');
@@ -1152,51 +506,9 @@ video:
       },
     );
 
-    it.each([
-      ['Cherry', undefined],
-      ['provider-catalog-voice', [{ id: 'provider-catalog-voice' }]],
-    ])(
-      'authorizes a grouping ID with catalog voice %s against the normal model',
-      async (voiceId, configuredVoices) => {
-        vi.stubEnv('TTS_QWEN_API_KEY', 'key');
-        vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash');
-        const { resolveTTSModel } = await import('@/lib/server/provider-config');
-        expect(
-          resolveTTSModel('qwen-tts', ' qwen3-tts-vc-2026-01-22 ', voiceId, configuredVoices),
-        ).toBe('qwen3-tts-flash');
-        expect(() =>
-          resolveTTSModel('qwen-tts', 'unlisted-model', voiceId, configuredVoices),
-        ).toThrow('not authorized');
-      },
-    );
-
-    it('does not let the grouping ID authorize an unlisted clone target', async () => {
-      vi.stubEnv('TTS_QWEN_API_KEY', 'key');
-      vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash,qwen3-tts-vc-2026-01-22');
-      const { resolveTTSModel } = await import('@/lib/server/provider-config');
-      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-vc-2026-01-22', 'clone-1')).toThrow(
-        'not authorized',
-      );
-    });
-
     it('uses the provider default base URL when none is configured or supplied', async () => {
       const { resolveTTSBaseUrl } = await import('@/lib/server/provider-config');
       expect(resolveTTSBaseUrl('qwen-tts')).toBe('https://dashscope.aliyuncs.com/api/v1');
-    });
-
-    it('maps VC sentinels to the resolved model and rejects pin bypasses', async () => {
-      vi.stubEnv('TTS_QWEN_API_KEY', 'key');
-      vi.stubEnv('TTS_QWEN_MODELS', 'qwen3-tts-flash,operator-vc-model');
-      vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'operator-vc-model');
-      const { resolveTTSModel } = await import('@/lib/server/provider-config');
-      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-vc-custom', 'clone-1')).toThrow(
-        'not authorized',
-      );
-      expect(resolveTTSModel('qwen-tts', 'operator-vc-model', 'clone-1')).toBe('operator-vc-model');
-      expect(() => resolveTTSModel('qwen-tts', 'qwen3-tts-flash-other', 'Cherry')).toThrow(
-        'not authorized',
-      );
-      expect(resolveTTSModel('qwen-tts', 'operator-vc-model', 'Cherry')).toBe('qwen3-tts-flash');
     });
 
     it('reads the VC override only from server-side resolution', async () => {
@@ -1204,84 +516,9 @@ video:
       const { resolveQwenVoiceCloneModel } = await import('@/lib/server/provider-config');
       expect(resolveQwenVoiceCloneModel()).toBe('operator-vc-model');
     });
-
-    it('rejects catalog synthesis when the operator pins only the clone model', async () => {
-      vi.stubEnv('TTS_QWEN_API_KEY', 'key');
-      vi.stubEnv('TTS_QWEN_MODELS', 'operator-vc-model');
-      vi.stubEnv('TTS_QWEN_VOICE_CLONE_MODEL', 'operator-vc-model');
-      const { resolveTTSModel } = await import('@/lib/server/provider-config');
-      expect(() => resolveTTSModel('qwen-tts', undefined, 'Cherry')).toThrow('not authorized');
-    });
-  });
-
-  describe('FunASR server configuration', () => {
-    it('activates the keyless provider from an env base URL', async () => {
-      vi.stubEnv('ASR_FUNASR_BASE_URL', 'http://localhost:8000/v1');
-      const { getServerASRProviders, resolveASRApiKey, resolveASRBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(getServerASRProviders()['funasr-asr']).toEqual({});
-      expect(resolveASRApiKey('funasr-asr')).toBe('');
-      expect(resolveASRBaseUrl('funasr-asr')).toBe('http://localhost:8000/v1');
-    });
-
-    it('activates the keyless provider from YAML and keeps server config authoritative', async () => {
-      yamlOverride = 'asr:\n  funasr-asr:\n    baseUrl: http://funasr.internal:8000/v1\n';
-      const { getServerASRProviders, resolveASRBaseUrl } =
-        await import('@/lib/server/provider-config');
-
-      expect(getServerASRProviders()['funasr-asr']).toEqual({});
-      expect(resolveASRBaseUrl('funasr-asr', 'https://client.example.com/v1')).toBe(
-        'http://funasr.internal:8000/v1',
-      );
-    });
   });
 
   describe('resolveManagedAliDocMindCredentials (AK/SK)', () => {
-    it('resolves YAML-managed AK/SK with NO ALIDOCMIND_* env vars', async () => {
-      // Regression: verification resolved YAML creds but extraction only had an
-      // env fallback, so a YAML-only deployment verified then failed to extract.
-      yamlOverride =
-        'pdf:\n  alidocmind:\n    accessKeyId: yaml-ak\n    accessKeySecret: yaml-sk\n';
-      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
-        await import('@/lib/server/provider-config');
-      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
-      expect(resolveManagedAliDocMindCredentials()).toEqual({
-        accessKeyId: 'yaml-ak',
-        accessKeySecret: 'yaml-sk',
-        baseUrl: undefined,
-      });
-    });
-
-    it('resolves YAML AK/SK even when the entry also has baseUrl', async () => {
-      // Regression: a YAML entry WITH baseUrl makes the generic loader create a
-      // pdf.alidocmind entry (copying only apiKey/baseUrl/models/proxy, never
-      // AK/SK). The fallback must merge AK/SK into that entry, not skip it.
-      yamlOverride =
-        'pdf:\n  alidocmind:\n' +
-        '    accessKeyId: review-ak\n' +
-        '    accessKeySecret: review-sk\n' +
-        '    baseUrl: https://docmind-api.cn-hangzhou.aliyuncs.com\n';
-      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
-        await import('@/lib/server/provider-config');
-      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
-      expect(resolveManagedAliDocMindCredentials()).toEqual({
-        accessKeyId: 'review-ak',
-        accessKeySecret: 'review-sk',
-        baseUrl: 'https://docmind-api.cn-hangzhou.aliyuncs.com',
-      });
-    });
-
-    it('resolves AK/SK from env vars', async () => {
-      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_ID', 'env-ak');
-      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_SECRET', 'env-sk');
-      const { resolveManagedAliDocMindCredentials } = await import('@/lib/server/provider-config');
-      expect(resolveManagedAliDocMindCredentials()).toMatchObject({
-        accessKeyId: 'env-ak',
-        accessKeySecret: 'env-sk',
-      });
-    });
-
     it('returns undefined when neither env nor YAML configures AliDocMind', async () => {
       const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
         await import('@/lib/server/provider-config');
@@ -1305,361 +542,29 @@ video:
   });
 });
 
-describe('Kimi shared search credentials', () => {
-  beforeEach(() => {
-    delete (globalThis as Record<symbol, unknown>)[Symbol.for('openmaic.model-config.deployment')];
-    vi.resetModules();
-    vi.unstubAllEnvs();
-    clearProviderEnv();
-    yamlOverride = null;
-  });
-  it.each([undefined, 'kimi-env-key'])(
-    'reuses the legacy YAML chat base and model pins with env key %s',
-    async (envKey) => {
-      if (envKey) process.env.KIMI_API_KEY = envKey;
-      process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
-      yamlOverride = `providers:
-  kimi:
-    apiKey: kimi-yaml-key
-    baseUrl: https://api.moonshot.ai/v1
-    models: [kimi-k3]
-`;
-      const { getServerProviderConfig } = await import('@/lib/server/provider-config');
-      const config = getServerProviderConfig();
-      expect(config.webSearch.kimi).toMatchObject({
-        apiKey: config.providers.kimi.apiKey,
-        baseUrl: config.providers.kimi.baseUrl,
-      });
-      expect(config.webSearch.kimi.models).toBeUndefined();
-      expect(config.providers.kimi.models).toEqual(['kimi-k3']);
-      expect(config.webSearch.kimi.apiKey).toBe(envKey || 'kimi-yaml-key');
-    },
-  );
-
-  it.each([
-    'https://api.moonshot.cn/v1',
-    'https://api.moonshot.ai/v1',
-    'https://api.kimi.com/coding/v1',
-  ])('reuses Kimi chat credentials at %s', async (baseUrl) => {
-    process.env.KIMI_API_KEY = 'kimi-key';
-    process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
-    process.env.KIMI_BASE_URL = baseUrl;
-    const config = await import('@/lib/server/provider-config');
-    expect(config.resolveWebSearchApiKey('kimi', undefined)).toBe('kimi-key');
-    expect(config.resolveWebSearchBaseUrl('kimi')).toBe(baseUrl);
-    expect(config.getServerProviderConfig().webSearch.kimi).toMatchObject({
-      apiKey: 'kimi-key',
-      baseUrl,
-    });
-  });
-});
-
-describe('Kimi search opt-in', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    clearProviderEnv();
-    yamlOverride = null;
-  });
-
-  it.each([
-    [undefined, undefined],
-    ['SEARXNG_BASE_URL', 'searxng'],
-    ['TAVILY_API_KEY', 'tavily'],
-  ])(
-    'keeps chat credentials out of default search selection with %s',
-    async (envName, expected) => {
-      process.env.KIMI_API_KEY = 'chat-key';
-      if (envName)
-        process.env[envName] =
-          envName === 'SEARXNG_BASE_URL' ? 'https://search.openmaic.test' : 'search-key';
-      const {
-        getServerProviderConfig,
-        resolveServerWebSearchProviderId,
-        getServerWebSearchProviders,
-      } = await import('@/lib/server/provider-config');
-      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-      const config = getServerProviderConfig();
-      expect(config.webSearch).not.toHaveProperty('kimi');
-      expect(getServerWebSearchProviders()).not.toHaveProperty('kimi');
-      expect(resolveServerWebSearchProviderId()).toBe(expected);
-      expect(translateLegacyConfig(config).config.slots?.webSearch).toBe(expected);
-    },
-  );
-
-  it('activates search only with the capability-specific opt-in and does not inherit chat model pins', async () => {
-    process.env.KIMI_API_KEY = 'chat-key';
-    process.env.KIMI_MODELS = 'kimi-k3';
-    process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
-    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-      await import('@/lib/server/provider-config');
-    const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-    const config = getServerProviderConfig();
-    expect(config.webSearch.kimi.apiKey).toBe('chat-key');
-    expect(config.webSearch.kimi.models).toBeUndefined();
-    expect(config.providers.kimi.models).toEqual(['kimi-k3']);
-    expect(resolveServerWebSearchProviderId()).toBe('kimi');
-    expect(translateLegacyConfig(config).config.slots?.webSearch).toBe('kimi');
-  });
-
-  it.each([
-    ['SEARXNG_BASE_URL', 'https://search.openmaic.test', 'searxng'],
-    ['BRAVE_BASE_URL', 'https://search.brave.com', 'brave'],
-    ['WEB_SEARCH_DOUBAO_API_KEY', 'doubao-key', 'doubao'],
-  ])(
-    'keeps an existing %s search default after opting into Kimi',
-    async (envName, value, expected) => {
-      process.env.KIMI_API_KEY = 'chat-key';
-      process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
-      process.env[envName] = value;
-      const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-        await import('@/lib/server/provider-config');
-      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-      const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
-      const server = getServerProviderConfig();
-      expect(Object.keys(server.webSearch)).toEqual([expected, 'kimi']);
-      expect(resolveServerWebSearchProviderId()).toBe(expected);
-      const { config } = translateLegacyConfig(server);
-      expect(resolveSlot('webSearch', [{ source: 'deployment', config }])).toMatchObject({
-        registryId: expected,
-      });
-      expect(
-        resolveSlot('webSearch', [
-          {
-            source: 'deployment',
-            config: {
-              ...config,
-              slots: { ...config.slots, webSearch: 'kimi' },
-            },
-          },
-        ]),
-      ).toMatchObject({ registryId: 'kimi', apiKey: 'chat-key' });
-    },
-  );
-
-  it('accepts explicit YAML search opt-in without a second key', async () => {
-    yamlOverride =
-      'providers:\n  kimi:\n    apiKey: chat-key\nweb-search:\n  kimi:\n    enabled: true\n';
-    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-      await import('@/lib/server/provider-config');
-    expect(getServerProviderConfig().webSearch.kimi.apiKey).toBe('chat-key');
-    expect(resolveServerWebSearchProviderId()).toBe('kimi');
-  });
-
-  it('does not activate search without credentials or with an unrelated enabled variable alone', async () => {
-    process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
-    const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-    expect(resolveServerWebSearchProviderId()).toBeUndefined();
-    vi.resetModules();
-    delete process.env.WEB_SEARCH_KIMI_ENABLED;
-    process.env.KIMI_API_KEY = 'chat-key';
-    process.env.KIMI_ENABLED = 'true';
-    const next = await import('@/lib/server/provider-config');
-    expect(next.resolveServerWebSearchProviderId()).toBeUndefined();
-  });
-
-  it.each([
-    ['false', undefined, true],
-    [undefined, 'false', false],
-    ['true', 'false', false],
-  ])(
-    'uses only the search switch %s and ignores an unrelated chat variable %s',
-    async (enabled, alias, disabled) => {
-      yamlOverride =
-        'providers:\n  kimi:\n    apiKey: chat-key\nweb-search:\n  kimi:\n    enabled: true\n';
-      if (enabled) process.env.WEB_SEARCH_KIMI_ENABLED = enabled;
-      if (alias) process.env.KIMI_ENABLED = alias;
-      const { isServerProviderDisabled, resolveServerWebSearchProviderId } =
-        await import('@/lib/server/provider-config');
-      expect(isServerProviderDisabled('webSearch', 'kimi')).toBe(disabled);
-      expect(resolveServerWebSearchProviderId()).toBe(disabled ? undefined : 'kimi');
-    },
-  );
-});
-
-describe('DeepSeek shared search credentials', () => {
-  beforeEach(() => {
-    delete (globalThis as Record<symbol, unknown>)[Symbol.for('openmaic.model-config.deployment')];
-    vi.resetModules();
-    vi.unstubAllEnvs();
-    clearProviderEnv();
-    yamlOverride = null;
-  });
-  it.each([undefined, 'deepseek-env-key'])(
-    'reuses the legacy YAML chat base and model pins with env key %s',
-    async (envKey) => {
-      if (envKey) process.env.DEEPSEEK_API_KEY = envKey;
-      process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
-      yamlOverride = `providers:
-  deepseek:
-    apiKey: deepseek-yaml-key
-    baseUrl: https://api.deepseek.com/v1
-    models: [deepseek-chat]
-`;
-      const { getServerProviderConfig } = await import('@/lib/server/provider-config');
-      const config = getServerProviderConfig();
-      expect(config.webSearch.deepseek).toMatchObject({
-        apiKey: config.providers.deepseek.apiKey,
-        baseUrl: config.providers.deepseek.baseUrl,
-      });
-      expect(config.webSearch.deepseek.models).toBeUndefined();
-      expect(config.providers.deepseek.models).toEqual(['deepseek-chat']);
-      expect(config.webSearch.deepseek.apiKey).toBe(envKey || 'deepseek-yaml-key');
-    },
-  );
-
-  it.each([
-    'https://api.deepseek.com',
-    'https://api.deepseek.com/v1',
-    'https://gateway.example/v1',
-  ])('reuses DeepSeek chat credentials at %s', async (baseUrl) => {
-    process.env.DEEPSEEK_API_KEY = 'deepseek-key';
-    process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
-    process.env.DEEPSEEK_BASE_URL = baseUrl;
-    const config = await import('@/lib/server/provider-config');
-    expect(config.resolveWebSearchApiKey('deepseek', undefined)).toBe('deepseek-key');
-    expect(config.resolveWebSearchBaseUrl('deepseek')).toBe(baseUrl);
-    expect(config.getServerProviderConfig().webSearch.deepseek).toMatchObject({
-      apiKey: 'deepseek-key',
-      baseUrl,
-    });
-  });
-});
-
-describe('DeepSeek search opt-in', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    clearProviderEnv();
-    yamlOverride = null;
-  });
-
-  it.each([
-    [undefined, undefined],
-    ['SEARXNG_BASE_URL', 'searxng'],
-    ['TAVILY_API_KEY', 'tavily'],
-  ])(
-    'keeps chat credentials out of default search selection with %s',
-    async (envName, expected) => {
-      process.env.DEEPSEEK_API_KEY = 'chat-key';
-      if (envName)
-        process.env[envName] =
-          envName === 'SEARXNG_BASE_URL' ? 'https://search.openmaic.test' : 'search-key';
-      const {
-        getServerProviderConfig,
-        resolveServerWebSearchProviderId,
-        getServerWebSearchProviders,
-      } = await import('@/lib/server/provider-config');
-      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-      const config = getServerProviderConfig();
-      expect(config.webSearch).not.toHaveProperty('deepseek');
-      expect(getServerWebSearchProviders()).not.toHaveProperty('deepseek');
-      expect(resolveServerWebSearchProviderId()).toBe(expected);
-      expect(translateLegacyConfig(config).config.slots?.webSearch).toBe(expected);
-    },
-  );
-
-  it('activates search only with the capability-specific opt-in and does not inherit chat model pins', async () => {
-    process.env.DEEPSEEK_API_KEY = 'chat-key';
-    process.env.DEEPSEEK_MODELS = 'deepseek-chat';
-    process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
-    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-      await import('@/lib/server/provider-config');
-    const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-    const config = getServerProviderConfig();
-    expect(config.webSearch.deepseek.apiKey).toBe('chat-key');
-    expect(config.webSearch.deepseek.models).toBeUndefined();
-    expect(config.providers.deepseek.models).toEqual(['deepseek-chat']);
-    expect(resolveServerWebSearchProviderId()).toBe('deepseek');
-    expect(translateLegacyConfig(config).config.slots?.webSearch).toBe('deepseek');
-  });
-
-  it.each([
-    ['SEARXNG_BASE_URL', 'https://search.openmaic.test', 'searxng'],
-    ['BRAVE_BASE_URL', 'https://search.brave.com', 'brave'],
-    ['WEB_SEARCH_DOUBAO_API_KEY', 'doubao-key', 'doubao'],
-  ])(
-    'keeps an existing %s search default after opting into DeepSeek',
-    async (envName, value, expected) => {
-      process.env.DEEPSEEK_API_KEY = 'chat-key';
-      process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
-      process.env[envName] = value;
-      const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-        await import('@/lib/server/provider-config');
-      const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-      const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
-      const server = getServerProviderConfig();
-      expect(Object.keys(server.webSearch)).toEqual([expected, 'deepseek']);
-      expect(resolveServerWebSearchProviderId()).toBe(expected);
-      const { config } = translateLegacyConfig(server);
-      expect(resolveSlot('webSearch', [{ source: 'deployment', config }])).toMatchObject({
-        registryId: expected,
-      });
-      expect(
-        resolveSlot('webSearch', [
-          {
-            source: 'deployment',
-            config: {
-              ...config,
-              slots: { ...config.slots, webSearch: 'deepseek' },
-            },
-          },
-        ]),
-      ).toMatchObject({ registryId: 'deepseek', apiKey: 'chat-key' });
-    },
-  );
-
-  it('accepts explicit YAML search opt-in without a second key', async () => {
-    yamlOverride =
-      'providers:\n  deepseek:\n    apiKey: chat-key\nweb-search:\n  deepseek:\n    enabled: true\n';
-    const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-      await import('@/lib/server/provider-config');
-    expect(getServerProviderConfig().webSearch.deepseek.apiKey).toBe('chat-key');
-    expect(resolveServerWebSearchProviderId()).toBe('deepseek');
-  });
-
-  it('does not activate search without credentials or with an unrelated enabled variable alone', async () => {
-    process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
-    const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
-    expect(resolveServerWebSearchProviderId()).toBeUndefined();
-    vi.resetModules();
-    delete process.env.WEB_SEARCH_DEEPSEEK_ENABLED;
-    process.env.DEEPSEEK_API_KEY = 'chat-key';
-    process.env.DEEPSEEK_ENABLED = 'true';
-    const next = await import('@/lib/server/provider-config');
-    expect(next.resolveServerWebSearchProviderId()).toBeUndefined();
-  });
-
-  it.each([
-    ['false', undefined, true],
-    [undefined, 'false', false],
-    ['true', 'false', false],
-  ])(
-    'uses only the search switch %s and ignores an unrelated chat variable %s',
-    async (enabled, alias, disabled) => {
-      yamlOverride =
-        'providers:\n  deepseek:\n    apiKey: chat-key\nweb-search:\n  deepseek:\n    enabled: true\n';
-      if (enabled) process.env.WEB_SEARCH_DEEPSEEK_ENABLED = enabled;
-      if (alias) process.env.DEEPSEEK_ENABLED = alias;
-      const { isServerProviderDisabled, resolveServerWebSearchProviderId } =
-        await import('@/lib/server/provider-config');
-      expect(isServerProviderDisabled('webSearch', 'deepseek')).toBe(disabled);
-      expect(resolveServerWebSearchProviderId()).toBe(disabled ? undefined : 'deepseek');
-    },
-  );
-});
-
-it('keeps an already enabled Kimi search default when DeepSeek is also enabled', async () => {
+it.each(['KIMI', 'DEEPSEEK'])('retains the %s search force-off switch', async (provider) => {
   vi.resetModules();
-  clearProviderEnv();
-  yamlOverride = null;
-  process.env.KIMI_API_KEY = 'existing-key';
-  process.env.WEB_SEARCH_KIMI_ENABLED = 'true';
-  process.env.DEEPSEEK_API_KEY = 'new-key';
-  process.env.WEB_SEARCH_DEEPSEEK_ENABLED = 'true';
-  const { getServerProviderConfig, resolveServerWebSearchProviderId } =
-    await import('@/lib/server/provider-config');
-  const { translateLegacyConfig } = await import('@/lib/server/model-config/legacy-config');
-  const server = getServerProviderConfig();
-  expect(Object.keys(server.webSearch)).toEqual(['kimi', 'deepseek']);
-  expect(resolveServerWebSearchProviderId()).toBe('kimi');
-  expect(translateLegacyConfig(server).config.slots?.webSearch).toBe('kimi');
+  vi.stubEnv(`WEB_SEARCH_${provider}_ENABLED`, 'false');
+  try {
+    const { isServerProviderDisabled } = await import('@/lib/server/provider-config');
+    expect(isServerProviderDisabled('webSearch', provider.toLowerCase())).toBe(true);
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
+it('does not read retired YAML or env credentials into provider settings', async () => {
+  vi.resetModules();
+  vi.stubEnv('OPENAI_API_KEY', 'env-provider-key');
+  yamlOverride = 'providers:\n  openai:\n    apiKey: yaml-provider-key\n';
+  try {
+    const { resolveApiKey, isServerConfiguredProvider } =
+      await import('@/lib/server/provider-config');
+    expect(resolveApiKey('openai')).toBe('');
+    expect(resolveApiKey('openai', 'body-key')).toBe('body-key');
+    expect(isServerConfiguredProvider('providers', 'openai')).toBe(false);
+  } finally {
+    vi.unstubAllEnvs();
+    yamlOverride = null;
+  }
 });
