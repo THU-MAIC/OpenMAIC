@@ -202,6 +202,34 @@ describe('POST /api/provider/probe-models', () => {
       });
     });
 
+    it.each([
+      { status: 'ok' },
+      { data: { error: 'gateway returned an error' } },
+      { data: [{ id: 12 }] },
+    ])('reports a JSON response that is not a model list', async (payload) => {
+      const provider = await answering(200, JSON.stringify(payload));
+      const res = await postProbeModels({ baseUrl: provider.origin, apiKey: 'test-key' });
+
+      expect(res).toEqual({
+        status: 502,
+        json: {
+          success: false,
+          errorCode: 'UPSTREAM_ERROR',
+          error: 'The provider returned an invalid model list',
+        },
+      });
+    });
+
+    it('accepts a provider that has no models available', async () => {
+      const provider = await answering(200, JSON.stringify({ data: [] }));
+      const res = await postProbeModels({ baseUrl: provider.origin, apiKey: 'test-key' });
+
+      expect(res).toEqual({
+        status: 200,
+        json: { success: true, models: [], total: 0, filtered: 0 },
+      });
+    });
+
     it('answers a refused connection with the fixed message', async () => {
       const res = await postProbeModels({ baseUrl: `http://127.0.0.1:${await closedPort()}` });
       expect(res).toEqual(CONNECTION_FAILED);

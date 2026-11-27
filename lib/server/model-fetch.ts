@@ -7,6 +7,8 @@
  * suffix-strip fallback) and try each until one returns a model list.
  */
 
+import { z } from 'zod';
+
 import { appAttributionHeaders } from '@/lib/config/app-attribution';
 import { createProviderFetch, isRejectedRedirectError } from '@/lib/server/provider-fetch';
 
@@ -121,9 +123,16 @@ export function buildModelsUrlCandidates(
   return candidates.filter((url, i) => candidates.indexOf(url) === i);
 }
 
-interface ModelsApiResponse {
-  data?: Array<{ id: string; owned_by?: string }>;
-}
+const modelsApiResponse = z.object({
+  data: z.array(
+    z.object({
+      id: z.string().min(1),
+      owned_by: z.string().optional().catch(undefined),
+    }),
+  ),
+});
+
+type ModelsApiResponse = z.infer<typeof modelsApiResponse>;
 
 /**
  * Fetches the model list by trying each candidate URL in order. A 404/405 means
@@ -175,7 +184,7 @@ export async function fetchModels(
       }
     }
     if (body === null) continue;
-    return (body.data ?? [])
+    return body.data
       .map((m) => ({ id: m.id, ownedBy: m.owned_by }))
       .sort((a, b) => a.id.localeCompare(b.id));
   }
@@ -220,13 +229,19 @@ async function fetchModelsCandidate(
       throw new ModelFetchError(res.status, 'Redirects are not allowed');
     }
     if (res.ok) {
+      let json: unknown;
       try {
-        return (await res.json()) as ModelsApiResponse;
+        json = await res.json();
       } catch (error) {
         if (controller.signal.aborted) throw error;
         // A SyntaxError quotes a snippet of the body; report the status only.
         throw new ModelFetchError(res.status, 'The model list response is not valid JSON');
       }
+      const parsed = modelsApiResponse.safeParse(json);
+      if (!parsed.success) {
+        throw new ModelFetchError(res.status, 'The model list response is invalid');
+      }
+      return parsed.data;
     }
     if (res.status === 404 || res.status === 405) return null;
     throw new ModelFetchError(res.status, `HTTP ${res.status}`);
