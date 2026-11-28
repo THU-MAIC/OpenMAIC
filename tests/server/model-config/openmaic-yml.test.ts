@@ -425,3 +425,50 @@ describe('declared context windows', () => {
     );
   });
 });
+
+describe('declared model vision', () => {
+  const endpoint = 'preset: openai-compatible\n    baseUrl: http://host/v1\n';
+
+  it('accepts vision: true on a model entry in openmaic.yml and normalizes models to ids', () => {
+    const config = parseModelConfig(
+      `providers:\n  local:\n    ${endpoint}    models:\n      - m1\n      - id: m2\n        vision: true\n`,
+      { env: {} },
+    );
+    expect(config.providers?.local.models).toEqual(['m1', 'm2']);
+    expect(config.providers?.local.modelVision).toEqual({ m2: true });
+  });
+
+  it('accepts modelVision for a model a slot references without a list', () => {
+    const config = parseModelConfig(
+      `providers:\n  local:\n    ${endpoint}    modelVision:\n      m1: true\nslots:\n  llm: local:m1\n`,
+      { env: {} },
+    );
+    expect(config.providers?.local.modelVision).toEqual({ m1: true });
+  });
+
+  it('refuses conflicting vision declarations for the same model', () => {
+    expect(
+      issuesOf(
+        `providers:\n  local:\n    ${endpoint}    models:\n      - id: m1\n        vision: true\n    modelVision:\n      m1: false\n`,
+      ),
+    ).toContainEqual(expect.stringContaining('conflicting vision declaration'));
+  });
+
+  it('refuses modelVision for a model the provider does not serve', () => {
+    expect(
+      issuesOf(
+        `providers:\n  local:\n    ${endpoint}    models: [m1]\n    modelVision:\n      m2: true\n`,
+      ),
+    ).toContainEqual(expect.stringContaining('is not a chat model this provider serves'));
+  });
+
+  it('refuses declared vision on a provider without chat', () => {
+    expect(
+      issuesOf(
+        'providers:\n  fc:\n    preset: firecrawl\n    apiKey: k\n    models:\n      - id: m1\n        vision: true\n',
+      ),
+    ).toContainEqual(
+      'providers.fc.modelVision: only chat providers support declared vision capabilities',
+    );
+  });
+});

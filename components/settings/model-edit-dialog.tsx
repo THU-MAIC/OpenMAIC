@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
@@ -20,7 +21,9 @@ interface ModelEditDialogProps {
   providerId?: string;
   /** The context window declared for this model, if any. */
   contextWindow?: number;
-  onSave: (modelId: string, contextWindow?: number) => void | Promise<void>;
+  /** Opt-in vision flag declared for this model, if any. */
+  vision?: boolean;
+  onSave: (modelId: string, contextWindow?: number, vision?: boolean) => void | Promise<void>;
 }
 
 /** A context-window input as a positive integer, or undefined when left empty. */
@@ -33,9 +36,10 @@ function parseContextWindow(text: string): number | undefined {
 
 /**
  * Add or edit a model of a language model service: its id, an optional
- * declared context window, and a test of it on the server. A model's name and
- * capabilities come from the built-in catalogue; a service's model list holds
- * ids (with the declared windows) only.
+ * declared context window, an opt-in vision flag for models not in the
+ * built-in catalogue, and a test of it on the server. A model's name and
+ * remaining capabilities come from the built-in catalogue, which still wins
+ * when it knows the model.
  */
 export function ModelEditDialog({
   open,
@@ -44,6 +48,7 @@ export function ModelEditDialog({
   isNew,
   providerId,
   contextWindow,
+  vision,
   onSave,
 }: ModelEditDialogProps) {
   const { t } = useI18n();
@@ -51,6 +56,7 @@ export function ModelEditDialog({
   const [contextWindowText, setContextWindowText] = useState(
     contextWindow !== undefined ? String(contextWindow) : '',
   );
+  const [supportsVision, setSupportsVision] = useState(vision === true);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
 
@@ -60,10 +66,11 @@ export function ModelEditDialog({
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset state when dialog opens
       setId(modelId);
       setContextWindowText(contextWindow !== undefined ? String(contextWindow) : '');
+      setSupportsVision(vision === true);
       setTestStatus('idle');
       setTestMessage('');
     }
-  }, [open, modelId, contextWindow]);
+  }, [open, modelId, contextWindow, vision]);
 
   const parsedContextWindow = parseContextWindow(contextWindowText);
 
@@ -140,6 +147,19 @@ export function ModelEditDialog({
             </p>
           </div>
 
+          {/* Supports images (opt-in vision capability for custom models) */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="model-supports-images">{t('settings.supportsImages')}</Label>
+              <Switch
+                id="model-supports-images"
+                checked={supportsVision}
+                onCheckedChange={setSupportsVision}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{t('settings.supportsImagesHint')}</p>
+          </div>
+
           {/* Test Model */}
           <div className="space-y-3 pt-3 border-t">
             <div className="flex items-center justify-between">
@@ -189,7 +209,7 @@ export function ModelEditDialog({
                 if (!id.trim() || Number.isNaN(parsedContextWindow)) {
                   return;
                 }
-                void onSave(id.trim(), parsedContextWindow);
+                void onSave(id.trim(), parsedContextWindow, supportsVision ? true : undefined);
               }}
             >
               {t('settings.saveModel')}

@@ -613,6 +613,60 @@ describe('declared context windows', () => {
   });
 });
 
+describe('declared vision', () => {
+  it('attaches to the model and fallback a chat slot resolves to', () => {
+    const cfg = layer(
+      'deployment',
+      'providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://host/v1\n    models:\n      - id: m1\n        vision: true\n      - m2\n      - id: m3\n        vision: true\nslots:\n  agent:\n    model: local:m1\n    fallback: local:m3\n',
+    );
+    expect(resolveSlot('agent', [cfg])).toMatchObject({
+      modelId: 'm1',
+      declaredVision: true,
+      fallback: { modelId: 'm3', declaredVision: true },
+    });
+    const plain = resolveSlot('agent', [
+      layer(
+        'deployment',
+        'providers:\n  local:\n    preset: openai-compatible\n    baseUrl: http://host/v1\n    models: [m2]\nslots:\n  agent: local:m2\n',
+      ),
+    ]);
+    expect(plain).not.toHaveProperty('declaredVision');
+  });
+
+  it('does not attach outside chat and ignores Object.prototype keys', () => {
+    const nonChat = {
+      source: 'deployment' as const,
+      config: {
+        providers: {
+          mm: {
+            preset: 'minimax',
+            apiKey: 'k',
+            modelVision: { 'speech-2.8-turbo': true },
+          },
+        },
+        slots: { tts: 'mm:speech-2.8-turbo' },
+      },
+    };
+    expect(resolveSlot('tts', [nonChat])).not.toHaveProperty('declaredVision');
+
+    const protoKey = {
+      source: 'deployment' as const,
+      config: {
+        providers: {
+          local: {
+            preset: 'openai-compatible',
+            baseUrl: 'http://host/v1',
+            models: ['constructor'],
+            modelVision: {},
+          },
+        },
+        slots: { agent: 'local:constructor' },
+      },
+    };
+    expect(resolveSlot('agent', [protoKey])).not.toHaveProperty('declaredVision');
+  });
+});
+
 describe('international token plans', () => {
   it.each([
     [

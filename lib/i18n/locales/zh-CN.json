@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "例如：1000000",
     "contextWindowHint": "可选。仅对内置目录不认识的模型生效，供压缩与上下文预算检查使用；留空则使用默认值。",
     "contextWindowInvalid": "请输入正整数 token 数，或留空。",
+    "supportsImages": "支持图像",
+    "supportsImagesHint": "可选。仅对内置目录不认识的模型生效；开启后智能体可查看场景预览等图像。",
     "modelSelectedViaVoice": "模型随音色选择自动确定",
     "modelServices": {
       "configured": "已配置",

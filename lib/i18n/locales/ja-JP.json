@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "例：1000000",
     "contextWindowHint": "任意。内蔵カタログにないモデルにのみ適用され、圧縮とコンテキスト予算チェックで使われます。空欄なら既定値を使います。",
     "contextWindowInvalid": "正の整数（token 数）を入力するか、空欄にしてください。",
+    "supportsImages": "画像に対応",
+    "supportsImagesHint": "任意。内蔵カタログにないモデルにのみ適用され、エージェントがシーンプレビューなどの画像を参照できるようになります。",
     "modelSelectedViaVoice": "モデルはボイスの選択によって決まります",
     "modelServices": {
       "configured": "設定済み",

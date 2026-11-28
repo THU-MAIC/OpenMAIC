@@ -99,6 +99,11 @@ export interface ProviderView {
    * only for models the catalogue does not describe.
    */
   modelContextWindows?: Record<string, number>;
+  /**
+   * Opt-in vision flags the provider declares per chat model (ids from `models`).
+   * Catalogue metadata still wins when the catalogue knows the model.
+   */
+  modelVision?: Record<string, boolean>;
   /** Non-secret adapter options, also available when previewing an inactive provider. */
   options?: Record<string, string | number | boolean>;
   voices?: ConfiguredTTSVoice[];
@@ -244,6 +249,8 @@ export type ModelSettingsChange =
       models?: string[] | null;
       /** Omitted: keep the stored windows. Null or empty: remove them all. */
       modelContextWindows?: Record<string, number> | null;
+      /** Omitted: keep the stored vision flags. Null or empty: remove them all. */
+      modelVision?: Record<string, boolean> | null;
     }
   | { kind: 'remove-provider'; id: string };
 
@@ -311,6 +318,7 @@ function capabilityModels(
     deployment,
     providerId,
     declared,
+    declaredVision,
     unsupported,
   }: {
     chatOnly?: boolean;
@@ -320,6 +328,8 @@ function capabilityModels(
     providerId?: string;
     /** Context windows the provider declares per chat model (`modelContextWindows`). */
     declared?: Record<string, number>;
+    /** Opt-in vision flags the provider declares per chat model (`modelVision`). */
+    declaredVision?: Record<string, boolean>;
     /** Capabilities the account behind the key does not have (`unsupportedCapabilities`). */
     unsupported?: readonly SlotCapability[];
   } = {},
@@ -351,19 +361,33 @@ function capabilityModels(
               catalogueModel(capability, registryId!, id),
           )
         : offered;
-    // A declared window shows on a row the catalogue says nothing about; the
-    // catalogue's own value stays, except on an endpoint the preset says the
-    // catalogue does not describe (mirrors how the calls resolve it).
+    // Declared per-model metadata shows on a row the catalogue says nothing
+    // about; the catalogue's own values stay, except on an endpoint the preset
+    // says the catalogue does not describe (mirrors how the calls resolve it).
     const withDeclared =
-      capability !== 'chat' || !declared
+      capability !== 'chat' || (!declared && !declaredVision)
         ? models
         : models.map((row) => {
-            const window = Object.hasOwn(declared, row.id) ? declared[row.id] : undefined;
-            if (window === undefined) return row;
-            if (row.contextWindow !== undefined && preset.trustsModelCatalogue !== false) {
-              return row;
+            let next = row;
+            const window =
+              declared && Object.hasOwn(declared, row.id) ? declared[row.id] : undefined;
+            if (
+              window !== undefined &&
+              (next.contextWindow === undefined || preset.trustsModelCatalogue === false)
+            ) {
+              next = { ...next, contextWindow: window };
             }
-            return { ...row, contextWindow: window };
+            const vision =
+              declaredVision && Object.hasOwn(declaredVision, row.id)
+                ? declaredVision[row.id]
+                : undefined;
+            if (
+              vision !== undefined &&
+              (next.capabilities?.vision === undefined || preset.trustsModelCatalogue === false)
+            ) {
+              next = { ...next, capabilities: { ...next.capabilities, vision } };
+            }
+            return next;
           });
     result[capability] = { models: withDeclared, ...(registryId ? { registryId } : {}) };
   }
@@ -552,6 +576,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         ...(provider.modelContextWindows
           ? { modelContextWindows: { ...provider.modelContextWindows } }
           : {}),
+        ...(provider.modelVision ? { modelVision: { ...provider.modelVision } } : {}),
         ...(provider.options ? { options: { ...provider.options } } : {}),
         ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
         ...(provider.unsupportedCapabilities
@@ -562,6 +587,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           deployment: deployment?.config,
           providerId: id,
           declared: provider.modelContextWindows,
+          declaredVision: provider.modelVision,
           unsupported: provider.unsupportedCapabilities,
         }),
       }),
@@ -577,6 +603,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         ...(provider.modelContextWindows
           ? { modelContextWindows: { ...provider.modelContextWindows } }
           : {}),
+        ...(provider.modelVision ? { modelVision: { ...provider.modelVision } } : {}),
         ...(provider.options ? { options: { ...provider.options } } : {}),
         ...(provider.voices ? { voices: provider.voices.map((voice) => ({ ...voice })) } : {}),
         ...(provider.unsupportedCapabilities
@@ -587,6 +614,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),
           baseUrl: provider.baseUrl,
           declared: provider.modelContextWindows,
+          declaredVision: provider.modelVision,
           unsupported: provider.unsupportedCapabilities,
         }),
         key: {
@@ -873,6 +901,29 @@ export async function applyModelSettingsChange(
             Object.entries(declaredSource).filter(([modelId]) => models.includes(modelId)),
           )
         : undefined;
+    const declaredVisionSource =
+      change.modelVision === undefined ? existing?.modelVision : (change.modelVision ?? undefined);
+    if (
+      declaredVisionSource &&
+      Object.keys(declaredVisionSource).length &&
+      change.models === undefined
+    ) {
+      const stray = Object.keys(declaredVisionSource).find(
+        (modelId) => !(existing?.models ?? []).includes(modelId),
+      );
+      if (stray) {
+        throw new ModelSettingsError(
+          'INVALID_PROVIDER',
+          `modelVision: ${stray} is not in this provider's model list`,
+        );
+      }
+    }
+    const modelVision =
+      models?.length && declaredVisionSource
+        ? Object.fromEntries(
+            Object.entries(declaredVisionSource).filter(([modelId]) => models.includes(modelId)),
+          )
+        : undefined;
     // What the account behind the key lacks belongs to that key: a new key
     // takes what its vendor reported (or nothing), an edit that keeps the key
     // and the endpoint keeps it, a custom endpoint is no longer the plan's.
@@ -893,6 +944,7 @@ export async function applyModelSettingsChange(
       ...(modelContextWindows && Object.keys(modelContextWindows).length
         ? { modelContextWindows }
         : {}),
+      ...(modelVision && Object.keys(modelVision).length ? { modelVision } : {}),
       ...(unsupportedCapabilities?.length ? { unsupportedCapabilities } : {}),
     };
     await checkProvider(change.id, provider);
@@ -1063,6 +1115,7 @@ const importedProviderSchema = z
     baseUrl: z.string().min(1).optional(),
     models: z.array(z.string().min(1)).min(1).optional(),
     modelContextWindows: z.record(z.string().min(1), z.number().int().positive()).optional(),
+    modelVision: z.record(z.string().min(1), z.boolean()).optional(),
   })
   .strict();
 
@@ -1087,7 +1140,7 @@ function storesProposedProvider(
       officialEndpointOf({ preset: proposed.preset, baseUrl: proposed.baseUrl })) ||
     proposed.baseUrl;
   const models = (list: string[] | undefined) => JSON.stringify(list?.length ? list : []);
-  const windows = (map: Record<string, number> | undefined) =>
+  const sortedRecord = (map: Record<string, unknown> | undefined) =>
     JSON.stringify(
       map && Object.keys(map).length
         ? Object.fromEntries(Object.entries(map).sort(([a], [b]) => a.localeCompare(b)))
@@ -1100,7 +1153,8 @@ function storesProposedProvider(
     stored.preset === proposed.preset &&
     stored.baseUrl === baseUrl &&
     models(stored.models) === models(proposed.models) &&
-    windows(stored.modelContextWindows) === windows(proposed.modelContextWindows)
+    sortedRecord(stored.modelContextWindows) === sortedRecord(proposed.modelContextWindows) &&
+    sortedRecord(stored.modelVision) === sortedRecord(proposed.modelVision)
   );
 }
 

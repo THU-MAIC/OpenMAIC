@@ -662,6 +662,70 @@ describe('applyModelSettingsChange', () => {
     expect(config.providers?.mine).toEqual({ preset: 'openai', apiKey: 'sk-1' });
   });
 
+  it('stores declared vision flags with the model list, pruned to it, and keeps catalogue precedence in view', async () => {
+    let config = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'relay',
+      preset: 'openai-compatible',
+      apiKey: 'sk-1',
+      baseUrl: 'https://1.1.1.1/v1',
+      models: ['custom-vlm', 'custom-text'],
+      modelVision: { 'custom-vlm': true },
+    });
+    expect(config.providers?.relay.modelVision).toEqual({ 'custom-vlm': true });
+
+    const view = modelSettingsView({ config, revision: 1, unreadableSecrets: [] });
+    const relayView = view.providers.find((p) => p.id === 'relay')!;
+    expect(relayView.modelVision).toEqual({ 'custom-vlm': true });
+    expect(
+      relayView.capabilities.chat?.models.find((m) => m.id === 'custom-vlm')?.capabilities?.vision,
+    ).toBe(true);
+    expect(
+      relayView.capabilities.chat?.models.find((m) => m.id === 'custom-text')?.capabilities?.vision,
+    ).toBeUndefined();
+
+    // Dropping a model from the list prunes its vision flag.
+    config = await applyModelSettingsChange(config, {
+      kind: 'provider',
+      id: 'relay',
+      preset: 'openai-compatible',
+      models: ['custom-text'],
+    });
+    expect(config.providers?.relay.modelVision).toBeUndefined();
+
+    // A vision flag for a model not in the list is refused.
+    await expect(
+      applyModelSettingsChange(config, {
+        kind: 'provider',
+        id: 'relay',
+        preset: 'openai-compatible',
+        modelVision: { other: true },
+      }),
+    ).rejects.toMatchObject({
+      code: 'INVALID_PROVIDER',
+      message: expect.stringContaining("not in this provider's model list"),
+    });
+
+    // Catalogue vision: false still wins on a trusted provider in the view.
+    const trusted = await applyModelSettingsChange(null, {
+      kind: 'provider',
+      id: 'ac',
+      preset: 'atlascloud',
+      apiKey: 'sk-1',
+      models: ['deepseek-ai/deepseek-v4-pro'],
+      modelVision: { 'deepseek-ai/deepseek-v4-pro': true },
+    });
+    const trustedView = modelSettingsView({
+      config: trusted,
+      revision: 1,
+      unreadableSecrets: [],
+    }).providers.find((p) => p.id === 'ac')!;
+    expect(
+      trustedView.capabilities.chat?.models.find((m) => m.id === 'deepseek-ai/deepseek-v4-pro')
+        ?.capabilities?.vision,
+    ).toBe(false);
+  });
+
   it('keeps workspace providers out of what only the deployment may set', async () => {
     for (const [provider, message] of [
       [{ id: 'operator', preset: 'openai' }, /deployment declares this provider id/],

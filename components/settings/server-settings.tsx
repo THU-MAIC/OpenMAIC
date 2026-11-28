@@ -331,6 +331,8 @@ export interface ProviderFields {
   models?: string[] | null;
   /** Omitted: keep the stored windows. Null or empty: remove them all. */
   modelContextWindows?: Record<string, number> | null;
+  /** Omitted: keep the stored vision flags. Null or empty: remove them all. */
+  modelVision?: Record<string, boolean> | null;
 }
 
 /**

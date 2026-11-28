@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "vd: 1000000",
     "contextWindowHint": "Tùy chọn. Chỉ áp dụng cho mô hình mà danh mục tích hợp không biết; dùng cho nén và kiểm tra ngân sách ngữ cảnh. Để trống sẽ dùng giá trị mặc định.",
     "contextWindowInvalid": "Nhập số nguyên dương token, hoặc để trống.",
+    "supportsImages": "Hỗ trợ hình ảnh",
+    "supportsImagesHint": "Tùy chọn. Chỉ áp dụng cho các mô hình không có trong danh mục tích hợp; cho phép tác nhân xem hình ảnh như bản xem trước cảnh.",
     "modelSelectedViaVoice": "Model được xác định theo giọng đã chọn",
     "modelServices": {
       "configured": "Đã cấu hình",

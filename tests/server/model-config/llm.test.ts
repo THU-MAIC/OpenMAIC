@@ -457,4 +457,152 @@ describe('declared context windows', () => {
     // The catalogue's own name and capabilities are kept.
     expect(resolved.modelInfo?.name).toBe('Gemma 4 26B A4B IT GGUF');
   });
+
+  it('uses declared vision: true for a catalogue-less custom model', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          models: ['custom-vlm'],
+          modelVision: { 'custom-vlm': true },
+        },
+      },
+      slots: { 'course.content': 'relay:custom-vlm' },
+    });
+    expect(resolved.modelInfo).toEqual({
+      id: 'custom-vlm',
+      name: 'custom-vlm',
+      capabilities: { vision: true },
+    });
+  });
+
+  it('combines declared contextWindow and declared vision on a catalogue-less model', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          models: ['custom-vlm'],
+          modelContextWindows: { 'custom-vlm': 512_000 },
+          modelVision: { 'custom-vlm': true },
+        },
+      },
+      slots: { 'course.content': 'relay:custom-vlm' },
+    });
+    expect(resolved.modelInfo).toEqual({
+      id: 'custom-vlm',
+      name: 'custom-vlm',
+      contextWindow: 512_000,
+      capabilities: { vision: true },
+    });
+  });
+
+  it('ignores declared vision when the built-in catalogue says vision: false', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        ac: {
+          preset: 'atlascloud',
+          apiKey: 'sk-test',
+          models: ['deepseek-ai/deepseek-v4-pro'],
+          modelVision: { 'deepseek-ai/deepseek-v4-pro': true },
+        },
+      },
+      slots: { 'course.content': 'ac:deepseek-ai/deepseek-v4-pro' },
+    });
+    expect(resolved.modelInfo?.capabilities?.vision).toBe(false);
+  });
+
+  it('takes declared vision over a name-colliding catalogue hit on a custom endpoint', async () => {
+    const resolved = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          modelVision: { 'gpt-5.6': false },
+        },
+      },
+      slots: { 'course.content': 'relay:gpt-5.6' },
+    });
+    expect(resolved.modelInfo?.capabilities?.vision).toBe(false);
+  });
+
+  it('forwards render_scene_preview images only when vision is enabled or known by the catalogue (#2111)', async () => {
+    const { toModelMessages } = await import('@/lib/agent/runtime/stream-fn');
+    const previewToolResult = {
+      role: 'toolResult' as const,
+      toolCallId: 'call-preview-1',
+      toolName: 'render_scene_preview',
+      content: [
+        { type: 'text' as const, text: 'Rendered scene 1 preview.' },
+        { type: 'image' as const, data: 'ZmFrZS1wbmc=', mimeType: 'image/png' },
+      ],
+      isError: false,
+      timestamp: Date.now(),
+    };
+
+    const withVision = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          models: ['custom-vlm'],
+          modelVision: { 'custom-vlm': true },
+        },
+      },
+      slots: { 'course.content': 'relay:custom-vlm' },
+    });
+    const forwarded = toModelMessages([previewToolResult], {
+      includeToolImages: withVision.modelInfo?.capabilities?.vision,
+    });
+    expect(forwarded).toHaveLength(2);
+    expect(forwarded[1]).toMatchObject({
+      role: 'user',
+      content: expect.arrayContaining([
+        { type: 'image', image: 'ZmFrZS1wbmc=', mediaType: 'image/png' },
+      ]),
+    });
+
+    const withoutVision = await resolvesWith({
+      providers: {
+        relay: {
+          preset: 'openai-compatible',
+          apiKey: 'sk',
+          baseUrl: 'https://relay.example/v1',
+          models: ['custom-text'],
+        },
+      },
+      slots: { 'course.content': 'relay:custom-text' },
+    });
+    const omitted = toModelMessages([previewToolResult], {
+      includeToolImages: withoutVision.modelInfo?.capabilities?.vision,
+    });
+    expect(omitted).toHaveLength(1);
+    expect(JSON.stringify(omitted[0])).toContain(
+      'Image observation omitted: the selected model does not support image input.',
+    );
+
+    const catalogueFalse = await resolvesWith({
+      providers: {
+        ac: {
+          preset: 'atlascloud',
+          apiKey: 'sk-test',
+          models: ['deepseek-ai/deepseek-v4-pro'],
+          modelVision: { 'deepseek-ai/deepseek-v4-pro': true },
+        },
+      },
+      slots: { 'course.content': 'ac:deepseek-ai/deepseek-v4-pro' },
+    });
+    const ignoredFlag = toModelMessages([previewToolResult], {
+      includeToolImages: catalogueFalse.modelInfo?.capabilities?.vision,
+    });
+    expect(ignoredFlag).toHaveLength(1);
+    expect(JSON.stringify(ignoredFlag[0])).toContain(
+      'Image observation omitted: the selected model does not support image input.',
+    );
+  });
 });

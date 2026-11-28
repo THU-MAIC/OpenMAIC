@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "ex. 1000000",
     "contextWindowHint": "Facultatif. Ne s'applique qu'aux modèles inconnus du catalogue intégré ; la compaction et la vérification du budget de contexte l'utilisent. Laissez vide pour la valeur par défaut.",
     "contextWindowInvalid": "Saisissez un nombre entier positif de tokens, ou laissez vide.",
+    "supportsImages": "Prend en charge les images",
+    "supportsImagesHint": "Facultatif. S’applique uniquement aux modèles absents du catalogue intégré ; permet à l’agent de voir des images telles que les aperçus de scène.",
     "modelSelectedViaVoice": "Le modèle est déterminé par la voix choisie",
     "modelServices": {
       "configured": "Configuré",
