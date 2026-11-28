@@ -109,6 +109,7 @@ export function useLiveCameraTutor({
   const camPausedRef = useRef(false);
   const tutorBufRef = useRef('');
   const userBufRef = useRef('');
+  const stopSessionRef = useRef<() => void>(() => {});
 
   const latestPropsRef = useRef({
     topic,
@@ -277,6 +278,27 @@ export function useLiveCameraTutor({
           : acquired;
 
       mediaStreamRef.current = stream;
+      // Handle unexpected webcam disconnect / permission revocation while camera is the active video source
+      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+        if (
+          !mountedRef.current ||
+          cameraAcquireSeqRef.current !== acquireSeq ||
+          mediaStreamRef.current !== stream
+        ) {
+          return;
+        }
+        const screenActive = Boolean(
+          screenStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live'),
+        );
+        if (!screenActive) {
+          stopSessionRef.current();
+          if (mountedRef.current) {
+            setStatus('error');
+            setErrorMessage('Camera stream ended. Please restart the session.');
+          }
+        }
+      });
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
@@ -348,6 +370,8 @@ export function useLiveCameraTutor({
     }
     micMutedRef.current = false;
     camPausedRef.current = false;
+    tutorBufRef.current = '';
+    userBufRef.current = '';
     if (mountedRef.current) {
       setMicLevel(0);
       setMicMuted(false);
@@ -358,6 +382,10 @@ export function useLiveCameraTutor({
       setTransportMode(null);
     }
   }, [stopPlayback]);
+
+  useEffect(() => {
+    stopSessionRef.current = stopSession;
+  }, [stopSession]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -907,8 +935,18 @@ export function useLiveCameraTutor({
 
   const sendStudentTurn = useCallback(
     async (promptText?: string) => {
-      const text = promptText?.trim() || 'Please check my notebook work and guide my next step.';
+      const explicitPrompt = promptText?.trim() ?? '';
+      const text = explicitPrompt || 'Please check my notebook work and guide my next step.';
       const dataUrl = !camPausedRef.current ? captureFrameDataUrl() : null;
+
+      if (!explicitPrompt && !dataUrl) {
+        setErrorMessage(
+          camPausedRef.current
+            ? 'Resume the camera before checking your notebook.'
+            : 'Camera video is not ready yet — please wait a moment and try again.',
+        );
+        return;
+      }
 
       if (transportMode === 'gemini-live' && wsRef.current?.readyState === WebSocket.OPEN) {
         if (playCtxRef.current?.state === 'suspended') {
@@ -1136,23 +1174,33 @@ export function useLiveCameraTutor({
           screen.getTracks().forEach((t) => t.stop());
           return;
         }
+        const handleScreenEnded = () => {
+          if (screenStreamRef.current === screen) {
+            screenStreamRef.current = null;
+          }
+          if (!mountedRef.current || sessionAttemptRef.current !== attemptId) return;
+          const hasCameraVideo =
+            mediaStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live') ?? false;
+          if (hasCameraVideo && mediaStreamRef.current) {
+            setVideoSource('camera');
+            if (videoRef.current) {
+              videoRef.current.srcObject = mediaStreamRef.current;
+              void videoRef.current.play().catch(() => {});
+            }
+          } else {
+            stopSession();
+          }
+        };
+        screen.getVideoTracks()[0]?.addEventListener('ended', handleScreenEnded);
         screenStreamRef.current = screen;
         setVideoSource('screen');
         if (videoRef.current) {
           videoRef.current.srcObject = screen;
           await videoRef.current.play().catch(() => {});
         }
-        screen.getVideoTracks()[0]?.addEventListener('ended', () => {
-          if (screenStreamRef.current === screen) {
-            screenStreamRef.current = null;
-          }
-          if (!mountedRef.current || sessionAttemptRef.current !== attemptId) return;
-          setVideoSource('camera');
-          if (videoRef.current && mediaStreamRef.current) {
-            videoRef.current.srcObject = mediaStreamRef.current;
-            void videoRef.current.play().catch(() => {});
-          }
-        });
+        if (!screen.getVideoTracks().some((t) => t.readyState === 'live')) {
+          handleScreenEnded();
+        }
       } catch {
         // user cancelled screen picker
       }
