@@ -692,15 +692,13 @@ export function useLiveCameraTutor({
         return;
       }
       const cur = latestPropsRef.current;
-      const initialSceneContextText = buildLiveSceneContextText(cur);
-      lastSentSceneKeyRef.current = initialSceneContextText;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
+        'Always follow the most recent active locale, topic, problem, and lesson context provided in user context messages.',
         'Never claim you can see a notebook or written work unless it is actually visible in the camera frame; if you do not see a notebook yet, kindly ask the student to point the camera at their notebook.',
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
         'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters). Whenever a visual sketch (labeled right triangle, angle arc, light rays, forces, coordinate axes, shapes, or arrows) helps explain the concept, call draw_whiteboard_diagram with a clean SVG (viewBox="0 0 600 340", white/light background, clear dark strokes and readable labels).',
-        initialSceneContextText,
         cur.whiteboardStepsText?.length
           ? `Current whiteboard items:\n- ${cur.whiteboardStepsText.slice(-8).join('\n- ')}`
           : '',
@@ -872,18 +870,25 @@ export function useLiveCameraTutor({
             silent.connect(aCtx.destination);
           }
 
-          const curProb = latestPropsRef.current.problem?.statement;
-          const curLang = latestPropsRef.current.language;
+          const curProps = latestPropsRef.current;
+          const initialContext = buildLiveSceneContextText(curProps);
+          lastSentSceneKeyRef.current = initialContext;
+          pendingLiveContextRef.current = null;
+          const curProb = curProps.problem?.statement;
+          const curLang = curProps.language;
           const langSuffix = curLang ? ` Speak in locale "${curLang}".` : '';
           const greetPrompt = curProb
             ? `Greet the student warmly in one short sentence, invite them to start working on "${curProb}", and ask them to show their notebook to the camera when they are ready.${langSuffix}`
             : `Greet the student warmly in one short sentence and ask them to show their notebook to the camera or tell you what question they would like help with.${langSuffix}`;
+          const initialTurnText = initialContext
+            ? `[Active classroom context]\n${initialContext}\n\n${greetPrompt}`
+            : greetPrompt;
 
           modelTurnActiveRef.current = true;
           ws.send(
             JSON.stringify({
               clientContent: {
-                turns: [{ role: 'user', parts: [{ text: greetPrompt }] }],
+                turns: [{ role: 'user', parts: [{ text: initialTurnText }] }],
                 turnComplete: true,
               },
             }),
@@ -960,14 +965,10 @@ export function useLiveCameraTutor({
         if (!serverContent) return;
 
         if (serverContent.interrupted) {
-          modelTurnActiveRef.current = false;
           stopPlayback();
           if (tutorBufRef.current) {
             appendMessage('assistant', sanitizeLiveCaption(tutorBufRef.current));
             tutorBufRef.current = '';
-          }
-          if (pendingLiveContextRef.current && wsRef.current === ws) {
-            sendLiveContextUpdate(ws, pendingLiveContextRef.current);
           }
         }
 
@@ -1012,7 +1013,11 @@ export function useLiveCameraTutor({
             tutorBufRef.current = '';
           }
           if (pendingLiveContextRef.current && wsRef.current === ws) {
-            sendLiveContextUpdate(ws, pendingLiveContextRef.current);
+            const latestContext = buildLiveSceneContextText(latestPropsRef.current);
+            pendingLiveContextRef.current = null;
+            if (latestContext && latestContext !== lastSentSceneKeyRef.current) {
+              sendLiveContextUpdate(ws, latestContext);
+            }
           }
         }
       } catch {
@@ -1074,11 +1079,20 @@ export function useLiveCameraTutor({
         }
         appendMessage('user', text);
         tutorBufRef.current = '';
+        const latestContext = buildLiveSceneContextText(latestPropsRef.current);
+        let outboundText = text;
+        if (latestContext && latestContext !== lastSentSceneKeyRef.current) {
+          lastSentSceneKeyRef.current = latestContext;
+          pendingLiveContextRef.current = null;
+          outboundText = `[Classroom context updated — use this for future guidance]\n${latestContext}\n\n${text}`;
+        } else {
+          pendingLiveContextRef.current = null;
+        }
         modelTurnActiveRef.current = true;
         wsRef.current.send(
           JSON.stringify({
             clientContent: {
-              turns: [{ role: 'user', parts: [{ text }] }],
+              turns: [{ role: 'user', parts: [{ text: outboundText }] }],
               turnComplete: true,
             },
           }),
@@ -1361,7 +1375,10 @@ export function useLiveCameraTutor({
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const nextContext = buildLiveSceneContextText({ topic, problem, sceneContext, language });
-    if (!nextContext || nextContext === lastSentSceneKeyRef.current) return;
+    if (!nextContext || nextContext === lastSentSceneKeyRef.current) {
+      pendingLiveContextRef.current = null;
+      return;
+    }
     if (modelTurnActiveRef.current) {
       pendingLiveContextRef.current = nextContext;
       return;
