@@ -511,6 +511,14 @@ export async function runPiSingleRequest(
         continue;
       }
 
+      // A stream error ends the turn. Handle it now instead of after a drawing
+      // that is still loading, so the turn is cleaned up and its remaining
+      // speech stops without waiting for that drawing.
+      if (event.type === 'error') {
+        consumer.onEvent(event);
+        continue;
+      }
+
       const pending = presentation
         ? presentation.then(() => {
             if (!controller.signal.aborted && !presentationFailure) return consumer.onEvent(event);

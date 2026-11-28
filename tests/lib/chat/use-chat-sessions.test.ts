@@ -482,6 +482,63 @@ describe('runPiSingleRequest', () => {
     }
   });
 
+  it('fails the turn on a stream error without waiting for a drawing that is still loading', async () => {
+    // The drawing never finishes loading.
+    const projection = new Promise<void>(() => {});
+    const events = [
+      { type: 'text_delta', data: { content: 'First part.' } },
+      { type: 'whiteboard', data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 } },
+      { type: 'text_delta', data: { content: 'Second part.' } },
+      { type: 'error', data: { message: 'Provider failed mid-turn' } },
+    ];
+    // Like the real consumer, an error event throws.
+    const onEvent = vi.fn((event: StatelessEvent) => {
+      if (event.type === 'whiteboard' && event.data.kind === 'projection') return projection;
+      if (event.type === 'error') throw new Error(event.data.message);
+    });
+    const onIterationEnd = vi.fn(async () => null);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')),
+      ),
+    );
+
+    try {
+      await expect(
+        runPiSingleRequest(
+          'session-1',
+          {
+            messages: [],
+            storeState: {
+              stage: null,
+              scenes: [],
+              currentSceneId: null,
+              mode: 'autonomous',
+              whiteboardOpen: false,
+            },
+            config: { agentIds: ['teacher'] },
+          },
+          new AbortController(),
+          'qa',
+          () => ({ onEvent, onIterationEnd }),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          vi.fn(),
+          {},
+          (key) => key,
+        ),
+      ).rejects.toThrow('Provider failed mid-turn');
+      // Narration queued behind the drawing is not presented.
+      expect(onEvent.mock.calls.map(([event]) => event)).toEqual([events[0], events[1], events[3]]);
+      expect(onIterationEnd).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ['qa', 'tool_calling_required', 'toolCallingRequired'],
     ['discussion', 'tool_calling_required', 'toolCallingRequired'],
