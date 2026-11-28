@@ -71,6 +71,10 @@ interface ChatAreaProps {
   onJumpToAction?: (sceneId: string, actionIndex: number) => void;
   /** Pauses classroom playback/discussion audio when Gemini Live starts in the Camera tab. */
   onActivateCameraLive?: () => void;
+  /** Optional portal host callback so a parent (PlaybackChromeRoot) can own one persistent tutor across desktop/mobile layouts. */
+  onCameraTabHost?: (host: HTMLDivElement | null) => void;
+  /** Notifies parent when the desktop Camera tab becomes active or inactive. */
+  onCameraTabActiveChange?: (active: boolean) => void;
 }
 
 export type SpeechSource = 'lecture' | 'reply' | 'question';
@@ -134,6 +138,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       canJumpToAction,
       onJumpToAction,
       onActivateCameraLive,
+      onCameraTabHost,
+      onCameraTabActiveChange,
     },
     ref,
   ) => {
@@ -313,9 +319,10 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         setMessageTarget(null);
         if (tab === 'camera') setCameraEverVisited(true);
         setActiveTab(tab);
+        onCameraTabActiveChange?.(tab === 'camera');
         if (tab !== 'camera') onTabChange?.(tab);
       },
-      [mobile, onTabChange, scrollChatToBottom],
+      [mobile, onCameraTabActiveChange, onTabChange, scrollChatToBottom],
     );
 
     useImperativeHandle(ref, () => ({
@@ -547,8 +554,17 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
               </div>
             </TabsContent>
 
-            {/* Persistent Camera Tutor Tab (desktop only; mobile uses the single floating tutor in PlaybackChromeRoot) */}
-            {!mobile && (cameraEverVisited || activeTab === 'camera') && (
+            {/* Persistent Camera Tutor Tab (desktop slot; when onCameraTabHost is supplied, PlaybackChromeRoot portals one persistent tutor here so layout switches never drop an active session) */}
+            {!mobile && onCameraTabHost && (
+              <div
+                ref={onCameraTabHost}
+                className={cn(
+                  'flex-1 min-h-0 flex flex-col p-3 overflow-hidden',
+                  activeTab !== 'camera' && 'hidden',
+                )}
+              />
+            )}
+            {!mobile && !onCameraTabHost && (cameraEverVisited || activeTab === 'camera') && (
               <div
                 className={cn(
                   'flex-1 min-h-0 flex flex-col p-3 overflow-hidden',

@@ -380,6 +380,11 @@ export function useLiveCameraTutor({
     setLiveCaption('');
     setStatus('connecting');
 
+    // Cancel any active browser Read Aloud narration (e.g. theory slide speech) before opening mic/audio
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
     const AudioContextCtor =
       window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -471,6 +476,7 @@ export function useLiveCameraTutor({
       const cur = latestPropsRef.current;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
+        cur.language ? `Always speak and write whiteboard steps in locale "${cur.language}".` : '',
         'Never claim you can see a notebook or written work unless it is actually visible in the camera frame; if you do not see a notebook yet, kindly ask the student to point the camera at their notebook.',
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
@@ -643,9 +649,11 @@ export function useLiveCameraTutor({
           }
 
           const curProb = latestPropsRef.current.problem?.statement;
+          const curLang = latestPropsRef.current.language;
+          const langSuffix = curLang ? ` Speak in locale "${curLang}".` : '';
           const greetPrompt = curProb
-            ? `Greet the student warmly in one short sentence, invite them to start working on "${curProb}", and ask them to show their notebook to the camera when they are ready.`
-            : 'Greet the student warmly in one short sentence and ask them to show their notebook to the camera or tell you what question they would like help with.';
+            ? `Greet the student warmly in one short sentence, invite them to start working on "${curProb}", and ask them to show their notebook to the camera when they are ready.${langSuffix}`
+            : `Greet the student warmly in one short sentence and ask them to show their notebook to the camera or tell you what question they would like help with.${langSuffix}`;
 
           ws.send(
             JSON.stringify({

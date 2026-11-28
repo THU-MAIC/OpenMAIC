@@ -29,9 +29,13 @@ import { cn } from '@/lib/utils';
 
 interface InlineQACameraPreviewProps {
   readonly open: boolean;
+  /** Controls visibility without unmounting the active tutor session (defaults to true). */
+  readonly visible?: boolean;
   readonly onClose: () => void;
   /** When true, renders embedded inside the right sidebar tab instead of a floating overlay. */
   readonly embedded?: boolean;
+  /** Optional portal host element (e.g. desktop sidebar Camera tab slot) so one instance survives layout switches. */
+  readonly portalTarget?: HTMLElement | null;
   /** Pauses classroom lecture/discussion audio when Gemini Live starts. */
   readonly onActivateLive?: () => void;
   /** Latest spoken/typed classroom Q&A lines for shared conversational context. */
@@ -60,8 +64,10 @@ function collectVisibleChatTranscript(): string {
 }
 
 function InlineQACameraLiveBody({
+  visible = true,
   onClose,
   embedded = false,
+  portalTarget = null,
   onActivateLive,
   recentClassroomSpeech,
 }: Omit<InlineQACameraPreviewProps, 'open'>) {
@@ -172,6 +178,7 @@ function InlineQACameraLiveBody({
       data-testid="inline-qa-camera-preview"
       className={cn(
         'flex flex-col overflow-hidden',
+        !visible && 'hidden',
         embedded
           ? 'h-full min-h-0 rounded-2xl border border-violet-200/70 dark:border-violet-800/60 bg-gray-950/95 shadow-sm'
           : 'fixed bottom-24 left-4 z-[60] w-[min(350px,calc(100vw-32px))] rounded-2xl border border-violet-300/70 dark:border-violet-700/70 bg-gray-950/95 shadow-[0_24px_60px_-12px_rgba(0,0,0,0.55)] backdrop-blur-xl',
@@ -408,6 +415,7 @@ function InlineQACameraLiveBody({
     </div>
   );
 
+  if (portalTarget) return createPortal(card, portalTarget);
   if (embedded) return card;
   return createPortal(card, document.body);
 }
@@ -419,6 +427,6 @@ function InlineQACameraLiveBody({
  */
 export function InlineQACameraPreview(props: InlineQACameraPreviewProps) {
   if (!props.open) return null;
-  if (!props.embedded && typeof document === 'undefined') return null;
+  if (!props.embedded && !props.portalTarget && typeof document === 'undefined') return null;
   return <InlineQACameraLiveBody {...props} />;
 }

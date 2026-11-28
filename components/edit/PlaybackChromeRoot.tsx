@@ -1920,6 +1920,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // so notes and chat keep following playback.
     const [mobilePanel, setMobilePanel] = useState<ClassroomPanel | null>(null);
     const [mobileCameraTutorOpen, setMobileCameraTutorOpen] = useState(false);
+    const [desktopCameraTabActive, setDesktopCameraTabActive] = useState(false);
+    const [cameraTutorMounted, setCameraTutorMounted] = useState(false);
+    const [cameraTabHost, setCameraTabHost] = useState<HTMLDivElement | null>(null);
     const handleActivateCameraLive = useCallback(() => {
       if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
         const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
@@ -2355,6 +2358,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   mobile ? mobileToggleChat : () => setChatAreaCollapsed(!chatAreaCollapsed)
                 }
                 onOpenCameraTab={() => {
+                  setCameraTutorMounted(true);
                   if (mobile) {
                     setMobileCameraTutorOpen((v) => !v);
                   } else {
@@ -2500,6 +2504,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             onSegmentSealed={discussionTTS.handleSegmentSealed}
             shouldHoldAfterReveal={discussionTTS.shouldHold}
             onActivateCameraLive={handleActivateCameraLive}
+            onCameraTabHost={setCameraTabHost}
+            onCameraTabActiveChange={(active) => {
+              setDesktopCameraTabActive(active);
+              if (active) setCameraTutorMounted(true);
+            }}
           />
         </div>
         {mobile && (
@@ -2508,20 +2517,33 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             <button
               type="button"
               data-testid="mobile-classroom-camera-tutor-button"
-              onClick={() => setMobileCameraTutorOpen((v) => !v)}
+              onClick={() => {
+                setCameraTutorMounted(true);
+                setMobileCameraTutorOpen((v) => !v);
+              }}
               title={t('liveTutor.classroomButtonHint')}
               className="fixed right-3 bottom-20 z-40 inline-flex items-center gap-1.5 rounded-full bg-violet-600 text-white px-3.5 py-2 text-xs font-semibold shadow-lg"
             >
               <Camera className="size-4" />
               <span>{t('liveTutor.classroomButton')}</span>
             </button>
-            <InlineQACameraPreview
-              open={mobileCameraTutorOpen}
-              onClose={() => setMobileCameraTutorOpen(false)}
-              onActivateLive={handleActivateCameraLive}
-            />
           </>
         )}
+        {/* Single persistent classroom camera tutor instance owned across desktop/mobile layout switches */}
+        <InlineQACameraPreview
+          open={cameraTutorMounted}
+          visible={mobile ? mobileCameraTutorOpen : desktopCameraTabActive}
+          embedded={!mobile && Boolean(cameraTabHost)}
+          portalTarget={!mobile ? cameraTabHost : null}
+          onClose={() => {
+            if (mobile) {
+              setMobileCameraTutorOpen(false);
+            } else {
+              chatAreaRef.current?.switchToTab('chat');
+            }
+          }}
+          onActivateLive={handleActivateCameraLive}
+        />
 
         {/* Scene switch confirmation dialog */}
         <AlertDialog
