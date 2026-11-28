@@ -1,6 +1,10 @@
 'use client';
 
 import { sampleInteractiveState } from '@/lib/interactive/chat-observation';
+import {
+  providerFailureText,
+  translateFailureText,
+} from '@/lib/generation-run-client/failure-message';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -439,6 +443,12 @@ export async function runPiSingleRequest(
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => null);
+    const provider = providerFailureText({ ...errorBody, message: errorBody?.error });
+    if (provider) {
+      clearLiveSessionAfterError(sessionId, translateFailureText(provider, t));
+      onStopSessionRef.current?.({ sessionId, source: 'error' });
+      return;
+    }
     if (
       reference?.kind === 'whiteboard_element' &&
       errorBody?.reason === 'whiteboard_reference_changed'
@@ -463,7 +473,7 @@ export async function runPiSingleRequest(
   let sseBuffer = '';
   let sawDoneEvent = false;
   let sawAgentOutput = false;
-  let failedWithoutOutput = false;
+  let failureMessage: string | undefined;
   let presentation: Promise<void> | undefined;
   let presentationFailure: { error: unknown } | undefined;
 
@@ -479,14 +489,17 @@ export async function runPiSingleRequest(
       const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
       if (!dataLine) continue;
       const event = JSON.parse(dataLine.slice(6)) as StatelessEvent;
-      if (failedWithoutOutput) continue;
-      // A server-side failure (e.g. the Director's own provider) before any
-      // classroom output gets the same fixed notice as a turn with no response,
-      // instead of the raw error. Errors after visible output keep the old path.
-      if (event.type === 'error' && !sawAgentOutput) {
-        log.error('[ChatArea] Pi stream error before classroom output:', event.data.message);
-        failedWithoutOutput = true;
-        continue;
+      if (failureMessage) continue;
+      // Only marked failures supply public recovery guidance. Other errors
+      // before classroom output still receive the fixed no-response notice.
+      if (event.type === 'error') {
+        const provider = providerFailureText(event.data);
+        if (provider || !sawAgentOutput) {
+          failureMessage = provider
+            ? translateFailureText(provider, t)
+            : t('chat.error.teacherNoResponse');
+          continue;
+        }
       }
       if (isVisibleAgentOutput(event)) sawAgentOutput = true;
       if (event.type === 'done') sawDoneEvent = true;
@@ -516,8 +529,8 @@ export async function runPiSingleRequest(
   if (presentation) await presentation;
   if (controller.signal.aborted) return;
   if (presentationFailure) throw presentationFailure.error;
-  if (failedWithoutOutput) {
-    clearLiveSessionAfterError(sessionId, t('chat.error.teacherNoResponse'));
+  if (failureMessage) {
+    clearLiveSessionAfterError(sessionId, failureMessage);
     onStopSessionRef.current?.({ sessionId, source: 'error' });
     return;
   }

@@ -2,7 +2,12 @@ import 'server-only';
 
 import { APICallError } from 'ai';
 
-import { CHATGPT_PLAN_PROVIDER_ID, CHATGPT_USAGE_SETTINGS_URL } from '@/lib/chatgpt-plan/shared';
+import {
+  CHATGPT_PLAN_ERROR_KEYS,
+  CHATGPT_PLAN_PROVIDER_ID,
+  CHATGPT_USAGE_SETTINGS_URL,
+  type ChatGPTPlanMessageKey,
+} from '@/lib/chatgpt-plan/shared';
 import { markPublicProviderFailure } from '@/lib/server/llm-error-response';
 import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
 
@@ -22,6 +27,8 @@ export type ChatGPTPlanErrorCode =
   /** No sign-in is waiting for this callback: it expired or was completed. */
   | 'sign-in-expired'
   | 'sign-in-denied'
+  /** A verified sign-in belongs to a different account than the saved registration. */
+  | 'account-mismatch'
   /** The pasted address is not the one this sign-in redirects to. */
   | 'invalid-callback'
   | 'sign-in-failed'
@@ -37,6 +44,8 @@ const MESSAGES: Record<ChatGPTPlanErrorCode, string> = {
   'reauth-required': 'The ChatGPT connection has expired. Sign in again in settings.',
   'sign-in-expired': 'This sign-in has expired or was already completed. Start a new one.',
   'sign-in-denied': 'The ChatGPT sign-in was cancelled.',
+  'account-mismatch':
+    'This registration belongs to another ChatGPT account. Sign in with that account or choose “Use a different account” in OpenMAIC settings after disconnecting.',
   'invalid-callback': 'That address does not belong to this sign-in. Paste the full address.',
   'sign-in-failed': 'The ChatGPT sign-in could not be completed. Try again.',
   upstream: 'ChatGPT could not be reached. Try again shortly.',
@@ -63,6 +72,7 @@ const CONNECTION_STATUS: Record<ChatGPTPlanErrorCode, number> = {
   'reauth-required': 401,
   'sign-in-expired': 400,
   'sign-in-denied': 400,
+  'account-mismatch': 409,
   'invalid-callback': 400,
   'sign-in-failed': 502,
   upstream: 502,
@@ -71,6 +81,20 @@ const CONNECTION_STATUS: Record<ChatGPTPlanErrorCode, number> = {
 /** The HTTP status a route answers a connection failure with. */
 export function connectionErrorStatus(error: ChatGPTPlanError): number {
   return CONNECTION_STATUS[error.code];
+}
+
+function markPlanFailure(
+  error: APICallError,
+  status: number,
+  reason: string | undefined,
+  key?: ChatGPTPlanMessageKey,
+): APICallError {
+  return markPublicProviderFailure(
+    error,
+    status,
+    reason,
+    key ? `settings.chatgptPlan.${key}` : undefined,
+  );
 }
 
 /** A connection failure met while sending a model request. */
@@ -83,7 +107,12 @@ export function connectionCallError(error: ChatGPTPlanError, url: string): APICa
     isRetryable: error.code === 'upstream',
     cause: error,
   });
-  return markPublicProviderFailure(callError, CONNECTION_STATUS[error.code], error.code);
+  return markPlanFailure(
+    callError,
+    CONNECTION_STATUS[error.code],
+    error.code,
+    CHATGPT_PLAN_ERROR_KEYS[error.code],
+  );
 }
 
 /** What an inference endpoint reported, read from its body or stream frame. */
@@ -101,16 +130,19 @@ interface PlanRule {
   retryable: boolean;
   message: string;
   quota?: true;
+  messageKey?: ChatGPTPlanMessageKey;
 }
 
 const USAGE_LIMIT: PlanRule = {
   status: 429,
   retryable: false,
   quota: true,
+  messageKey: 'usageLimit',
   message: `This app has reached its usage limit on your ChatGPT plan. Review the limit at ${CHATGPT_USAGE_SETTINGS_URL}.`,
 };
 const TEMPORARILY_UNAVAILABLE: PlanRule = {
   status: 503,
+  messageKey: 'errorFailed',
   retryable: true,
   message: 'ChatGPT plan usage is temporarily unavailable. Try again shortly.',
 };
@@ -124,21 +156,25 @@ const PLAN_RULES: Record<string, PlanRule> = {
   user_unavailable: TEMPORARILY_UNAVAILABLE,
   user_not_eligible: {
     status: 403,
+    messageKey: 'accountIneligible',
     retryable: false,
     message: 'This ChatGPT account cannot use its plan in other apps.',
   },
   unsupported_capability: {
     status: 400,
+    messageKey: 'requestUnsupported',
     retryable: false,
     message: 'ChatGPT plan usage does not support part of this request.',
   },
   route_not_supported: {
     status: 403,
+    messageKey: 'requestUnsupported',
     retryable: false,
     message: 'ChatGPT plan usage does not support this request.',
   },
   invalid_user: {
     status: 401,
+    messageKey: 'reauthRequired',
     retryable: false,
     message:
       'ChatGPT could not confirm the connected account. Try again; if this continues, sign in again in settings.',
@@ -146,11 +182,13 @@ const PLAN_RULES: Record<string, PlanRule> = {
 };
 const PLAN_ACCESS_DENIED: PlanRule = {
   status: 403,
+  messageKey: 'accountIneligible',
   retryable: false,
   message: 'ChatGPT plan usage is not available for this account right now.',
 };
 const REQUEST_TOO_LARGE: PlanRule = {
   status: 413,
+  messageKey: 'requestTooLarge',
   retryable: false,
   message:
     'This request is too large for ChatGPT plan usage. Try a shorter conversation or fewer attachments.',
@@ -182,6 +220,7 @@ function genericRule({ status, code }: UpstreamFailure): PlanRule {
   if (code === 'openmaic_invalid_model_list')
     return {
       status: 502,
+      messageKey: 'modelUnavailable',
       retryable: false,
       message: 'ChatGPT returned an invalid model list. Refresh the model list in settings.',
     };
@@ -217,9 +256,9 @@ export function planCallError(
   failure: UpstreamFailure,
   request: { url: string; requestBodyValues?: unknown },
 ): APICallError {
-  const rule = planRule(failure.code) ?? genericRule(failure);
+  const plan = planRule(failure.code);
+  const rule = plan ?? genericRule(failure);
   let message = rule.message;
-  if (rule.quota && failure.code) message += ` (${failure.code})`;
   if (failure.code?.endsWith('unsupported_capability') && SAFE_TOKEN.test(failure.param ?? '')) {
     message += ` (unsupported: ${failure.param})`;
   }
@@ -237,10 +276,11 @@ export function planCallError(
       ? { cause: new ProviderQuotaExhaustedError(CHATGPT_PLAN_PROVIDER_ID, rule.message) }
       : {}),
   });
-  return markPublicProviderFailure(
+  return markPlanFailure(
     callError,
     rule.status,
-    isPlanUsageFailure(failure) && SAFE_TOKEN.test(failure.code ?? '') ? failure.code : undefined,
+    plan && SAFE_TOKEN.test(failure.code ?? '') ? failure.code : undefined,
+    rule.messageKey,
   );
 }
 

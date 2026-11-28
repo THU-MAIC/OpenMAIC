@@ -14,6 +14,7 @@ import { attachedModelFallback, fallbackMaxOutputTokens } from '@/lib/ai/model-f
 import { streamLLM } from '@/lib/ai/llm';
 import {
   type FallbackResolution,
+  isRetryableLlmError,
   shouldFallbackFor,
   logFallbackFired,
 } from '@/lib/server/llm-fallback';
@@ -39,9 +40,11 @@ import type {
 } from '@/lib/types/generation';
 import { resolveServerGenerationCapabilities } from '@/lib/server/generation-capabilities';
 import {
+  classifyHostFailure,
   isNonRetryableHostFailure,
   isProviderQuotaRefusal,
 } from '@/lib/server/generation-run-hooks/runtime';
+import { publicProviderFailure } from '@/lib/server/llm-error-response';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 
@@ -719,9 +722,13 @@ async function streamOutlines(
         }
       }
 
-      // A host failure no retry helps fails the step as it is, even after
-      // some outlines streamed: they are not the outline the model meant.
-      if (streamError !== undefined && isNonRetryableHostFailure(streamError)) throw streamError;
+      // An adapter's explicit refusal, like a terminal host failure, invalidates
+      // any scenes the model sent before refusing the request.
+      if (
+        streamError !== undefined &&
+        (publicProviderFailure(streamError) || isNonRetryableHostFailure(streamError))
+      )
+        throw streamError;
 
       // Validate: got outlines?
       if (parsedOutlines.length > 0) {
@@ -774,16 +781,20 @@ async function streamOutlines(
       // The caller went away (AbortError from the propagated signal):
       // stop immediately, don't burn retries re-running generation.
       if (signal?.aborted) throw new StepAbortedError();
-      if (isNonRetryableHostFailure(error)) throw error;
+      const host = classifyHostFailure(error);
+      if (host?.retryable === false) throw error;
+      const provider = publicProviderFailure(error);
+      if (provider) parsedOutlines = [];
       lastCause = error;
       lastError = error instanceof Error ? error.message : String(error);
       log.warn(
         `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
       );
 
-      // No retry of this model serves an exhausted quota, and the fallback
-      // round is the last attempt.
-      if (!isProviderQuotaRefusal(error) && !fellBack && attempt <= MAX_STREAM_RETRIES) {
+      const retrySameModel =
+        host?.retryable ??
+        (!isProviderQuotaRefusal(error) && (!provider || isRetryableLlmError(error)));
+      if (retrySameModel && !fellBack && attempt <= MAX_STREAM_RETRIES) {
         log.warn(`Stream error (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`, error);
         emit({ type: 'retry', attempt, maxAttempts: MAX_STREAM_RETRIES + 1 });
         continue;

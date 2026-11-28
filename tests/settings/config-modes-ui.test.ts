@@ -165,6 +165,75 @@ async function openDialog(view: ModelSettingsView) {
 }
 
 describe('the settings sections', () => {
+  it.each([false, true])(
+    'manages only the declared personal account with user keys off and all slots locked=%s',
+    async (locked) => {
+      const view = viewFor({
+        allowUserKeys: false,
+        ...(locked ? { lock: 'all' as const } : {}),
+        providers: {
+          ...providers,
+          personal: { preset: 'chatgpt-plan', models: ['listed'] },
+        },
+      });
+      Object.assign(view.providers.find((provider) => provider.id === 'personal')!, {
+        accountModelsUrl: '/api/chatgpt-plan/models',
+      });
+      let state = 'disconnected';
+      let modelName = 'Listed account model';
+      const calls: string[] = [];
+      vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(input);
+        calls.push(`${init?.method ?? 'GET'} ${path}`);
+        if (path.endsWith('/status'))
+          return Response.json({
+            success: true,
+            status: { available: true, state, noticeAcknowledged: true },
+          });
+        if (path.startsWith('/api/chatgpt-plan/models')) {
+          if (state !== 'connected') return Response.json({ success: false }, { status: 401 });
+          if (path.endsWith('?refresh=1')) modelName = 'Updated account model';
+          return Response.json({
+            success: true,
+            models: [
+              { id: 'listed', name: modelName },
+              { id: 'other', name: 'Other account model' },
+            ],
+          });
+        }
+        if (path.endsWith('/api/model-config')) return Response.json(view);
+        return Response.json({ enabled: false, runtimeEnabled: false });
+      });
+      const nav = await openDialog(view);
+      expect(nav).toContain('model-services');
+      click(
+        document.body.querySelector<HTMLElement>('[data-testid="settings-nav-model-services"]')!,
+      );
+      await flush();
+      expect(document.body.textContent).toContain('settings.chatgptPlan.signIn');
+      expect(document.body.textContent).not.toContain('DeepSeek');
+      const focus = async (next: string) => {
+        state = next;
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+        });
+        await flush();
+      };
+      await focus('reauth-required');
+      expect(document.body.textContent).toContain('settings.chatgptPlan.signInAgain');
+      expect(document.body.textContent).toContain('settings.chatgptPlan.disconnect');
+      await focus('connected');
+      expect(document.body.textContent).toContain('Listed account model');
+      click(byText('settings.chatgptPlan.refreshModels'));
+      await flush();
+      expect(calls).toContain('GET /api/chatgpt-plan/models?refresh=1');
+      expect(calls).not.toContain('PUT /api/model-config');
+      expect(document.body.textContent).toContain('Updated account model');
+      expect(document.body.textContent).not.toContain('Other account model');
+      expect(document.body.textContent).not.toContain('settings.addNewModel');
+    },
+  );
+
   it('lists Token Plan, Model Services and Course Model when users may set things up', async () => {
     const nav = await openDialog(
       viewFor({ providers, slots: { llm: 'operator:deepseek-v4-pro' } }),

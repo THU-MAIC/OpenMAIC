@@ -9,6 +9,7 @@ import type { NextRequest } from 'next/server';
 import {
   assertDeploymentModelAuthorized,
   ModelAuthorizationError,
+  providerModelAllowlist,
   usesServerCredentials,
 } from '@/lib/server/model-config/model-authorization';
 import {
@@ -149,6 +150,14 @@ export async function resolveRequestedModel(
   // A provider the server signs in to takes nothing from the request.
   const adapter = serverLanguageModelAdapter(providerId);
   if (adapter) {
+    const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
+    const allowed = providerModelAllowlist(
+      deploymentConfig().layer?.config,
+      providerId,
+      providerId,
+      'chat',
+    );
+    if (allowed && !allowed.includes(modelId)) throw new ModelAuthorizationError();
     return serverAdapterModel(adapter, {
       registryId: providerId,
       modelId,

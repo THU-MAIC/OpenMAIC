@@ -153,7 +153,9 @@ export function ProviderConfigPanel({
         );
       } else if (data.errorCode === 'PROVIDER_ACTION_REQUIRED') {
         setFetchStatus('error');
-        setFetchMessage(data.error);
+        setFetchMessage(
+          data.messageKey ? t(data.messageKey, { defaultValue: data.error }) : data.error,
+        );
       } else if (response.status === 404) {
         setFetchStatus('error');
         setFetchMessage(t('settings.fetchModelsNoEndpoint'));
@@ -184,12 +186,14 @@ export function ProviderConfigPanel({
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Server-configured notice */}
-      {serverConfigured && <ServerConfiguredNotice view={view} capability="chat" />}
+      {serverConfigured && !provider?.accountModelsUrl && (
+        <ServerConfiguredNotice view={view} capability="chat" />
+      )}
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
 
       {/* A provider the server signs in to shows its account instead. */}
-      {editable && planAccount && registry?.serverAdapter && (
-        <ChatGPTPlanAccount save={save} account={planAccount} />
+      {(editable || provider?.accountModelsUrl) && planAccount && registry?.serverAdapter && (
+        <ChatGPTPlanAccount save={editable ? save : undefined} account={planAccount} />
       )}
 
       {/* The server's providers are the operator's: their key and endpoint

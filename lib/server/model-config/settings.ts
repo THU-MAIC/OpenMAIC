@@ -16,11 +16,7 @@ import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 import type { WebFetchProviderInfo } from '@/lib/web-fetch/types';
 import { DEFAULT_WEB_FETCH_PROVIDER, webFetchProviderMetadata } from '@/lib/web-fetch/registry';
 import { getVoiceRegistrationAdapter } from '@/lib/audio/voice-registration';
-import {
-  deploymentAuthorizedModels,
-  ModelAuthorizationError,
-  usesServerCredentials,
-} from './model-authorization';
+import { ModelAuthorizationError, providerModelAllowlist } from './model-authorization';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { z } from 'zod';
@@ -50,6 +46,7 @@ import {
 
 import { acceptsWorkspaceToolBaseUrl, isForceDisabled, isLocalEndpoint } from './media';
 import { serverLanguageModelAdapter } from './server-adapters';
+import { isPersonalInstallationOwner, type OwnerPrincipal } from '@/lib/server/identity';
 import {
   checkModelConfigShape,
   parseModelRef,
@@ -92,6 +89,8 @@ export interface ProviderView {
   presetKind: ProviderPreset['kind'];
   /** Where it is declared: deployment providers are read-only. */
   source: 'deployment' | 'workspace';
+  /** Where the personal owner can read the account catalogue, independently of these settings. */
+  accountModelsUrl?: string;
   baseUrl?: string;
   models?: string[];
   /**
@@ -308,7 +307,7 @@ function capabilityModels(
   {
     chatOnly = false,
     baseUrl,
-    strictModels = false,
+    workspace = false,
     deployment,
     providerId,
     declared,
@@ -316,7 +315,7 @@ function capabilityModels(
   }: {
     chatOnly?: boolean;
     baseUrl?: string;
-    strictModels?: boolean;
+    workspace?: boolean;
     deployment?: ModelConfigFile;
     providerId?: string;
     /** Context windows the provider declares per chat model (`modelContextWindows`). */
@@ -340,18 +339,18 @@ function capabilityModels(
     if (registryId && isForceDisabled(capability, registryId)) continue;
     const offered = preset.trustsModelCatalogue === false ? [] : presetModels(preset, capability);
     // A provider's own model list narrows (or names) the chat models it serves.
-    const authorized =
-      strictModels && providerId
-        ? deploymentAuthorizedModels(deployment, providerId, capability)
-        : pinned;
-    const models =
-      (capability === 'chat' && pinned?.length) || strictModels
-        ? (authorized ?? []).map(
-            (id) =>
-              offered.find((model) => model.id === id) ??
-              catalogueModel(capability, registryId!, id),
-          )
-        : offered;
+    const allowed =
+      providerId && registryId
+        ? providerModelAllowlist(deployment, providerId, registryId, capability)
+        : undefined;
+    let ids = capability === 'chat' && pinned?.length ? pinned : undefined;
+    if (allowed) ids = workspace ? ids?.filter((id) => allowed.includes(id)) : allowed;
+    const models = ids
+      ? ids.map(
+          (id) =>
+            offered.find((model) => model.id === id) ?? catalogueModel(capability, registryId!, id),
+        )
+      : offered;
     // A declared window shows on a row the catalogue says nothing about; the
     // catalogue's own value stays, except on an endpoint the preset says the
     // catalogue does not describe (mirrors how the calls resolve it).
@@ -531,7 +530,10 @@ function withCloneTarget(view: ProviderView): ProviderView {
 }
 
 /** The view of the settings for a workspace's stored configuration (or none). */
-export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSettingsView {
+export function modelSettingsView(
+  stored: StoredWorkspaceConfig | null,
+  owner?: OwnerPrincipal,
+): ModelSettingsView {
   const { layer: deployment } = deploymentConfig();
   const workspace: ModelConfigLayer | null = stored
     ? { source: 'workspace', config: stored.config }
@@ -563,7 +565,6 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           ? { unsupportedCapabilities: [...provider.unsupportedCapabilities] }
           : {}),
         capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
-          strictModels: usesServerCredentials(provider),
           deployment: deployment?.config,
           providerId: id,
           declared: provider.modelContextWindows,
@@ -588,6 +589,9 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
           ? { unsupportedCapabilities: [...provider.unsupportedCapabilities] }
           : {}),
         capabilities: capabilityModels(getProviderPreset(provider.preset), provider.models, {
+          workspace: true,
+          deployment: deployment?.config,
+          providerId: id,
           // An official regional endpoint is the service's own, not a custom one.
           chatOnly: provider.baseUrl !== undefined && !officialEndpointOf(provider),
           baseUrl: provider.baseUrl,
@@ -609,6 +613,14 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
       capabilities: { webFetch: { models: [], registryId: DEFAULT_WEB_FETCH_PROVIDER.id } },
     },
   ];
+
+  if (owner && isPersonalInstallationOwner(owner)) {
+    for (const provider of providers) {
+      const registryId = provider.capabilities.chat?.registryId;
+      const adapter = registryId && serverLanguageModelAdapter(registryId);
+      if (adapter && !adapter.problem()) provider.accountModelsUrl = adapter.modelsUrl;
+    }
+  }
 
   const deploymentSlots = deployment?.config.slots ?? {};
   const workspaceSlots = counted?.config.slots ?? {};

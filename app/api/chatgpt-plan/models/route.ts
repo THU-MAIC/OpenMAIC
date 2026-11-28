@@ -11,7 +11,8 @@ export const runtime = 'nodejs';
 export function GET(request: Request) {
   return chatGPTPlanRoute(request, async () => {
     try {
-      return Response.json({ success: true, models: await listChatGPTPlanModels() });
+      const refresh = new URL(request.url).searchParams.get('refresh') === '1';
+      return Response.json({ success: true, models: await listChatGPTPlanModels({ refresh }) });
     } catch (error) {
       // The connection's failures surface as API call errors with fixed messages.
       if (APICallError.isInstance(error) && error.statusCode !== undefined) {

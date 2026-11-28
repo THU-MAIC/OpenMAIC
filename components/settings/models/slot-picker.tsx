@@ -278,7 +278,7 @@ export function SlotPicker({
   const thinkingCapability = (() => {
     if (current.kind !== 'model') return undefined;
     const { providerId, modelId } = splitRef(current.model);
-    const capability = view.providers
+    const capability = chatProviders
       .find((provider) => provider.id === providerId)
       ?.capabilities.chat?.models.find((model) => model.id === modelId)?.capabilities?.thinking;
     return slotRefusesThinkingEffort(slot.slot)

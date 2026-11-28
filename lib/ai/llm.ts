@@ -127,7 +127,7 @@ function getAnthropicEffort(
   config: ThinkingConfig,
 ): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
   const effort = pickThinkingEffort(thinking, config);
-  if (!effort || effort === 'none' || effort === 'minimal') return undefined;
+  if (!effort || effort === 'none' || effort === 'minimal' || effort === 'ultra') return undefined;
   return effort;
 }
 

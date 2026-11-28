@@ -1389,6 +1389,12 @@
       "chatgpt-plan": "Gói ChatGPT"
     },
     "chatgptPlan": {
+      "usageLimit": "OpenMAIC đã dùng hết hạn mức được cấp trong gói ChatGPT của bạn. Hãy xem mức sử dụng trong phần cài đặt ChatGPT. https://chatgpt.com/settings/usage",
+      "connectInSettings": "Hãy kết nối tài khoản ChatGPT trong phần cài đặt mô hình rồi thử lại.",
+      "accountIneligible": "Tài khoản này không thể dùng gói ChatGPT trong OpenMAIC. Hãy chọn tài khoản hoặc mô hình khác.",
+      "requestUnsupported": "Gói ChatGPT của bạn không hỗ trợ yêu cầu này. Hãy sửa yêu cầu hoặc chọn mô hình khác.",
+      "requestTooLarge": "Yêu cầu quá lớn. Hãy rút ngắn cuộc trò chuyện hoặc giảm số tệp đính kèm.",
+      "modelUnavailable": "Mô hình đã chọn hiện không khả dụng. Hãy làm mới danh sách trong phần cài đặt và chọn một mô hình khả dụng.",
       "preview": "Bản xem trước",
       "differentAccount": "Dùng tài khoản khác",
       "forgetConfirm": "Lần đăng nhập tới, bạn có thể chọn tài khoản hoặc không gian làm việc ChatGPT khác.",
@@ -1401,6 +1407,7 @@
       "signIn": "Tiếp tục với ChatGPT",
       "signInAgain": "Đăng nhập lại",
       "signInHint": "Dùng các mô hình trong gói ChatGPT mà không cần khóa API.",
+      "reconnectHint": "Đăng nhập bằng tài khoản ChatGPT và không gian làm việc đã đăng ký tại đây.",
       "noticeBody": "Lượt dùng các mô hình này được tính vào gói ChatGPT của bạn. Bạn có thể xem mức sử dụng trong phần cài đặt ChatGPT.",
       "noticeAccept": "Đã hiểu",
       "waiting": "Hoàn tất đăng nhập trong thẻ mới. Trang này sẽ cập nhật khi bạn xong.",
@@ -1422,6 +1429,7 @@
       "unavailableNotPersonal": "Nhà cung cấp này chỉ khả dụng trên bản cài đặt cá nhân.",
       "errorExpired": "Phiên đăng nhập này đã hết hạn hoặc đã được dùng. Hãy bắt đầu lại.",
       "errorDenied": "Đăng nhập đã bị hủy trong ChatGPT.",
+      "errorAccountMismatch": "Thông tin đăng ký này gắn với một tài khoản ChatGPT khác. Hãy đăng nhập bằng tài khoản đó hoặc ngắt kết nối rồi chọn “Dùng tài khoản khác” trong phần cài đặt OpenMAIC.",
       "errorInvalidCallback": "Địa chỉ đó không thuộc phiên đăng nhập này. Hãy sao chép toàn bộ địa chỉ từ thẻ đã mở sau khi bạn chấp thuận.",
       "errorFailed": "ChatGPT không thể hoàn tất yêu cầu. Hãy thử lại."
     },

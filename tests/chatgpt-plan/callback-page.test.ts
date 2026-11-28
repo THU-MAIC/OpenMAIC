@@ -24,6 +24,15 @@ describe('loopback callback page', () => {
     expect(html).not.toContain('ChatGPT is connected');
     expect(html).not.toContain('window.close()');
   });
+  it('shows how to switch accounts when the signed-in account differs from the saved registration', async () => {
+    const request = new NextRequest('http://127.0.0.1/auth/callback');
+    const response = await callbackPage(request, {
+      ok: false,
+      reason: 'account-mismatch',
+      locale: 'zh-CN',
+    });
+    expect(await response.text()).toContain('使用其他账号');
+  });
   it('uses the preferred supported language and keeps callback parameters out of the response', async () => {
     const request = new NextRequest(
       'http://localhost/auth/callback?code=private-code&state=private-state',

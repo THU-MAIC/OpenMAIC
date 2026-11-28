@@ -3,6 +3,7 @@ import { convertToLlm, type AgentTool } from '@earendil-works/pi-agent-core';
 import type { LanguageModel } from 'ai';
 import { buildAgent } from '@/lib/agent/runtime/build-agent';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
+import { publicProviderFailure } from '@/lib/server/llm-error-response';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
@@ -131,13 +132,19 @@ export async function runPiDirectorLoop(opts: {
     return true;
   };
 
-  const streamFn = (opts.streamFnFactory ?? createCallLlmStreamFn)({
+  let directorError: unknown;
+  let teachingError: unknown;
+  const factory = opts.streamFnFactory ?? createCallLlmStreamFn;
+  const streamFn = factory({
     languageModel: opts.languageModel,
     maxOutputTokens: opts.maxOutputTokens,
     thinkingConfig: opts.thinkingConfig,
     source: 'pi-chat-director',
     includeUserImages: opts.childRuntimeMode === 'native' && opts.supportsToolImages === true,
     abortSignal: signal,
+    onError: (error) => {
+      directorError = publicProviderFailure(error) ? error : undefined;
+    },
   });
   const compactionRuntime = createDirectorCompactionRuntime({
     streamFn,
@@ -159,7 +166,16 @@ export async function runPiDirectorLoop(opts: {
       languageModel: opts.languageModel,
       supportsToolImages: opts.supportsToolImages,
       whiteboardPreview: opts.whiteboardPreview,
-      streamFnFactory: opts.streamFnFactory,
+      streamFnFactory: (options, agent) =>
+        factory(
+          {
+            ...options,
+            onError: (error) => {
+              if (agent?.role === 'teacher' || agent?.role === 'assistant') teachingError = error;
+            },
+          },
+          agent,
+        ),
       onAgentDone: (summary, outcome) => {
         if (outcome?.completed !== false) totalAgents += 1;
         if (summary.contentPreview || summary.actionCount > 0) agentHadContent = true;
@@ -301,7 +317,9 @@ export async function runPiDirectorLoop(opts: {
 
     // Pi settles provider failures in state rather than rejecting prompt(). Let
     // the route log and stream the actual reason instead of emitting a normal done.
-    if (director.state.errorMessage) throw new Error(director.state.errorMessage);
+    if (director.state.errorMessage) throw directorError ?? new Error(director.state.errorMessage);
+    if (!agentHadContent && teachingAgentFailedOrEmpty && publicProviderFailure(teachingError))
+      throw teachingError;
 
     if (!sessionClosed && !userCued && hasAgentContent()) {
       await cueUser({ fromAgentId: piAgentResponses.at(-1)?.agentId });

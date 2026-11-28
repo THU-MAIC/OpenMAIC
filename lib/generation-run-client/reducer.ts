@@ -114,6 +114,7 @@ export function applyRunEvent(view: RunView, event: RunEvent): RunView {
         message,
         ...(typeof data.errorCode === 'string' ? { errorCode: data.errorCode } : {}),
         ...(typeof data.statusCode === 'number' ? { statusCode: data.statusCode } : {}),
+        ...(typeof data.messageKey === 'string' ? { messageKey: data.messageKey } : {}),
       };
       next.failedSeq = event.seq;
       return next;

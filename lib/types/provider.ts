@@ -49,7 +49,17 @@ export type ThinkingControlType =
   | 'budget-only';
 
 export type ThinkingMode = 'default' | 'disabled' | 'enabled' | 'auto';
-export type ThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export const THINKING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultra',
+] as const;
+export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
 export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
 
 export type ThinkingRequestAdapter =

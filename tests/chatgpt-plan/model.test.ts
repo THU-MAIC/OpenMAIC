@@ -28,7 +28,10 @@ vi.mock('@/lib/server/chatgpt-plan/http', () => ({
   },
 }));
 
-const accessToken = vi.fn(async (rejected?: string) => (rejected ? 'token-2' : 'token-1'));
+let tokenNumber = 0;
+const accessToken = vi.fn(async (rejected?: string) =>
+  rejected ? 'renewed-token' : `token-${tokenNumber}`,
+);
 vi.mock('@/lib/server/chatgpt-plan/session', () => ({
   chatGPTPlanAccessToken: (rejected?: string) => accessToken(rejected),
 }));
@@ -108,6 +111,7 @@ const makeSlide = tool({
 });
 
 beforeEach(() => {
+  tokenNumber++;
   sent.length = 0;
   accessToken.mockClear();
   answer = () => sse(textEvents('Hello'));
@@ -152,7 +156,7 @@ describe('ChatGPT plan requests', () => {
     expect(result.text).toBe('Hello');
     const [request] = sent;
     expect(request!.url).toBe('https://api.openai.com/v1/responses');
-    expect(request!.authorization).toBe('Bearer token-1');
+    expect(request!.authorization).toBe(`Bearer token-${tokenNumber}`);
     const body = request!.body!;
     expect(body).toMatchObject({ model: 'plan-model', stream: true, store: false });
     expect(body.instructions).toBe('You are an OpenMAIC teacher.');
@@ -359,7 +363,7 @@ describe('ChatGPT plan requests', () => {
 
   it('refreshes a refused token once and sends the request again', async () => {
     answer = (request) =>
-      request.authorization === 'Bearer token-1'
+      request.authorization === `Bearer token-${tokenNumber}`
         ? json(401, { error: { code: 'invalid_token', message: 'expired' } })
         : sse(textEvents('Again'));
     const result = await generateText({
@@ -368,10 +372,10 @@ describe('ChatGPT plan requests', () => {
       maxRetries: 0,
     });
     expect(result.text).toBe('Again');
-    expect(accessToken).toHaveBeenLastCalledWith('token-1');
+    expect(accessToken).toHaveBeenLastCalledWith(`token-${tokenNumber}`);
     expect(sent.map((request) => request.authorization)).toEqual([
-      'Bearer token-1',
-      'Bearer token-2',
+      `Bearer token-${tokenNumber}`,
+      'Bearer renewed-token',
     ]);
   });
 });
@@ -484,6 +488,91 @@ describe('ChatGPT plan failures', () => {
 });
 
 describe('ChatGPT plan models', () => {
+  const modelList = (id: string) => json(200, { models: [{ slug: id, visibility: 'list' }] });
+
+  it('offers the advertised ultra reasoning level and sends it only when selected', async () => {
+    answer = ({ url }) =>
+      url.endsWith('/models')
+        ? json(200, {
+            models: [
+              {
+                slug: 'plan-model',
+                visibility: 'list',
+                supported_reasoning_levels: [{ effort: 'medium' }, { effort: 'ultra' }],
+              },
+            ],
+          })
+        : sse(textEvents('ok'));
+    const [entry] = await listChatGPTPlanModels();
+    expect(entry?.thinking?.effortValues).toEqual(['medium', 'ultra']);
+    const model = chatGPTPlanLanguageModel(entry!.id, entry!.thinking);
+    await generateText({ model, prompt: 'Hello', maxRetries: 0 });
+    expect(sent[1]?.body?.reasoning ?? {}).not.toHaveProperty('effort');
+    await callLLM({ model, prompt: 'Hello' }, 'scene-stream', undefined, { effort: 'ultra' });
+    expect(sent[2]?.body?.reasoning).toMatchObject({ effort: 'ultra' });
+  });
+
+  it('shares one catalogue across resolutions and concurrent refreshes until expiry', async () => {
+    const clock = vi.spyOn(Date, 'now');
+    const start = Date.now();
+    try {
+      answer = (_, index) => modelList(`model-${index}`);
+      const [first, second] = await Promise.all([listChatGPTPlanModels(), listChatGPTPlanModels()]);
+      expect(second).toEqual(first);
+      expect(await listChatGPTPlanModels()).toEqual(first);
+      expect(sent).toHaveLength(1);
+      const [refresh, simultaneous] = await Promise.all([
+        listChatGPTPlanModels({ refresh: true }),
+        listChatGPTPlanModels({ refresh: true }),
+      ]);
+      expect(refresh[0]?.id).toBe('model-1');
+      expect(simultaneous).toEqual(refresh);
+      clock.mockReturnValue(start + 6 * 60_000);
+      expect((await listChatGPTPlanModels())[0]?.id).toBe('model-2');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('checks the connection before using a cached catalogue and discovers afresh for a new grant', async () => {
+    answer = (_, index) => modelList(`model-${index}`);
+    expect((await listChatGPTPlanModels())[0]?.id).toBe('model-0');
+    accessToken.mockRejectedValueOnce(new ChatGPTPlanError('not-connected'));
+    await expect(listChatGPTPlanModels()).rejects.toMatchObject({ statusCode: 401 });
+    tokenNumber++;
+    expect((await listChatGPTPlanModels())[0]?.id).toBe('model-1');
+  });
+
+  it('keeps usable models when an unrelated catalogue entry is malformed', async () => {
+    answer = () =>
+      json(200, {
+        models: [
+          null,
+          { slug: 'hidden', visibility: 'hide' },
+          { slug: 'working', visibility: 'list' },
+        ],
+      });
+    expect(await listChatGPTPlanModels()).toEqual([{ id: 'working', name: 'working' }]);
+  });
+
+  it('warns when a caller explicitly requests reasoning the model does not advertise', async () => {
+    const model = chatGPTPlanLanguageModel('plan-model');
+    const result = await generateText({
+      model,
+      prompt: 'Hello',
+      providerOptions: { openai: { reasoningEffort: 'high' } },
+      maxRetries: 0,
+    });
+    const effortWarning = expect.objectContaining({
+      type: 'unsupported',
+      feature: 'reasoningEffort',
+    });
+    expect(result.warnings).toContainEqual(effortWarning);
+    expect(sent[0]?.body?.reasoning ?? {}).not.toHaveProperty('effort');
+    const defaultResult = await generateText({ model, prompt: 'Hello', maxRetries: 0 });
+    expect(defaultResult.warnings).not.toContainEqual(effortWarning);
+  });
+
   it('resolves an eval model only when the current account lists it', async () => {
     answer = ({ url }) =>
       url.endsWith('/models')
@@ -593,9 +682,11 @@ describe('ChatGPT plan models', () => {
       ...runFailureCode(error),
     };
     expect(runFailureText(failure)).toEqual({
-      text: expect.stringContaining(CHATGPT_USAGE_SETTINGS_URL),
+      key: 'settings.chatgptPlan.usageLimit',
+      fallback: expect.stringContaining(CHATGPT_USAGE_SETTINGS_URL),
     });
     expect(JSON.stringify(failure)).not.toContain('internal wrapper');
+    expect(failure.message).not.toContain('subscription_sharing_usage_limit_exceeded');
   });
 
   it('lists the models the account offers, in server order', async () => {

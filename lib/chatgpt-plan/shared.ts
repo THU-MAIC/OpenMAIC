@@ -1,4 +1,5 @@
-import type { ThinkingCapability } from '@/lib/types/provider';
+import type { AccountModel } from '@/lib/model-settings/account-models';
+import type en from '@/lib/i18n/locales/en-US.json';
 
 /**
  * ChatGPT plan provider (preview): what the browser and the server share.
@@ -56,20 +57,36 @@ export interface ChatGPTPlanStatus {
   canForgetRegistration?: true;
 }
 
-/**
- * How a sign-in started: `loopback` completes on this server's own
- * `127.0.0.1` callback; `paste` waits for the user to paste the redirect URL
- * the browser could not open (the server is on another machine).
- */
+/** The result of one sign-in, including retries that leave the connection unchanged. */
 export type ChatGPTPlanAttemptOutcome =
   | 'pending'
   | 'connected'
   | 'sharing-disabled'
   | 'sign-in-expired'
   | 'sign-in-denied'
+  | 'account-mismatch'
   | 'sign-in-failed'
   | 'invalid-callback';
 
+export type ChatGPTPlanMessageKey = keyof typeof en.settings.chatgptPlan;
+
+/** Localized connection messages shared by settings and the loopback callback page. */
+export const CHATGPT_PLAN_ERROR_KEYS: Partial<Record<string, ChatGPTPlanMessageKey>> = {
+  'sign-in-expired': 'errorExpired',
+  'sign-in-denied': 'errorDenied',
+  'account-mismatch': 'errorAccountMismatch',
+  'invalid-callback': 'errorInvalidCallback',
+  'sign-in-failed': 'errorFailed',
+  'sharing-disabled': 'sharingDisabled',
+  'reauth-required': 'reauthRequired',
+  'not-connected': 'connectInSettings',
+  upstream: 'errorFailed',
+};
+
+/**
+ * A loopback sign-in completes on this server's own `127.0.0.1` callback.
+ * A remote server waits for the user to paste the redirect URL.
+ */
 export interface ChatGPTPlanSignInStart {
   /** Settings can check or cancel this attempt without sending OAuth state. */
   attemptId: string;
@@ -79,10 +96,4 @@ export interface ChatGPTPlanSignInStart {
   expiresAt: number;
 }
 
-export interface ChatGPTPlanModel {
-  id: string;
-  name: string;
-  contextWindow?: number;
-  vision?: boolean;
-  thinking?: ThinkingCapability;
-}
+export type ChatGPTPlanModel = AccountModel;

@@ -4,6 +4,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OwnerAuthMethod } from '@/lib/server/identity/types';
+const accountModels = vi.hoisted(() => vi.fn(async () => []));
+vi.mock('@/lib/server/chatgpt-plan/model', () => ({ listChatGPTPlanModels: accountModels }));
 
 /**
  * /api/model-config on the real route, owner seam and an in-memory
@@ -118,6 +120,50 @@ describe('/api/model-config', () => {
       }) as never,
     );
   }
+
+  it('opens personal plan account controls without waiting for remote discovery on reads or writes', async () => {
+    vi.stubEnv('OPENMAIC_CHATGPT_PLAN_ENABLED', 'true');
+    vi.stubEnv('OWNER_SINGLE_USER', 'true');
+    const { resetOwnerAuthenticationForTests } = await import('@/lib/server/identity/registry');
+    const { configureOwnerAuthentication, singleUserAuthMethod } =
+      await import('@/lib/server/identity');
+    resetOwnerAuthenticationForTests();
+    configureOwnerAuthentication({ methods: [singleUserAuthMethod()] });
+    const saved = await (
+      await put('personal', null, {
+        kind: 'provider',
+        id: 'mine',
+        preset: 'chatgpt-plan',
+        models: ['listed'],
+      })
+    ).json();
+    expect(saved.providers).toContainEqual(
+      expect.objectContaining({ id: 'mine', accountModelsUrl: '/api/chatgpt-plan/models' }),
+    );
+    (await import('@/lib/server/model-config/runtime')).setDeploymentConfigForTests({
+      layer: {
+        source: 'deployment',
+        config: {
+          allowUserKeys: false,
+          providers: { personal: { preset: 'chatgpt-plan', models: ['listed'] } },
+        },
+      },
+      legacy: false,
+      notices: [],
+    });
+    const reloaded = await (await get('personal')).json();
+    expect(reloaded.providers).toContainEqual(
+      expect.objectContaining({ id: 'personal', accountModelsUrl: '/api/chatgpt-plan/models' }),
+    );
+    expect(reloaded.providers.some((p: { id: string }) => p.id === 'mine')).toBe(false);
+    resetOwnerAuthenticationForTests();
+    configureOwnerAuthentication({ methods: [sessionMethod, singleUserAuthMethod()] });
+    const hosted = await (await get('alice')).json();
+    expect(hosted.providers.find((p: { id: string }) => p.id === 'personal')).not.toHaveProperty(
+      'accountModelsUrl',
+    );
+    expect(accountModels).not.toHaveBeenCalled();
+  });
 
   it('reads and edits the workspace settings, keeping keys out of every answer', async () => {
     const initial = await (await get('alice')).json();

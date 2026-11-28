@@ -10,16 +10,14 @@ import { Pool } from 'pg';
 import { applySchemaMigrations } from '@openmaic/storage/pg-migrations';
 import { CHATGPT_PLAN_MIGRATIONS } from '@/lib/persistence/chatgpt-plan';
 import { nodePostgresTransaction } from '@openmaic/storage/server/reference';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
 let pool: Pool;
+let withTransaction: Mock<ReturnType<typeof nodePostgresTransaction>>;
 vi.mock('@/lib/persistence/server-provider', () => ({
-  getServerPersistenceProvider: async () => ({
-    pool,
-    withTransaction: nodePostgresTransaction(pool),
-  }),
+  getServerPersistenceProvider: async () => ({ pool, withTransaction }),
 }));
 vi.mock('@/lib/server/chatgpt-plan/availability', () => ({
   chatGPTPlanAvailability: () => ({ available: true }),
@@ -36,6 +34,7 @@ const server = {
   revocations: [] as URLSearchParams[],
   scope: undefined as string | undefined,
   subject: 'user-1',
+  refreshToken: undefined as string | undefined,
   refreshError: undefined as string | undefined,
   issued: 0,
 };
@@ -85,7 +84,7 @@ vi.mock('@/lib/server/chatgpt-plan/http', () => ({
     server.issued += 1;
     return Response.json({
       access_token: `access-${server.issued}`,
-      refresh_token: `refresh-${server.issued}`,
+      refresh_token: server.refreshToken ?? `refresh-${server.issued}`,
       expires_in: 3600,
       scope: server.scope,
       ...(form.get('grant_type') === 'authorization_code'
@@ -148,6 +147,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
       connectionString: process.env.PG_CONTRACT_URL,
       options: `-c search_path=${schema}`,
     });
+    withTransaction = vi.fn(nodePostgresTransaction(pool));
     vi.stubEnv('DATABASE_URL', 'fixture');
     vi.stubEnv('OPENMAIC_SECRET_KEY', 'pg-test-secret-only');
     resetDiscoveryForTests();
@@ -178,6 +178,7 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     server.issued = 0;
     server.subject = 'user-1';
     server.scope = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct';
+    server.refreshToken = undefined;
     server.refreshError = undefined;
   });
 
@@ -211,10 +212,12 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
       email: 'learner@example.com',
       noticeAcknowledged: false,
     });
-    // A callback completes once.
+    // Reopening the completed callback does not wait behind a token rotation.
+    withTransaction.mockClear();
     await expect(completeChatGPTSignIn({ params: callback })).rejects.toMatchObject({
       code: 'sign-in-expired',
     });
+    expect(withTransaction).not.toHaveBeenCalled();
     // The token set is stored sealed.
     const { rows } = await pool.query('SELECT credential FROM chatgpt_plan_connection');
     expect(JSON.stringify(rows[0])).not.toContain('access-1');
@@ -401,6 +404,28 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     );
   });
 
+  it('exchanges the code once when two callbacks complete the same pending sign-in', async () => {
+    const { params } = await begin('http://localhost:3000');
+    const callback = {
+      params: new URLSearchParams({
+        code: 'one-code',
+        state: params.get('state')!,
+        client_id: 'client-issued',
+      }),
+    };
+    const completed = await Promise.allSettled([
+      completeChatGPTSignIn(callback),
+      completeChatGPTSignIn(callback),
+    ]);
+    expect(completed).toEqual(
+      expect.arrayContaining([
+        { status: 'fulfilled', value: { returnTo: 'http://localhost:3000' } },
+        { status: 'rejected', reason: expect.objectContaining({ code: 'sign-in-expired' }) },
+      ]),
+    );
+    expect(server.tokenRequests).toHaveLength(1);
+  });
+
   it('requires a granted plan scope in the first token response', async () => {
     server.scope = undefined;
     await initialSignIn();
@@ -419,17 +444,63 @@ describe.skipIf(!process.env.PG_CONTRACT_URL)('ChatGPT sign-in and token rotatio
     });
   });
 
-  it('preserves the registered account across disconnect and checks it on reconnect', async () => {
+  it('rejects a different verified account on reconnect and revokes its newly issued session', async () => {
     await initialSignIn();
     await disconnectChatGPT();
-    const { params } = await begin('http://localhost:3000');
+    const { start, params } = await begin('http://localhost:3000', 'zh-CN');
     server.subject = 'different-account';
     await expect(
       completeChatGPTSignIn({
         params: new URLSearchParams({ code: 'returning-code', state: params.get('state')! }),
       }),
+    ).rejects.toMatchObject({ code: 'account-mismatch', locale: 'zh-CN' });
+    expect(await chatGPTSignInAttempt(start.attemptId)).toBe('account-mismatch');
+    expect(Object.fromEntries(server.revocations.at(-1)!)).toEqual({
+      client_id: 'client-issued',
+      token_type_hint: 'refresh_token',
+      token: 'refresh-2',
+    });
+    expect(await chatGPTPlanStatus()).toMatchObject({
+      state: 'disconnected',
+      canForgetRegistration: true,
+    });
+  });
+
+  it.each([
+    { returned: 'refresh-2', revoked: ['refresh-2'] },
+    { returned: 'refresh-1', revoked: [] },
+  ])(
+    'preserves the saved grant when a different verified identity returns $returned',
+    async ({ returned, revoked }) => {
+      server.scope = 'openid profile email offline_access';
+      await initialSignIn();
+      const { params } = await begin('http://localhost:3000');
+      server.subject = 'different-account';
+      server.refreshToken = returned;
+      await expect(
+        completeChatGPTSignIn({
+          params: new URLSearchParams({ code: 'consent-again', state: params.get('state')! }),
+        }),
+      ).rejects.toMatchObject({ code: 'account-mismatch' });
+      expect(server.revocations.map((form) => form.get('token'))).toEqual(revoked);
+      expect((await chatGPTPlanStatus()).state).toBe('sharing-disabled');
+      await disconnectChatGPT();
+      expect(server.revocations.at(-1)?.get('token')).toBe('refresh-1');
+    },
+  );
+
+  it('keeps an issuer refusal on reconnect distinct from a verified account mismatch', async () => {
+    await initialSignIn();
+    await disconnectChatGPT();
+    const { start, params } = await begin('http://localhost:3000');
+    await expect(
+      completeChatGPTSignIn({
+        params: new URLSearchParams({ error: 'invalid_request', state: params.get('state')! }),
+      }),
     ).rejects.toMatchObject({ code: 'sign-in-failed' });
-    expect((await chatGPTPlanStatus()).state).toBe('disconnected');
+    expect(await chatGPTSignInAttempt(start.attemptId)).toBe('sign-in-failed');
+    expect(server.tokenRequests).toHaveLength(1);
+    expect(server.revocations).toHaveLength(1);
   });
 
   it('cancels a pending sign-in when the user disconnects', async () => {

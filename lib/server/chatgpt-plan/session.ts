@@ -185,7 +185,12 @@ export async function completeChatGPTSignIn(
     throw new ChatGPTPlanError('invalid-callback');
   }
 
-  const { withTransaction } = await chatGPTPlanDatabase();
+  const { pool, withTransaction } = await chatGPTPlanDatabase();
+  // Completed, expired and unknown callbacks need no token lock. Recheck under
+  // the lock because another callback or a cancellation may finish first.
+  if ((await attemptOutcome(pool, attemptId)) !== 'pending') {
+    throw new ChatGPTPlanError('sign-in-expired');
+  }
   const outcome = await withTransaction(async (q) => {
     await lockTokens(q);
     const pending = await readPendingSignIn(q, attemptId);
@@ -204,6 +209,7 @@ export async function completeChatGPTSignIn(
       if (error instanceof ChatGPTPlanError) {
         const reason =
           error.code === 'sign-in-denied' ||
+          error.code === 'account-mismatch' ||
           error.code === 'invalid-callback' ||
           error.code === 'sign-in-expired'
             ? error.code
@@ -259,7 +265,11 @@ async function finishSignIn(
     nonce: pending.nonce,
   });
   if (connection.subject && identity.subject !== connection.subject) {
-    throw new ChatGPTPlanError('sign-in-failed');
+    // End the unused session without revoking a credential we still hold.
+    if (tokens.refreshToken !== connection.tokens?.refreshToken) {
+      await revokeRefreshToken(clientId, tokens.refreshToken);
+    }
+    throw new ChatGPTPlanError('account-mismatch');
   }
   const state = allowsPlanUsage(tokens) ? 'connected' : 'sharing-disabled';
   await saveSignedIn(q, { identity, tokens, state });

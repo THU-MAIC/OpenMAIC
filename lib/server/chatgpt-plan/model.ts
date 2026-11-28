@@ -16,7 +16,11 @@ import {
 
 import { thinkingContext } from '@/lib/ai/thinking-context';
 import { pickThinkingEffort } from '@/lib/ai/thinking-config';
-import type { ThinkingCapability, ThinkingEffort } from '@/lib/types/provider';
+import {
+  THINKING_EFFORTS,
+  type ThinkingCapability,
+  type ThinkingEffort,
+} from '@/lib/types/provider';
 import { generateViaStreamMiddleware } from '@/lib/ai/generate-via-stream';
 import { CHATGPT_PLAN_PROVIDER_ID, type ChatGPTPlanModel } from '@/lib/chatgpt-plan/shared';
 import { publicProviderFailure } from '@/lib/server/llm-error-response';
@@ -81,32 +85,29 @@ async function accessToken(url: string, rejected?: string): Promise<string> {
   }
 }
 
-/**
- * `fetch` for the plan API: adds the account's access token (to plan API
- * URLs only), refreshes it once when the API refuses it, and reports an error
- * response as a {@link planCallError}.
- */
-const planFetch: typeof fetch = async (input, init) => {
-  const url = input instanceof Request ? input.url : String(input);
+/** Send an authenticated plan API request, renewing a refused token once. */
+async function sendPlanRequest(url: string, init?: RequestInit, knownToken?: string) {
   if (!url.startsWith(`${CHATGPT_PLAN_API_BASE}/`)) {
     throw new Error(`ChatGPT plan requests go to ${CHATGPT_PLAN_API_BASE} only.`);
   }
-  const send = (token: string) => {
+  const send = (bearer: string) => {
     const headers = new Headers(init?.headers);
-    headers.set('authorization', `Bearer ${token}`);
+    headers.set('authorization', `Bearer ${bearer}`);
     return inferenceFetch(url, { ...init, headers });
   };
-  let token = await accessToken(url);
+  const token = knownToken ?? (await accessToken(url));
   let response = await send(token);
   if (response.status === 401) {
     const failure = await readFailure(response);
     if (isPlanUsageFailure(failure)) throw planCallError(failure, { url });
-    token = await accessToken(url, token);
-    response = await send(token);
+    response = await send(await accessToken(url, token));
   }
   if (!response.ok) throw planCallError(await readFailure(response), { url });
   return response;
-};
+}
+
+const planFetch: typeof fetch = (input, init) =>
+  sendPlanRequest(input instanceof Request ? input.url : String(input), init);
 
 // ── Request and stream policy ────────────────────────────────────────────────
 
@@ -178,6 +179,17 @@ function shapeRequest(params: CallOptions, thinking?: ThinkingCapability): CallO
 
   const config = thinkingContext.getStore();
   const effort = thinking && config ? pickThinkingEffort(thinking, config) : openai.reasoningEffort;
+  const requestedEffort = config?.effort ?? openai.reasoningEffort;
+  if (
+    requestedEffort !== undefined &&
+    !thinking?.effortValues?.includes(requestedEffort as ThinkingEffort)
+  ) {
+    warnings.push({
+      type: 'unsupported',
+      feature: 'reasoningEffort',
+      details: 'The selected model does not list the requested reasoning effort.',
+    });
+  }
   delete openai.reasoningEffort;
   if (thinking?.effortValues?.includes(effort as ThinkingEffort)) openai.reasoningEffort = effort;
   // The SDK's named tool_choice refers to a top-level function. Require the
@@ -350,40 +362,62 @@ export function chatGPTPlanLanguageModel(
   });
 }
 
-/** The models the connected account offers, in the order the server lists them. */
-export async function listChatGPTPlanModels(): Promise<ChatGPTPlanModel[]> {
-  const response = await planFetch(`${CHATGPT_PLAN_API_BASE}/models`, {
-    headers: { accept: 'application/json' },
-  });
-  const body: unknown = await response.json().catch(() => undefined);
+const MODEL_LIST_URL = `${CHATGPT_PLAN_API_BASE}/models`;
+const MODEL_LIST_TTL_MS = 5 * 60_000;
+const MODEL_LIST_TIMEOUT_MS = 15_000;
+let catalogue: { token: string; models: Promise<ChatGPTPlanModel[]>; readyAt?: number } | undefined;
+
+/** Share catalogue reads for the active grant; reconnecting or rotating it starts a new list. */
+export async function listChatGPTPlanModels({ refresh = false } = {}): Promise<ChatGPTPlanModel[]> {
+  const token = await accessToken(MODEL_LIST_URL);
   if (
-    !isRecord(body) ||
-    !Array.isArray(body.models) ||
-    body.models.some(
-      (entry) =>
-        !isRecord(entry) ||
-        typeof entry.slug !== 'string' ||
-        !entry.slug ||
-        typeof entry.visibility !== 'string',
-    )
+    catalogue?.token === token &&
+    (catalogue.readyAt === undefined ||
+      (!refresh && Date.now() - catalogue.readyAt < MODEL_LIST_TTL_MS))
   ) {
-    throw planCallError(
-      { code: 'openmaic_invalid_model_list' },
-      { url: `${CHATGPT_PLAN_API_BASE}/models` },
+    return catalogue.models;
+  }
+  const models = fetchAccountModels(token);
+  catalogue = { token, models };
+  try {
+    const result = await models;
+    if (catalogue?.models === models) catalogue.readyAt = Date.now();
+    return result;
+  } catch (error) {
+    if (catalogue?.models === models) catalogue = undefined;
+    throw error;
+  }
+}
+
+async function fetchAccountModels(token: string): Promise<ChatGPTPlanModel[]> {
+  const response = await sendPlanRequest(
+    MODEL_LIST_URL,
+    { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS) },
+    token,
+  );
+  const body: unknown = await response.json().catch(() => undefined);
+  const invalidList = () =>
+    planCallError({ code: 'openmaic_invalid_model_list' }, { url: MODEL_LIST_URL });
+  if (!isRecord(body) || !Array.isArray(body.models)) throw invalidList();
+  const entries = body.models.filter(
+    (entry): entry is Record<string, unknown> & { slug: string; visibility: string } =>
+      isRecord(entry) &&
+      typeof entry.slug === 'string' &&
+      entry.slug.length > 0 &&
+      typeof entry.visibility === 'string',
+  );
+  if (entries.length !== body.models.length) {
+    if (!entries.length) throw invalidList();
+    log.warn(
+      `Skipped ${body.models.length - entries.length} malformed ChatGPT plan model entries.`,
     );
   }
-  const listed = body.models;
-  return listed.flatMap((model): ChatGPTPlanModel[] => {
-    if (!isRecord(model) || typeof model.slug !== 'string' || model.visibility !== 'list') {
-      return [];
-    }
-    if (model.supported_in_api === false) return [];
+  return entries.flatMap((model): ChatGPTPlanModel[] => {
+    if (model.visibility !== 'list' || model.supported_in_api === false) return [];
     const effortValues: ThinkingEffort[] = Array.isArray(model.supported_reasoning_levels)
       ? model.supported_reasoning_levels.flatMap((entry) => {
           const effort = isRecord(entry) ? entry.effort : entry;
-          return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(effort)
-            ? [effort]
-            : [];
+          return THINKING_EFFORTS.includes(effort) ? [effort] : [];
         })
       : [];
     return [

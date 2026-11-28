@@ -1,9 +1,12 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { modelSettingsClient } from '@/lib/model-settings/client';
 import { CHATGPT_PLAN_API, type ChatGPTPlanStatus } from './shared';
 
-type Answer<T> = { ok: true; data: T } | { ok: false; reason?: string; error?: string };
+type Answer<T> =
+  | { ok: true; data: T }
+  | { ok: false; reason?: string; error?: string; messageKey?: string };
 
 export async function callChatGPTPlan<T>(
   path: string,
@@ -27,6 +30,7 @@ export async function callChatGPTPlan<T>(
           ok: false,
           reason: data.reason,
           error: data.errorCode === 'PROVIDER_ACTION_REQUIRED' ? data.error : undefined,
+          messageKey: data.errorCode === 'PROVIDER_ACTION_REQUIRED' ? data.messageKey : undefined,
         };
   } catch {
     return { ok: false };
@@ -43,9 +47,21 @@ function loadStatus() {
     (answer) => {
       const status = answer.ok ? answer.data.status : null;
       if (loading === request) {
+        const previous = snapshot.status;
         snapshot = { status, statusFailed: !answer.ok };
         loading = undefined;
         listeners.forEach((listener) => listener());
+        // A sign-in can finish in another tab. Re-read the choices for this account.
+        if (
+          previous &&
+          status &&
+          (previous.state === 'connected' || status.state === 'connected') &&
+          (previous.state !== status.state || previous.email !== status.email) &&
+          modelSettingsClient
+            .getState()
+            .view?.providers.some((provider) => provider.accountModelsUrl)
+        )
+          void modelSettingsClient.load({ fresh: true });
       }
       return status;
     },

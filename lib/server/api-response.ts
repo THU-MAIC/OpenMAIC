@@ -61,6 +61,7 @@ export interface ApiErrorBody {
   error: string;
   details?: string;
   reason?: string;
+  messageKey?: string;
 }
 
 export function apiError(
@@ -69,6 +70,7 @@ export function apiError(
   error: string,
   details?: string,
   reason?: string,
+  messageKey?: string,
 ): NextResponse<ApiErrorBody> {
   return NextResponse.json(
     {
@@ -77,6 +79,7 @@ export function apiError(
       error,
       ...(details ? { details } : {}),
       ...(reason ? { reason } : {}),
+      ...(messageKey ? { messageKey } : {}),
     },
     { status },
   );
@@ -104,5 +107,6 @@ export function publicProviderResponse(error: unknown): NextResponse<ApiErrorBod
       failure.message,
       undefined,
       failure.reason,
+      failure.messageKey,
     );
 }

@@ -48,7 +48,10 @@ import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { useEditModeFreshness } from '@/lib/classroom/use-edit-mode-freshness';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
-import { pendingSceneFailureText } from '@/lib/generation-run-client/failure-message';
+import {
+  pendingSceneFailureText,
+  translateFailureText,
+} from '@/lib/generation-run-client/failure-message';
 import { PblActivityProvider } from '@/components/scene-renderers/pbl/v3/activity-provider';
 
 const log = createLogger('Classroom');
@@ -379,9 +382,7 @@ function ClassroomSurfaceContent({
           ) : (
             <Stage
               classroomId={classroomId}
-              generationFailureMessage={
-                failureText && ('key' in failureText ? t(failureText.key) : failureText.text)
-              }
+              generationFailureMessage={failureText && translateFailureText(failureText, t)}
               onRetryOutline={mayGenerate && runCourse.runId ? runCourse.retryOutline : undefined}
             />
           )}

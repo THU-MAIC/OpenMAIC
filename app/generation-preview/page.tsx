@@ -24,7 +24,7 @@ import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { RunApiError, runApiErrorText } from '@/lib/generation-run-client/api';
 import { toast } from 'sonner';
-import { runFailureText, type FailureText } from '@/lib/generation-run-client/failure-message';
+import { runFailureText, translateFailureText } from '@/lib/generation-run-client/failure-message';
 import { confirmOutline, holdOutline, retryPausedRun } from '@/lib/generation-run-client/commands';
 import { nextPreviewPhase, type PreviewPhase } from '@/lib/generation-run-client/outline-review';
 import { previewStepIds, previewStepIndex } from '@/lib/generation-run-client/preview-steps';
@@ -317,13 +317,14 @@ function GenerationPreviewContent() {
     );
   }
 
-  const failureSentence = (text: FailureText) => ('key' in text ? t(text.key) : text.text);
   const isReviewingOutlines = phase === 'review';
   // The run confirms its outline itself unless the learner opens the review.
   const isOutlineReady = phase === 'outline-ready';
   const error =
     commandError ??
-    (view.state === 'paused' && view.error ? failureSentence(runFailureText(view.error)) : null);
+    (view.state === 'paused' && view.error
+      ? translateFailureText(runFailureText(view.error), t)
+      : null);
   const paused = view.state === 'paused';
   const statusMessage = view.outlineRetrying
     ? t('generation.outlineRetrying')

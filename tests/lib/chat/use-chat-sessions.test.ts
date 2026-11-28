@@ -1105,6 +1105,51 @@ describe('runPiSingleRequest fixed notices', () => {
     expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
   });
 
+  it.each(['http', 'stream'] as const)(
+    'shows localized provider guidance for a %s refusal before any output',
+    async (transport) => {
+      const reason = 'subscription_sharing_usage_limit_exceeded';
+      const recovery = {
+        errorCode: 'PROVIDER_ACTION_REQUIRED',
+        reason,
+        messageKey: 'settings.chatgptPlan.usageLimit',
+        message: 'Check your plan usage.',
+      } as const;
+      vi.stubGlobal('fetch', async () =>
+        transport === 'http'
+          ? Response.json({ ...recovery, error: recovery.message }, { status: 429 })
+          : new Response(sse([{ type: 'error', data: recovery }])),
+      );
+      const clearAfterError = vi.fn();
+      const onStop = vi.fn();
+      await runPiSingleRequest(
+        'session-1',
+        {
+          messages: [],
+          storeState: {
+            stage: null,
+            scenes: [],
+            currentSceneId: null,
+            mode: 'autonomous',
+            whiteboardOpen: false,
+          },
+          config: { agentIds: ['teacher-1'] },
+        },
+        new AbortController(),
+        'qa',
+        () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }),
+        clearAfterError,
+        vi.fn(),
+        vi.fn(),
+        vi.fn(),
+        { current: onStop },
+        (key) => (key === 'settings.chatgptPlan.usageLimit' ? '请查看套餐用量。' : key),
+      );
+      expect(clearAfterError).toHaveBeenCalledWith('session-1', '请查看套餐用量。');
+      expect(onStop).toHaveBeenCalledWith({ sessionId: 'session-1', source: 'error' });
+    },
+  );
+
   it('keeps the existing error path once classroom output was shown', async () => {
     const onEvent = vi.fn((event: StatelessEvent) => {
       if (event.type === 'error') throw new Error(event.data.message);

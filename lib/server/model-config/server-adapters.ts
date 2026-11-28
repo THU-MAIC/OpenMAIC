@@ -9,22 +9,18 @@ import type { LanguageModel } from 'ai';
 import { markPublicProviderFailure } from '@/lib/server/llm-error-response';
 import { chatGPTPlanAvailability } from '@/lib/server/chatgpt-plan/availability';
 import type { ResolvedModel } from '@/lib/server/resolve-model';
-import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
-
-export interface ServerAdapterModel {
-  id: string;
-  name: string;
-  contextWindow?: number;
-  vision?: boolean;
-  thinking?: ThinkingCapability;
-}
+import type { ThinkingConfig } from '@/lib/types/provider';
+import { accountModelInfo, type AccountModel } from '@/lib/model-settings/account-models';
+import { CHATGPT_PLAN_API } from '@/lib/chatgpt-plan/shared';
 
 export interface ServerLanguageModelAdapter {
   /** Why this installation cannot use the provider (caller-facing), or undefined. */
   problem(): string | undefined;
-  languageModel(model: ServerAdapterModel): Promise<LanguageModel>;
+  languageModel(model: AccountModel): Promise<LanguageModel>;
+  /** The owner's endpoint for refreshing the catalogue in settings. */
+  modelsUrl: string;
   /** The models the signed-in account offers. */
-  listModels(): Promise<ServerAdapterModel[]>;
+  listModels(): Promise<AccountModel[]>;
 }
 
 // An adapter's model code loads when a model is built, not with model resolution.
@@ -32,6 +28,7 @@ const chatGPTPlanModels = () => import('@/lib/server/chatgpt-plan/model');
 
 const ADAPTERS: Record<string, ServerLanguageModelAdapter> = {
   'chatgpt-plan': {
+    modelsUrl: CHATGPT_PLAN_API.models,
     problem() {
       const availability = chatGPTPlanAvailability();
       if (availability.available) return undefined;
@@ -78,12 +75,7 @@ export async function serverAdapterModel(
     );
   return {
     model: await adapter.languageModel(listed),
-    modelInfo: {
-      id: modelId,
-      name: listed.name,
-      contextWindow: contextWindow ?? listed.contextWindow,
-      capabilities: { vision: listed.vision, thinking: listed.thinking },
-    },
+    modelInfo: accountModelInfo(listed, contextWindow),
     modelString: `${registryId}:${modelId}`,
     providerId: registryId,
     modelId,

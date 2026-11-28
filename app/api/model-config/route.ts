@@ -45,9 +45,9 @@ async function pool() {
 
 export async function GET(req: NextRequest) {
   if (!isServerPersistenceConfigured()) return new Response('Not found', { status: 404 });
-  return withRequestOwner(req, async ({ ownerId }, headers) => {
-    const stored = await readWorkspaceModelConfig(await pool(), ownerId);
-    return NextResponse.json(modelSettingsView(stored), { headers });
+  return withRequestOwner(req, async (owner, headers) => {
+    const stored = await readWorkspaceModelConfig(await pool(), owner.ownerId);
+    return NextResponse.json(modelSettingsView(stored, owner), { headers });
   });
 }
 
@@ -106,7 +106,8 @@ export async function PUT(req: NextRequest) {
   const revision = parsed.data.revision;
   const change = parsed.data.change as ModelSettingsChange;
 
-  return withRequestOwner(req, async ({ ownerId }, headers) => {
+  return withRequestOwner(req, async (owner, headers) => {
+    const { ownerId } = owner;
     const queryable = await pool();
     try {
       const current = await readWorkspaceModelConfig(queryable, ownerId);
@@ -134,7 +135,7 @@ export async function PUT(req: NextRequest) {
         clearKeys: keysClearedBy(change),
       });
       const stored = await readWorkspaceModelConfig(queryable, ownerId);
-      return NextResponse.json(modelSettingsView(stored), { headers });
+      return NextResponse.json(modelSettingsView(stored, owner), { headers });
     } catch (error) {
       const authorization = modelAuthorizationResponse(error);
       if (authorization)

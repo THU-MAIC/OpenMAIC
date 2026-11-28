@@ -1389,6 +1389,12 @@
       "chatgpt-plan": "ChatGPT 方案"
     },
     "chatgptPlan": {
+      "usageLimit": "OpenMAIC 已用完你的 ChatGPT 方案分配給它的額度。請至 ChatGPT 設定查看用量。 https://chatgpt.com/settings/usage",
+      "connectInSettings": "請到模型服務設定連結 ChatGPT 帳號，然後重試。",
+      "accountIneligible": "這個帳號無法在 OpenMAIC 使用 ChatGPT 方案。請選擇其他帳號或模型。",
+      "requestUnsupported": "ChatGPT 方案不支援這項請求。請調整請求或選擇其他模型。",
+      "requestTooLarge": "請求內容過大。請縮短對話或減少附件後重試。",
+      "modelUnavailable": "所選模型目前無法使用。請至設定重新整理模型清單，再選擇模型。",
       "preview": "預覽",
       "differentAccount": "使用其他帳號",
       "forgetConfirm": "下次登入時，你可以選擇其他 ChatGPT 帳號或工作區。",
@@ -1401,6 +1407,7 @@
       "signIn": "使用 ChatGPT 繼續",
       "signInAgain": "重新登入",
       "signInHint": "使用 ChatGPT 方案提供的模型，無須 API 金鑰。",
+      "reconnectHint": "請使用此處已綁定的 ChatGPT 帳號和工作區登入。",
       "noticeBody": "使用這些模型會計入 ChatGPT 方案的用量。你可以在 ChatGPT 設定中查看用量。",
       "noticeAccept": "知道了",
       "waiting": "請在新分頁中完成登入，完成後此頁面會自動更新。",
@@ -1422,6 +1429,7 @@
       "unavailableNotPersonal": "此服務供應商僅在個人部署中可用。",
       "errorExpired": "此次登入已過期或已被使用，請重新開始。",
       "errorDenied": "已在 ChatGPT 中取消登入。",
+      "errorAccountMismatch": "此註冊資料綁定了另一個 ChatGPT 帳號。請使用原帳號登入，或在中斷連線後前往 OpenMAIC 設定選擇「使用其他帳號」。",
       "errorInvalidCallback": "此網址不屬於此次登入。請從核准後開啟的分頁複製完整網址。",
       "errorFailed": "ChatGPT 無法完成請求，請重試。"
     },

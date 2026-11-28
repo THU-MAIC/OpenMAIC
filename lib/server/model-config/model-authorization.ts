@@ -1,12 +1,18 @@
 import { getSlot, isSlotId, type SlotCapability } from '@/lib/config/model-slots';
 import { getProviderPreset } from '@/lib/config/provider-presets';
+import { getProvider } from '@/lib/ai/providers';
+import type { ProviderId } from '@/lib/types/provider';
 import { TTS_PROVIDERS, ASR_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { CLAUDE_WEB_SEARCH_DEFAULT_MODEL } from '@/lib/web-search/constants';
 import type { ModelConfigFile } from './openmaic-yml';
 
-/** Whether this provider uses deployment credentials, including an SDK credential chain. */
+function usesServerAccount(registryId?: string): boolean {
+  return !!registryId && getProvider(registryId as ProviderId)?.serverAdapter === true;
+}
+
+/** Whether this provider uses a key, an SDK credential chain, or a server's signed-in account. */
 export function usesServerCredentials(provider: {
   preset?: string;
   apiKey?: string;
@@ -15,7 +21,9 @@ export function usesServerCredentials(provider: {
   return Boolean(
     provider.apiKey ||
     Object.values(provider.credentials ?? {}).some(Boolean) ||
-    provider.preset === 'bedrock',
+    provider.preset === 'bedrock' ||
+    (provider.preset &&
+      usesServerAccount(getProviderPreset(provider.preset)?.capabilities.chat?.registryId)),
   );
 }
 
@@ -96,6 +104,32 @@ export function deploymentAuthorizedModels(
   if (capability === 'chat')
     for (const ref of legacyReferences.get(config!) ?? []) addReference(ref);
   return [...models];
+}
+
+/** A model limit for the credentials this provider uses, or undefined for its own account. */
+export function providerModelAllowlist(
+  config: ModelConfigFile | undefined,
+  providerId: string,
+  registryId: string,
+  capability: SlotCapability,
+): string[] | undefined {
+  const providers = config?.providers;
+  if (!providers) return undefined;
+  const declared = Object.hasOwn(providers, providerId) ? providers[providerId] : undefined;
+  const registryFor = (preset: string) =>
+    getProviderPreset(preset)?.capabilities[capability]?.registryId;
+  if (declared && registryFor(declared.preset) === registryId && usesServerCredentials(declared)) {
+    return deploymentAuthorizedModels(config, providerId, capability);
+  }
+  // Every alias of a server adapter uses the same account. A workspace or a
+  // legacy registry id can use only models the operator granted for that account.
+  if (capability !== 'chat' || !usesServerAccount(registryId)) return undefined;
+  const aliases = Object.entries(providers).filter(
+    ([, provider]) => registryFor(provider.preset) === registryId,
+  );
+  return aliases.length
+    ? [...new Set(aliases.flatMap(([id]) => deploymentAuthorizedModels(config, id, capability)))]
+    : undefined;
 }
 
 /** Only operator declarations grant access; workspace assignments and SDK catalogues do not. */

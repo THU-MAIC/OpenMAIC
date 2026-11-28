@@ -1389,6 +1389,12 @@
       "chatgpt-plan": "Plano do ChatGPT"
     },
     "chatgptPlan": {
+      "usageLimit": "O OpenMAIC atingiu o limite de uso do seu plano ChatGPT. Consulte o uso nas configurações do ChatGPT. https://chatgpt.com/settings/usage",
+      "connectInSettings": "Conecte sua conta do ChatGPT nas configurações de modelos e tente novamente.",
+      "accountIneligible": "Esta conta não pode usar o plano ChatGPT no OpenMAIC. Escolha outra conta ou outro modelo.",
+      "requestUnsupported": "Seu plano ChatGPT não aceita esta solicitação. Altere a solicitação ou selecione outro modelo.",
+      "requestTooLarge": "A solicitação é muito grande. Encurte a conversa ou reduza o número de anexos.",
+      "modelUnavailable": "O modelo selecionado está indisponível. Atualize a lista nas configurações e escolha um modelo disponível.",
       "preview": "Prévia",
       "differentAccount": "Usar outra conta",
       "forgetConfirm": "Ao entrar novamente, você poderá escolher outra conta ou espaço de trabalho do ChatGPT.",
@@ -1401,6 +1407,7 @@
       "signIn": "Continuar com o ChatGPT",
       "signInAgain": "Entrar novamente",
       "signInHint": "Use os modelos do seu plano do ChatGPT sem uma chave de API.",
+      "reconnectHint": "Entre com a conta do ChatGPT e o espaço de trabalho vinculados a este registro.",
       "noticeBody": "O uso desses modelos conta para o seu plano do ChatGPT. Você pode acompanhar o consumo nas configurações do ChatGPT.",
       "noticeAccept": "Entendi",
       "waiting": "Conclua o login na nova aba. Esta página será atualizada quando você terminar.",
@@ -1422,6 +1429,7 @@
       "unavailableNotPersonal": "Este provedor está disponível apenas em instalações pessoais.",
       "errorExpired": "Este login expirou ou já foi usado. Comece de novo.",
       "errorDenied": "O login foi cancelado no ChatGPT.",
+      "errorAccountMismatch": "Este registro está vinculado a outra conta do ChatGPT. Entre com essa conta ou, após desconectar, selecione “Usar outra conta” nas configurações do OpenMAIC.",
       "errorInvalidCallback": "Esse endereço não pertence a este login. Copie o endereço completo da aba que abriu depois que você aprovou.",
       "errorFailed": "O ChatGPT não conseguiu concluir a solicitação. Tente novamente."
     },

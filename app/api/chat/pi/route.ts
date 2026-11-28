@@ -25,6 +25,7 @@ import type { SendEvent } from '@/lib/chat/pi/types';
 import { requestWorkspaceId } from '@/lib/server/model-config/runtime';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { publicProviderResponse, apiError } from '@/lib/server/api-response';
+import { publicProviderFailure } from '@/lib/server/llm-error-response';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
@@ -355,9 +356,17 @@ async function chat(req: NextRequest, principal: OwnerPrincipal): Promise<Respon
 
         log.error('Pi chat stream error:', error);
         try {
+          const failure = publicProviderFailure(error);
           await send({
             type: 'error',
-            data: { message: error instanceof Error ? error.message : String(error) },
+            data: failure
+              ? {
+                  errorCode: 'PROVIDER_ACTION_REQUIRED',
+                  reason: failure.reason,
+                  messageKey: failure.messageKey,
+                  message: failure.message,
+                }
+              : { message: error instanceof Error ? error.message : String(error) },
           });
           await writer.close();
         } catch {

@@ -168,6 +168,8 @@ export interface CallLlmStreamFnOptions {
   responseIdleTimeoutMs?: number;
   /** Upstream execution feedback, before presentation throttling; never a local heartbeat. */
   onProgress?: () => void;
+  /** The request failure before Pi reduces it to its errorMessage string. */
+  onError?: (error: unknown) => void;
   source?: string;
   /** Optional abort signal forwarded to the underlying streamLLM call. */
   abortSignal?: AbortSignal;
@@ -361,6 +363,7 @@ async function pump(
     mapper.finalize();
     removeExecutableToolCalls();
     partial.stopReason = reason;
+    if (reason === 'error') opts.onError?.(error);
     partial.errorMessage = errorMessage(
       error,
       reason === 'aborted' ? 'Operation aborted' : 'LLM stream error',

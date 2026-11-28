@@ -42,6 +42,69 @@ describe('model settings client', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('enriches the current saved choices without delaying settings or reviving a replaced view', async () => {
+    const endpoint = '/api/chatgpt-plan/models';
+    const personal = {
+      ...workspaceProvider('personal'),
+      accountModelsUrl: endpoint,
+      capabilities: { chat: { models: [{ id: 'one', name: 'one' }] } },
+    };
+    const view = makeView({ providers: [personal] });
+    const pending: ((response: Response) => void)[] = [];
+    const fetchImpl = async (url: string) =>
+      url === endpoint ? new Promise<Response>((resolve) => pending.push(resolve)) : json(view);
+    const client = createModelSettingsClient(fetchImpl);
+    await client.load();
+    expect(client.getState()).toEqual({ phase: 'ready', view });
+    expect(pending).toHaveLength(1);
+    const catalogue = (name: string) =>
+      json({
+        success: true,
+        models: [
+          { id: 'outside', name: 'Outside the saved list' },
+          {
+            id: 'one',
+            name,
+            contextWindow: 150000,
+            vision: true,
+            thinking: {
+              control: 'effort',
+              requestAdapter: 'openai',
+              effortValues: ['low', 'high'],
+            },
+          },
+        ],
+      });
+    pending[0](catalogue('Personal model'));
+    const rows = () => client.getState().view?.providers[0]?.capabilities.chat?.models;
+    await vi.waitFor(() =>
+      expect(rows()).toEqual([
+        {
+          id: 'one',
+          name: 'Personal model',
+          contextWindow: 150000,
+          capabilities: {
+            vision: true,
+            thinking: {
+              control: 'effort',
+              requestAdapter: 'openai',
+              effortValues: ['low', 'high'],
+            },
+          },
+        },
+      ]),
+    );
+    await client.apply({ kind: 'slots', set: { llm: 'personal:one' } });
+    expect(pending).toHaveLength(2);
+    pending[1](catalogue('Renamed model'));
+    await vi.waitFor(() => expect(rows()?.[0].name).toBe('Renamed model'));
+    await client.load({ fresh: true });
+    client.adopt(null);
+    pending[2](catalogue('Former account'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(client.getState().view).toBeNull();
+  });
+
   it('reports a server without persistence as unavailable', async () => {
     const client = createModelSettingsClient(
       async () => new Response('Not found', { status: 404 }),

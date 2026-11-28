@@ -11,6 +11,7 @@ vi.mock('@/lib/web-search', async (original) => ({
 }));
 import { runChildFailureEval } from '@/eval/orchestration/child-failure';
 import { runPiDirectorLoop } from '@/lib/chat/pi/director-loop';
+import { markPublicProviderFailure } from '@/lib/server/llm-error-response';
 import {
   buildChildActionTools,
   createPiWhiteboardRuntimeState,
@@ -133,6 +134,28 @@ function done(events: StatelessEvent[]) {
   if (e?.type !== 'done') throw Error('missing done');
   return e.data;
 }
+
+it('streams the public recovery reason when the first director request is refused', async () => {
+  const error = markPublicProviderFailure(
+    new Error('Reconnect in settings'),
+    401,
+    'reauth-required',
+    'settings.chatgptPlan.reauthRequired',
+  );
+  mocks.streamLLM.mockImplementation(() => result([{ type: 'error', error }]));
+  const events: StatelessEvent[] = [];
+  await runRoute(events);
+  expect(events).toContainEqual({
+    type: 'error',
+    data: {
+      errorCode: 'PROVIDER_ACTION_REQUIRED',
+      reason: 'reauth-required',
+      messageKey: 'settings.chatgptPlan.reauthRequired',
+      message: 'Reconnect in settings',
+    },
+  });
+  expect(events.some((event) => event.type === 'done')).toBe(false);
+});
 describe('Pi Director completion and request cancellation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -204,6 +227,32 @@ describe('Pi Director completion and request cancellation', () => {
         .join(''),
     ).toContain('All steps explained');
   });
+  it.each(['legacy', 'native'] as const)(
+    'surfaces a %s teaching provider refusal when no classroom answer followed',
+    async (mode) => {
+      let turn = 0;
+      const error = markPublicProviderFailure(
+        new Error('Reconnect in settings'),
+        401,
+        'reauth-required',
+        'settings.chatgptPlan.reauthRequired',
+      );
+      mocks.streamLLM.mockImplementation((_options, source) => {
+        if (source !== 'pi-chat-director') return result([{ type: 'error', error }]);
+        return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
+      });
+      const events: StatelessEvent[] = [];
+      await runRoute(events, mode);
+      expect(events).toContainEqual({
+        type: 'error',
+        data: expect.objectContaining({
+          errorCode: 'PROVIDER_ACTION_REQUIRED',
+          messageKey: 'settings.chatgptPlan.reauthRequired',
+        }),
+      });
+      expect(events.some((event) => event.type === 'done')).toBe(false);
+    },
+  );
   it.each(['legacy', 'native'] as const)(
     'reports %s provider errors without exposing diagnostics and still emits done',
     async (mode) => {

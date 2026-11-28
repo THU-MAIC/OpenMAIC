@@ -147,6 +147,13 @@ export function ModelServicesPanel({
   const capability = TAB_CAPABILITY[tab];
   const entries = useMemo(() => {
     const list = serviceEntries(view, capability, registryIdsFor(view, capability));
+    // With no editable chat services this tab opens solely for the owner's sign-in.
+    if (capability === 'chat' && !canAddService(view, capability)) {
+      const accounts = list.filter(
+        (entry) => entry.state === 'deployment' && entry.provider?.accountModelsUrl,
+      );
+      if (accounts.length) return accounts;
+    }
     // Kimi 推广位：置顶于内置服务之首（其他账号/自定义服务在前，其余保持原顺序）。
     const rank = (entry: ServiceEntry) =>
       entry.provider && !entry.serviceId ? 0 : entry.id === PINNED_PROVIDER_ID ? 1 : 2;

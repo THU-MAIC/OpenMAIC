@@ -106,6 +106,44 @@ it('repairs missing builtin references only outside the webFetch slot', async ()
 });
 
 describe('modelSettingsView', () => {
+  it.each([true, false])(
+    'uses the deployment plan list and slot references with allowUserKeys=%s',
+    async (allowUserKeys) => {
+      deployment({
+        allowUserKeys,
+        providers: { personal: { preset: 'chatgpt-plan', models: ['listed'] } },
+        slots: { llm: { model: 'personal:primary', fallback: 'personal:backup' } },
+      });
+      const view = modelSettingsView(null);
+      expect(view.providers[0].capabilities.chat!.models.map(({ id }) => id)).toEqual([
+        'listed',
+        'primary',
+        'backup',
+      ]);
+      await expect(
+        applyModelSettingsChange(null, { kind: 'slots', set: { classroom: 'personal:other' } }),
+      ).rejects.toMatchObject({ code: 'PROVIDER_DISABLED' });
+    },
+  );
+
+  it('keeps a saved workspace plan within an operator declaration for the same account', async () => {
+    const workspace = {
+      providers: { mine: { preset: 'chatgpt-plan', models: ['listed', 'other'] } },
+    };
+    const stored = { config: workspace, revision: 1, unreadableSecrets: [] };
+    const rows = () =>
+      modelSettingsView(stored)
+        .providers.find(({ id }) => id === 'mine')!
+        .capabilities.chat!.models.map(({ id }) => id);
+    deployment({});
+    expect(rows()).toEqual(['listed', 'other']);
+    deployment({ providers: { personal: { preset: 'chatgpt-plan', models: ['listed'] } } });
+    expect(rows()).toEqual(['listed']);
+    await expect(
+      applyModelSettingsChange(workspace, { kind: 'slots', set: { classroom: 'mine:other' } }),
+    ).rejects.toMatchObject({ code: 'PROVIDER_DISABLED' });
+  });
+
   it('offers only deployment slot models when the provider has no model list', async () => {
     const config: ModelConfigLayer['config'] = {
       providers: {

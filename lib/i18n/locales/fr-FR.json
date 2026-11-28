@@ -1389,6 +1389,12 @@
       "chatgpt-plan": "Forfait ChatGPT"
     },
     "chatgptPlan": {
+      "usageLimit": "OpenMAIC a atteint la limite qui lui est allouée dans votre abonnement ChatGPT. Consultez votre utilisation dans les paramètres de ChatGPT. https://chatgpt.com/settings/usage",
+      "connectInSettings": "Connectez votre compte ChatGPT dans les paramètres des modèles, puis réessayez.",
+      "accountIneligible": "Ce compte ne permet pas d’utiliser son abonnement ChatGPT dans OpenMAIC. Choisissez un autre compte ou modèle.",
+      "requestUnsupported": "Votre abonnement ChatGPT ne prend pas en charge cette demande. Modifiez-la ou choisissez un autre modèle.",
+      "requestTooLarge": "La demande est trop volumineuse. Raccourcissez la conversation ou réduisez le nombre de pièces jointes.",
+      "modelUnavailable": "Le modèle sélectionné est indisponible. Actualisez la liste dans les paramètres et choisissez un modèle disponible.",
       "preview": "Aperçu",
       "differentAccount": "Utiliser un autre compte",
       "forgetConfirm": "Lors de votre prochaine connexion, vous pourrez choisir un autre compte ou espace de travail ChatGPT.",
@@ -1401,6 +1407,7 @@
       "signIn": "Continuer avec ChatGPT",
       "signInAgain": "Se reconnecter",
       "signInHint": "Utilisez les modèles de votre forfait ChatGPT sans clé API.",
+      "reconnectHint": "Connectez-vous avec le compte ChatGPT et l’espace de travail associés à cet enregistrement.",
       "noticeBody": "L’utilisation de ces modèles est décomptée de votre forfait ChatGPT. Vous pouvez la consulter dans les paramètres de ChatGPT.",
       "noticeAccept": "Compris",
       "waiting": "Terminez la connexion dans le nouvel onglet. Cette page se met à jour une fois terminé.",
@@ -1422,6 +1429,7 @@
       "unavailableNotPersonal": "Ce fournisseur est disponible uniquement sur les installations personnelles.",
       "errorExpired": "Cette connexion a expiré ou a déjà été utilisée. Recommencez.",
       "errorDenied": "La connexion a été annulée dans ChatGPT.",
+      "errorAccountMismatch": "Cet enregistrement est lié à un autre compte ChatGPT. Connectez-vous avec ce compte ou, après déconnexion, choisissez « Utiliser un autre compte » dans les paramètres d’OpenMAIC.",
       "errorInvalidCallback": "Cette adresse n’appartient pas à cette connexion. Copiez l’adresse complète de l’onglet ouvert après votre accord.",
       "errorFailed": "ChatGPT n’a pas pu terminer la requête. Réessayez."
     },

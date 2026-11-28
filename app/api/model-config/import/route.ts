@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return withRequestOwner(req, async ({ ownerId }, headers) => {
+  return withRequestOwner(req, async (owner, headers) => {
+    const { ownerId } = owner;
     const queryable = (await getServerPersistenceProvider(process.env.DATABASE_URL ?? '')).pool;
     try {
       for (let attempt = 1; ; attempt++) {
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
           {
             imported: result.imported,
             skipped: result.skipped,
-            view: modelSettingsView(stored),
+            view: modelSettingsView(stored, owner),
           },
           { headers },
         );

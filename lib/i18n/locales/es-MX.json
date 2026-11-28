@@ -1389,6 +1389,12 @@
       "chatgpt-plan": "Plan de ChatGPT"
     },
     "chatgptPlan": {
+      "usageLimit": "OpenMAIC alcanzó el límite de tu plan de ChatGPT. Revisa el consumo en la configuración de ChatGPT. https://chatgpt.com/settings/usage",
+      "connectInSettings": "Conecta tu cuenta de ChatGPT en la configuración de modelos y vuelve a intentarlo.",
+      "accountIneligible": "Esta cuenta no puede usar su plan de ChatGPT en OpenMAIC. Elige otra cuenta u otro modelo.",
+      "requestUnsupported": "Tu plan de ChatGPT no admite esta solicitud. Modifícala o selecciona otro modelo.",
+      "requestTooLarge": "La solicitud es demasiado grande. Acorta la conversación o reduce los archivos adjuntos.",
+      "modelUnavailable": "El modelo seleccionado no está disponible. Actualiza la lista en la configuración y elige un modelo disponible.",
       "preview": "Vista previa",
       "differentAccount": "Usar otra cuenta",
       "forgetConfirm": "La próxima vez que inicies sesión, podrás elegir otra cuenta o espacio de trabajo de ChatGPT.",
@@ -1401,6 +1407,7 @@
       "signIn": "Continuar con ChatGPT",
       "signInAgain": "Volver a iniciar sesión",
       "signInHint": "Usa los modelos de tu plan de ChatGPT sin una clave de API.",
+      "reconnectHint": "Inicia sesión con la cuenta de ChatGPT y el espacio de trabajo vinculados a este registro.",
       "noticeBody": "El uso de estos modelos cuenta para tu plan de ChatGPT. Puedes consultarlo en la configuración de ChatGPT.",
       "noticeAccept": "Entendido",
       "waiting": "Termina de iniciar sesión en la pestaña nueva. Esta página se actualiza cuando termines.",
@@ -1422,6 +1429,7 @@
       "unavailableNotPersonal": "Este proveedor solo está disponible en instalaciones personales.",
       "errorExpired": "Este inicio de sesión expiró o ya se usó. Empieza de nuevo.",
       "errorDenied": "Se canceló el inicio de sesión en ChatGPT.",
+      "errorAccountMismatch": "Este registro está vinculado a otra cuenta de ChatGPT. Inicia sesión con esa cuenta o, después de desconectarte, selecciona «Usar otra cuenta» en la configuración de OpenMAIC.",
       "errorInvalidCallback": "Esa dirección no corresponde a este inicio de sesión. Copia la dirección completa de la pestaña que se abrió después de aprobar.",
       "errorFailed": "ChatGPT no pudo completar la solicitud. Inténtalo de nuevo."
     },

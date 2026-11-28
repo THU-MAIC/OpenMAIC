@@ -7,6 +7,7 @@ import 'server-only';
 import { randomBytes } from 'node:crypto';
 
 import type { NextRequest } from 'next/server';
+import { CHATGPT_PLAN_ERROR_KEYS } from '@/lib/chatgpt-plan/shared';
 import { supportedLocaleOf, type Locale } from '@/lib/i18n/types';
 import { LOCALE_COOKIE, resolveRequestLocale } from '@/lib/i18n/resolve-locale';
 import { loadLocaleResource } from '@/lib/i18n/load-resource';
@@ -133,13 +134,7 @@ export async function callbackPage(
     ? result.sharingDisabled
       ? copy.sharingDisabled
       : copy.callbackComplete
-    : result.reason === 'sign-in-expired'
-      ? copy.errorExpired
-      : result.reason === 'sign-in-denied'
-        ? copy.errorDenied
-        : result.reason === 'invalid-callback'
-          ? copy.errorInvalidCallback
-          : copy.errorFailed;
+    : copy[CHATGPT_PLAN_ERROR_KEYS[result.reason ?? ''] ?? 'errorFailed'];
   const link =
     result.ok && result.returnTo
       ? `<p><a href="${escapeHtml(result.returnTo)}/">${escapeHtml(copy.callbackReturn)}</a></p>`

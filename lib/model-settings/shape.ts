@@ -7,10 +7,11 @@
  * - `yourself` (set it up yourself): users may add keys (`allowUserKeys`), so
  *   Token Plan, Model Services and the course model map, each where it can
  *   still change a slot;
- * - `choose` (choose a model): no keys of their own, so only the course model
+ * - `choose` (choose a model): no keys of their own, so the course model
  *   map, choosing among the deployment's providers;
  * - `admin` (configured by the administrator): nothing a user may set, so
  *   the course model map with every card read-only.
+ * A personal owner can also manage the account a deployment provider uses.
  *
  * Pure functions over the view; every component asks these instead of
  * checking locks or the deployment's switches itself.
@@ -131,17 +132,19 @@ export interface SettingsSections {
   /**
    * Model Services, with the capabilities whose tab is shown: adding a service
    * there can change something, or (Text-to-Speech) the narration in use has
-   * voices of the user's own to manage. Empty when everything is locked.
+   * voices of the user's own to manage. A personal deployment's account can
+   * still be managed when its slots are locked.
    */
   modelServices: readonly SlotCapability[];
 }
 
 export function settingsSections(view: ModelSettingsView): SettingsSections {
   const shape = settingsShape(view);
-  // Configured by the administrator: only the read-only course model map. A
-  // plan the workspace connected earlier no longer changes anything, and
-  // narration voices are not managed here in this shape.
-  if (shape === 'admin') return { shape, tokenPlan: false, modelServices: [] };
+  const manageAccount = view.providers.some(
+    (provider) => provider.source === 'deployment' && provider.accountModelsUrl,
+  );
+  if (shape === 'admin')
+    return { shape, tokenPlan: false, modelServices: manageAccount ? ['chat'] : [] };
   const yourself = shape === 'yourself';
   return {
     shape,
@@ -151,6 +154,7 @@ export function settingsSections(view: ModelSettingsView): SettingsSections {
     modelServices: SERVICE_CAPABILITIES.filter(
       (capability) =>
         (yourself && canAddService(view, capability)) ||
+        (capability === 'chat' && manageAccount) ||
         (capability === 'tts' && narrationVoicesManageable(view)),
     ),
   };

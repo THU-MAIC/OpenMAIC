@@ -65,6 +65,7 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { ChatGPTPlanAccount } from '@/components/settings/chatgpt-plan-account';
 import { ModelServicesPanel } from '@/components/settings/model-services';
 import { ModelMap } from '@/components/settings/models/model-map';
+import { SlotPicker } from '@/components/settings/models/slot-picker';
 import { llmPickerGroups } from '@/components/settings/use-llm-picker-groups';
 import { ProviderConfigPanel } from '@/components/settings/provider-config-panel';
 import { TokenPlanSettings } from '@/components/settings/token-plan-settings';
@@ -95,8 +96,11 @@ beforeAll(() => {
 });
 
 const roots: Root[] = [];
-afterEach(() => {
+function unmountAll() {
   for (const root of roots.splice(0)) act(() => root.unmount());
+}
+afterEach(() => {
+  unmountAll();
   document.body.replaceChildren();
   vi.unstubAllGlobals();
 });
@@ -345,6 +349,7 @@ describe('Model Services → provider changes', () => {
     await flush();
     expect(toast.warning).toHaveBeenCalledWith('settings.chatgptPlan.notRevoked');
     expect(byText('settings.chatgptPlan.signIn').hasAttribute('data-oai-siwc-button')).toBe(true);
+    expect(document.body.textContent).toContain('settings.chatgptPlan.reconnectHint');
     click(byText('settings.chatgptPlan.differentAccount'));
     click(byText('common.cancel'));
     expect(registered).toBe(true);
@@ -353,10 +358,16 @@ describe('Model Services → provider changes', () => {
     await flush();
     expect(registered).toBe(false);
     expect(document.body.textContent).not.toContain('settings.chatgptPlan.differentAccount');
+    expect(document.body.textContent).not.toContain('settings.chatgptPlan.reconnectHint');
   });
-  it.each(['sign-in-denied', 'sharing-disabled', 'cancel'])(
+  it.each([
+    ['sign-in-denied', 'errorDenied'],
+    ['account-mismatch', 'errorAccountMismatch'],
+    ['sharing-disabled', 'sharingDisabled'],
+    ['cancel', 'sharingDisabled'],
+  ])(
     'ends a loopback retry whose account state does not change: %s',
-    async (outcome) => {
+    async (outcome, expectedMessage) => {
       vi.spyOn(window, 'open').mockReturnValue(null);
       const calls = vi.fn(async (path: string) =>
         Response.json(
@@ -411,11 +422,7 @@ describe('Model Services → provider changes', () => {
           }),
         );
         expect(document.body.textContent).not.toContain('settings.chatgptPlan.waiting');
-        expect(document.body.textContent).toContain(
-          outcome === 'sign-in-denied'
-            ? 'settings.chatgptPlan.errorDenied'
-            : 'settings.chatgptPlan.sharingDisabled',
-        );
+        expect(document.body.textContent).toContain(`settings.chatgptPlan.${expectedMessage}`);
       } finally {
         vi.useRealTimers();
         vi.mocked(window.open).mockRestore();
@@ -732,10 +739,27 @@ describe("the server's providers wherever chat models are offered", () => {
   });
 
   it('offers the assigned ChatGPT model and its usage link only while the account is connected', async () => {
-    const plan = {
+    const plan: PresetView = {
       ...chatPreset,
       id: 'chatgpt-plan',
-      capabilities: { chat: { models: [{ id: 'gpt', name: 'Account model' }] } },
+      capabilities: {
+        chat: {
+          models: [
+            {
+              id: 'gpt',
+              name: 'Account model',
+              capabilities: {
+                vision: true,
+                thinking: {
+                  control: 'effort',
+                  requestAdapter: 'openai',
+                  effortValues: ['low', 'high'],
+                },
+              },
+            },
+          ],
+        },
+      },
     };
     const view = withLlm(
       makeView({ providers: [workspaceProvider('personal', plan)], presets: [plan] }),
@@ -768,6 +792,15 @@ describe("the server's providers wherever chat models are offered", () => {
       mount(
         createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
       );
+      mount(
+        createElement(SlotPicker, {
+          view,
+          slot: view.slots.find(({ slot }) => slot === 'llm')!,
+          apply,
+          t: (key: string) => key,
+          onDone: () => {},
+        }),
+      );
       expect(
         vi.mocked(fetch).mock.calls.filter(([path]) => path === '/api/chatgpt-plan/status'),
       ).toHaveLength(1);
@@ -792,12 +825,18 @@ describe("the server's providers wherever chat models are offered", () => {
             el.textContent?.includes('Account model'),
           ),
         ).toBe(active);
+        expect(!!document.querySelector('[title="settings.capabilities.vision"]')).toBe(active);
+        const efforts = document.querySelectorAll<HTMLOptionElement>(
+          '[aria-label="settings.modelSettings.picker.thinking"] option:not([value=""])',
+        );
+        expect([...efforts].map((option) => option.value)).toEqual(active ? ['low', 'high'] : []);
         expect(modelSettingsClient.getState().view).toBe(view);
       }
       expect(byText('settings.chatgptPlan.manageUsage', 'a').getAttribute('href')).toBe(
         'https://chatgpt.com/settings/usage',
       );
     } finally {
+      unmountAll();
       modelSettingsClient.adopt(null);
     }
   });

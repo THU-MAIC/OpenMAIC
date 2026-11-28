@@ -22,6 +22,8 @@ export interface RunFailureCode {
   errorCode: string;
   /** Overrides a wrapper message with the adapter-authored recovery instruction. */
   message?: string;
+  /** The translation of an adapter-authored recovery message, when available. */
+  messageKey?: string;
   /**
    * Status used to classify the failure. A provider HTTP status when the
    * failure carries one. `TTSRateLimitError` contributes 429 as a classifier
@@ -48,6 +50,7 @@ export function runFailureCode(error: unknown): RunFailureCode {
       errorCode: 'PROVIDER_ACTION_REQUIRED',
       statusCode: provider.statusCode,
       message: provider.message,
+      ...(provider.messageKey ? { messageKey: provider.messageKey } : {}),
     };
   const status = upstreamHttpStatus(error);
   // The provider account's plan or balance, not the owner's quota: a host's

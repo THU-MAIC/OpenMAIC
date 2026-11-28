@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   CHATGPT_PLAN_API,
+  CHATGPT_PLAN_ERROR_KEYS,
   CHATGPT_USAGE_SETTINGS_URL,
   type ChatGPTPlanModel,
   type ChatGPTPlanSignInStart,
@@ -28,15 +29,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderFields } from './server-settings';
 
 import { callChatGPTPlan, type PlanAccountState } from '@/lib/chatgpt-plan/client';
-
-/** What the settings say for a failure the server reported with a code. */
-const REASON_KEYS: Record<string, string> = {
-  'sign-in-expired': 'settings.chatgptPlan.errorExpired',
-  'sign-in-denied': 'settings.chatgptPlan.errorDenied',
-  'invalid-callback': 'settings.chatgptPlan.errorInvalidCallback',
-  'sharing-disabled': 'settings.chatgptPlan.sharingDisabled',
-  'reauth-required': 'settings.chatgptPlan.reauthRequired',
-};
+import { modelSettingsClient } from '@/lib/model-settings/client';
 
 /**
  * The ChatGPT plan provider's account, in place of a key and an endpoint:
@@ -48,7 +41,7 @@ export function ChatGPTPlanAccount({
   account: { status, statusFailed, loadStatus },
 }: {
   account: PlanAccountState;
-  save: (fields: ProviderFields) => Promise<unknown>;
+  save?: (fields: ProviderFields) => Promise<unknown>;
 }) {
   const { t } = useI18n();
   const [pending, setPending] = useState<ChatGPTPlanSignInStart | null>(null);
@@ -62,32 +55,47 @@ export function ChatGPTPlanAccount({
   const [confirm, setConfirm] = useState<'disconnect' | 'forget' | null>(null);
 
   const failed = useCallback(
-    (answer: { reason?: string; error?: string }) => {
-      const key = REASON_KEYS[answer.reason ?? ''];
-      setError(key ? t(key) : (answer.error ?? t('settings.chatgptPlan.errorFailed')));
+    (answer: { reason?: string; error?: string; messageKey?: string }) => {
+      const connectionKey = CHATGPT_PLAN_ERROR_KEYS[answer.reason ?? ''];
+      const key = answer.messageKey ?? (connectionKey && `settings.chatgptPlan.${connectionKey}`);
+      setError(
+        key
+          ? t(key, { defaultValue: answer.error })
+          : (answer.error ?? t('settings.chatgptPlan.errorFailed')),
+      );
     },
     [t],
   );
 
-  /** Make the provider's model list the account's. */
-  const syncModels = useCallback(async () => {
-    setError('');
-    setBusy('models');
-    const answer = await callChatGPTPlan<{ models: ChatGPTPlanModel[] }>(CHATGPT_PLAN_API.models);
-    setBusy(null);
-    if (!answer.ok) {
-      await loadStatus();
-      return failed(answer);
-    }
-    const { models } = answer.data;
-    const windows = Object.fromEntries(
-      models.flatMap((model) => (model.contextWindow ? [[model.id, model.contextWindow]] : [])),
-    );
-    await save({
-      models: models.length ? models.map((model) => model.id) : null,
-      modelContextWindows: Object.keys(windows).length ? windows : null,
-    });
-  }, [failed, loadStatus, save]);
+  /** Refresh account metadata; only a workspace provider saves the account's list. */
+  const syncModels = useCallback(
+    async (refresh = false) => {
+      setError('');
+      setBusy('models');
+      const answer = await callChatGPTPlan<{ models: ChatGPTPlanModel[] }>(
+        refresh ? `${CHATGPT_PLAN_API.models}?refresh=1` : CHATGPT_PLAN_API.models,
+      );
+      setBusy(null);
+      if (!answer.ok) {
+        await loadStatus();
+        return failed(answer);
+      }
+      if (!save) {
+        const next = await modelSettingsClient.load({ fresh: true });
+        if (next.phase !== 'ready') failed({});
+        return;
+      }
+      const { models } = answer.data;
+      const windows = Object.fromEntries(
+        models.flatMap((model) => (model.contextWindow ? [[model.id, model.contextWindow]] : [])),
+      );
+      await save({
+        models: models.length ? models.map((model) => model.id) : null,
+        modelContextWindows: Object.keys(windows).length ? windows : null,
+      });
+    },
+    [failed, loadStatus, save],
+  );
 
   const connected = useCallback(async () => {
     setPending(null);
@@ -354,7 +362,12 @@ export function ChatGPTPlanAccount({
         </p>
         <div className="flex flex-wrap gap-2">
           {usageLink}
-          <Button variant="outline" size="sm" onClick={syncModels} disabled={busy !== null}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void syncModels(true)}
+            disabled={busy !== null}
+          >
             <RefreshCw className={busy === 'models' ? 'size-3.5 animate-spin' : 'size-3.5'} />
             {t('settings.chatgptPlan.refreshModels')}
           </Button>
@@ -381,7 +394,13 @@ export function ChatGPTPlanAccount({
   } else {
     body = (
       <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">{t('settings.chatgptPlan.signInHint')}</p>
+        <p className="text-sm text-muted-foreground">
+          {t(
+            status.canForgetRegistration
+              ? 'settings.chatgptPlan.reconnectHint'
+              : 'settings.chatgptPlan.signInHint',
+          )}
+        </p>
         <div className="flex flex-wrap gap-2">
           {signInButton(t('settings.chatgptPlan.signIn'))}
           {status.canForgetRegistration && (

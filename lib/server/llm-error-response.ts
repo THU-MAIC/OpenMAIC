@@ -113,6 +113,7 @@ interface PublicProviderFailure {
   message: string;
   statusCode: number;
   reason?: string;
+  messageKey?: string;
 }
 const publicFailures = new WeakMap<Error, PublicProviderFailure>();
 
@@ -120,8 +121,9 @@ export function markPublicProviderFailure<T extends Error>(
   error: T,
   statusCode: number,
   reason?: string,
+  messageKey?: string,
 ): T {
-  publicFailures.set(error, { message: error.message, statusCode, reason });
+  publicFailures.set(error, { message: error.message, statusCode, reason, messageKey });
   return error;
 }
 
