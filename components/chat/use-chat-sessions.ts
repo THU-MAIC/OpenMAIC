@@ -413,6 +413,10 @@ export async function runPiSingleRequest(
   onResponseAccepted?: (response: Response) => void,
 ): Promise<void> {
   const consumer = createConsumer(sessionId, controller, sessionType);
+  const endWithError = (message: string) => {
+    clearLiveSessionAfterError(sessionId, message);
+    onStopSessionRef.current?.({ sessionId, source: 'error' });
+  };
   // Every send re-samples the current Scene, including a follow-up with no reference.
   const interactiveState = await sampleInteractiveState(
     requestTemplate.storeState,
@@ -445,8 +449,7 @@ export async function runPiSingleRequest(
     const errorBody = await response.json().catch(() => null);
     const provider = providerFailureText({ ...errorBody, message: errorBody?.error });
     if (provider) {
-      clearLiveSessionAfterError(sessionId, translateFailureText(provider, t));
-      onStopSessionRef.current?.({ sessionId, source: 'error' });
+      endWithError(translateFailureText(provider, t));
       return;
     }
     if (
@@ -473,7 +476,6 @@ export async function runPiSingleRequest(
   let sseBuffer = '';
   let sawDoneEvent = false;
   let sawAgentOutput = false;
-  let failureMessage: string | undefined;
   let presentation: Promise<void> | undefined;
   let presentationFailure: { error: unknown } | undefined;
 
@@ -489,17 +491,19 @@ export async function runPiSingleRequest(
       const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
       if (!dataLine) continue;
       const event = JSON.parse(dataLine.slice(6)) as StatelessEvent;
-      if (failureMessage) continue;
-      // Only marked failures supply public recovery guidance. Other errors
-      // before classroom output still receive the fixed no-response notice.
+      // Handle an error immediately, even while a drawing is loading.
       if (event.type === 'error') {
         const provider = providerFailureText(event.data);
-        if (provider || !sawAgentOutput) {
-          failureMessage = provider
-            ? translateFailureText(provider, t)
-            : t('chat.error.teacherNoResponse');
-          continue;
+        const guidance = provider && translateFailureText(provider, t);
+        if (!sawAgentOutput) {
+          endWithError(guidance ?? t('chat.error.teacherNoResponse'));
+          void reader.cancel().catch(() => {});
+          return;
         }
+        consumer.onEvent(
+          guidance ? { ...event, data: { ...event.data, message: guidance } } : event,
+        );
+        continue;
       }
       if (isVisibleAgentOutput(event)) sawAgentOutput = true;
       if (event.type === 'done') sawDoneEvent = true;
@@ -507,14 +511,6 @@ export async function runPiSingleRequest(
       // The Native child waits for visibility replies. Keep reading and answer
       // these queries even while a previous drawing is being loaded.
       if (event.type === 'whiteboard' && event.data.kind === 'visibility_query') {
-        consumer.onEvent(event);
-        continue;
-      }
-
-      // A stream error ends the turn. Handle it now instead of after a drawing
-      // that is still loading, so the turn is cleaned up and its remaining
-      // speech stops without waiting for that drawing.
-      if (event.type === 'error') {
         consumer.onEvent(event);
         continue;
       }
@@ -537,11 +533,6 @@ export async function runPiSingleRequest(
   if (presentation) await presentation;
   if (controller.signal.aborted) return;
   if (presentationFailure) throw presentationFailure.error;
-  if (failureMessage) {
-    clearLiveSessionAfterError(sessionId, failureMessage);
-    onStopSessionRef.current?.({ sessionId, source: 'error' });
-    return;
-  }
 
   const doneData = sawDoneEvent ? await consumer.onIterationEnd() : null;
 
@@ -549,8 +540,7 @@ export async function runPiSingleRequest(
 
   const outcome = getPiSingleRequestOutcome(doneData);
   if (outcome.type === 'error') {
-    clearLiveSessionAfterError(sessionId, t(outcome.messageKey));
-    onStopSessionRef.current?.({ sessionId, source: 'error' });
+    endWithError(t(outcome.messageKey));
     return;
   }
   // Partial answer after a failed or empty teacher/assistant call: keep the
