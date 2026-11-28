@@ -103,7 +103,7 @@ export interface ChatAreaRef {
   resumeActiveLiveBuffer: () => void;
   switchToTab: (
     tab: 'lecture' | 'chat' | 'camera',
-    options?: { followLatest?: boolean },
+    options?: { followLatest?: boolean; silent?: boolean },
   ) => void;
 }
 
@@ -244,7 +244,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
           if (text) lines.push(`${speaker}: ${text}`);
         }
       }
-      return lines.slice(-8).join('\n').slice(0, 1500);
+      return lines.slice(-8).join('\n').slice(-1500);
     }, [chatSessions]);
 
     useEffect(() => {
@@ -315,10 +315,10 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     const switchToTab = useCallback(
       (
         tab: 'lecture' | 'chat' | 'camera',
-        { followLatest = false }: { followLatest?: boolean } = {},
+        { followLatest = false, silent = false }: { followLatest?: boolean; silent?: boolean } = {},
       ) => {
         if (mobile && tab === 'camera') return;
-        if (mobile && tab === 'chat' && followLatest) {
+        if (mobile && tab === 'chat' && followLatest && !silent) {
           followReplies.current = true;
           scrollChatToBottom();
         }
@@ -327,7 +327,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         if (tab === 'camera') setCameraEverVisited(true);
         setActiveTab(tab);
         onCameraTabActiveChange?.(tab === 'camera');
-        if (tab !== 'camera') onTabChange?.(tab);
+        if (tab !== 'camera' && !silent) onTabChange?.(tab);
       },
       [mobile, onCameraTabActiveChange, onTabChange, scrollChatToBottom],
     );

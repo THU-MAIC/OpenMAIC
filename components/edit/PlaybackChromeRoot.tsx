@@ -1945,7 +1945,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       setMobileCameraTutorOpen(false);
       setCameraTutorMounted(false);
       setDesktopCameraTabActive(false);
-      chatAreaRef.current?.switchToTab('chat');
+      // Reset any latent desktop Camera tab selection without triggering mobile panel navigation to Chat
+      chatAreaRef.current?.switchToTab('chat', { silent: true });
     }, []);
 
     const toggleMobileCameraTutor = useCallback(() => {

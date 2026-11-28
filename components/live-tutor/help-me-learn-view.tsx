@@ -81,8 +81,10 @@ export function HelpMeLearnView() {
   const [topicInput, setTopicInput] = useState('');
   const [mode, setMode] = useState<LearningMode>('theory-then-solve');
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [processingPhoto, setProcessingPhoto] = useState(false);
   const [loadingPlan, setLoadingPlan] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
+  const photoPickSeqRef = useRef(0);
 
   const [plan, setPlan] = useState<HelpMeLearnPlan | null>(null);
   const [activeStage, setActiveStage] = useState<'theory' | 'solve'>('theory');
@@ -94,10 +96,22 @@ export function HelpMeLearnView() {
   const handleImagePick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const seq = ++photoPickSeqRef.current;
+    setProcessingPhoto(true);
+    const finishPick = (nextUrl: string | null) => {
+      if (!mountedRef.current || photoPickSeqRef.current !== seq) return;
+      if (nextUrl) setAttachedImage(nextUrl);
+      setProcessingPhoto(false);
+    };
+
     const reader = new FileReader();
+    reader.onerror = () => finishPick(null);
     reader.onload = () => {
       const rawUrl = typeof reader.result === 'string' ? reader.result : null;
-      if (!rawUrl) return;
+      if (!rawUrl) {
+        finishPick(null);
+        return;
+      }
       // Downscale high-megapixel tablet/phone camera photos so uploads stay fast and reliable
       const img = new window.Image();
       img.onload = () => {
@@ -108,13 +122,13 @@ export function HelpMeLearnView() {
         canvas.height = Math.max(1, Math.round(img.height * scale));
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          setAttachedImage(rawUrl);
+          finishPick(rawUrl);
           return;
         }
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        setAttachedImage(canvas.toDataURL('image/jpeg', 0.82));
+        finishPick(canvas.toDataURL('image/jpeg', 0.82));
       };
-      img.onerror = () => setAttachedImage(rawUrl);
+      img.onerror = () => finishPick(rawUrl);
       img.src = rawUrl;
     };
     reader.readAsDataURL(file);
@@ -134,7 +148,7 @@ export function HelpMeLearnView() {
   }, []);
 
   const handleStartLearning = async () => {
-    if (!topicInput.trim() && !attachedImage) return;
+    if (processingPhoto || (!topicInput.trim() && !attachedImage)) return;
     planAbortRef.current?.abort();
     const controller = new AbortController();
     planAbortRef.current = controller;
@@ -436,11 +450,11 @@ export function HelpMeLearnView() {
 
                 <Button
                   type="button"
-                  disabled={loadingPlan || (!topicInput.trim() && !attachedImage)}
+                  disabled={loadingPlan || processingPhoto || (!topicInput.trim() && !attachedImage)}
                   onClick={() => void handleStartLearning()}
                   className="rounded-xl h-11 px-6 bg-violet-600 hover:bg-violet-700 text-white gap-2 font-semibold"
                 >
-                  {loadingPlan ? (
+                  {loadingPlan || processingPhoto ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <Sparkles className="size-4" />

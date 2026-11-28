@@ -56,7 +56,7 @@ function collectVisibleChatTranscript(): string {
         .map((n) => (n.textContent || '').replace(/\s+/g, ' ').trim())
         .filter(Boolean)
         .join('\n')
-        .slice(0, 1400);
+        .slice(-1400);
     }
   } catch {
     // ignore DOM read issues
@@ -101,27 +101,41 @@ function InlineQACameraLiveBody({
   }, [currentScene, recentClassroomSpeech, stageName]);
 
   const syncStepsToClassroomWhiteboard = useCallback(
-    (nextSteps: WhiteboardStepItem[]) => {
+    (nextSteps: WhiteboardStepItem[], clearedByTutor: boolean) => {
       if (!stageId) return;
-      const wb = buildWhiteboardFromSteps(nextSteps, `classroom-live-wb-${stageId}`);
-      useCanvasStore.setState((prev) => ({
-        whiteboardOpen: true,
-        runtimeWhiteboardProjection: {
-          stageId,
-          lastSeq: (prev.runtimeWhiteboardProjection?.lastSeq ?? 0) + 1,
-          whiteboard: wb,
-        },
-        runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
-      }));
+      const tutorWb = buildWhiteboardFromSteps(nextSteps, `classroom-live-wb-${stageId}`);
+      useCanvasStore.setState((prev) => {
+        const rawProjected =
+          prev.runtimeWhiteboardProjection?.stageId === stageId
+            ? prev.runtimeWhiteboardProjection.whiteboard
+            : useStageStore.getState().stage?.whiteboard;
+        const currentProjected = Array.isArray(rawProjected) ? rawProjected[0] : rawProjected;
+        const preservedElements = clearedByTutor
+          ? []
+          : (currentProjected?.elements ?? []).filter((el) => !el.id.startsWith('lt-wb-'));
+        return {
+          whiteboardOpen: true,
+          runtimeWhiteboardProjection: {
+            stageId,
+            lastSeq: (prev.runtimeWhiteboardProjection?.lastSeq ?? 0) + 1,
+            whiteboard: {
+              ...tutorWb,
+              elements: [...preservedElements, ...tutorWb.elements],
+            },
+          },
+          runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
+        };
+      });
     },
     [stageId],
   );
 
   const handleWhiteboardOps = useCallback(
     (ops: WhiteboardOp[]) => {
+      const clearedByTutor = ops.some((o) => o.op === 'clear');
       setWbSteps((prev) => {
         const next = applyWhiteboardOps(prev, ops);
-        syncStepsToClassroomWhiteboard(next);
+        syncStepsToClassroomWhiteboard(next, clearedByTutor);
         return next;
       });
     },
