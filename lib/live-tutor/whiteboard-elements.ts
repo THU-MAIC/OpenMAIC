@@ -176,11 +176,12 @@ export function buildWhiteboardFromSteps(
   whiteboardId = 'live-tutor-whiteboard',
   startY = BOARD_TOP_PADDING,
 ): Whiteboard {
-  const topPadding = Math.max(BOARD_TOP_PADDING, Math.min(startY, BOARD_MAX_Y - 120));
-  const availableHeight = Math.max(120, BOARD_MAX_Y - topPadding);
+  const topPadding = Math.max(BOARD_TOP_PADDING, Math.round(startY));
+  const maxSectionY = topPadding + BOARD_AVAILABLE_HEIGHT;
+  const availableHeight = BOARD_AVAILABLE_HEIGHT;
   const measured = steps.map(measureStep);
 
-  // Keep the most recent window of steps that fits within the remaining board height
+  // Keep the most recent window of steps that fits within the tutor section height
   const selected: MeasuredStep[] = [];
   let usedHeight = 0;
   for (let i = measured.length - 1; i >= 0; i--) {
@@ -225,7 +226,7 @@ export function buildWhiteboardFromSteps(
         elements.push(captionEl);
         cursorY += item.captionHeight;
       }
-      const clampedHeight = Math.max(120, Math.min(item.bodyHeight, BOARD_MAX_Y - cursorY));
+      const clampedHeight = Math.max(120, Math.min(item.bodyHeight, maxSectionY - cursorY));
       const imgEl: PPTImageElement = {
         id: step.id,
         type: 'image',
@@ -244,7 +245,7 @@ export function buildWhiteboardFromSteps(
     }
 
     if (step.kind === 'latex') {
-      const clampedHeight = Math.max(44, Math.min(item.bodyHeight, BOARD_MAX_Y - cursorY));
+      const clampedHeight = Math.max(44, Math.min(item.bodyHeight, maxSectionY - cursorY));
       const latexEl: PPTLatexElement = {
         id: step.id,
         type: 'latex',
@@ -265,7 +266,7 @@ export function buildWhiteboardFromSteps(
 
     const isHeading = step.kind === 'heading';
     const fontSize = isHeading ? 21 : 17;
-    const clampedHeight = Math.max(36, Math.min(item.bodyHeight, BOARD_MAX_Y - cursorY));
+    const clampedHeight = Math.max(36, Math.min(item.bodyHeight, maxSectionY - cursorY));
 
     const textEl: PPTTextElement = {
       id: step.id,
@@ -283,10 +284,11 @@ export function buildWhiteboardFromSteps(
     cursorY += clampedHeight + item.gapAfter;
   }
 
+  const requiredRatio = (cursorY + BOARD_BOTTOM_PADDING) / BOARD_VIEWPORT_SIZE;
   return {
     id: whiteboardId,
     viewportSize: BOARD_VIEWPORT_SIZE,
-    viewportRatio: BOARD_VIEWPORT_RATIO,
+    viewportRatio: Math.max(BOARD_VIEWPORT_RATIO, requiredRatio),
     elements,
   };
 }

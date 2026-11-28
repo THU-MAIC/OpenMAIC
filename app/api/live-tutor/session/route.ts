@@ -114,10 +114,13 @@ export async function POST(req: NextRequest) {
       if (liveModelAuthorized) {
         try {
           const tokenResp = await proxyFetch(
-            `${GOOGLE_DEFAULT_ORIGIN}/v1alpha/auth_tokens?key=${encodeURIComponent(resolved.apiKey)}`,
+            `${GOOGLE_DEFAULT_ORIGIN}/v1alpha/auth_tokens`,
             {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': resolved.apiKey,
+              },
               signal: req.signal,
               body: JSON.stringify({
                 uses: 1,

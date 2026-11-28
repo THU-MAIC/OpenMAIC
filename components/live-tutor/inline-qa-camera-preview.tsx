@@ -116,15 +116,14 @@ function InlineQACameraLiveBody({
           ? []
           : (currentProjected?.elements ?? []).filter((el) => !el.id.startsWith('lt-wb-'));
 
-        // Offset tutor steps below existing classroom elements so they never overlap
+        // Always retain existing classroom elements (unless clear_whiteboard was called)
+        // and append tutor steps cleanly below them, expanding the sheet ratio if needed.
         let occupiedBottom = 0;
         for (const el of preservedElements) {
           const elHeight = 'height' in el && typeof el.height === 'number' ? el.height : 40;
           occupiedBottom = Math.max(occupiedBottom, el.top + elHeight);
         }
-        const canAppendBelow = occupiedBottom > 0 && occupiedBottom + 16 <= 420;
-        const keptPreserved = canAppendBelow ? preservedElements : [];
-        const startY = canAppendBelow ? occupiedBottom + 16 : undefined;
+        const startY = occupiedBottom > 0 ? occupiedBottom + 16 : undefined;
         const tutorWb = buildWhiteboardFromSteps(
           nextSteps,
           `classroom-live-wb-${stageId}`,
@@ -135,11 +134,12 @@ function InlineQACameraLiveBody({
           whiteboardOpen: true,
           runtimeWhiteboardProjection: {
             stageId,
-            // Preserve the existing persisted sequence without fabricating N+1 so Pi updates are never suppressed
-            lastSeq: sameStageProjection ? sameStageProjection.lastSeq : null,
+            // Use 0 (not null, not N+1) on fresh boards so getDisplayedWhiteboard() treats
+            // the tutor projection as authoritative without ever suppressing Pi's seq >= 1.
+            lastSeq: sameStageProjection?.lastSeq ?? 0,
             whiteboard: {
               ...tutorWb,
-              elements: [...keptPreserved, ...tutorWb.elements],
+              elements: [...preservedElements, ...tutorWb.elements],
             },
           },
           runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
