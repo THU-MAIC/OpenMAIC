@@ -227,6 +227,13 @@ export function HelpMeLearnView() {
     setActiveStage('solve');
   }, []);
 
+  // Stop any active Read Aloud narration when navigating between theory slides
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, [slideIndex]);
+
   const resetToTopicPicker = () => {
     planAbortRef.current?.abort();
     planAbortRef.current = null;

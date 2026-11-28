@@ -119,12 +119,16 @@ export function useLiveCameraTutor({
     problem?: PracticeProblem | null;
     sceneContext?: string;
     language?: string;
+    whiteboardStepsText?: string[];
   }) =>
     [
       cur.language ? `Always speak and write whiteboard steps in locale "${cur.language}".` : '',
       cur.topic ? `Current topic: ${cur.topic}.` : '',
       cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
       cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(-1800)}` : '',
+      cur.whiteboardStepsText?.length
+        ? `Current whiteboard items:\n- ${cur.whiteboardStepsText.slice(-8).join('\n- ')}`
+        : 'Current whiteboard items: (empty)',
     ]
       .filter(Boolean)
       .join('\n');
@@ -691,20 +695,14 @@ export function useLiveCameraTutor({
         }
         return;
       }
-      const cur = latestPropsRef.current;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
-        'Always follow the most recent active locale, topic, problem, and lesson context provided in user context messages.',
+        'Always follow the most recent active locale, topic, problem, whiteboard state, and lesson context provided in user context messages.',
         'Never claim you can see a notebook or written work unless it is actually visible in the camera frame; if you do not see a notebook yet, kindly ask the student to point the camera at their notebook.',
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
         'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters). Whenever a visual sketch (labeled right triangle, angle arc, light rays, forces, coordinate axes, shapes, or arrows) helps explain the concept, call draw_whiteboard_diagram with a clean SVG (viewBox="0 0 600 340", white/light background, clear dark strokes and readable labels).',
-        cur.whiteboardStepsText?.length
-          ? `Current whiteboard items:\n- ${cur.whiteboardStepsText.slice(-8).join('\n- ')}`
-          : '',
-      ]
-        .filter(Boolean)
-        .join('\n');
+      ].join('\n');
 
       ws.send(
         JSON.stringify({
@@ -1368,13 +1366,21 @@ export function useLiveCameraTutor({
     }
   }, [canShareScreen, facingMode, startCameraStream, stopSession, videoSource]);
 
-  // Push updated slide/quiz/lesson/locale context into an active Gemini Live session,
+  const whiteboardStepsKey = (whiteboardStepsText ?? []).slice(-8).join('\n');
+
+  // Push updated slide/quiz/lesson/locale/whiteboard context into an active Gemini Live session,
   // deferring while Gemini is mid-turn so clientContent never interrupts active speech.
   useEffect(() => {
     if (status !== 'live' || transportMode !== 'gemini-live') return;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const nextContext = buildLiveSceneContextText({ topic, problem, sceneContext, language });
+    const nextContext = buildLiveSceneContextText({
+      topic,
+      problem,
+      sceneContext,
+      language,
+      whiteboardStepsText: latestPropsRef.current.whiteboardStepsText,
+    });
     if (!nextContext || nextContext === lastSentSceneKeyRef.current) {
       pendingLiveContextRef.current = null;
       return;
@@ -1384,7 +1390,16 @@ export function useLiveCameraTutor({
       return;
     }
     sendLiveContextUpdate(ws, nextContext);
-  }, [language, problem, sceneContext, sendLiveContextUpdate, status, topic, transportMode]);
+  }, [
+    language,
+    problem,
+    sceneContext,
+    sendLiveContextUpdate,
+    status,
+    topic,
+    transportMode,
+    whiteboardStepsKey,
+  ]);
 
   const bindVideoElement = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
