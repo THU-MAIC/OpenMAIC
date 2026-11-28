@@ -58,6 +58,7 @@ import { CHATGPT_USAGE_SETTINGS_URL } from '@/lib/chatgpt-plan/shared';
 import { ChatGPTPlanError } from '@/lib/server/chatgpt-plan/errors';
 import { chatGPTPlanLanguageModel, listChatGPTPlanModels } from '@/lib/server/chatgpt-plan/model';
 import { ProviderQuotaExhaustedError } from '@/lib/server/provider-quota';
+import { publicProviderFailure } from '@/lib/server/llm-error-response';
 
 const sse = (events: Record<string, unknown>[], headers: Record<string, string> = {}) =>
   new Response(
@@ -580,9 +581,14 @@ describe('ChatGPT plan models', () => {
         : sse(textEvents('Eval result'));
     const result = await resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:plan-model');
     expect((await generateText({ model: result.model, prompt: 'Hello' })).text).toBe('Eval result');
-    await expect(resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:hidden')).rejects.toThrow(
-      /unavailable for the connected account/,
+    const missing = await resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:hidden').catch(
+      publicProviderFailure,
     );
+    expect(missing).toMatchObject({
+      message: expect.stringContaining('unavailable for the connected account'),
+      reason: 'model-unavailable',
+      messageKey: 'settings.chatgptPlan.modelUnavailable',
+    });
   });
 
   it.each([

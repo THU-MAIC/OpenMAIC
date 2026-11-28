@@ -64,7 +64,7 @@ export async function runPiDirectorLoop(opts: {
   let totalActions = 0;
   let agentHadContent = false;
   // A teacher/assistant call failed or stayed empty. It only widens cue_user and
-  // drives a fixed client notice; it never stops the Director.
+  // drives a fixed client notice for an unclassified failure.
   let teachingAgentFailedOrEmpty = false;
   let userCued = false;
   let sessionClosed = false;
@@ -171,7 +171,12 @@ export async function runPiDirectorLoop(opts: {
           {
             ...options,
             onError: (error) => {
-              if (agent?.role === 'teacher' || agent?.role === 'assistant') teachingError = error;
+              if (
+                (agent?.role === 'teacher' || agent?.role === 'assistant') &&
+                publicProviderFailure(error)
+              ) {
+                teachingError = error;
+              }
             },
           },
           agent,
@@ -295,7 +300,7 @@ export async function runPiDirectorLoop(opts: {
         resultPreview,
         details: context.result.details,
       });
-      const terminate = sessionClosed || userCued;
+      const terminate = sessionClosed || userCued || teachingError !== undefined;
       if (!terminate && !evidenceError) return undefined;
       return {
         ...(terminate ? { terminate: true } : {}),
@@ -318,8 +323,7 @@ export async function runPiDirectorLoop(opts: {
     // Pi settles provider failures in state rather than rejecting prompt(). Let
     // the route log and stream the actual reason instead of emitting a normal done.
     if (director.state.errorMessage) throw directorError ?? new Error(director.state.errorMessage);
-    if (!agentHadContent && teachingAgentFailedOrEmpty && publicProviderFailure(teachingError))
-      throw teachingError;
+    if (teachingError !== undefined) throw teachingError;
 
     if (!sessionClosed && !userCued && hasAgentContent()) {
       await cueUser({ fromAgentId: piAgentResponses.at(-1)?.agentId });

@@ -227,9 +227,14 @@ describe('Pi Director completion and request cancellation', () => {
         .join(''),
     ).toContain('All steps explained');
   });
-  it.each(['legacy', 'native'] as const)(
-    'surfaces a %s teaching provider refusal when no classroom answer followed',
-    async (mode) => {
+  it.each([
+    ['legacy', false],
+    ['native', false],
+    ['legacy', true],
+    ['native', true],
+  ] as const)(
+    'surfaces a %s teaching provider refusal and stops the turn (partial answer: %s)',
+    async (mode, partial) => {
       let turn = 0;
       const error = markPublicProviderFailure(
         new Error('Reconnect in settings'),
@@ -238,11 +243,18 @@ describe('Pi Director completion and request cancellation', () => {
         'settings.chatgptPlan.reauthRequired',
       );
       mocks.streamLLM.mockImplementation((_options, source) => {
-        if (source !== 'pi-chat-director') return result([{ type: 'error', error }]);
+        if (source !== 'pi-chat-director')
+          return result([
+            ...(partial ? [{ type: 'text-delta', text: 'One example is' }] : []),
+            { type: 'error', error },
+          ]);
         return ++turn === 1 ? result([invoke('d1'), finish('tool-calls')]) : speech('done');
       });
       const events: StatelessEvent[] = [];
       await runRoute(events, mode);
+      expect(
+        events.some((e) => e.type === 'text_delta' && e.data.content === 'One example is'),
+      ).toBe(partial);
       expect(events).toContainEqual({
         type: 'error',
         data: expect.objectContaining({
@@ -251,6 +263,7 @@ describe('Pi Director completion and request cancellation', () => {
         }),
       });
       expect(events.some((event) => event.type === 'done')).toBe(false);
+      expect(turn).toBe(1);
     },
   );
   it.each(['legacy', 'native'] as const)(

@@ -19,6 +19,8 @@ export interface ServerLanguageModelAdapter {
   languageModel(model: AccountModel): Promise<LanguageModel>;
   /** The owner's endpoint for refreshing the catalogue in settings. */
   modelsUrl: string;
+  /** Recovery text when an assigned model disappears from this account. */
+  modelUnavailableKey: string;
   /** The models the signed-in account offers. */
   listModels(): Promise<AccountModel[]>;
 }
@@ -29,6 +31,7 @@ const chatGPTPlanModels = () => import('@/lib/server/chatgpt-plan/model');
 const ADAPTERS: Record<string, ServerLanguageModelAdapter> = {
   'chatgpt-plan': {
     modelsUrl: CHATGPT_PLAN_API.models,
+    modelUnavailableKey: 'settings.chatgptPlan.modelUnavailable',
     problem() {
       const availability = chatGPTPlanAvailability();
       if (availability.available) return undefined;
@@ -72,6 +75,7 @@ export async function serverAdapterModel(
       ),
       400,
       'model-unavailable',
+      adapter.modelUnavailableKey,
     );
   return {
     model: await adapter.languageModel(listed),
