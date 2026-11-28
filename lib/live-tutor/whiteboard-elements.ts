@@ -126,10 +126,13 @@ export function applyWhiteboardOps(
 
 const BOARD_VIEWPORT_SIZE = 1000;
 const BOARD_VIEWPORT_RATIO = 0.5625;
+const BOARD_MAX_VIEWPORT_RATIO = 1;
 const BOARD_HEIGHT = Math.floor(BOARD_VIEWPORT_SIZE * BOARD_VIEWPORT_RATIO); // 562
+const BOARD_MAX_SUPPORTED_HEIGHT = Math.floor(BOARD_VIEWPORT_SIZE * BOARD_MAX_VIEWPORT_RATIO); // 1000
 const BOARD_TOP_PADDING = 28;
 const BOARD_BOTTOM_PADDING = 20;
 const BOARD_MAX_Y = BOARD_HEIGHT - BOARD_BOTTOM_PADDING; // 542
+const BOARD_MAX_SUPPORTED_Y = BOARD_MAX_SUPPORTED_HEIGHT - BOARD_BOTTOM_PADDING; // 980
 const BOARD_AVAILABLE_HEIGHT = BOARD_MAX_Y - BOARD_TOP_PADDING; // 514
 
 interface MeasuredStep {
@@ -176,9 +179,16 @@ export function buildWhiteboardFromSteps(
   whiteboardId = 'live-tutor-whiteboard',
   startY = BOARD_TOP_PADDING,
 ): Whiteboard {
-  const topPadding = Math.max(BOARD_TOP_PADDING, Math.round(startY));
-  const maxSectionY = topPadding + BOARD_AVAILABLE_HEIGHT;
-  const availableHeight = BOARD_AVAILABLE_HEIGHT;
+  // Keep generated sheets within the renderer's supported ratio range (<= 1.0, i.e. <= 1000px tall)
+  const topPadding = Math.max(
+    BOARD_TOP_PADDING,
+    Math.min(Math.round(startY), BOARD_MAX_SUPPORTED_Y - 120),
+  );
+  const availableHeight = Math.max(
+    120,
+    Math.min(BOARD_AVAILABLE_HEIGHT, BOARD_MAX_SUPPORTED_Y - topPadding),
+  );
+  const maxSectionY = Math.min(topPadding + availableHeight, BOARD_MAX_SUPPORTED_Y);
   const measured = steps.map(measureStep);
 
   // Keep the most recent window of steps that fits within the tutor section height
@@ -288,7 +298,10 @@ export function buildWhiteboardFromSteps(
   return {
     id: whiteboardId,
     viewportSize: BOARD_VIEWPORT_SIZE,
-    viewportRatio: Math.max(BOARD_VIEWPORT_RATIO, requiredRatio),
+    viewportRatio: Math.min(
+      BOARD_MAX_VIEWPORT_RATIO,
+      Math.max(BOARD_VIEWPORT_RATIO, requiredRatio),
+    ),
     elements,
   };
 }

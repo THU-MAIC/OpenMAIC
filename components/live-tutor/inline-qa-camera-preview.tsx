@@ -134,9 +134,10 @@ function InlineQACameraLiveBody({
           whiteboardOpen: true,
           runtimeWhiteboardProjection: {
             stageId,
-            // Use 0 (not null, not N+1) on fresh boards so getDisplayedWhiteboard() treats
-            // the tutor projection as authoritative without ever suppressing Pi's seq >= 1.
-            lastSeq: sameStageProjection?.lastSeq ?? 0,
+            // Use -1 on fresh boards (first durable runtime record is seq 0) so
+            // getDisplayedWhiteboard() treats it as authoritative (-1 !== null)
+            // without ever claiming Pi's seq 0 or N+1.
+            lastSeq: sameStageProjection?.lastSeq ?? -1,
             whiteboard: {
               ...tutorWb,
               elements: [...preservedElements, ...tutorWb.elements],
