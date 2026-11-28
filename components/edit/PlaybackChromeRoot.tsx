@@ -1932,19 +1932,21 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       }
     }, [cameraTutorMounted, desktopCameraTabActive, mobile]);
 
-    const toggleMobileCameraTutor = useCallback(() => {
-      setMobileCameraTutorOpen((prev) => {
-        const next = !prev;
-        if (next) {
-          setCameraTutorMounted(true);
-        } else {
-          // Manual close on mobile unmounts the tutor so active streams/WebSocket stop immediately
-          setCameraTutorMounted(false);
-          setDesktopCameraTabActive(false);
-        }
-        return next;
-      });
+    const closeMobileCameraTutor = useCallback(() => {
+      setMobileCameraTutorOpen(false);
+      setCameraTutorMounted(false);
+      setDesktopCameraTabActive(false);
+      chatAreaRef.current?.switchToTab('chat');
     }, []);
+
+    const toggleMobileCameraTutor = useCallback(() => {
+      if (mobileCameraTutorOpen) {
+        closeMobileCameraTutor();
+      } else {
+        setCameraTutorMounted(true);
+        setMobileCameraTutorOpen(true);
+      }
+    }, [closeMobileCameraTutor, mobileCameraTutorOpen]);
     const handleActivateCameraLive = useCallback(() => {
       if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
         const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
@@ -2557,9 +2559,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           portalTarget={!mobile ? cameraTabHost : isPresenting ? stageRef.current : null}
           onClose={() => {
             if (mobile) {
-              setMobileCameraTutorOpen(false);
-              setCameraTutorMounted(false);
-              setDesktopCameraTabActive(false);
+              closeMobileCameraTutor();
             } else {
               chatAreaRef.current?.switchToTab('chat');
             }

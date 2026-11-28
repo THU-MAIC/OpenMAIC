@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
@@ -66,6 +66,17 @@ const STANDALONE_WHITEBOARD_CONTROLLER: SceneDataController = {
 export function HelpMeLearnView() {
   const { t, locale } = useI18n();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const planAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      planAbortRef.current?.abort();
+      planAbortRef.current = null;
+    };
+  }, []);
 
   const [topicInput, setTopicInput] = useState('');
   const [mode, setMode] = useState<LearningMode>('theory-then-solve');
@@ -124,6 +135,10 @@ export function HelpMeLearnView() {
 
   const handleStartLearning = async () => {
     if (!topicInput.trim() && !attachedImage) return;
+    planAbortRef.current?.abort();
+    const controller = new AbortController();
+    planAbortRef.current = controller;
+
     setLoadingPlan(true);
     setPlanError(null);
 
@@ -131,6 +146,7 @@ export function HelpMeLearnView() {
       const resp = await fetch('/api/help-me-learn/plan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           topic: topicInput.trim(),
           mode,
@@ -143,6 +159,7 @@ export function HelpMeLearnView() {
         plan?: HelpMeLearnPlan;
         error?: string | { message?: string };
       };
+      if (!mountedRef.current || controller.signal.aborted) return;
       if (!resp.ok) {
         const errMsg =
           typeof json.error === 'string' ? json.error : json.error?.message || `HTTP ${resp.status}`;
@@ -158,9 +175,15 @@ export function HelpMeLearnView() {
         generated.mode === 'theory-then-solve' && generated.slides.length > 0 ? 'theory' : 'solve',
       );
     } catch (err) {
+      if (!mountedRef.current || controller.signal.aborted) return;
       setPlanError(err instanceof Error ? err.message : 'Failed to create study session');
     } finally {
-      setLoadingPlan(false);
+      if (planAbortRef.current === controller) {
+        planAbortRef.current = null;
+        if (mountedRef.current) {
+          setLoadingPlan(false);
+        }
+      }
     }
   };
 
@@ -191,9 +214,12 @@ export function HelpMeLearnView() {
   }, []);
 
   const resetToTopicPicker = () => {
+    planAbortRef.current?.abort();
+    planAbortRef.current = null;
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
+    setLoadingPlan(false);
     setPlan(null);
     setWbSteps([]);
     setPlanError(null);
