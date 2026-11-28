@@ -157,12 +157,22 @@ const providerVoicesSchema = z
     'voice ids must be unique',
   );
 
-export const providerSchema = z
+const modelEntrySchema = z.union([
+  z.string().trim().min(1),
+  z
+    .object({
+      id: z.string().trim().min(1),
+      vision: z.boolean().optional(),
+    })
+    .strict(),
+]);
+
+const rawProviderSchema = z
   .object({
     preset: z.string().min(1),
     apiKey: z.string().min(1).optional(),
     baseUrl: z.url().optional(),
-    models: z.array(z.string().trim().min(1)).min(1).optional(),
+    models: z.array(modelEntrySchema).min(1).optional(),
     /**
      * Context windows the configuration declares for chat models the built-in
      * catalogue does not describe (or, for a preset that distrusts the
@@ -171,6 +181,14 @@ export const providerSchema = z
      * context budget check, never sent on the wire.
      */
     modelContextWindows: z.record(z.string().trim().min(1), z.number().int().positive()).optional(),
+    /**
+     * Opt-in vision capability flags declared for chat models the built-in
+     * catalogue does not describe (or, for a preset that distrusts the
+     * catalogue, describes only by a name collision). Catalogue metadata still
+     * wins when the catalogue knows the model; unknown stays unsupported.
+     * Also populated from `{ id, vision }` entries in `models`.
+     */
+    modelVision: z.record(z.string().trim().min(1), z.boolean()).optional(),
     /** HTTP proxy for this provider's requests. */
     proxy: z.url().optional(),
     /** Multi-part credentials for vendors that do not use a single key. */
@@ -190,6 +208,47 @@ export const providerSchema = z
     unsupportedCapabilities: z.array(z.enum(SLOT_CAPABILITIES)).min(1).optional(),
   })
   .strict();
+
+export const providerSchema = rawProviderSchema.transform((provider, ctx) => {
+  const { models: rawModels, modelVision: rawVision, ...rest } = provider;
+  let models: string[] | undefined;
+  const visionEntries: [string, boolean][] = rawVision ? Object.entries(rawVision) : [];
+  const seenVision = new Map<string, boolean>(visionEntries);
+
+  if (rawModels) {
+    models = [];
+    for (let i = 0; i < rawModels.length; i++) {
+      const entry = rawModels[i];
+      if (typeof entry === 'string') {
+        models.push(entry);
+      } else {
+        models.push(entry.id);
+        if (entry.vision !== undefined) {
+          const prev = seenVision.get(entry.id);
+          if (prev !== undefined && prev !== entry.vision) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['models', i, 'vision'],
+              message: `conflicting vision declaration for model "${entry.id}"`,
+            });
+            return z.NEVER;
+          }
+          if (prev === undefined) {
+            seenVision.set(entry.id, entry.vision);
+            visionEntries.push([entry.id, entry.vision]);
+          }
+        }
+      }
+    }
+  }
+
+  const modelVision = visionEntries.length ? Object.fromEntries(visionEntries) : undefined;
+  return {
+    ...rest,
+    ...(models ? { models } : {}),
+    ...(modelVision ? { modelVision } : {}),
+  };
+});
 
 /** What `lock` names: the slots fixed for everyone with their subtrees, or every slot. */
 const lockSchema = z.union([z.literal('all'), z.array(z.string())], {
@@ -391,6 +450,23 @@ function crossCheck(
           if (!served.has(modelId)) {
             issues.push(
               `${windowsAt}: ${shown(modelId, windowsAt)} is not a chat model this ` +
+                'provider serves; add it to models or reference it from a slot',
+            );
+          }
+        }
+      }
+    }
+    const declaredVision = provider.modelVision;
+    if (declaredVision && Object.keys(declaredVision).length) {
+      const visionAt = `providers.${id}.modelVision`;
+      if (!preset.capabilities.chat) {
+        issues.push(`${visionAt}: only chat providers support declared vision capabilities`);
+      } else {
+        const served = new Set(deploymentAuthorizedModels(config, id, 'chat'));
+        for (const modelId of Object.keys(declaredVision)) {
+          if (!served.has(modelId)) {
+            issues.push(
+              `${visionAt}: ${shown(modelId, visionAt)} is not a chat model this ` +
                 'provider serves; add it to models or reference it from a slot',
             );
           }

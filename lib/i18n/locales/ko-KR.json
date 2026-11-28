@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "예: 1000000",
     "contextWindowHint": "선택 사항. 내장 카탈로그에 없는 모델에만 적용되며, 압축과 컨텍스트 예산 검사에 사용됩니다. 비워 두면 기본값을 사용합니다.",
     "contextWindowInvalid": "양의 정수(token 수)를 입력하거나 비워 두세요.",
+    "supportsImages": "이미지 지원",
+    "supportsImagesHint": "선택 사항. 내장 카탈로그에 없는 모델에만 적용되며, 에이전트가 장면 미리보기 등의 이미지를 볼 수 있게 합니다.",
     "modelSelectedViaVoice": "모델은 음성 선택으로 결정됩니다",
     "modelServices": {
       "configured": "구성됨",

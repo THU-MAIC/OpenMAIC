@@ -82,11 +82,18 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
     [view, apply, entry, t],
   );
 
-  const saveModels = (ids: string[] | null, windows?: Record<string, number> | null) =>
+  const saveModels = (
+    ids: string[] | null,
+    windows?: Record<string, number> | null,
+    visions?: Record<string, boolean> | null,
+  ) =>
     save({
       models: ids && ids.length ? ids : null,
       ...(windows !== undefined
         ? { modelContextWindows: windows && Object.keys(windows).length ? windows : null }
+        : {}),
+      ...(visions !== undefined
+        ? { modelVision: visions && Object.keys(visions).length ? visions : null }
         : {}),
     });
 
@@ -499,23 +506,38 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
             ? provider.modelContextWindows[editing.id]
             : undefined
         }
-        onSave={async (id, contextWindow) => {
+        vision={
+          editing?.id && provider?.modelVision && Object.hasOwn(provider.modelVision, editing.id)
+            ? provider.modelVision[editing.id]
+            : undefined
+        }
+        onSave={async (id, contextWindow, vision) => {
           const ids = models.map((model) => model.id);
-          // The declared windows travel with the list: the edited model's entry
-          // moves to its (possibly new) id; the server prunes keys the list no
-          // longer holds. Build from entries so no model id (including
-          // '__proto__') can invoke a prototype setter or delete the prototype.
+          // The declared windows and vision flags travel with the list: the
+          // edited model's entry moves to its (possibly new) id; the server
+          // prunes keys the list no longer holds. Build from entries so no
+          // model id (including '__proto__') can invoke a prototype setter or
+          // delete the prototype.
           const prevWindows = provider?.modelContextWindows ?? {};
-          const baseEntries = Object.entries(prevWindows).filter(([k]) => k !== editing?.id);
+          const baseWindowEntries = Object.entries(prevWindows).filter(([k]) => k !== editing?.id);
           const windowEntries: [string, number][] =
-            contextWindow !== undefined ? [...baseEntries, [id, contextWindow]] : baseEntries;
+            contextWindow !== undefined
+              ? [...baseWindowEntries, [id, contextWindow]]
+              : baseWindowEntries;
           const windows = Object.fromEntries(windowEntries);
+
+          const prevVisions = provider?.modelVision ?? {};
+          const baseVisionEntries = Object.entries(prevVisions).filter(([k]) => k !== editing?.id);
+          const visionEntries: [string, boolean][] =
+            vision !== undefined ? [...baseVisionEntries, [id, vision]] : baseVisionEntries;
+          const visions = Object.fromEntries(visionEntries);
+
           if (editing?.index === null || editing === null) {
             if (!ids.includes(id)) ids.push(id);
           } else {
             ids[editing.index] = id;
           }
-          await saveModels([...new Set(ids)], windows);
+          await saveModels([...new Set(ids)], windows, visions);
           setEditing(null);
         }}
       />

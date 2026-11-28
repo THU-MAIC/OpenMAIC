@@ -78,6 +78,7 @@ const bodySchema = z
             .record(z.string().min(1), z.number().int().positive())
             .nullable()
             .optional(),
+          modelVision: z.record(z.string().min(1), z.boolean()).nullable().optional(),
         })
         .strict(),
       z.object({ kind: z.literal('remove-provider'), id }).strict(),

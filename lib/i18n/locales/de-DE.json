@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "z. B. 1000000",
     "contextWindowHint": "Optional. Gilt nur für Modelle, die der integrierte Katalog nicht kennt; Verdichtung und Kontextbudget-Prüfung planen damit. Leer lassen für den Standardwert.",
     "contextWindowInvalid": "Geben Sie eine positive ganze Anzahl an Tokens ein, oder lassen Sie das Feld leer.",
+    "supportsImages": "Unterstützt Bilder",
+    "supportsImagesHint": "Optional. Gilt nur für Modelle außerhalb des integrierten Katalogs; ermöglicht dem Agenten, Bilder wie Szenenvorschauen zu sehen.",
     "modelSelectedViaVoice": "Die Stimmauswahl bestimmt das Modell",
     "modelServices": {
       "configured": "Konfiguriert",

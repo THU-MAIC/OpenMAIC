@@ -96,6 +96,12 @@ export interface ResolvedModelTarget {
    * (`catalogue: false`) takes this over a name-colliding catalogue hit.
    */
   declaredContextWindow?: number;
+  /**
+   * Opt-in vision flag the configuration declared for this chat model
+   * (`modelVision` or `{ id, vision }` on the provider). Catalogue metadata
+   * still wins when the catalogue knows the model; unknown stays unsupported.
+   */
+  declaredVision?: boolean;
 }
 
 export interface RequirementCheck {
@@ -282,6 +288,12 @@ function resolveTarget(
     provider.modelContextWindows !== undefined &&
     Object.hasOwn(provider.modelContextWindows, effectiveModel)
       ? { declaredContextWindow: provider.modelContextWindows[effectiveModel] }
+      : {}),
+    ...(capability === 'chat' &&
+    effectiveModel !== undefined &&
+    provider.modelVision !== undefined &&
+    Object.hasOwn(provider.modelVision, effectiveModel)
+      ? { declaredVision: provider.modelVision[effectiveModel] }
       : {}),
   };
 }

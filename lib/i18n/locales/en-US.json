@@ -2063,6 +2063,8 @@
     "contextWindowTokensPlaceholder": "e.g., 1000000",
     "contextWindowHint": "Optional. Applies only to models the built-in catalogue does not know; compaction and the context budget check plan with it. Leave empty for the default.",
     "contextWindowInvalid": "Enter a positive whole number of tokens, or leave it empty.",
+    "supportsImages": "Supports images",
+    "supportsImagesHint": "Optional. Applies only to models the built-in catalogue does not know; lets the agent see images such as scene previews.",
     "modelSelectedViaVoice": "Model is determined by voice selection",
     "modelServices": {
       "configured": "Configured",

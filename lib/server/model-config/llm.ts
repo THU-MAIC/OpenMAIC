@@ -110,19 +110,30 @@ export async function languageModelFor(
     proxy: target.proxy,
     fetchImpl: userEndpoint ? clientBaseUrlLlmFetch : fetchWithRedirectValidation,
   });
-  // A context window the configuration declared for a model the catalogue may
-  // not describe. The catalogue still wins where it has a value; the
-  // declaration fills the gap when the row exists but omits contextWindow, and
-  // wins outright on a preset that distrusts the catalogue.
-  const declared = target.declaredContextWindow;
-  const resolvedInfo =
-    declared === undefined
-      ? modelInfo
-      : modelInfo === null
-        ? { id: modelId, name: modelId, contextWindow: declared }
-        : target.catalogue === false || modelInfo.contextWindow === undefined
-          ? { ...modelInfo, contextWindow: declared }
-          : modelInfo;
+  // Per-model overrides declared for models the catalogue may not describe.
+  // The catalogue still wins where it has a value; declarations fill gaps when
+  // the row exists without the field, and win outright on a preset that
+  // distrusts the catalogue.
+  const declaredWindow = target.declaredContextWindow;
+  const declaredVision = target.declaredVision;
+  let resolvedInfo = modelInfo;
+  if (declaredWindow !== undefined) {
+    if (resolvedInfo === null) {
+      resolvedInfo = { id: modelId, name: modelId, contextWindow: declaredWindow };
+    } else if (target.catalogue === false || resolvedInfo.contextWindow === undefined) {
+      resolvedInfo = { ...resolvedInfo, contextWindow: declaredWindow };
+    }
+  }
+  if (declaredVision !== undefined) {
+    if (resolvedInfo === null) {
+      resolvedInfo = { id: modelId, name: modelId, capabilities: { vision: declaredVision } };
+    } else if (target.catalogue === false || resolvedInfo.capabilities?.vision === undefined) {
+      resolvedInfo = {
+        ...resolvedInfo,
+        capabilities: { ...resolvedInfo.capabilities, vision: declaredVision },
+      };
+    }
+  }
   return {
     model,
     modelInfo: resolvedInfo,
