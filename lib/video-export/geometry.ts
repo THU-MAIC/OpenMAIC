@@ -3,10 +3,9 @@
  *
  * Resolves a slide element's percentage geometry (0–100 space) so effect
  * segments (spotlight/laser) can carry the target's position into the IR. This
- * is a faithful reimplementation of the runtime's calculation — the app copy
- * (`lib/utils/geometry.ts`) imports a host-app path and the packaged copy
- * (`@openmaic/renderer`) pulls a render backend, so both are unreachable under
- * this module's purity boundary. The math is ~15 lines and must stay identical
+ * is a faithful reimplementation of the runtime's calculation — the packaged
+ * copy (`@openmaic/renderer`) pulls a render backend, so it is unreachable
+ * under this module's purity boundary. The math is ~15 lines and must stay identical
  * to the runtime's, so it is mirrored here rather than imported.
  *
  * Like the runtime, the base is the slide's own `viewportSize`/`viewportRatio`,

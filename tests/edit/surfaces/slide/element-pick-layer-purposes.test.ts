@@ -61,11 +61,10 @@ const scene = {
 } as unknown as Scene;
 
 /**
- * A LEGACY editor host: a `#editable-element-{id}` wrapper carrying only
- * `data-maic-element-id`, with the painted box on `.element-content`. This is
- * the DEFAULT canvas, and before the shared DOM contract it emitted neither the
- * attribute the hit-test looks for nor a paint node the layer knew about — so
- * picking silently found nothing on it.
+ * A host without the package's DOM structure: a `#editable-element-{id}`
+ * wrapper carrying only `data-maic-element-id`, with the painted box on
+ * `.element-content`. Picking must still find the element and measure its
+ * paint node rather than the wrapper.
  */
 function mountLegacyHost(elementId: string, top: number) {
   const host = document.createElement('div');

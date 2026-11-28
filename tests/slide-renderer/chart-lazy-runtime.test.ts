@@ -16,7 +16,7 @@ const probe = vi.hoisted(() => ({
   reject: (_error: unknown) => {},
 }));
 
-vi.mock('@/components/slide-renderer/components/element/ChartElement/chart-runtime', () => ({
+vi.mock('@/packages/@openmaic/renderer/src/elements/chart/chartRuntime', () => ({
   loadChartRuntime: () =>
     new Promise((resolve, reject) => {
       probe.resolve = resolve;
@@ -24,13 +24,13 @@ vi.mock('@/components/slide-renderer/components/element/ChartElement/chart-runti
     }),
 }));
 
-import { Chart } from '@/components/slide-renderer/components/element/ChartElement/Chart';
+import { Chart } from '@/packages/@openmaic/renderer/src/elements/chart/Chart';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
-const instance = { setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn() };
+const instance = { setOption: vi.fn(), resize: vi.fn(), dispose: vi.fn(), on: vi.fn() };
 const runtime = { init: vi.fn(() => instance) };
 const data = (label: string): ChartData => ({
   labels: [label],

@@ -4,8 +4,10 @@ import { parseHTML } from 'linkedom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SceneProvider, type SceneDataController } from '@/lib/contexts/scene-context';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
-import { PlaybackScreenCanvas } from '@/components/slide-renderer/Editor/ScreenCanvas';
-import { getPlaybackImageState } from '@/components/slide-renderer/Editor/RendererScreenCanvas';
+import {
+  RendererScreenCanvas,
+  getPlaybackImageState,
+} from '@/components/slide-renderer/Editor/RendererScreenCanvas';
 import type { SlideContent } from '@/lib/types/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { setModelSettingsViewForTests } from '../helpers/model-settings-view';
@@ -56,47 +58,21 @@ const TestSceneProvider = SceneProvider as ComponentType<{
   children?: ReactNode;
 }>;
 
-describe('PlaybackScreenCanvas', () => {
-  const flag = 'NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED';
-  let original: string | undefined;
-
+describe('RendererScreenCanvas', () => {
   beforeEach(() => {
-    original = process.env[flag];
     useMediaGenerationStore.setState({ tasks: {} });
   });
 
   afterEach(() => {
     setModelSettingsViewForTests(null);
-    if (original === undefined) {
-      delete process.env[flag];
-    } else {
-      process.env[flag] = original;
-    }
   });
 
-  it('uses the legacy playback renderer when disabled', () => {
-    process.env[flag] = 'false';
-
+  it('renders playback through @openmaic/renderer', () => {
     const html = renderToStaticMarkup(
       createElement(
         TestSceneProvider,
         { controller: controller as SceneDataController },
-        createElement(PlaybackScreenCanvas),
-      ),
-    );
-
-    expect(html).toContain('class="screen-element"');
-    expect(html).toContain('id="screen-element-title-1"');
-    expect(html).not.toContain('class="slide-element"');
-  });
-
-  it('uses @openmaic/renderer by default', () => {
-    delete process.env[flag];
-    const html = renderToStaticMarkup(
-      createElement(
-        TestSceneProvider,
-        { controller: controller as SceneDataController },
-        createElement(PlaybackScreenCanvas),
+        createElement(RendererScreenCanvas),
       ),
     );
 
@@ -104,7 +80,7 @@ describe('PlaybackScreenCanvas', () => {
     expect(html).toContain('id="screen-element-title-1"');
   });
 
-  it('keeps shape-label padding and paragraph spacing in both playback renderers', () => {
+  it('keeps shape-label padding and paragraph spacing in playback', () => {
     const shapeController: SceneDataController<SlideContent> = {
       ...controller,
       getSnapshot: () => ({
@@ -137,23 +113,20 @@ describe('PlaybackScreenCanvas', () => {
       }),
     };
 
-    for (const rendererEnabled of [false, true]) {
-      process.env[flag] = String(rendererEnabled);
-      const html = renderToStaticMarkup(
-        createElement(
-          TestSceneProvider,
-          { controller: shapeController as SceneDataController },
-          createElement(PlaybackScreenCanvas),
-        ),
-      );
-      const { document } = parseHTML(html);
-      const label = document.querySelector('.shape-text');
-      const prose = document.querySelector('.shape-text .slide-renderer-prose');
-      expect(label?.getAttribute('style')).toContain('padding:10px');
-      expect(label?.getAttribute('style')).toContain('line-height:1.625');
-      expect(prose?.getAttribute('style')).toContain('--paragraphSpace:12px');
-      expect(document.querySelector('style')?.textContent).toContain('.slide-renderer-prose p');
-    }
+    const html = renderToStaticMarkup(
+      createElement(
+        TestSceneProvider,
+        { controller: shapeController as SceneDataController },
+        createElement(RendererScreenCanvas),
+      ),
+    );
+    const { document } = parseHTML(html);
+    const label = document.querySelector('.shape-text');
+    const prose = document.querySelector('.shape-text .slide-renderer-prose');
+    expect(label?.getAttribute('style')).toContain('padding:10px');
+    expect(label?.getAttribute('style')).toContain('line-height:1.625');
+    expect(prose?.getAttribute('style')).toContain('--paragraphSpace:12px');
+    expect(document.querySelector('style')?.textContent).toContain('.slide-renderer-prose p');
   });
 
   it('renders playback videos inline for mobile browsers', () => {
@@ -181,19 +154,15 @@ describe('PlaybackScreenCanvas', () => {
       getSnapshot: () => videoContent,
     };
 
-    for (const rendererEnabled of [false, true]) {
-      process.env[flag] = String(rendererEnabled);
+    const html = renderToStaticMarkup(
+      createElement(
+        TestSceneProvider,
+        { controller: videoController as SceneDataController },
+        createElement(RendererScreenCanvas),
+      ),
+    );
 
-      const html = renderToStaticMarkup(
-        createElement(
-          TestSceneProvider,
-          { controller: videoController as SceneDataController },
-          createElement(PlaybackScreenCanvas),
-        ),
-      );
-
-      expect(html).toMatch(/<video[^>]*playsinline/i);
-    }
+    expect(html).toMatch(/<video[^>]*playsinline/i);
   });
 
   // With image generation off — the default — an untracked generated
@@ -202,7 +171,6 @@ describe('PlaybackScreenCanvas', () => {
   // about the placeholder left a lease in flight during the first paint; the
   // pool never held such a ref, so it is no longer asked.
   it('renders an untracked generated placeholder as disabled when generation is off', () => {
-    process.env[flag] = 'true';
     // The workspace's image slot resolves to nothing.
     setModelSettingsViewForTests({});
     const imageContent: SlideContent = {
@@ -236,7 +204,7 @@ describe('PlaybackScreenCanvas', () => {
         createElement(
           TestSceneProvider,
           { controller: imageController as SceneDataController },
-          createElement(PlaybackScreenCanvas),
+          createElement(RendererScreenCanvas),
         ),
       ),
     );
@@ -246,7 +214,6 @@ describe('PlaybackScreenCanvas', () => {
   });
 
   it('renders a completed generated image with the renderer default image treatment', () => {
-    process.env[flag] = 'true';
     useMediaGenerationStore.setState({
       tasks: {
         gen_img_1: {
@@ -293,7 +260,7 @@ describe('PlaybackScreenCanvas', () => {
         createElement(
           TestSceneProvider,
           { controller: imageController as SceneDataController },
-          createElement(PlaybackScreenCanvas),
+          createElement(RendererScreenCanvas),
         ),
       ),
     );

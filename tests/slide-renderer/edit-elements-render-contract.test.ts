@@ -7,12 +7,7 @@ import type {
   PPTTableElement,
   PPTTextElement,
 } from '@openmaic/dsl';
-import { useClipImage as useAppClipImage } from '@/components/slide-renderer/components/element/ImageElement/useClipImage';
-import { imageFiltersToCss as appImageFiltersToCss } from '@/components/slide-renderer/components/element/ImageElement/useFilter';
-import { BaseLatexElement } from '@/components/slide-renderer/components/element/LatexElement/BaseLatexElement';
-import { LatexElement } from '@/components/slide-renderer/components/element/LatexElement';
-import { BaseTextElement } from '@/components/slide-renderer/components/element/TextElement/BaseTextElement';
-import { StaticTable } from '@/components/slide-renderer/components/element/TableElement/StaticTable';
+import { BaseLatexElement as PackageBaseLatexElement } from '../../packages/@openmaic/renderer/src/elements/latex/BaseLatexElement';
 import { useClipImage as usePackageClipImage } from '../../packages/@openmaic/renderer/src/elements/image/useClipImage';
 import { imageFiltersToCss as packageImageFiltersToCss } from '../../packages/@openmaic/renderer/src/elements/image/useFilter';
 import { BaseTextElement as PackageBaseTextElement } from '../../packages/@openmaic/renderer/src/elements/text/BaseTextElement';
@@ -62,33 +57,30 @@ const htmlLatex = {
 } as PPTLatexElement;
 
 describe('edit_elements renderer contracts', () => {
-  it('renders canonical and legacy filter units identically in both renderers', () => {
+  it('renders canonical and legacy filter units identically', () => {
     for (const filters of [
       { blur: '2', contrast: '90', brightness: '120', 'hue-rotate': '15' },
       { blur: '2px', contrast: '90%', brightness: '120%', 'hue-rotate': '15deg' },
     ]) {
-      expect(packageImageFiltersToCss(filters)).toBe(appImageFiltersToCss(filters));
       expect(packageImageFiltersToCss(filters)).toBe(
         'blur(2px) contrast(90%) brightness(120%) hue-rotate(15deg)',
       );
     }
   });
 
-  it('renders an explicit zero radius for roundRect images in both renderers', () => {
-    expect(clipMarkup(useAppClipImage)).toContain('inset(0 round 0px)');
+  it('renders an explicit zero radius for roundRect images', () => {
     expect(clipMarkup(usePackageClipImage)).toContain('inset(0 round 0px)');
   });
 
-  it('applies latex color to HTML-backed formulas in editable and read-only app renderers', () => {
+  it('applies latex color to HTML-backed formulas', () => {
     expect(
-      renderToStaticMarkup(React.createElement(LatexElement, { elementInfo: htmlLatex })),
-    ).toContain('color:#ff0000');
-    expect(
-      renderToStaticMarkup(React.createElement(BaseLatexElement, { elementInfo: htmlLatex })),
+      renderToStaticMarkup(
+        React.createElement(PackageBaseLatexElement, { elementInfo: htmlLatex }),
+      ),
     ).toContain('color:#ff0000');
   });
 
-  it('applies text fill and opacity to the rotating full box in both renderers', () => {
+  it('applies text fill and opacity to the rotating full box', () => {
     const text = {
       id: 'text-1',
       type: 'text',
@@ -103,7 +95,7 @@ describe('edit_elements renderer contracts', () => {
       fill: '#ff0000',
       opacity: 0.5,
     } as PPTTextElement;
-    for (const Component of [BaseTextElement, PackageBaseTextElement]) {
+    for (const Component of [PackageBaseTextElement]) {
       const markup = renderToStaticMarkup(React.createElement(Component, { elementInfo: text }));
       expect(markup).toMatch(
         /class="rotate-wrapper[^"]*" style="[^"]*transform:rotate\(0deg\)[^"]*background-color:#ff0000[^"]*opacity:0\.5/,
@@ -111,7 +103,7 @@ describe('edit_elements renderer contracts', () => {
     }
   });
 
-  it('uses the same compact table cell geometry in both renderers', () => {
+  it('uses compact table cell geometry', () => {
     const table = {
       id: 'table-1',
       type: 'table',
@@ -129,7 +121,7 @@ describe('edit_elements renderer contracts', () => {
       cellMinHeight: 36,
       outline: { width: 1, color: '#000000' },
     } as PPTTableElement;
-    for (const Component of [StaticTable, PackageStaticTable]) {
+    for (const Component of [PackageStaticTable]) {
       const markup = renderToStaticMarkup(React.createElement(Component, { elementInfo: table }));
       expect(markup).toContain('height:20px');
       expect(markup).toContain('height:80px');

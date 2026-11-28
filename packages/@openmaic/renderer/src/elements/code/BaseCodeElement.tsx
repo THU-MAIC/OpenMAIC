@@ -62,6 +62,11 @@ function parseShikiLines(html: string): string[] {
 export interface BaseCodeElementProps {
   elementInfo: PPTCodeElement;
   animate?: boolean;
+  /**
+   * Let the viewer select and copy the code with the pointer. Turns off
+   * drag-to-scroll in the code body; wheel scrolling stays contained.
+   */
+  selectable?: boolean;
 }
 
 interface LineAnimationState {
@@ -222,7 +227,13 @@ function CodeLineRow({
   const [mounted, setMounted] = useState(!isNewLine || typingDelay === 0);
 
   useEffect(() => {
-    if (isNewLine && typingDelay > 0) {
+    // A row that loses its animation state (for example when the lines are
+    // replaced by equal copies) must still appear instead of waiting forever.
+    if (!isNewLine) {
+      const timer = setTimeout(() => setMounted(true), 0);
+      return () => clearTimeout(timer);
+    }
+    if (typingDelay > 0) {
       const timer = setTimeout(() => setMounted(true), typingDelay);
       return () => clearTimeout(timer);
     }
@@ -365,7 +376,7 @@ function CodeLineRow({
 
 // ==================== BaseCodeElement ====================
 
-export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) {
+export function BaseCodeElement({ elementInfo, animate, selectable }: BaseCodeElementProps) {
   const { language, lines, fileName, showLineNumbers = true, fontSize = 14 } = elementInfo;
   const wrapperRef = useRef<HTMLDivElement>(null);
   const codeBodyRef = useRef<HTMLDivElement>(null);
@@ -373,6 +384,18 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
   useEffect(() => {
     const el = codeBodyRef.current;
     if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      e.stopPropagation();
+    };
+    el.addEventListener('wheel', onWheel, { passive: true });
+
+    if (selectable) {
+      el.style.cursor = 'text';
+      return () => {
+        el.removeEventListener('wheel', onWheel);
+      };
+    }
 
     let dragging = false;
     let startX = 0;
@@ -417,17 +440,12 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
       endDrag();
     };
 
-    const onWheel = (e: WheelEvent) => {
-      e.stopPropagation();
-    };
-
     el.style.cursor = 'grab';
     el.addEventListener('pointerdown', onPointerDown);
     el.addEventListener('pointermove', onPointerMove);
     el.addEventListener('pointerup', onPointerEnd);
     el.addEventListener('pointercancel', onPointerEnd);
     el.addEventListener('lostpointercapture', onLostCapture);
-    el.addEventListener('wheel', onWheel, { passive: true });
     return () => {
       endDrag();
       el.removeEventListener('pointerdown', onPointerDown);
@@ -437,7 +455,7 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
       el.removeEventListener('lostpointercapture', onLostCapture);
       el.removeEventListener('wheel', onWheel);
     };
-  }, []);
+  }, [selectable]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -459,32 +477,41 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [highlighter, setHighlighter] = useState<any>(null);
-  const prevLinesRef = useRef<CodeLine[]>([]);
+  const prevLinesRef = useRef<CodeLine[]>(lines);
   const isFirstRenderRef = useRef(true);
 
-  const [animStates, setAnimStates] = useState<Map<string, LineAnimationState>>(
-    () => new Map<string, LineAnimationState>(),
-  );
+  // The entrance states must exist on the very first render: CodeLineRow
+  // latches `mounted` from its initial props, so rows that mount before their
+  // states arrive skip the per-line stagger and all type at once.
+  const [animStates, setAnimStates] = useState<Map<string, LineAnimationState>>(() => {
+    const states = new Map<string, LineAnimationState>();
+    if (animate) {
+      lines.forEach((line, i) => {
+        states.set(line.id, { type: 'typing', timestamp: i * 80 });
+      });
+    }
+    return states;
+  });
 
   useEffect(() => {
+    // The first render's states come from the initializer above; this effect
+    // only handles later line edits.
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
     const states = new Map<string, LineAnimationState>();
 
     if (animate) {
-      if (isFirstRenderRef.current) {
-        isFirstRenderRef.current = false;
-        lines.forEach((line, i) => {
-          states.set(line.id, { type: 'typing', timestamp: i * 80 });
-        });
-      } else {
-        const prevById = new Map(prevLinesRef.current.map((l) => [l.id, l]));
+      const prevById = new Map(prevLinesRef.current.map((l) => [l.id, l]));
 
-        for (const line of lines) {
-          const prev = prevById.get(line.id);
-          if (!prev) {
-            states.set(line.id, { type: 'inserted', timestamp: 0 });
-          } else if (prev.content !== line.content) {
-            states.set(line.id, { type: 'replaced', timestamp: 0 });
-          }
+      for (const line of lines) {
+        const prev = prevById.get(line.id);
+        if (!prev) {
+          states.set(line.id, { type: 'inserted', timestamp: 0 });
+        } else if (prev.content !== line.content) {
+          states.set(line.id, { type: 'replaced', timestamp: 0 });
         }
       }
 
@@ -660,6 +687,7 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
 
           <div
             ref={codeBodyRef}
+            className="slide-renderer-code-body"
             style={{
               flex: 1,
               overflow: 'auto',
@@ -667,9 +695,9 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
               paddingBottom: '8px',
               background: '#fafbfc',
               color: '#24292e',
-              userSelect: 'none',
-              WebkitUserSelect: 'none',
-              touchAction: 'none',
+              ...(selectable
+                ? { userSelect: 'text', WebkitUserSelect: 'text' }
+                : { userSelect: 'none', WebkitUserSelect: 'none', touchAction: 'none' }),
             }}
           >
             <div style={{ minWidth: 'max-content' }}>

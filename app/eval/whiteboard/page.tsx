@@ -1,83 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
-import { SceneProvider } from '@/lib/contexts/scene-context';
-import { useStageStore } from '@/lib/store/stage';
-import type { PPTElement } from '@openmaic/dsl';
-import { createTextProseStyles } from '@openmaic/renderer';
+import { useEffect, useMemo, useState } from 'react';
+import type { PPTElement, Slide } from '@openmaic/dsl';
+import { SLIDE_RENDERER_STYLES, SlideElement, SlideRendererProvider } from '@openmaic/renderer';
+import { useResolvedSlideMedia } from '@/components/slide-renderer/use-resolved-slide';
+import { SCREEN_ELEMENT_ID_PREFIX } from '@/components/slide-renderer/element-dom';
 
-const EVAL_SHAPE_PROSE_STYLES = createTextProseStyles(
-  '.eval-whiteboard-canvas .screen-element .slide-renderer-prose',
-);
-
-const EVAL_STAGE_ID = '__eval_stage__';
-const EVAL_SCENE_ID = '__eval_scene__';
+const EVAL_SLIDE_ID = '__eval_slide__';
 const CANVAS_WIDTH = 1000;
 const CANVAS_HEIGHT = 563;
+const EVAL_THEME = {
+  backgroundColor: '#ffffff',
+  themeColors: ['#5b9bd5'],
+  fontColor: '#333333',
+  fontName: 'Microsoft YaHei',
+};
 
 function WhiteboardCanvas() {
   const [elements, setElements] = useState<PPTElement[]>([]);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Bootstrap store with a synthetic stage + scene
-    const store = useStageStore.getState();
-    store.setStage({
-      id: EVAL_STAGE_ID,
-      name: 'eval',
-      createdAt: 0,
-      updatedAt: 0,
-    });
-    store.setScenes([
-      {
-        id: EVAL_SCENE_ID,
-        stageId: EVAL_STAGE_ID,
-        type: 'slide',
-        title: 'eval',
-        order: 0,
-        content: {
-          type: 'slide',
-          canvas: {
-            id: EVAL_SCENE_ID,
-            viewportSize: CANVAS_WIDTH,
-            viewportRatio: CANVAS_HEIGHT / CANVAS_WIDTH,
-            theme: {
-              backgroundColor: '#ffffff',
-              themeColors: ['#5b9bd5'],
-              fontColor: '#333333',
-              fontName: 'Microsoft YaHei',
-            },
-            elements: [],
-          },
-        },
-      },
-    ]);
-    store.setCurrentSceneId(EVAL_SCENE_ID);
-
     // Expose setter for Playwright
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (window as any).__setElements = (incoming: PPTElement[]) => {
-      setElements(incoming);
-      // Also update the store so SceneProvider/ScreenElement reads the theme
-      useStageStore.getState().updateScene(EVAL_SCENE_ID, {
-        content: {
-          type: 'slide',
-          canvas: {
-            id: EVAL_SCENE_ID,
-            viewportSize: CANVAS_WIDTH,
-            viewportRatio: CANVAS_HEIGHT / CANVAS_WIDTH,
-            theme: {
-              backgroundColor: '#ffffff',
-              themeColors: ['#5b9bd5'],
-              fontColor: '#333333',
-              fontName: 'Microsoft YaHei',
-            },
-            elements: incoming,
-          },
-        },
-      });
-    };
+    (window as any).__setElements = (incoming: PPTElement[]) => setElements(incoming);
 
     // Signal readiness
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,10 +32,22 @@ function WhiteboardCanvas() {
     queueMicrotask(() => setReady(true));
   }, []);
 
+  const slide = useMemo<Slide>(
+    () => ({
+      id: EVAL_SLIDE_ID,
+      viewportSize: CANVAS_WIDTH,
+      viewportRatio: CANVAS_HEIGHT / CANVAS_WIDTH,
+      theme: EVAL_THEME,
+      elements,
+    }),
+    [elements],
+  );
+  const resolved = useResolvedSlideMedia(slide);
+
   if (!ready) return null;
 
   return (
-    <SceneProvider>
+    <SlideRendererProvider slide={resolved.slide} classroomSizing>
       <div
         className="eval-whiteboard-canvas"
         style={{
@@ -100,12 +58,18 @@ function WhiteboardCanvas() {
           overflow: 'hidden',
         }}
       >
-        <style dangerouslySetInnerHTML={{ __html: EVAL_SHAPE_PROSE_STYLES }} />
-        {elements.map((element, index) => (
-          <ScreenElement key={element.id} elementInfo={element} elementIndex={index} />
+        <style dangerouslySetInnerHTML={{ __html: SLIDE_RENDERER_STYLES }} />
+        {resolved.slide.elements.map((element, index) => (
+          <SlideElement
+            key={element.id}
+            elementInfo={element}
+            elementIndex={index}
+            theme={EVAL_THEME}
+            idPrefix={SCREEN_ELEMENT_ID_PREFIX}
+          />
         ))}
       </div>
-    </SceneProvider>
+    </SlideRendererProvider>
   );
 }
 

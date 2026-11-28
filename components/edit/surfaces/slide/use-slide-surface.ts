@@ -1,141 +1,17 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
-import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
-import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
-import { useI18n } from '@/lib/hooks/use-i18n';
-import { createElementId } from '@/lib/edit/element-id';
-import {
-  createDefaultChartElement,
-  createDefaultImageElement,
-  createDefaultSlide,
-  createDefaultTableElement,
-} from '@/lib/edit/slide-edit-elements';
-import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
+import type { SurfaceState } from '@/lib/edit/scene-editor-surface';
+import { createDefaultSlide } from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
-import type { ChartType, PPTElement, PPTImageElement, SlideBackground } from '@openmaic/dsl';
-import { ImagePicker } from './ImagePicker';
-import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
-import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
-import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
 
 export interface SlideSelection {
   readonly activeElementIds: readonly string[];
-}
-
-export function buildInsertItems(
-  t: (k: string, options?: Record<string, unknown>) => string,
-  // The currently-armed creating type, or undefined when nothing is armed. The
-  // text item toggles `creatingElement` (no auto-insert): the active canvas
-  // then captures the next click/drag and creates a text box at that rect.
-  creatingType?: string,
-): InsertPaletteItem[] {
-  const armText = () => {
-    const cs = useCanvasStore.getState();
-    cs.setCreatingElement(creatingType === 'text' ? null : { type: 'text' });
-  };
-  const items: InsertPaletteItem[] = [
-    {
-      id: 'insert-text',
-      label: t('edit.insert.textBox'),
-      tooltip: t('edit.insert.textBox'),
-      icon: React.createElement(Type, { className: 'h-4 w-4' }),
-      active: creatingType === 'text',
-      onInvoke: armText,
-    },
-    {
-      id: 'insert-image',
-      label: t('edit.insert.image'),
-      tooltip: t('edit.insert.image'),
-      icon: React.createElement(ImageIcon, { className: 'h-4 w-4' }),
-      onInvoke: () => {}, // popover-only: CommandBar's InsertButton ignores onInvoke when popoverContent is set
-      popoverContent: () =>
-        React.createElement(ImagePicker, {
-          onPick: insertImageElement,
-        }),
-    },
-  ];
-  items.push({
-    // Slide-level (not element-anchored): set the slide background. Rides the
-    // always-visible insert strip so it stays reachable with nothing selected.
-    id: 'slide-background',
-    label: t('edit.background.label'),
-    tooltip: t('edit.background.label'),
-    icon: React.createElement(PaintBucket, { className: 'h-4 w-4' }),
-    onInvoke: () => {}, // popover-only: see insert-image above
-    popoverContent: () => React.createElement(BackgroundControl),
-  });
-  return items;
-}
-
-// Default insertion size for an image whose natural dimensions are unknown
-// (e.g. the URL fails to load). Larger sizes get scaled to fit under MAX_W /
-// MAX_H while preserving the natural aspect ratio.
-const IMAGE_MAX_W = 600;
-const IMAGE_MAX_H = 400;
-
-/**
- * Insert an image element, sized to preserve the source's natural aspect
- * ratio (scaled down to fit MAX_W × MAX_H, never upscaled). The op is
- * dispatched on `Image` load; if the source fails to load, we still insert
- * at the factory's hardcoded default so the user sees something.
- */
-export function insertImageElement(src: string): void {
-  const id = createElementId('image');
-  // Bind the insert to the scene that was active at click time. Image
-  // sizing is resolved asynchronously (Image.onload), and the user may
-  // switch slides before it resolves — without this guard the element
-  // would be applied to whatever session is current when onload fires,
-  // i.e. inserted into the wrong slide.
-  const targetSceneId = useSlideEditSession.getState().sceneId;
-  const dispatch = (width?: number, height?: number) => {
-    if (useSlideEditSession.getState().sceneId !== targetSceneId) return;
-    const base = createDefaultImageElement(id, src);
-    const element = width && height ? { ...base, width, height } : base;
-    useSlideEditSession.getState().applyOp({ type: 'element.add', element });
-  };
-  if (typeof window === 'undefined') {
-    dispatch();
-    return;
-  }
-  const img = new window.Image();
-  img.onload = () => {
-    const ratio = img.naturalWidth / img.naturalHeight;
-    let width = img.naturalWidth;
-    let height = img.naturalHeight;
-    if (width > IMAGE_MAX_W) {
-      width = IMAGE_MAX_W;
-      height = width / ratio;
-    }
-    if (height > IMAGE_MAX_H) {
-      height = IMAGE_MAX_H;
-      width = height * ratio;
-    }
-    dispatch(Math.round(width), Math.round(height));
-  };
-  img.onerror = () => dispatch();
-  img.src = src;
-}
-
-/** Insert an empty table and select it through the normal slide edit session. */
-export function insertTableElement(rows: number, columns: number): void {
-  const id = createElementId('table');
-  const element = createDefaultTableElement(id, rows, columns);
-  useSlideEditSession.getState().applyOp({ type: 'element.add', element });
-  useCanvasStore.getState().setActiveElementIdList([id]);
-}
-
-/** Insert a chart and select it through the normal slide edit session. */
-export function insertChartElement(chartType: ChartType): void {
-  const id = createElementId('chart');
-  const element = createDefaultChartElement(id, chartType);
-  useSlideEditSession.getState().applyOp({ type: 'element.add', element });
-  useCanvasStore.getState().setActiveElementIdList([id]);
 }
 
 /** Delete a slide element and clear the canvas selection. */
@@ -160,27 +36,6 @@ export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): 
   // Already at the target edge — skip so we don't push an empty undo step.
   if (currentIndex === index) return;
   useSlideEditSession.getState().applyOp({ type: 'element.reorder', elementId, index });
-}
-
-/**
- * Replace an image element's source. Clears any stale `clip`: the new source's
- * aspect ratio may differ, so the old crop rect would no longer be meaningful.
- */
-export function replaceImageSrc(elementId: string, src: string): void {
-  useSlideEditSession
-    .getState()
-    .applyOp({ type: 'element.update', elementId, patch: { src, clip: undefined } });
-}
-
-/** Toggle horizontal/vertical flip on an image element. */
-export function toggleImageFlip(el: PPTImageElement, axis: 'H' | 'V'): void {
-  const patch = axis === 'H' ? { flipH: !el.flipH } : { flipV: !el.flipV };
-  useSlideEditSession.getState().applyOp({ type: 'element.update', elementId: el.id, patch });
-}
-
-/** Set the slide-level background (solid color or image). */
-export function updateSlideBackground(background: SlideBackground): void {
-  useSlideEditSession.getState().applyOp({ type: 'slide.update', patch: { background } });
 }
 
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
@@ -208,20 +63,17 @@ export function useResolvedSlideContent(): SlideContent {
  * session store + the renderer's selection store.
  */
 export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelection> {
-  const { t } = useI18n();
   const activeElementIds = useCanvasStore.use.activeElementIdList();
-  const creatingElement = useCanvasStore.use.creatingElement();
-  const rendererEditorEnabled = isEditorRendererEnabled();
   const content = useResolvedSlideContent();
 
   return {
     content,
     selection: { activeElementIds },
     hasSelection: activeElementIds.length > 0,
-    insertItems: rendererEditorEnabled ? [] : buildInsertItems(t, creatingElement?.type),
-    // Every element type carries its own actions on a selection-anchored bar
-    // (AnchoredTextBar / AnchoredElementBar) — the surface contributes no
-    // top-center FloatingToolbar actions.
+    // The package editor renders its own insert toolbar.
+    insertItems: [],
+    // The package editor anchors element actions to the selection, so the
+    // surface contributes no top-center FloatingToolbar actions.
     floatingActions: [],
     commands: [],
     hints: [],
@@ -276,59 +128,4 @@ export function useSlideCanvasController(): SlideCanvasController {
   );
 
   return { controller };
-}
-
-/**
- * The id of the text element currently being edited — i.e. the sole selected
- * element, when it is a text element. "" means "not editing text". Drives both
- * the AnchoredTextBar and the canvas store's `editingElementId`.
- */
-export function useEditingTextElementId(requestedId?: string): string {
-  const activeElementIds = useCanvasStore.use.activeElementIdList();
-  const content = useResolvedSlideContent();
-  return resolveEditingElementId(activeElementIds, content.canvas.elements, requestedId);
-}
-
-/**
- * The single selected non-text element (image / shape / line / …), or null —
- * drives the type-aware AnchoredElementBar. Text elements get their own
- * AnchoredTextBar. Returns the element (not just its id) so the bar can branch
- * on element type for image-specific controls.
- */
-export function useSelectedNonTextElement(): PPTElement | null {
-  const activeElementIds = useCanvasStore.use.activeElementIdList();
-  const content = useResolvedSlideContent();
-  const el = resolveSelectedElement(activeElementIds, content.canvas.elements);
-  return el && el.type !== 'text' ? el : null;
-}
-
-/**
- * Mirrors the surface's editing-element decision into the canvas store's
- * `editingElementId` flag, which the renderer's `TextElementOperate` reads.
- * useLayoutEffect so the renderer suppresses the dashed frame in the same
- * commit the selection changes — no one-frame flicker. Cleared on unmount.
- */
-export function useSyncEditingElementId(editingElementId: string, enabled = true): void {
-  const setEditingElementId = useCanvasStore.use.setEditingElementId();
-  const setRichTextAttrs = useCanvasStore.use.setRichtextAttrs();
-  // Track the previous editing id so we only reset attrs on element-to-element
-  // *transitions*. Resetting on the first selection (or initial mount with a
-  // restored selection) would briefly flash neutral defaults — `color #000`,
-  // `fontsize 16px` — before the focusing ProseMirror repopulates the real
-  // values, which is more jarring than skipping the reset there.
-  const prevEditingElementId = useRef('');
-  useLayoutEffect(() => {
-    if (!enabled) return;
-    setEditingElementId(editingElementId);
-    if (prevEditingElementId.current && prevEditingElementId.current !== editingElementId) {
-      // `richTextAttrs` is a single shared store updated by whichever
-      // ProseMirror was last focused. Without this reset on switch, the
-      // format bar visibly carries the previous element's toggle states
-      // (B, I, alignment, …) until the new element's ProseMirror takes
-      // focus and writes its own attrs.
-      setRichTextAttrs(defaultRichTextAttrs);
-    }
-    prevEditingElementId.current = editingElementId;
-    return () => setEditingElementId('');
-  }, [editingElementId, enabled, setEditingElementId, setRichTextAttrs]);
 }

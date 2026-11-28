@@ -4,7 +4,7 @@ import { act, createElement, type ComponentType, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SceneProvider, type SceneDataController } from '@/lib/contexts/scene-context';
-import { PlaybackScreenCanvas } from '@/components/slide-renderer/Editor/ScreenCanvas';
+import { RendererScreenCanvas } from '@/components/slide-renderer/Editor/RendererScreenCanvas';
 import { SlideElementPickOverlay } from '@/components/canvas/slide-element-pick-overlay';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 
@@ -116,19 +116,12 @@ class TestResizeObserver {
   unobserve() {}
 }
 
-describe.each([
-  ['Legacy', 'false'],
-  ['New', 'true'],
-] as const)('SlideElementPickOverlay with the real %s playback renderer', (_name, flag) => {
-  const rendererFlag = 'NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED';
-  let originalFlag: string | undefined;
+describe('SlideElementPickOverlay with the real playback renderer', () => {
   let container: HTMLDivElement;
   let root: Root;
   let frames: FrameRequestCallback[];
 
   beforeEach(() => {
-    originalFlag = process.env[rendererFlag];
-    process.env[rendererFlag] = flag;
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('ResizeObserver', TestResizeObserver);
     frames = [];
@@ -147,7 +140,6 @@ describe.each([
       if (this.classList.contains('base-element-text')) return rect(80, 60, 120, 48);
       if (this.hasAttribute('data-shape-geometry-error')) return rect(0, 0, 0, 0);
       if (this.classList.contains('slide-element')) return rect(0, 0, 800, 450);
-      if (this.classList.contains('screen-element')) return rect(0, 0, 0, 0);
       return rect(0, 0, 800, 450);
     });
     Object.defineProperty(document, 'elementsFromPoint', {
@@ -164,8 +156,6 @@ describe.each([
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
-    if (originalFlag === undefined) delete process.env[rendererFlag];
-    else process.env[rendererFlag] = originalFlag;
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -180,7 +170,7 @@ describe.each([
           createElement(
             'div',
             null,
-            createElement(PlaybackScreenCanvas),
+            createElement(RendererScreenCanvas),
             createElement(SlideElementPickOverlay, { scene, onPick, onCancel: vi.fn() }),
           ),
         ),
@@ -189,16 +179,10 @@ describe.each([
     const initialFrames = frames.splice(0);
     act(() => initialFrames.forEach((callback) => callback(0)));
 
-    if (flag === 'true') {
-      expect(
-        container.querySelector('.slide-element-hit-target .base-element-text'),
-      ).not.toBeNull();
-      expect(
-        (document.getElementById('screen-element-text-1') as HTMLElement).style.pointerEvents,
-      ).toBe('none');
-    } else {
-      expect(container.querySelector('#screen-element-text-1 > .base-element-text')).not.toBeNull();
-    }
+    expect(container.querySelector('.slide-element-hit-target .base-element-text')).not.toBeNull();
+    expect(
+      (document.getElementById('screen-element-text-1') as HTMLElement).style.pointerEvents,
+    ).toBe('none');
 
     const outline = container.querySelector('.border-violet-400\\/70') as HTMLElement;
     expect(outline.style.cssText).toContain('left: 80px');
@@ -229,7 +213,7 @@ describe.each([
           createElement(
             'div',
             null,
-            createElement(PlaybackScreenCanvas),
+            createElement(RendererScreenCanvas),
             createElement(SlideElementPickOverlay, {
               scene: brokenShapeScene,
               onPick: vi.fn(),

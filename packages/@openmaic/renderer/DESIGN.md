@@ -3,6 +3,8 @@
 > 配套计划：`docs/superpowers/plans/2026-05-28-maic-renderer-package.md`
 > 原始 spec：`docs/superpowers/specs/2026-05-28-maic-renderer-package-design.md`
 
+> Status: the app's own canvases that this document refers to (`Editor/ScreenCanvas.tsx`, `Editor/Canvas/*`, the in-app ProseMirror editor) have been removed ([#2441](https://github.com/THU-MAIC/OpenMAIC/issues/2441)). Classroom playback and the whiteboard render through this package, and slide editing through `@openmaic/editor`. The rest of this document is the original v1 design.
+
 ## 1. 目标
 
 把 OpenMAIC 主仓 `components/maic-renderer/` 中的只读画布部分抽成独立 workspace 包，让任意 React + Tailwind 4 项目都能"装包 → 传 Slide → 直接渲染"。

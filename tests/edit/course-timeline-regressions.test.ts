@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 
 /**
- * Cases where the timeline met the rest of the app badly: the renderer's real
- * empty-text cleanup, reads overtaken by saves, whole-document agent saves, and
- * write-backs that are not steps. They run the real TextElement, controller,
- * session and store rather than calling the session with hand-built snapshots.
+ * Cases where the timeline met the rest of the app badly: reads overtaken by
+ * saves, whole-document agent saves, and write-backs that are not steps. They
+ * run the real controller, session and store rather than calling the session
+ * with hand-built snapshots.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,12 +22,6 @@ vi.stubGlobal(
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: vi.fn(async () => ({ failedChanges: [] })),
   saveStageDataIncremental: vi.fn(async () => ({ failedChanges: [] })),
-}));
-vi.mock('@/lib/hooks/use-history-snapshot', () => ({
-  useHistorySnapshot: () => ({ addHistorySnapshot: async () => {} }),
-}));
-vi.mock('@/components/slide-renderer/components/element/ProsemirrorEditor', () => ({
-  ProsemirrorEditor: () => null,
 }));
 
 const { createDefaultSlide, createDefaultTextElement } =

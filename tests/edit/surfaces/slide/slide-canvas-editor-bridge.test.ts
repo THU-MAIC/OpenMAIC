@@ -6,11 +6,8 @@ import type { EditorTransaction } from '@openmaic/editor/core';
 import type { EditableSlideCanvasWithUIProps } from '@openmaic/editor/ui';
 
 const state = vi.hoisted(() => ({
-  rendererEnabled: true,
   pickTarget: null as unknown,
   lastRendererProps: undefined as EditableSlideCanvasWithUIProps | undefined,
-  legacyCanvasRenders: 0,
-  legacyTextBarRenders: 0,
   applyTransaction: vi.fn(),
   setActiveElementIdList: vi.fn(),
   setEditingElementId: vi.fn(),
@@ -47,17 +44,6 @@ const content: SlideContent = {
   },
 };
 
-vi.mock('@/lib/config/feature-flags', () => ({
-  isEditorRendererEnabled: () => state.rendererEnabled,
-}));
-
-vi.mock('@/components/slide-renderer/Editor/Canvas', () => ({
-  default: () => {
-    state.legacyCanvasRenders += 1;
-    return createElement('div', { 'data-legacy-canvas': '' });
-  },
-}));
-
 vi.mock('@/components/slide-renderer/Editor/SpotlightOverlay', () => ({
   SpotlightOverlay: () => null,
 }));
@@ -72,27 +58,12 @@ vi.mock('@/lib/contexts/scene-context', () => ({
   useSceneSelector: () => undefined,
 }));
 
-vi.mock('@/components/edit/surfaces/slide/AnchoredTextBar', () => ({
-  renderClassroomTextToolbar: () => null,
-  AnchoredTextBar: () => {
-    state.legacyTextBarRenders += 1;
-    return null;
-  },
-}));
-
-vi.mock('@/components/edit/surfaces/slide/AnchoredElementBar', () => ({
-  AnchoredElementBar: () => null,
-}));
-
 vi.mock('@/components/edit/surfaces/slide/ElementPickLayer', () => ({
   ElementPickLayer: () => null,
 }));
 
 vi.mock('@/components/edit/surfaces/slide/use-slide-surface', () => ({
-  useSlideCanvasController: () => ({ controller: {}, gestureProps: {} }),
-  useEditingTextElementId: () => 'text-1',
-  useSelectedNonTextElement: () => null,
-  useSyncEditingElementId: () => undefined,
+  useSlideCanvasController: () => ({ controller: {} }),
   useResolvedSlideContent: () => content,
 }));
 
@@ -147,11 +118,8 @@ import { InsertToolbarSlot } from '@/components/edit/EditShell/FloatingInsertToo
 import { SlideCanvas } from '@/components/edit/surfaces/slide/SlideCanvas';
 
 beforeEach(() => {
-  state.rendererEnabled = true;
   state.pickTarget = null;
   state.lastRendererProps = undefined;
-  state.legacyCanvasRenders = 0;
-  state.legacyTextBarRenders = 0;
   state.applyTransaction.mockReset();
   state.setActiveElementIdList.mockReset();
   state.setEditingElementId.mockReset();
@@ -159,15 +127,13 @@ beforeEach(() => {
   state.translate.mockClear();
 });
 
-describe('slide editor renderer feature flag', () => {
-  it('uses the renderer editor host bridge when enabled', () => {
+describe('slide editor host bridge', () => {
+  it('renders the package editor with the app host bridge', () => {
     const markup = renderToStaticMarkup(
       createElement(InsertToolbarSlot.Provider, { value: () => null }, createElement(SlideCanvas)),
     );
 
     expect(markup).toContain('data-renderer-editor');
-    expect(state.legacyCanvasRenders).toBe(0);
-    expect(state.legacyTextBarRenders).toBe(0);
     expect(state.lastRendererProps).toMatchObject({
       slide: content.canvas,
       selection: { elementIds: ['text-1'], primaryId: 'text-1', editingId: 'text-1' },
@@ -206,15 +172,5 @@ describe('slide editor renderer feature flag', () => {
     renderToStaticMarkup(createElement(SlideCanvas));
 
     expect(state.lastRendererProps?.host?.shortcutsEnabled).toBe(false);
-  });
-
-  it('preserves the legacy editor path when disabled', () => {
-    state.rendererEnabled = false;
-    const markup = renderToStaticMarkup(createElement(SlideCanvas));
-
-    expect(markup).toContain('data-legacy-canvas');
-    expect(state.lastRendererProps).toBeUndefined();
-    expect(state.legacyCanvasRenders).toBe(1);
-    expect(state.legacyTextBarRenders).toBe(1);
   });
 });

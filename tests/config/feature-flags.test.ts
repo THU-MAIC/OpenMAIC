@@ -2,10 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   isAgentRuntimeConfigured,
   isAgentRuntimeEnabled,
-  isEditorRendererEnabled,
   isCoursewareReferenceEnabled,
   isMaicEditorEnabled,
-  isPlaybackRendererEnabled,
   isPiNativeChildRuntimeEnabled,
   isPiNativeChildSpotlightEnabled,
   isPptxImportEnabled,
@@ -164,86 +162,6 @@ describe('isWorkbenchEnabled', () => {
     if (workbench !== undefined) process.env[WORKBENCH_FLAG] = workbench;
     if (legacyWorkbench !== undefined) process.env[LEGACY_WORKBENCH_FLAG] = legacyWorkbench;
     expect(isWorkbenchEnabled()).toBe(expected);
-  });
-});
-
-describe('isPlaybackRendererEnabled', () => {
-  const flag = 'NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED';
-  let original: string | undefined;
-
-  beforeEach(() => {
-    original = process.env[flag];
-  });
-
-  afterEach(() => {
-    if (original === undefined) {
-      delete process.env[flag];
-    } else {
-      process.env[flag] = original;
-    }
-  });
-
-  it('defaults on when unset or empty', () => {
-    delete process.env[flag];
-    expect(isPlaybackRendererEnabled()).toBe(true);
-    process.env[flag] = '';
-    expect(isPlaybackRendererEnabled()).toBe(true);
-  });
-
-  it("returns true for 'true' and '1'", () => {
-    process.env[flag] = 'true';
-    expect(isPlaybackRendererEnabled()).toBe(true);
-
-    process.env[flag] = '1';
-    expect(isPlaybackRendererEnabled()).toBe(true);
-  });
-
-  it('returns false for other values', () => {
-    process.env[flag] = 'false';
-    expect(isPlaybackRendererEnabled()).toBe(false);
-
-    process.env[flag] = 'yes';
-    expect(isPlaybackRendererEnabled()).toBe(false);
-  });
-});
-
-describe('isEditorRendererEnabled', () => {
-  const flag = 'NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED';
-  let original: string | undefined;
-
-  beforeEach(() => {
-    original = process.env[flag];
-  });
-
-  afterEach(() => {
-    if (original === undefined) {
-      delete process.env[flag];
-    } else {
-      process.env[flag] = original;
-    }
-  });
-
-  it('defaults on when unset or empty', () => {
-    delete process.env[flag];
-    expect(isEditorRendererEnabled()).toBe(true);
-    process.env[flag] = '';
-    expect(isEditorRendererEnabled()).toBe(true);
-  });
-
-  it("returns true for 'true' and '1'", () => {
-    process.env[flag] = 'true';
-    expect(isEditorRendererEnabled()).toBe(true);
-
-    process.env[flag] = '1';
-    expect(isEditorRendererEnabled()).toBe(true);
-  });
-
-  it('returns false for other values', () => {
-    process.env[flag] = 'false';
-    expect(isEditorRendererEnabled()).toBe(false);
-
-    process.env[flag] = 'yes';
-    expect(isEditorRendererEnabled()).toBe(false);
   });
 });
 

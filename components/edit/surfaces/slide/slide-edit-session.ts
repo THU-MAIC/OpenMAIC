@@ -144,9 +144,8 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     commitContent: (sceneId, next) => {
       const content = canonicalContent(sceneId);
       if (!content) return;
-      // The legacy Canvas still emits complete snapshots while the renderer
-      // editor is feature-flagged. Keep this compatibility bridge isolated
-      // to that fallback until its React surface moves into @openmaic/editor.
+      // A SceneProvider consumer's `updateSceneData` writes a complete
+      // snapshot; the package editor sends transactions instead.
       const committed = commitSlideEdit({ past: [], present: content, future: [] }, next);
       if (committed.present === content) return;
       commitCourseEdit({ coalesceKey: textBurstOf(sceneId, content, next) }, () =>

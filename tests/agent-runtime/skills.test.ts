@@ -1161,12 +1161,12 @@ describe('slide-dsl', () => {
     expect(dsl).toContain('injected into the page as raw HTML');
     expect(dsl).toContain('The write is byte-exact');
     expect(dsl).toContain('There is no tag allow-list and no CSS property allow-list');
-    expect(dsl).toContain('no stylesheet for this HTML at all');
-    expect(dsl).toContain('an inline style always wins');
+    expect(dsl).toContain('The renderer adds one small stylesheet for this HTML');
+    expect(dsl).toContain('An inline style wins, with one exception');
     expect(dsl).toContain('`<h1>`–`<h6>`');
     expect(dsl).toContain('**Inert.**');
-    expect(dsl).toContain('**no marker, no indent**');
-    expect(dsl).toContain('stacked paragraphs touch');
+    expect(dsl).toContain("**restored by the renderer's stylesheet**");
+    expect(dsl).toContain('stacked `<p>` tags sit with zero gap');
     expect(dsl).toContain('looks exactly like body text**');
     for (const kept of ['`<sub>` / `<sup>`', '`<mark>`', '`<code>` / `<pre>`']) {
       expect(dsl, kept).toContain(kept);
@@ -1184,14 +1184,13 @@ describe('slide-dsl', () => {
     expect(dsl).toContain('There is no filter to catch a mistake');
   });
 
-  it('states the per-renderer divergences instead of a single false renderer', async () => {
+  it('names the one renderer and where thumbnails and the classroom differ', async () => {
     const dsl = flat((await findSkill('slide-dsl'))!.content);
-    expect(dsl).toContain('Two renderers paint your page');
-    expect(dsl).toContain('write for the intersection');
-    expect(dsl).toContain('**not rendered at all** in playback');
-    expect(dsl).toContain('inert in playback');
-    expect(dsl).toContain('every space becomes `&nbsp;`');
-    expect(dsl).toContain('Inline `style` attributes inside a cell do not work');
+    expect(dsl).toContain('One renderer paints your page');
+    expect(dsl).toContain('Thumbnails and the classroom differ only in sizing');
+    expect(dsl).toContain('**Classroom playback keeps text at the top**');
+    expect(dsl).toContain('A raw `\\n` in a cell collapses to a space');
+    expect(dsl).toContain('The renderer draws a click-to-play speaker button');
     expect(dsl).toContain('`bar` is the vertical one and `column` is the');
     expect(dsl).toContain('renders as unhighlighted plain');
   });

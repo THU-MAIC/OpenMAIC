@@ -15,8 +15,8 @@
  * classroom content enters or leaves storage, instead of at each render sink.
  *
  * The allowlists below were derived empirically:
- *   - the ProseMirror schemas in `lib/prosemirror/schema` and in
- *     `@openmaic/editor`'s text schema (marks/nodes → their `toDOM` output),
+ *   - the ProseMirror text schema of `@openmaic/editor` (and of the in-app
+ *     editor it replaced): marks/nodes → their `toDOM` output,
  *   - the renderer text/shape/table element components,
  *   - real stage/scene fixtures in `eval/`, `tests/` and the
  *     `@openmaic/editor` round-trip tests,

@@ -1,35 +1,18 @@
 'use client';
 
 import { useEffect } from 'react';
-import Canvas from '@/components/slide-renderer/Editor/Canvas';
 import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
 import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
 import { SceneProvider } from '@/lib/contexts/scene-context';
-import { isEditorRendererEnabled } from '@/lib/config/feature-flags';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { AnchoredTextBar } from './AnchoredTextBar';
-import { AnchoredElementBar } from './AnchoredElementBar';
 import { ElementPickLayer } from './ElementPickLayer';
 import { ElementRefPinLayer } from './ElementRefPinLayer';
 import { EDITABLE_ELEMENT_ID_PREFIX } from './renderer-element-dom';
-import {
-  useEditingTextElementId,
-  useSelectedNonTextElement,
-  useSlideCanvasController,
-  useSyncEditingElementId,
-} from './use-slide-surface';
+import { useSlideCanvasController } from './use-slide-surface';
 import { RendererEditorCanvas } from './RendererEditorCanvas';
 
-/** Switches between the preserved legacy editor and the renderer editor. */
 export function SlideCanvas() {
   const { controller } = useSlideCanvasController();
-  const useRendererEditor = isEditorRendererEnabled();
-  const requestedEditingElementId = useCanvasStore.use.editingElementId();
-  const editingElementId = useEditingTextElementId(
-    useRendererEditor ? requestedEditingElementId : undefined,
-  );
-  const nonTextElement = useSelectedNonTextElement();
-  useSyncEditingElementId(editingElementId, !useRendererEditor);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -44,15 +27,10 @@ export function SlideCanvas() {
   return (
     <div className="relative h-full w-full">
       <SceneProvider controller={controller}>
-        {/* Keyed by page: the legacy canvas copies its elements into state in an effect, so a
-            page switch would mount the next page's elements with the previous page's
-            content first, and a text editor would take that into its history. */}
-        {useRendererEditor ? <RendererEditorCanvas /> : <Canvas key={controller.sceneId} />}
+        <RendererEditorCanvas />
         <SpotlightOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
         <LaserPointerOverlay domIdPrefix={EDITABLE_ELEMENT_ID_PREFIX} />
       </SceneProvider>
-      {!useRendererEditor && <AnchoredTextBar editingElementId={editingElementId} />}
-      {!useRendererEditor && <AnchoredElementBar element={nonTextElement} />}
       <ElementRefPinLayer />
       <ElementPickLayer />
     </div>

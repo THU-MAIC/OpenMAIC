@@ -31,10 +31,8 @@ const STABLE_FRAMES_BEFORE_IDLE = 20;
  * `#editable-element-{id}` is only a zero-size `absolute` wrapper (it carries
  * just a z-index); the geometry lives on its inner `.element-content` root
  * (text, image, shape, …), which has the real left/top/width/height and
- * inherits the viewport scale. Both the legacy editor and renderer expose this
- * class, while only the legacy editor exposes `.editable-element-{type}`.
- * Measuring the wrapper itself would collapse to a 0x0 rect at the canvas
- * origin.
+ * inherits the viewport scale. Measuring the wrapper itself would collapse to
+ * a 0x0 rect at the canvas origin.
  *
  * Measurement is via getBoundingClientRect (one call already resolves canvas
  * scale, viewport offset and page scroll). A requestAnimationFrame loop drives
