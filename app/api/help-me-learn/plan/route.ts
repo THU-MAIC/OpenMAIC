@@ -165,12 +165,13 @@ Reply with valid JSON only:
         model: languageModel,
         system: systemPrompt,
         messages,
+        abortSignal: req.signal,
       },
       stage,
       undefined,
       thinkingConfig,
       // Disable slot fallback for image-bearing requests so a retry never hits a text-only fallback model
-      { serverManaged, enabled: !hasImage },
+      { serverManaged, enabled: !hasImage, preserveAbortSignal: true },
     );
 
     const parsed = extractJsonObject(result.text);

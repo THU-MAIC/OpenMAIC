@@ -80,6 +80,7 @@ export function getCameraTutorCapabilities(
   const supportsLiveStreaming =
     preset === 'google' &&
     provider?.hasCustomBaseUrl !== true &&
+    provider?.liveStreamingAuthorized !== false &&
     isOfficialGoogleBaseUrl(provider?.baseUrl);
 
   const cataloguedModel = modelId

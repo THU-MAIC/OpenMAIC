@@ -104,6 +104,9 @@ export async function POST(req: NextRequest) {
                 uses: 1,
                 expireTime,
                 newSessionExpireTime,
+                bidiGenerateContentSetup: {
+                  model: liveModel,
+                },
               }),
             },
           );

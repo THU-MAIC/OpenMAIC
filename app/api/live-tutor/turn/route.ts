@@ -87,11 +87,12 @@ Reply with valid JSON only (no markdown fences):
           system: systemPrompt,
           prompt:
             contextText || 'Create an engaging foundational math or science practice problem.',
+          abortSignal: req.signal,
         },
         'chat-adapter',
         undefined,
         thinkingConfig,
-        { serverManaged },
+        { serverManaged, preserveAbortSignal: true },
       );
 
       const parsed = extractJsonObject(result.text);
@@ -188,11 +189,12 @@ Reply with valid JSON only:
           model: languageModel,
           system: systemPrompt,
           messages,
+          abortSignal: req.signal,
         },
         'chat-adapter',
         undefined,
         thinkingConfig,
-        { serverManaged, enabled: !hasImage },
+        { serverManaged, enabled: !hasImage, preserveAbortSignal: true },
       );
 
       const parsed = extractJsonObject(result.text);

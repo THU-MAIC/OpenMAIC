@@ -204,4 +204,40 @@ describe('live-tutor model capabilities', () => {
     expect(caps.supportsLiveStreaming).toBe(false);
     expect(caps.supportsVision).toBe(true);
   });
+
+  it('disables live streaming when a deployment Google provider excludes the Live model from its allowlist', () => {
+    const view = {
+      providers: [
+        {
+          id: 'google',
+          preset: 'google',
+          presetName: 'Google Gemini',
+          presetKind: 'single',
+          source: 'deployment',
+          liveStreamingAuthorized: false,
+          capabilities: {
+            chat: {
+              models: [
+                {
+                  id: 'gemini-2.5-flash',
+                  name: 'Gemini 2.5 Flash',
+                  capabilities: { streaming: true, tools: true, vision: true },
+                },
+              ],
+            },
+          },
+        },
+      ],
+      slots: [
+        {
+          slot: 'classroom',
+          effective: { status: 'assigned', providerId: 'google', modelId: 'gemini-2.5-flash' },
+        },
+      ],
+    } as unknown as ModelSettingsView;
+
+    const caps = getCameraTutorCapabilities(view);
+    expect(caps.supportsLiveStreaming).toBe(false);
+    expect(caps.supportsVision).toBe(true);
+  });
 });

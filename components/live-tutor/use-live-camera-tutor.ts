@@ -99,6 +99,7 @@ export function useLiveCameraTutor({
   const frameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
   const sessionAttemptRef = useRef(0);
+  const cameraAcquireSeqRef = useRef(0);
   const sessionAbortRef = useRef<AbortController | null>(null);
   const turnAbortRef = useRef<AbortController | null>(null);
   const problemAbortRef = useRef<AbortController | null>(null);
@@ -224,21 +225,10 @@ export function useLiveCameraTutor({
     async (
       preferredFacing: 'environment' | 'user',
       options?: { audio?: boolean; preserveExistingAudio?: boolean },
-    ) => {
+    ): Promise<MediaStream | null> => {
+      const acquireSeq = ++cameraAcquireSeqRef.current;
       const wantAudio = options?.audio ?? true;
       const preserveExistingAudio = options?.preserveExistingAudio ?? false;
-
-      const existingAudioTracks = preserveExistingAudio
-        ? (mediaStreamRef.current?.getAudioTracks().filter((t) => t.readyState === 'live') ?? [])
-        : [];
-
-      if (mediaStreamRef.current) {
-        if (preserveExistingAudio) {
-          mediaStreamRef.current.getVideoTracks().forEach((t) => t.stop());
-        } else {
-          mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        }
-      }
 
       const audioConstraint =
         wantAudio && !preserveExistingAudio
@@ -262,6 +252,24 @@ export function useLiveCameraTutor({
         });
       }
 
+      // Discard and stop tracks if stopSession/unmount or a newer camera flip superseded this request
+      if (!mountedRef.current || cameraAcquireSeqRef.current !== acquireSeq) {
+        acquired.getTracks().forEach((t) => t.stop());
+        return null;
+      }
+
+      const existingAudioTracks = preserveExistingAudio
+        ? (mediaStreamRef.current?.getAudioTracks().filter((t) => t.readyState === 'live') ?? [])
+        : [];
+
+      if (mediaStreamRef.current) {
+        if (preserveExistingAudio) {
+          mediaStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+        } else {
+          mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
+      }
+
       const stream =
         existingAudioTracks.length > 0
           ? new MediaStream([...acquired.getVideoTracks(), ...existingAudioTracks])
@@ -279,6 +287,7 @@ export function useLiveCameraTutor({
 
   const stopSession = useCallback(() => {
     sessionAttemptRef.current += 1;
+    cameraAcquireSeqRef.current += 1;
     if (sessionAbortRef.current) {
       sessionAbortRef.current.abort();
       sessionAbortRef.current = null;
@@ -411,7 +420,7 @@ export function useLiveCameraTutor({
     if (isStale()) return;
 
     const needsMic = sessionInfo.mode === 'gemini-live';
-    let stream: MediaStream;
+    let stream: MediaStream | null;
     try {
       stream = await startCameraStream(facingMode, { audio: needsMic });
     } catch {
@@ -425,12 +434,12 @@ export function useLiveCameraTutor({
       return;
     }
 
-    if (isStale()) {
-      stream.getTracks().forEach((t) => t.stop());
-      if (mediaStreamRef.current === stream) {
+    if (!stream || isStale()) {
+      stream?.getTracks().forEach((t) => t.stop());
+      if (stream && mediaStreamRef.current === stream) {
         mediaStreamRef.current = null;
       }
-      if (videoRef.current && videoRef.current.srcObject === stream) {
+      if (stream && videoRef.current && videoRef.current.srcObject === stream) {
         videoRef.current.srcObject = null;
       }
       return;
@@ -913,16 +922,19 @@ export function useLiveCameraTutor({
       if (!resp.ok) throw new Error(extractApiError(json, resp.status));
       const nextProblem = (json.data ?? json).problem;
       if (nextProblem) {
-        cur.onProblemAssigned?.(nextProblem);
-        const ops: WhiteboardOp[] = [
-          { op: 'clear' },
-          { op: 'add_heading', content: nextProblem.targetConcept || 'Practice Problem' },
-          { op: 'add_step', content: nextProblem.statement },
-        ];
-        if (nextProblem.formulaLatex) {
-          ops.push({ op: 'add_formula', content: nextProblem.formulaLatex });
+        if (cur.onProblemAssigned) {
+          cur.onProblemAssigned(nextProblem);
+        } else {
+          const ops: WhiteboardOp[] = [
+            { op: 'clear' },
+            { op: 'add_heading', content: nextProblem.targetConcept || 'Practice Problem' },
+            { op: 'add_step', content: nextProblem.statement },
+          ];
+          if (nextProblem.formulaLatex) {
+            ops.push({ op: 'add_formula', content: nextProblem.formulaLatex });
+          }
+          cur.onWhiteboardOps?.(ops);
         }
-        cur.onWhiteboardOps?.(ops);
 
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(
@@ -984,6 +996,7 @@ export function useLiveCameraTutor({
           audio: false,
           preserveExistingAudio: true,
         });
+        if (!stream) return;
         if (!mountedRef.current || sessionAttemptRef.current !== attemptId) {
           stream.getTracks().forEach((t) => t.stop());
           if (mediaStreamRef.current === stream) mediaStreamRef.current = null;

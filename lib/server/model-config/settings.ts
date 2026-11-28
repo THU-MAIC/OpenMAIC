@@ -94,6 +94,8 @@ export interface ProviderView {
   baseUrl?: string;
   /** True when the provider overrides the preset's default endpoint (safe to expose even when deployment baseUrl is hidden). */
   hasCustomBaseUrl?: boolean;
+  /** False when a deployment-managed Google provider's allowlist excludes the configured Gemini Live model. */
+  liveStreamingAuthorized?: boolean;
   models?: string[];
   /**
    * Context windows the provider declares per chat model (ids from `models`).
@@ -568,6 +570,20 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         ...presetLabel(provider.preset),
         source: 'deployment' as const,
         ...(providerHasCustomBaseUrl(provider) ? { hasCustomBaseUrl: true } : {}),
+        ...(provider.preset === 'google' && usesServerCredentials(provider)
+          ? {
+              liveStreamingAuthorized: deploymentAuthorizedModels(
+                deployment?.config,
+                id,
+                'chat',
+              ).includes(
+                (process.env.GEMINI_LIVE_MODEL?.trim() || 'gemini-3.8-live').replace(
+                  /^models\//,
+                  '',
+                ),
+              ),
+            }
+          : {}),
         ...(provider.models ? { models: [...provider.models] } : {}),
         ...(provider.modelContextWindows
           ? { modelContextWindows: { ...provider.modelContextWindows } }
