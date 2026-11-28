@@ -277,6 +277,35 @@ describe('read_stage', () => {
     expect(JSON.parse(textOf(text)).combinedText).toContain('Welcome');
   });
 
+  it('reads and patches an imported course, whose orders start at 0, by 1-based page', async () => {
+    const first = { ...slideScene(0, 'scene_imported_1'), title: 'Imported page 1' };
+    const second = { ...slideScene(1, 'scene_imported_2'), title: 'Imported page 2' };
+    const current = state(course([first, second]));
+    const tools = dslTools(current.store);
+    const read = tool(tools, 'read_stage');
+
+    const page1 = await read.execute('page-1', { path: '/scenes/1', detail: 'source' } as never);
+    expect(JSON.parse(textOf(page1))).toMatchObject({ id: 'scene_imported_1' });
+    const page2 = await read.execute('page-2', { path: '/scenes/2', detail: 'source' } as never);
+    expect(JSON.parse(textOf(page2))).toMatchObject({ id: 'scene_imported_2' });
+    const page3 = await read.execute('page-3', { path: '/scenes/3', detail: 'source' } as never);
+    expect(page3).toMatchObject({ isError: true });
+
+    const patched = await tool(tools, 'patch_stage').execute('patch-page-2', {
+      target: '/scenes/2',
+      intent: 'reword page 2 narration',
+      ops: [{ op: 'set', path: '/actions/0/text', value: 'Page 2 narration' }],
+    } as never);
+    expect(patched).not.toMatchObject({ isError: true });
+    const scenes = current.get().scenes;
+    expect(scenes.find(({ id }) => id === 'scene_imported_2')!.actions![0]).toMatchObject({
+      text: 'Page 2 narration',
+    });
+    expect(scenes.find(({ id }) => id === 'scene_imported_1')!.actions![0]).toMatchObject({
+      text: 'Welcome',
+    });
+  });
+
   it('returns an error with legal forms for bad paths and inaccessible explicit stages', async () => {
     const current = state();
     const read = tool(dslTools(current.store), 'read_stage');
