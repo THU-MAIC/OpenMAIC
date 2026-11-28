@@ -948,6 +948,8 @@ export function useLiveCameraTutor({
         return;
       }
 
+      setErrorMessage(null);
+
       if (transportMode === 'gemini-live' && wsRef.current?.readyState === WebSocket.OPEN) {
         if (playCtxRef.current?.state === 'suspended') {
           void playCtxRef.current.resume().catch(() => {});
