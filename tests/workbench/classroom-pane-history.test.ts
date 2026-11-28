@@ -163,14 +163,17 @@ describe('undo and redo in the classroom pane header', () => {
       const redoControl = redoButton()!;
       expect(header.contains(undoButton())).toBe(true);
       expect(header.contains(redoControl)).toBe(true);
-      // With the other editing control between them at most: the tour's ?.
+      // With the other editing controls between them at most: the tour's ?
+      // and the course-issues button (both are optional, order may vary).
       const modeGroup = byTestId('workbench-mode-learning')!.parentElement;
-      const next = redoControl.parentElement!.nextElementSibling;
-      expect(
-        next === modeGroup ||
-          (next?.getAttribute('data-testid') === 'workspace-edit-guide' &&
-            next.nextElementSibling === modeGroup),
-      ).toBe(true);
+      const EDIT_CONTROLS = new Set(['workspace-edit-guide', 'edit-course-issues']);
+      let cursor = redoControl.parentElement!.nextElementSibling;
+      while (cursor && cursor !== modeGroup) {
+        const tid = cursor.getAttribute('data-testid');
+        expect(EDIT_CONTROLS.has(tid ?? '')).toBe(true);
+        cursor = cursor.nextElementSibling;
+      }
+      expect(cursor).toBe(modeGroup);
       expect(undoButton()!.getAttribute('aria-label')).toBe('edit.undo');
       expect(undoButton()!.title).toBe('edit.undo');
       expect(redoControl.getAttribute('aria-label')).toBe('edit.redo');

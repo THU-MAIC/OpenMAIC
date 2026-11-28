@@ -2,7 +2,7 @@
 
 import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
 import { useStageStore, useCanvasStore } from '@/lib/store';
@@ -29,6 +29,12 @@ import { isEditorPreloaded, preloadEditor } from '@/lib/edit/preload-editor';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { useWorkbenchPanelState } from '@/lib/workbench/panel-context';
 import { workspaceHref } from '@/lib/workbench/workspace-panes';
+import {
+  AgentFixContext,
+  stageAgentFixForWorkspace,
+  type AgentFixAccess,
+  type AgentFixRequest,
+} from '@/lib/workbench/agent-fix-handoff';
 
 /**
  * Stage — top-level classroom container. Standalone classrooms dispatch
@@ -354,6 +360,41 @@ export function Stage({
     !hosted && proWorkbenchEntry && isOwner ? handleEnterWorkbench : undefined;
   const makeOwnCourseHref = !hosted && proWorkbenchEntry && !isOwner ? '/' : undefined;
 
+  // "Fix with agent" (issue #2329): where a course's problems can be handed to
+  // a conversation. Hosted, the pane already resolved it from the workspace's
+  // access answer (this store's `isOwner` is standalone-only knowledge).
+  // Standalone, the classroom stages the request and goes to the workspace
+  // exactly as "open in workspace" does — offered only where that conversation
+  // could change the course: its owner, with the Pro runtime on and no
+  // generation run holding the course.
+  const handOffToWorkspace = useCallback(
+    async (request: AgentFixRequest) => {
+      // Flush any pending save before opening the conversation so the agent
+      // reads the same document state the owner sees in the issues list.
+      await settlePendingStageSave();
+      stageAgentFixForWorkspace(request);
+      handleEnterWorkbench();
+    },
+    [handleEnterWorkbench],
+  );
+  const agentFix = useMemo<AgentFixAccess>(
+    () => ({
+      handOff: hosted
+        ? workbenchPanel.requestAgentFix
+        : proWorkbenchEntry && canEditOwnedStage && !courseGenerating
+          ? handOffToWorkspace
+          : null,
+    }),
+    [
+      hosted,
+      workbenchPanel.requestAgentFix,
+      proWorkbenchEntry,
+      canEditOwnedStage,
+      courseGenerating,
+      handOffToWorkspace,
+    ],
+  );
+
   // Mode swap choreography — a clean opacity cross-fade. Both roots layer
   // via `absolute inset-0` so they coexist for the ~280ms window without
   // one popping out before the other arrives. The outgoing root keeps
@@ -431,30 +472,32 @@ export function Stage({
 
   const [classroomHost, setClassroomHost] = useState<HTMLDivElement | null>(null);
   return (
-    <div
-      ref={setClassroomHost}
-      data-classroom-stage
-      data-mobile={
-        mobile && (!workbenchPanel.hosted || workbenchPanel.visible) && chromeMode !== 'edit'
-      }
-      className="relative flex flex-1 overflow-hidden"
-    >
-      {/* The edit-mode guard has been removed (#1961 decision change 2026-08-23): a
-          new agent version directly replaces the canvas, except a scene with an
-          edit not yet saved, which the freshness sync leaves alone until it is
-          (see useStageFreshnessSync). There is no longer an "agent modified this
-          page" banner or a manual reload entry. */}
-      {classroomChrome}
-      {/* Keep-alive host for interactive scene iframes (#619). Lives here, above
-          the mode-swap subtree, so its iframes survive Pro mode toggles and
-          scene switches instead of reloading on every remount. */}
-      <InteractiveIframeHost
-        portalContainer={classroomHost}
-        onMediaPlay={handleInteractiveMediaPlay}
-        playbackPicker={playbackInteractivePicker}
-        onPlaybackPick={handlePlaybackInteractivePick}
-        onPlaybackCancel={handlePlaybackInteractiveCancel}
-      />
-    </div>
+    <AgentFixContext.Provider value={agentFix}>
+      <div
+        ref={setClassroomHost}
+        data-classroom-stage
+        data-mobile={
+          mobile && (!workbenchPanel.hosted || workbenchPanel.visible) && chromeMode !== 'edit'
+        }
+        className="relative flex flex-1 overflow-hidden"
+      >
+        {/* The edit-mode guard has been removed (#1961 decision change 2026-08-23): a
+            new agent version directly replaces the canvas, except a scene with an
+            edit not yet saved, which the freshness sync leaves alone until it is
+            (see useStageFreshnessSync). There is no longer an "agent modified this
+            page" banner or a manual reload entry. */}
+        {classroomChrome}
+        {/* Keep-alive host for interactive scene iframes (#619). Lives here, above
+            the mode-swap subtree, so its iframes survive Pro mode toggles and
+            scene switches instead of reloading on every remount. */}
+        <InteractiveIframeHost
+          portalContainer={classroomHost}
+          onMediaPlay={handleInteractiveMediaPlay}
+          playbackPicker={playbackInteractivePicker}
+          onPlaybackPick={handlePlaybackInteractivePick}
+          onPlaybackCancel={handlePlaybackInteractiveCancel}
+        />
+      </div>
+    </AgentFixContext.Provider>
   );
 }

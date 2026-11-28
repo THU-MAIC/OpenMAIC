@@ -2665,7 +2665,7 @@ export function startAgentRunner(
     'agent runner toolset: ask_user always; web_search when a web-search backend is configured; ' +
       'create_skill/read_skill/patch_skill and the skill-scoped read when skills are installed; ' +
       'fetch_url when enabled (URL trust gate enforced per call); ' +
-      'read_stage/patch_stage/grep_stage and create_stage/read_stage_outline always (owner-scoped store)',
+      'read_stage/patch_stage/grep_stage/list_course_issues and create_stage/read_stage_outline always (owner-scoped store)',
   );
 
   return {

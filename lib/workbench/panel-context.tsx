@@ -8,6 +8,7 @@ import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import type { WorkbenchMaterial } from './session-store';
 import type { ElementRef } from './element-refs';
 import type { CourseRef } from './course-refs';
+import type { AgentFixRequest } from './agent-fix-handoff';
 
 export interface WorkbenchPanelState {
   readonly hosted: boolean;
@@ -21,6 +22,12 @@ export interface WorkbenchPanelState {
   readonly historySlot: HTMLElement | null;
   /** Delegate mobile Back to the workspace's existing navigation lifecycle. */
   readonly onMobileExit?: () => void;
+  /**
+   * "Fix with agent" while hosted: hand an observed course issue to the shell,
+   * which opens an empty conversation beside the course with the issue
+   * pre-filled. Absent outside a pane that offers it.
+   */
+  readonly requestAgentFix: ((request: AgentFixRequest) => void) | null;
 }
 
 const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
@@ -29,6 +36,7 @@ const OUTSIDE_WORKBENCH: WorkbenchPanelState = {
   editPinned: false,
   learning: false,
   historySlot: null,
+  requestAgentFix: null,
 };
 
 const WorkbenchPanelContext = createContext<WorkbenchPanelState>(OUTSIDE_WORKBENCH);
@@ -39,12 +47,14 @@ export function WorkbenchPanelProvider({
   learning = true,
   historySlot = null,
   onMobileExit,
+  onAgentFix = null,
 }: {
   readonly children: ReactNode;
   readonly visible?: boolean;
   readonly learning?: boolean;
   readonly historySlot?: HTMLElement | null;
   readonly onMobileExit?: () => void;
+  readonly onAgentFix?: ((request: AgentFixRequest) => void) | null;
 }) {
   // The pane's size (split or full screen) is not part of this: the hosted
   // classroom renders the same chrome at either size, and the pane draws the
@@ -57,8 +67,9 @@ export function WorkbenchPanelProvider({
       editPinned: visible && !learning,
       historySlot,
       onMobileExit,
+      requestAgentFix: onAgentFix,
     }),
-    [visible, learning, historySlot, onMobileExit],
+    [visible, learning, historySlot, onMobileExit, onAgentFix],
   );
   return <WorkbenchPanelContext.Provider value={value}>{children}</WorkbenchPanelContext.Provider>;
 }

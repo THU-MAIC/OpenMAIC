@@ -68,6 +68,7 @@ import {
   Presentation,
   Scissors,
   Sparkles,
+  TriangleAlert,
   Users,
   Volume2,
   Wrench,
@@ -959,6 +960,24 @@ export function presentTool(
         chips,
         ...(failed
           ? { errorText: errorLine(t('workbench.tool.error.grepCourse'), node.toolResultText) }
+          : {}),
+      };
+    }
+
+    case 'list_course_issues': {
+      const total = num(d.total);
+      if (total !== undefined) {
+        chips.push({ label: t('workbench.tool.chip.results', { count: total }), tone: 'accent' });
+      }
+      if (d.truncated) chips.push({ label: t('workbench.tool.chip.truncated'), tone: 'warn' });
+      return {
+        icon: TriangleAlert,
+        label: t('workbench.tool.label.listCourseIssues'),
+        chips,
+        ...(failed
+          ? {
+              errorText: errorLine(t('workbench.tool.error.listCourseIssues'), node.toolResultText),
+            }
           : {}),
       };
     }

@@ -787,6 +787,31 @@
     "dock": {
       "elementRefHint": "Ссылки на элементы — выберите элементы для следующего сообщения",
       "globalTools": "Общие инструменты"
+    },
+    "issues": {
+      "buttonLabel": "Проблемы курса",
+      "buttonLabelWithCount": "Проблемы курса ({{count}})",
+      "summary": "Проблем: {{count}}",
+      "summary_one": "Проблем: {{count}}",
+      "summary_other": "Проблем: {{count}}",
+      "empty": "В этом курсе проблем не найдено.",
+      "goTo": "Перейти",
+      "goToPage": "Перейти {{page}}",
+      "fixPageWithAgent": "Fix issues on {{page}} with AI",
+      "fixWithAgent": "Исправить с ИИ",
+      "pageLabel": "Страница {{index}} · {{title}}",
+      "untitledPage": "Безымянная страница",
+      "fixPrefillIssue": "Пожалуйста, исправьте эту проблему («{{page}}»): {{issue}}.",
+      "fixPrefillCourse": "Пожалуйста, проверьте этот курс на наличие проблем и исправьте их.",
+      "kind": {
+        "speechWithoutAudio": "У закадрового текста нет аудио",
+        "mediaNotGenerated": "Изображение или видео не создано",
+        "danglingCue": "Действие указывает на элемент, которого больше нет",
+        "emptyActions": "На странице нет действий",
+        "emptySpeech": "Закадровый текст пуст",
+        "unboundCue": "Действие не привязано к элементу",
+        "emptyDiscussion": "У обсуждения нет темы"
+      }
     }
   },
   "whiteboard": {

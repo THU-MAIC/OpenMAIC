@@ -787,6 +787,31 @@
     "dock": {
       "elementRefHint": "Element references — pick elements to send with your next message",
       "globalTools": "Global tools"
+    },
+    "issues": {
+      "buttonLabel": "Course issues",
+      "buttonLabelWithCount": "Course issues ({{count}})",
+      "summary": "{{count}} issues",
+      "summary_one": "{{count}} issue",
+      "summary_other": "{{count}} issues",
+      "empty": "No issues found in this course.",
+      "goTo": "Go to",
+      "goToPage": "Go to {{page}}",
+      "fixWithAgent": "Fix with AI",
+      "fixPageWithAgent": "Fix issues on {{page}} with AI",
+      "pageLabel": "Page {{index}} · {{title}}",
+      "untitledPage": "Untitled page",
+      "fixPrefillIssue": "Please fix this issue on “{{page}}”: {{issue}}.",
+      "fixPrefillCourse": "Please check this course for issues and fix them.",
+      "kind": {
+        "speechWithoutAudio": "Narration has no audio",
+        "mediaNotGenerated": "Image or video was not generated",
+        "danglingCue": "An action points at an element that no longer exists",
+        "emptyActions": "Page has no actions",
+        "emptySpeech": "Narration text is empty",
+        "unboundCue": "An action is not bound to an element",
+        "emptyDiscussion": "Discussion has no topic"
+      }
     }
   },
   "whiteboard": {

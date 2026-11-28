@@ -787,6 +787,31 @@
     "dock": {
       "elementRefHint": "مراجع العناصر — اختر عناصر لإرسالها مع رسالتك التالية",
       "globalTools": "أدوات عامة"
+    },
+    "issues": {
+      "buttonLabel": "مشكلات الدورة",
+      "buttonLabelWithCount": "مشكلات الدورة ({{count}})",
+      "summary": "عدد المشكلات: {{count}}",
+      "summary_one": "عدد المشكلات: {{count}}",
+      "summary_other": "عدد المشكلات: {{count}}",
+      "empty": "لم يتم العثور على مشكلات في هذه الدورة.",
+      "goTo": "انتقال",
+      "goToPage": "انتقال {{page}}",
+      "fixPageWithAgent": "Fix AI: {{page}}",
+      "fixWithAgent": "الإصلاح باستخدام الذكاء الاصطناعي",
+      "pageLabel": "الصفحة {{index}} · {{title}}",
+      "untitledPage": "صفحة بدون عنوان",
+      "fixPrefillIssue": "يرجى إصلاح هذه المشكلة في \"{{page}}\": {{issue}}.",
+      "fixPrefillCourse": "يرجى التحقق من مشكلات هذه الدورة وإصلاحها.",
+      "kind": {
+        "speechWithoutAudio": "السرد بلا صوت",
+        "mediaNotGenerated": "لم يتم إنشاء الصورة أو الفيديو",
+        "danglingCue": "إجراء يشير إلى عنصر لم يعد موجودًا",
+        "emptyActions": "لا تحتوي الصفحة على أي إجراءات",
+        "emptySpeech": "نص السرد فارغ",
+        "unboundCue": "إجراء غير مرتبط بأي عنصر",
+        "emptyDiscussion": "المناقشة بلا موضوع"
+      }
     }
   },
   "whiteboard": {

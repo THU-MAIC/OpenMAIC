@@ -27,6 +27,9 @@ vi.mock('@/components/classroom/ClassroomSurface', async () => {
   };
 });
 vi.mock('@/components/stage/header-controls', () => ({ HeaderControls: () => null }));
+vi.mock('@/components/edit/EditDock/CourseIssuesButton', () => ({
+  CourseIssuesButton: () => null,
+}));
 vi.mock('@/lib/workbench/use-workbench-pro-edit', () => ({ useWorkbenchProEditing: () => {} }));
 vi.mock('@/components/workbench/workspace/WorkspaceCourseTabs', () => ({
   WorkspaceCourseTabs: ({ activeCourseId }: { activeCourseId: string }) => {

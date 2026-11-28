@@ -30,6 +30,9 @@ vi.mock('@/lib/edit/preload-editor', () => ({
 vi.mock('@/lib/hooks/use-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/classroom/ClassroomSurface', () => ({ ClassroomSurface: () => null }));
 vi.mock('@/components/stage/header-controls', () => ({ HeaderControls: () => null }));
+vi.mock('@/components/edit/EditDock/CourseIssuesButton', () => ({
+  CourseIssuesButton: () => null,
+}));
 vi.mock('@/lib/workbench/use-workbench-pro-edit', () => ({ useWorkbenchProEditing: () => {} }));
 vi.mock('@/components/workbench/workspace/WorkspaceCourseTabs', () => ({
   WorkspaceCourseTabs: () => null,

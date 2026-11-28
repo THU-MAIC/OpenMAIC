@@ -14,7 +14,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SceneThumbnailContent } from '@/components/stage/scene-thumbnail-content';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
-import { useSceneIssues } from '@/lib/edit/use-scene-issues';
 import { useNearViewport } from '@/lib/hooks/use-near-viewport';
 import type { Scene } from '@/lib/types/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -41,11 +40,6 @@ function ThumbItemComponent({
   onDelete,
 }: ThumbItemProps) {
   const { t } = useI18n();
-  const issues = useSceneIssues(scene).filter(
-    (issue) => issue.evidence !== 'local-audio-unchecked',
-  );
-  const hasError = issues.some((issue) => issue.severity === 'error');
-  const issueLabel = t(hasError ? 'edit.nav.sceneHasErrors' : 'edit.nav.sceneIncomplete');
   const viewportSize = useCanvasStore.use.viewportSize();
   const viewportRatio = useCanvasStore.use.viewportRatio();
   const updateScene = useStageStore.use.updateScene();
@@ -236,25 +230,6 @@ function ThumbItemComponent({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          )}
-
-          {/* Page-level "incomplete content" dot — surfaces a scene with any content
-              issue (blank narration / no actions / unbound cue …) so the user can spot
-              it in the rail without opening every page. On the header's line, with its
-              right edge on the thumbnail's, past the menu rather than over it. Hidden
-              during inline rename with the menu, for the same reason. */}
-          {issues.length > 0 && !renaming && (
-            <span
-              role="img"
-              title={issueLabel}
-              aria-label={issueLabel}
-              data-testid="scene-issue-marker"
-              data-severity={hasError ? 'error' : 'warning'}
-              className={cn(
-                'absolute right-0 top-1/2 size-2 -translate-y-1/2 rounded-full',
-                hasError ? 'bg-red-500' : 'bg-amber-400',
-              )}
-            />
           )}
         </div>
 

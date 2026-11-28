@@ -2052,6 +2052,7 @@ describe('DSL course-tool wiring', () => {
     expect(tool(tools, 'patch_stage')).toMatchObject({ executionMode: 'sequential' });
     expect(tool(tools, 'read_stage')).not.toHaveProperty('executionMode');
     expect(tool(tools, 'grep_stage')).not.toHaveProperty('executionMode');
+    expect(tool(tools, 'list_course_issues')).not.toHaveProperty('executionMode');
     expect(new Set(names)).toEqual(
       new Set([
         'generate_scene',
@@ -2065,6 +2066,7 @@ describe('DSL course-tool wiring', () => {
         'read_stage',
         'patch_stage',
         'grep_stage',
+        'list_course_issues',
       ]),
     );
   });
@@ -2126,6 +2128,141 @@ describe('grep_stage source scope searches the bounded projection (R6-P2-6)', ()
       scope: 'source',
     } as never)) as { details: { hits: unknown[] } };
     expect(normal.details.hits.length).toBeGreaterThan(0);
+  });
+});
+
+describe('list_course_issues', () => {
+  type Listed = {
+    isError?: boolean;
+    details: {
+      total: number;
+      truncated: boolean;
+      issues: Array<Record<string, unknown>>;
+    };
+  };
+  const unvoiced = {
+    ...slideScene(2, 'scene_unvoiced'),
+    title: 'Unvoiced',
+    actions: [{ id: 'act-2', type: 'speech', text: 'No voice yet' }],
+  } as Scene;
+  const dangling = {
+    ...slideScene(3, 'scene_cue'),
+    title: 'Cue',
+    actions: [
+      { id: 'act-3', type: 'speech', text: 'Look here', audioId: 'asset-3' },
+      { id: 'cue-3', type: 'spotlight', elementId: 'el-gone' },
+    ],
+  } as Scene;
+  // Out of page order on purpose: the list follows the pages, not the array.
+  const issuesCourse = () => course([dangling, slideScene(1, 'scene_ok'), unvoiced]);
+  const listIssues = async (
+    store: CourseStore,
+    params: Record<string, unknown> = {},
+    capabilities?: { isAvailable: (capability: string) => boolean },
+  ) =>
+    (await tool(
+      buildDslCourseTools({
+        store,
+        stageAccess: async () => OWNED,
+        onCheckpoint: () => undefined,
+        ...(capabilities ? { capabilities: capabilities as never } : {}),
+      }),
+      'list_course_issues',
+    ).execute('issues', params)) as Listed;
+
+  it('lists the current issues page by page and drops one once its cause is fixed', async () => {
+    const current = state(issuesCourse());
+    const first = await listIssues(current.store);
+    expect(first.isError).toBeUndefined();
+    expect(first.details).toMatchObject({ total: 2, truncated: false });
+    expect(first.details.issues).toEqual([
+      {
+        kind: 'speech-without-audio',
+        severity: 'warning',
+        scenePath: '/scenes/scene_unvoiced',
+        page: 2,
+        order: 2,
+        title: 'Unvoiced',
+        actionId: 'act-2',
+        // The server cannot see a browser's device cache: said, not guessed.
+        note: 'possibly local audio',
+      },
+      {
+        kind: 'dangling-cue',
+        severity: 'warning',
+        scenePath: '/scenes/scene_cue',
+        page: 3,
+        order: 3,
+        title: 'Cue',
+        actionId: 'cue-3',
+        elementId: 'el-gone',
+      },
+    ]);
+
+    await current.putScene('stage-test', {
+      ...unvoiced,
+      actions: [{ id: 'act-2', type: 'speech', text: 'No voice yet', audioId: 'asset-2' }],
+    } as Scene);
+    const after = await listIssues(current.store);
+    expect(after.details.issues.map((issue) => issue.kind)).toEqual(['dangling-cue']);
+  });
+
+  it('labels only legacy-eligible narration as possibly local audio', async () => {
+    const invalidated = {
+      ...unvoiced,
+      actions: [{ id: 'act-2', type: 'speech', text: 'Edited', audioInvalidated: true }],
+    } as Scene;
+    const listed = await listIssues(state(course([invalidated])).store);
+    expect(listed.details.issues).toEqual([
+      expect.not.objectContaining({ note: expect.anything() }),
+    ]);
+  });
+
+  it('does not report missing narration when the run cannot synthesize speech', async () => {
+    const withoutTts = await listIssues(
+      state(issuesCourse()).store,
+      {},
+      {
+        isAvailable: (capability) => capability !== 'tts',
+      },
+    );
+    expect(withoutTts.details.issues.map((issue) => issue.kind)).toEqual(['dangling-cue']);
+    const withTts = await listIssues(
+      state(issuesCourse()).store,
+      {},
+      {
+        isAvailable: () => true,
+      },
+    );
+    expect(withTts.details.issues.map((issue) => issue.kind)).toEqual([
+      'speech-without-audio',
+      'dangling-cue',
+    ]);
+  });
+
+  it('narrows to one page and refuses a page that is not there', async () => {
+    const current = state(issuesCourse());
+    const one = await listIssues(current.store, { sceneId: 'scene_cue' });
+    expect(one.details.issues).toEqual([expect.objectContaining({ kind: 'dangling-cue' })]);
+    const clean = await listIssues(current.store, { sceneId: 'scene_ok' });
+    expect(clean.details).toMatchObject({ total: 0, issues: [] });
+    const missing = await listIssues(current.store, { sceneId: 'scene_nowhere' });
+    expect(missing.isError).toBe(true);
+    expect(textOf(missing)).toContain('scene_nowhere');
+  });
+
+  it('bounds the list and says how many there are', async () => {
+    const crowded = {
+      ...slideScene(1, 'scene_crowded'),
+      actions: Array.from({ length: 60 }, (_, index) => ({
+        id: `empty-${index}`,
+        type: 'speech',
+        text: ' ',
+      })),
+    } as Scene;
+    const listed = await listIssues(state(course([crowded])).store);
+    expect(listed.details).toMatchObject({ total: 60, truncated: true });
+    expect(listed.details.issues).toHaveLength(50);
   });
 });
 
@@ -2197,6 +2334,7 @@ describe('cross-owner isolation (owner-scoped store)', () => {
       readStage: run(dsl, 'read_stage'),
       patchStage: run(dsl, 'patch_stage'),
       grepStage: run(dsl, 'grep_stage'),
+      listIssues: run(dsl, 'list_course_issues'),
       createStage: run(curriculum, 'create_stage'),
     };
   }
@@ -2261,6 +2399,11 @@ describe('cross-owner isolation (owner-scoped store)', () => {
     } as never)) as { isError?: boolean };
     expect(foreignGrep).toMatchObject(refusalShape);
 
+    const foreignIssues = (await bob.listIssues.execute('issues-1', { stageId } as never)) as {
+      isError?: boolean;
+    };
+    expect(foreignIssues).toMatchObject(refusalShape);
+
     // The document is untouched — the refusal happened before any IO.
     await expect(alice.store.loadDocument(stageId)).resolves.toMatchObject({
       stage: { id: stageId, name: 'Alice stage' },
@@ -2275,6 +2418,12 @@ describe('cross-owner isolation (owner-scoped store)', () => {
     expect(JSON.parse(ownRead.content[0]!.text)).toMatchObject({
       stage: { id: stageId, name: 'Alice stage' },
     });
+    const ownIssues = (await alice.listIssues.execute('issues-2', { stageId } as never)) as {
+      isError?: boolean;
+      details: { stageId: string };
+    };
+    expect(ownIssues.isError).toBeUndefined();
+    expect(ownIssues.details.stageId).toBe(stageId);
   });
 
   it('each owner list contains only that owner’s stage', async () => {
@@ -2356,4 +2505,116 @@ it('allows unrelated text edits on a slide with imported chart formatting', asyn
   } as never);
   expect(result).not.toHaveProperty('isError');
   expect(current.putScene).toHaveBeenCalledTimes(1);
+});
+
+// ── Point 3: resolveCoursePath accepts any exact scene id ──────────────────
+
+it('list_course_issues and read_stage / patch_stage work with a plain nanoid scene', async () => {
+  // Simulate a scene whose id was assigned by the editor (not scene-/scene_).
+  const nanoidSceneId = 'V7q4bPxK2m'; // plausible nanoid, no scene-/scene_ prefix
+  const nanoidScene: Scene = {
+    id: nanoidSceneId,
+    stageId: 'stage-test',
+    type: 'slide',
+    title: 'Nano scene',
+    order: 1,
+    content: {
+      type: 'slide',
+      canvas: {
+        id: 'c-nano',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
+        elements: [],
+      },
+    },
+    actions: [], // empty-actions issue
+    createdAt: 0,
+    updatedAt: 0,
+  } as unknown as Scene;
+  const initial = course([nanoidScene]);
+  const current = state(initial);
+  const list = tool(dslTools(current.store), 'list_course_issues');
+  const listResult = await list.execute('list-nano', {});
+  expect(listResult).not.toHaveProperty('isError');
+  const listed = JSON.parse((listResult as { content: Array<{ text: string }> }).content[0]!.text);
+  expect(listed.issues).toHaveLength(1);
+  expect(listed.issues[0].kind).toBe('empty-actions');
+  const scenePath = listed.issues[0].scenePath as string;
+  expect(scenePath).toBe(`/scenes/${nanoidSceneId}`);
+
+  // read_stage with the returned scenePath must succeed.
+  const read = tool(dslTools(current.store), 'read_stage');
+  const readResult = await read.execute('read-nano', { path: scenePath });
+  expect(readResult).not.toHaveProperty('isError');
+
+  // patch_stage with the same path must succeed.
+  const patch = tool(dslTools(current.store), 'patch_stage');
+  const patchResult = await patch.execute('patch-nano', {
+    target: scenePath,
+    intent: 'add speech action',
+    ops: [
+      {
+        op: 'set',
+        path: '/actions/0',
+        value: { id: 'speech-new', type: 'speech', text: 'Hi', audioId: 'x' },
+      },
+    ],
+  });
+  expect(patchResult).not.toHaveProperty('isError');
+  expect(current.putScene).toHaveBeenCalledTimes(1);
+});
+
+// ── Point 4: list_course_issues marks generating media ────────────────────
+
+it('list_course_issues marks media-not-generated as generating while a job is running', async () => {
+  const { registerPendingMedia, clearPendingMediaTasks } =
+    await import('@/lib/server/agent-runtime/pending-media');
+  const ref = 'gen_vid_test123';
+  const elemId = 'el-video';
+  const videoScene: Scene = {
+    id: 'scene_vid',
+    stageId: 'stage-test',
+    type: 'slide',
+    title: 'Video page',
+    order: 1,
+    content: {
+      type: 'slide',
+      canvas: {
+        id: 'c-vid',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
+        elements: [
+          {
+            id: elemId,
+            type: 'video',
+            left: 0,
+            top: 0,
+            width: 100,
+            height: 100,
+            rotate: 0,
+            src: ref,
+            fixedRatio: true,
+          },
+        ],
+      },
+    },
+    actions: [{ id: 's1', type: 'speech', text: 'Hi', audioId: 'x' }],
+    createdAt: 0,
+    updatedAt: 0,
+  } as unknown as Scene;
+  registerPendingMedia({ ref, type: 'video', stageId: 'stage-test' });
+  try {
+    const current = state(course([videoScene]));
+    const list = tool(dslTools(current.store), 'list_course_issues');
+    const result = await list.execute('list-vid', {});
+    expect(result).not.toHaveProperty('isError');
+    const listed = JSON.parse((result as { content: Array<{ text: string }> }).content[0]!.text);
+    expect(listed.issues).toHaveLength(1);
+    expect(listed.issues[0].kind).toBe('media-not-generated');
+    expect(listed.issues[0].note).toBe('generating');
+  } finally {
+    clearPendingMediaTasks();
+  }
 });

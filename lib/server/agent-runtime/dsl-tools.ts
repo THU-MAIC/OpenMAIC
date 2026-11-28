@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { nanoid } from 'nanoid';
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import { collectCourseIssues } from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import { validateAppScene } from '@/lib/document-store/validators';
@@ -28,6 +29,7 @@ import {
 import { COURSE_STAGE_ID_DESCRIPTION } from './course-stage';
 import { validateSlideCanvas } from './course-edit/element-schema';
 import { interactiveRuntimeFeedback } from './interactive-runtime';
+import { getPendingMediaTask } from './pending-media';
 
 const READ_PAGE_CHARS = 12_000;
 const SEARCH_CONTEXT_CHARS = 200;
@@ -148,6 +150,20 @@ type ReadParams = Static<typeof READ_COURSE_SCHEMA>;
 type PatchParams = Static<typeof PATCH_COURSE_SCHEMA>;
 type GrepParams = Static<typeof GREP_COURSE_SCHEMA>;
 
+export const LIST_COURSE_ISSUES_TOOL_NAME = 'list_course_issues';
+const MAX_LISTED_ISSUES = 50;
+
+export const LIST_COURSE_ISSUES_SCHEMA = Type.Object({
+  stageId: Type.String({ description: COURSE_STAGE_ID_DESCRIPTION }),
+  sceneId: Type.Optional(
+    Type.String({
+      description: 'List one page only: its scene id, as read_stage or list_scenes report it.',
+    }),
+  ),
+});
+
+type ListIssuesParams = Static<typeof LIST_COURSE_ISSUES_SCHEMA>;
+
 function toolResult(text: string, details: Record<string, unknown>, isError = false) {
   return {
     content: [{ type: 'text' as const, text }],
@@ -194,10 +210,12 @@ function resolveCoursePath(doc: CourseDocument, rawPath?: string): ResolvedPath 
   let scene: Scene | undefined;
   if (/^[1-9]\d*$/.test(token)) {
     scene = doc.scenes.find((item) => item.order === Number(token));
-  } else if (/^scene[-_]/.test(token)) {
-    scene = doc.scenes.find((item) => item.id === token);
   } else {
-    return `Scene selector ${JSON.stringify(token)} must be a 1-based order or scene_/scene- id. ${LEGAL_PATHS}`;
+    // Accept any existing scene id directly — a scene added in the editor
+    // can carry a plain nanoid that does not start with scene_/scene-.
+    // The existing promise in LEGAL_PATHS and skill docs already says
+    // "/scenes/<scene_id>" works; this makes the resolver match it.
+    scene = doc.scenes.find((item) => item.id === token);
   }
   if (!scene) return `Scene ${JSON.stringify(token)} was not found. ${LEGAL_PATHS}`;
   return match[2] ? { kind: 'actions', path, scene } : { kind: 'scene', path, scene };
@@ -1375,8 +1393,94 @@ export function buildDslCourseTools(deps: CourseToolDeps): AgentTool<never, neve
     },
   };
 
-  return [readCourse, patchCourse, grepCourse] as unknown as AgentTool<never, never>[];
+  /**
+   * The course's current problems, derived by the same `collectCourseIssues`
+   * the editor's issues list and page markers use (RFC #1899), so a fixed cause
+   * is gone from both. Read-only.
+   *
+   * What the server cannot see is said, not guessed: narration a browser may
+   * still hold on the owner's device is listed and marked "possibly local
+   * audio", where the editor's list checks that device and leaves out what
+   * still plays there. An interactive page's runtime errors are not listed
+   * here: where the deployment checks interactive pages, generate_scene and
+   * patch_stage report them when they write the page.
+   */
+  const listIssues: AgentTool<typeof LIST_COURSE_ISSUES_SCHEMA, unknown> = {
+    name: LIST_COURSE_ISSUES_TOOL_NAME,
+    label: 'List course issues',
+    description:
+      "List what is currently wrong in a stage, page by page, at most 50: speech-without-audio (narration text with no generated audio; generate_tts), media-not-generated (an image or video slot still holding a generation placeholder; generate_image or generate_video — do not regenerate media whose note is 'generating', as a job is already running), dangling-cue (a spotlight, laser or play_video cue bound to an element that is gone, or play_video bound to a non-video; rebind or remove with patch_stage), empty-actions (a page with no playback actions; generate_actions), and empty-speech, unbound-cue, empty-discussion (an action missing its text, element or topic; patch_stage). Each issue carries its page's 1-based `page` (matching the editor's issues list) plus its `scenePath` (pass it as read_stage's path or patch_stage's target), and the actionId or elementId it is about. An issue marked 'possibly local audio' may still play from the owner's device. An issue marked 'generating' has an in-progress generation job; wait for it to finish before acting. Interactive runtime errors are not listed: where the deployment checks interactive pages, generate_scene and patch_stage report them when they write one. Call it again after fixing to confirm the issue is gone.",
+    parameters: LIST_COURSE_ISSUES_SCHEMA,
+    async execute(_id, params: ListIssuesParams) {
+      const loaded = await loadCourse(deps, params.stageId);
+      if ('error' in loaded) return toolResult(loaded.error, {}, true);
+      const scenes = [...loaded.doc.scenes].sort((a, b) => a.order - b.order);
+      const target =
+        params.sceneId === undefined
+          ? scenes
+          : scenes.filter((scene) => scene.id === params.sceneId);
+      if (target.length === 0 && params.sceneId !== undefined)
+        return toolResult(`Scene ${JSON.stringify(params.sceneId)} was not found.`, {}, true);
+      const issues = collectCourseIssues(
+        { scenes: target },
+        // A run that cannot synthesize narration does not report its absence.
+        deps.capabilities ? { narrationEnabled: deps.capabilities.isAvailable('tts') } : {},
+      );
+      const byId = new Map(target.map((scene) => [scene.id, scene]));
+      const listed = issues.slice(0, MAX_LISTED_ISSUES).map((issue, _i, _arr) => {
+        const scene = byId.get(issue.sceneId)!;
+        // `page` is the 1-based position in the sorted scene list so the agent
+        // can say "page 3" and match what the editor's list shows, independent
+        // of non-contiguous `order` values after deletions.
+        const page = scenes.indexOf(scene) + 1;
+        // For media-not-generated issues, check whether the generation job is
+        // still running in this process. If so, mark it 'generating' so the
+        // agent knows not to submit another generate request (which could start
+        // a duplicate job and cost money). The registry is process-local, so
+        // this only fires when list_course_issues runs on the same instance as
+        // the generate_video / generate_image call; in multi-instance deploys
+        // the note may be absent for a short window, which is safe to miss.
+        let note: string | undefined;
+        if (issue.kind === 'media-not-generated' && issue.elementId) {
+          const canvas = scene.content.type === 'slide' ? scene.content.canvas : null;
+          const el = canvas?.elements.find((e) => e.id === issue.elementId) as
+            | { src?: string; mediaRef?: string }
+            | undefined;
+          const ref = el?.mediaRef ?? el?.src;
+          if (ref && getPendingMediaTask(ref)?.status === 'generating') {
+            note = 'generating';
+          }
+        }
+        if (!note && issue.evidence === 'local-audio-unchecked') note = 'possibly local audio';
+        return {
+          kind: issue.kind,
+          severity: issue.severity,
+          scenePath: `/scenes/${scene.id}`,
+          page,
+          order: scene.order,
+          title: scene.title,
+          ...(issue.actionId ? { actionId: issue.actionId } : {}),
+          ...(issue.elementId ? { elementId: issue.elementId } : {}),
+          ...(note ? { note } : {}),
+        };
+      });
+      const details = {
+        stageId: loaded.stageId,
+        total: issues.length,
+        truncated: listed.length < issues.length,
+        issues: listed,
+      };
+      return toolResult(JSON.stringify(details, null, 2), details);
+    },
+  };
+
+  return [readCourse, patchCourse, grepCourse, listIssues] as unknown as AgentTool<never, never>[];
 }
 
-export const DSL_COURSE_TOOL_NAMES = ['read_stage', 'patch_stage', 'grep_stage'] as const;
+export const DSL_COURSE_TOOL_NAMES = [
+  'read_stage',
+  'patch_stage',
+  'grep_stage',
+  LIST_COURSE_ISSUES_TOOL_NAME,
+] as const;
 export const DSL_COURSE_WRITE_TOOLS = ['patch_stage'] as const;

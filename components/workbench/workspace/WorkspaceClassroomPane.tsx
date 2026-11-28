@@ -24,7 +24,7 @@
  */
 
 import { ArrowLeft, CircleHelp, Eye, Maximize, MessagesSquare, Minimize2 } from 'lucide-react';
-import { memo, useEffect, useLayoutEffect, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useMobileLayout } from '@/lib/adaptive/adaptive-provider';
 import {
@@ -37,6 +37,7 @@ import { ClassroomSurface } from '@/components/classroom/ClassroomSurface';
 import { useStageStore } from '@/lib/store/stage';
 import { useWorkbenchStore } from '@/lib/workbench/session-store';
 import { WorkbenchPanelProvider } from '@/lib/workbench/panel-context';
+import { AgentFixContext, type AgentFixRequest } from '@/lib/workbench/agent-fix-handoff';
 import { useWorkbenchProEditing } from '@/lib/workbench/use-workbench-pro-edit';
 import { useEditorWarmup, warmEditor } from '@/lib/edit/use-editor-warmup';
 import { shouldCollapseFullscreenOnEscape } from '@/lib/workbench/classroom-fullscreen';
@@ -48,6 +49,7 @@ import {
   useOnboardingPending,
   useTourActive,
 } from '@/lib/workbench/onboarding';
+import { CourseIssuesButton } from '@/components/edit/EditDock/CourseIssuesButton';
 import { WorkspaceCourseTabs, type WorkspaceCourseTabItem } from './WorkspaceCourseTabs';
 import { WorkspaceTour } from './WorkspaceTour';
 import { editTourSteps } from './edit-tour-steps';
@@ -65,6 +67,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
   onCollapse,
   onMobileExit,
   onTalkAboutCourse,
+  onAgentFix,
 }: {
   /**
    * The tab strip's state and callbacks. The pane owns no tab state: the
@@ -121,6 +124,11 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
    * one about it ("Edit with AI"). Absent otherwise.
    */
   readonly onTalkAboutCourse?: () => void;
+  /**
+   * "Fix with agent": hand an observed problem to an empty conversation about
+   * this course. Absent while a conversation could not change it.
+   */
+  readonly onAgentFix?: (request: AgentFixRequest) => void;
 }) {
   const courseId = browser.activeCourseId;
   const { t } = useI18n();
@@ -153,6 +161,13 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
     scenes.length > 0;
   // Full screen does not force learning: it is a size, not a mode.
   const learning = !editingAllowed || preferences[courseId] !== 'editing';
+  // The AgentFixAccess for the course-issues header button mirrors what Stage
+  // supplies when hosted. The header is outside Stage's own provider, so we
+  // build it directly from the prop passed in by WorkspaceShell.
+  const agentFixAccess = useMemo(
+    () => ({ handOff: editingAllowed && !learning && onAgentFix ? onAgentFix : null }),
+    [editingAllowed, learning, onAgentFix],
+  );
   // Load the editor while the course is shown in Learn mode, so the first switch
   // to Edit does not wait on its download. Only where the switch is offered.
   const warmEditorNow = useEditorWarmup(editingAllowed && learning && !hidden);
@@ -335,6 +350,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           {loadedCourseId === courseId ? (
             <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
           ) : null}
+          {/* Course issues button — course-level, Edit mode only, owner only. */}
+          {editingAllowed && !learning ? (
+            <AgentFixContext.Provider value={agentFixAccess}>
+              <CourseIssuesButton />
+            </AgentFixContext.Provider>
+          ) : null}
           {modeSwitch}
           <span className="ws-vsep" aria-hidden="true" />
           <button
@@ -358,6 +379,12 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
               {readOnly && readOnlyKnown ? <ReadOnlyBadge /> : null}
               {/* Export, as in the split header. */}
               <HeaderControls variant="compact" showGlobalControls={false} showCourseActions />
+              {/* Course issues button — course-level, Edit mode only, owner only. */}
+              {editingAllowed && !learning ? (
+                <AgentFixContext.Provider value={agentFixAccess}>
+                  <CourseIssuesButton />
+                </AgentFixContext.Provider>
+              ) : null}
               {/* The editor portals its undo/redo here while editing; empty, it
               takes no space. It sits with the other editing control (the
               tour's ?) just before Learn | Edit. */}
@@ -409,6 +436,7 @@ export const WorkspaceClassroomPane = memo(function WorkspaceClassroomPane({
           learning={learning}
           historySlot={historySlot}
           onMobileExit={onMobileExit}
+          onAgentFix={onAgentFix ?? null}
         >
           <ClassroomSurface classroomId={courseId} variant="pane" />
         </WorkbenchPanelProvider>

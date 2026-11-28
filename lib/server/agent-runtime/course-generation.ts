@@ -71,6 +71,7 @@ export const COURSE_READER_TOOLS: ReadonlyMap<string, 'stageId' | 'classroomId'>
   ['grep_stage', 'stageId'],
   ['list_scenes', 'stageId'],
   ['read_stage_outline', 'stageId'],
+  ['list_course_issues', 'stageId'],
   ['read_classroom', 'classroomId'],
 ]);
 
