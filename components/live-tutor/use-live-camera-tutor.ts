@@ -422,8 +422,30 @@ export function useLiveCameraTutor({
         preAcquiredScreen.getTracks().forEach((t) => t.stop());
         return;
       }
-      screenStreamRef.current = preAcquiredScreen;
+      const acquiredScreen = preAcquiredScreen;
+      screenStreamRef.current = acquiredScreen;
+      // Attach the ended listener immediately so stopping sharing during negotiation/mic setup tears down cleanly
+      acquiredScreen.getVideoTracks()[0]?.addEventListener('ended', () => {
+        if (screenStreamRef.current === acquiredScreen) {
+          screenStreamRef.current = null;
+        }
+        if (isStale()) return;
+        const hasCameraVideo =
+          mediaStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live') ?? false;
+        if (hasCameraVideo && mediaStreamRef.current) {
+          setVideoSource('camera');
+          if (videoRef.current) {
+            videoRef.current.srcObject = mediaStreamRef.current;
+            void videoRef.current.play().catch(() => {});
+          }
+        } else {
+          stopSession();
+        }
+      });
     }
+
+    const isScreenStillLive = (stream: MediaStream | null): boolean =>
+      Boolean(stream?.getVideoTracks().some((t) => t.readyState === 'live'));
 
     // Negotiate transport first so turn-based snapshot fallback only requests video (not mic)
     let sessionInfo: LiveTutorSessionResponse;
@@ -456,6 +478,10 @@ export function useLiveCameraTutor({
       preAcquiredScreen?.getTracks().forEach((t) => t.stop());
       return;
     }
+    if (requestedSource === 'screen' && !isScreenStillLive(preAcquiredScreen)) {
+      stopSession();
+      return;
+    }
 
     const needsMic = sessionInfo.mode === 'gemini-live';
     let audioStream: MediaStream | null = null;
@@ -476,9 +502,10 @@ export function useLiveCameraTutor({
           setErrorMessage('Microphone permission is required for live voice tutoring.');
           return;
         }
-        if (isStale()) {
+        if (isStale() || !isScreenStillLive(screen)) {
           screen.getTracks().forEach((t) => t.stop());
           audioStream.getTracks().forEach((t) => t.stop());
+          if (!isStale()) stopSession();
           return;
         }
         mediaStreamRef.current = audioStream;
@@ -489,23 +516,6 @@ export function useLiveCameraTutor({
         videoRef.current.srcObject = screen;
         await videoRef.current.play().catch(() => {});
       }
-      screen.getVideoTracks()[0]?.addEventListener('ended', () => {
-        if (screenStreamRef.current === screen) {
-          screenStreamRef.current = null;
-        }
-        if (isStale()) return;
-        const hasCameraVideo =
-          mediaStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live') ?? false;
-        if (hasCameraVideo && mediaStreamRef.current) {
-          setVideoSource('camera');
-          if (videoRef.current) {
-            videoRef.current.srcObject = mediaStreamRef.current;
-            void videoRef.current.play().catch(() => {});
-          }
-        } else {
-          stopSession();
-        }
-      });
     } else {
       let stream: MediaStream | null;
       try {
