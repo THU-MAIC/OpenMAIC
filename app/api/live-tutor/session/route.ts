@@ -14,6 +14,11 @@
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, modelAuthorizationResponse } from '@/lib/server/api-response';
+import {
+  assertDeploymentModelAuthorized,
+  ModelAuthorizationError,
+} from '@/lib/server/model-config/model-authorization';
+import { deploymentConfig } from '@/lib/server/model-config/runtime';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { LiveTutorSessionResponse } from '@/lib/live-tutor/types';
 
@@ -52,40 +57,77 @@ export async function POST(req: NextRequest) {
       const expireTime = new Date(now + 30 * 60 * 1000).toISOString();
       const newSessionExpireTime = new Date(now + 2 * 60 * 1000).toISOString();
       const liveModel = normalizeLiveModelName(process.env.GEMINI_LIVE_MODEL);
+      const bareLiveModel = liveModel.replace(/^models\//, '');
 
-      try {
-        const tokenResp = await fetch(
-          `${GOOGLE_DEFAULT_ORIGIN}/v1alpha/auth_tokens?key=${encodeURIComponent(resolved.apiKey)}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uses: 1,
-              expireTime,
-              newSessionExpireTime,
-            }),
-          },
-        );
+      // Enforce deployment model allowlist before spending deployment credentials on the Live model
+      // (workspace BYOK providers use the user's own API key, not the deployment allowlist).
+      let liveModelAuthorized = true;
+      const resolution = (
+        resolved as { resolution?: { providerId?: string; providerSource?: string } }
+      ).resolution;
+      const usesDeploymentCreds = resolution?.providerSource
+        ? resolution.providerSource === 'deployment'
+        : resolved.serverManaged;
 
-        if (tokenResp.ok) {
-          const tokenData = (await tokenResp.json()) as { name?: string };
-          if (tokenData.name) {
-            const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(tokenData.name)}`;
-            const payload: LiveTutorSessionResponse = {
-              mode: 'gemini-live',
-              wsUrl,
-              model: liveModel,
-              expiresAt: expireTime,
-            };
-            return apiSuccess(payload);
+      if (usesDeploymentCreds) {
+        const { layer: deployment } = deploymentConfig();
+        if (deployment?.config) {
+          const deploymentProviderId = resolution?.providerId ?? resolved.providerId;
+          try {
+            assertDeploymentModelAuthorized(
+              deployment.config,
+              deploymentProviderId,
+              bareLiveModel,
+              'chat',
+            );
+          } catch (authErr) {
+            if (authErr instanceof ModelAuthorizationError) {
+              liveModelAuthorized = false;
+              log.warn(
+                `Live model "${bareLiveModel}" is not in deployment allowlist for provider "${deploymentProviderId}"; falling back to turn-based mode.`,
+              );
+            } else {
+              throw authErr;
+            }
           }
-        } else {
-          log.warn(
-            `Gemini ephemeral token request returned HTTP ${tokenResp.status}; falling back to turn-based mode.`,
-          );
         }
-      } catch (tokenErr) {
-        log.warn('Failed to mint Gemini Live ephemeral token; using turn-based mode:', tokenErr);
+      }
+
+      if (liveModelAuthorized) {
+        try {
+          const tokenResp = await fetch(
+            `${GOOGLE_DEFAULT_ORIGIN}/v1alpha/auth_tokens?key=${encodeURIComponent(resolved.apiKey)}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uses: 1,
+                expireTime,
+                newSessionExpireTime,
+              }),
+            },
+          );
+
+          if (tokenResp.ok) {
+            const tokenData = (await tokenResp.json()) as { name?: string };
+            if (tokenData.name) {
+              const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(tokenData.name)}`;
+              const payload: LiveTutorSessionResponse = {
+                mode: 'gemini-live',
+                wsUrl,
+                model: liveModel,
+                expiresAt: expireTime,
+              };
+              return apiSuccess(payload);
+            }
+          } else {
+            log.warn(
+              `Gemini ephemeral token request returned HTTP ${tokenResp.status}; falling back to turn-based mode.`,
+            );
+          }
+        } catch (tokenErr) {
+          log.warn('Failed to mint Gemini Live ephemeral token; using turn-based mode:', tokenErr);
+        }
       }
     }
 

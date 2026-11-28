@@ -14,7 +14,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, modelAuthorizationResponse } from '@/lib/server/api-response';
 import { resolveModelFromRequest, type ResolvedModel } from '@/lib/server/resolve-model';
-import { isLikelyTextOnlyModel } from '@/lib/live-tutor/model-capabilities';
+import { modelSupportsVision } from '@/lib/live-tutor/model-capabilities';
 import type {
   HelpMeLearnPlan,
   LearningMode,
@@ -23,9 +23,7 @@ import type {
 } from '@/lib/live-tutor/types';
 
 function resolvedModelSupportsVision(resolved: ResolvedModel): boolean {
-  const cataloguedVision = resolved.modelInfo?.capabilities?.vision;
-  if (typeof cataloguedVision === 'boolean') return cataloguedVision;
-  return !isLikelyTextOnlyModel(resolved.modelId);
+  return modelSupportsVision(resolved.modelId, resolved.modelInfo?.capabilities?.vision);
 }
 
 const log = createLogger('HelpMeLearnPlan');
@@ -53,7 +51,11 @@ function extractJsonObject(raw: string): Record<string, unknown> | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as PlanRequest;
+    const rawBody: unknown = await req.json().catch(() => null);
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+      return apiError('INVALID_REQUEST', 400, 'Invalid JSON request body');
+    }
+    const body = rawBody as PlanRequest;
     const rawTopic = body.topic?.trim() ?? '';
     const hasImage = Boolean(body.imageDataUrl && body.imageDataUrl.startsWith('data:image/'));
     if (!rawTopic && !hasImage) {
@@ -75,10 +77,14 @@ export async function POST(req: NextRequest) {
 
     if (hasImage && !resolvedModelSupportsVision(resolved)) {
       if (stage === 'scene-content:slide') {
-        const classroomResolved = await resolveModelFromRequest(req, body, 'chat-adapter');
-        if (resolvedModelSupportsVision(classroomResolved)) {
-          stage = 'chat-adapter';
-          resolved = classroomResolved;
+        try {
+          const classroomResolved = await resolveModelFromRequest(req, body, 'chat-adapter');
+          if (resolvedModelSupportsVision(classroomResolved)) {
+            stage = 'chat-adapter';
+            resolved = classroomResolved;
+          }
+        } catch {
+          // Classroom slot may be disabled or unassigned; fall through to the 400 vision error
         }
       }
       if (!resolvedModelSupportsVision(resolved)) {
@@ -163,7 +169,8 @@ Reply with valid JSON only:
       stage,
       undefined,
       thinkingConfig,
-      { serverManaged },
+      // Disable slot fallback for image-bearing requests so a retry never hits a text-only fallback model
+      { serverManaged, enabled: !hasImage },
     );
 
     const parsed = extractJsonObject(result.text);

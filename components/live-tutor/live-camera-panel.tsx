@@ -90,6 +90,7 @@ export function LiveCameraPanel({
   const isConnecting = status === 'connecting';
 
   const handleSendText = () => {
+    if (turnBusy) return;
     const trimmed = textQuestion.trim();
     if (!trimmed) return;
     setTextQuestion('');
@@ -355,12 +356,13 @@ export function LiveCameraPanel({
           <input
             type="text"
             value={textQuestion}
+            disabled={turnBusy}
             onChange={(e) => setTextQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSendText();
+              if (e.key === 'Enter' && !turnBusy) handleSendText();
             }}
             placeholder={t('liveTutor.askPlaceholder')}
-            className="flex-1 h-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-xs text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+            className="flex-1 h-10 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-xs text-gray-900 dark:text-gray-100 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
           />
           <Button
             type="button"

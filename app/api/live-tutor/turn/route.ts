@@ -15,6 +15,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, modelAuthorizationResponse } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { modelSupportsVision } from '@/lib/live-tutor/model-capabilities';
 import type { PracticeProblem, WhiteboardOp } from '@/lib/live-tutor/types';
 
 const log = createLogger('LiveTutorTurn');
@@ -52,12 +53,13 @@ function extractJsonObject(raw: string): Record<string, unknown> | null {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = (await req.json()) as TurnRequest;
-    const {
-      model: languageModel,
-      thinkingConfig,
-      serverManaged,
-    } = await resolveModelFromRequest(req, body, 'chat-adapter');
+    const rawBody: unknown = await req.json().catch(() => null);
+    if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+      return apiError('INVALID_REQUEST', 400, 'Invalid JSON request body');
+    }
+    const body = rawBody as TurnRequest;
+    const resolved = await resolveModelFromRequest(req, body, 'chat-adapter');
+    const { model: languageModel, thinkingConfig, serverManaged } = resolved;
 
     const langHint = body.language ? `Respond in locale "${body.language}".` : '';
 
@@ -114,6 +116,14 @@ Reply with valid JSON only (no markdown fences):
       if (body.imageDataUrl && body.imageDataUrl.length > 8_000_000) {
         return apiError('INVALID_REQUEST', 413, 'Snapshot payload is too large');
       }
+      const hasImage = Boolean(body.imageDataUrl && body.imageDataUrl.startsWith('data:image/'));
+      if (hasImage && !modelSupportsVision(resolved.modelId, resolved.modelInfo?.capabilities?.vision)) {
+        return apiError(
+          'INVALID_REQUEST',
+          400,
+          'The configured classroom model does not support camera images. Switch to a vision-capable model in Settings → Model Services.',
+        );
+      }
       const systemPrompt = `You are a warm, patient Socratic teacher watching a student's physical notebook and guiding them step by step with a shared whiteboard.
 ${langHint}
 Rules:
@@ -142,10 +152,11 @@ Reply with valid JSON only:
         .join('\n');
 
       const messages: ModelMessage[] = [];
-      for (const h of (body.history ?? []).slice(-8)) {
-        if (!h.text?.trim()) continue;
+      const historyItems = Array.isArray(body.history) ? body.history.slice(-8) : [];
+      for (const h of historyItems) {
+        if (!h || typeof h !== 'object' || typeof h.text !== 'string' || !h.text.trim()) continue;
         messages.push({
-          role: h.role,
+          role: h.role === 'assistant' ? 'assistant' : 'user',
           content: h.text.trim(),
         });
       }
@@ -157,12 +168,12 @@ Reply with valid JSON only:
         .filter(Boolean)
         .join('\n\n');
 
-      if (body.imageDataUrl && body.imageDataUrl.startsWith('data:image/')) {
+      if (hasImage) {
         messages.push({
           role: 'user',
           content: [
             { type: 'text', text: userPromptText },
-            { type: 'image', image: body.imageDataUrl },
+            { type: 'image', image: body.imageDataUrl! },
           ],
         });
       } else {
@@ -181,7 +192,7 @@ Reply with valid JSON only:
         'chat-adapter',
         undefined,
         thinkingConfig,
-        { serverManaged },
+        { serverManaged, enabled: !hasImage },
       );
 
       const parsed = extractJsonObject(result.text);

@@ -160,6 +160,7 @@ function InlineQACameraLiveBody({
   };
 
   const handleSendText = () => {
+    if (turnBusy) return;
     const trimmed = textQuestion.trim();
     if (!trimmed) return;
     setTextQuestion('');
@@ -383,12 +384,13 @@ function InlineQACameraLiveBody({
               <input
                 type="text"
                 value={textQuestion}
+                disabled={turnBusy}
                 onChange={(e) => setTextQuestion(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSendText();
+                  if (e.key === 'Enter' && !turnBusy) handleSendText();
                 }}
                 placeholder={t('liveTutor.askPlaceholder')}
-                className="flex-1 h-8 rounded-xl border border-white/15 bg-white/10 px-2.5 text-[11px] text-white placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                className="flex-1 h-8 rounded-xl border border-white/15 bg-white/10 px-2.5 text-[11px] text-white placeholder:text-gray-400 disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-violet-400"
               />
               <button
                 type="button"

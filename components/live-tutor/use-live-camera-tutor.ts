@@ -53,6 +53,17 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
+function extractApiError(
+  json: { error?: string | { message?: string } } | null | undefined,
+  status: number,
+): string {
+  if (typeof json?.error === 'string' && json.error.trim()) return json.error.trim();
+  if (json?.error && typeof json.error === 'object' && typeof json.error.message === 'string') {
+    return json.error.message;
+  }
+  return `HTTP ${status}`;
+}
+
 export function useLiveCameraTutor({
   topic,
   problem,
@@ -89,6 +100,9 @@ export function useLiveCameraTutor({
   const mountedRef = useRef(true);
   const sessionAttemptRef = useRef(0);
   const sessionAbortRef = useRef<AbortController | null>(null);
+  const turnAbortRef = useRef<AbortController | null>(null);
+  const problemAbortRef = useRef<AbortController | null>(null);
+  const turnBusyRef = useRef(false);
   const micMutedRef = useRef(false);
   const camPausedRef = useRef(false);
   const tutorBufRef = useRef('');
@@ -269,6 +283,15 @@ export function useLiveCameraTutor({
       sessionAbortRef.current.abort();
       sessionAbortRef.current = null;
     }
+    if (turnAbortRef.current) {
+      turnAbortRef.current.abort();
+      turnAbortRef.current = null;
+    }
+    if (problemAbortRef.current) {
+      problemAbortRef.current.abort();
+      problemAbortRef.current = null;
+    }
+    turnBusyRef.current = false;
     if (frameTimerRef.current) {
       clearInterval(frameTimerRef.current);
       frameTimerRef.current = null;
@@ -291,6 +314,10 @@ export function useLiveCameraTutor({
       audioCtxRef.current = null;
     }
     stopPlayback();
+    if (playCtxRef.current) {
+      void playCtxRef.current.close().catch(() => {});
+      playCtxRef.current = null;
+    }
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((t) => t.stop());
       screenStreamRef.current = null;
@@ -311,6 +338,7 @@ export function useLiveCameraTutor({
       setMicLevel(0);
       setMicMuted(false);
       setCamPaused(false);
+      setTurnBusy(false);
       setVideoSource('camera');
       setStatus('idle');
       setTransportMode(null);
@@ -321,6 +349,10 @@ export function useLiveCameraTutor({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      if (problemAbortRef.current) {
+        problemAbortRef.current.abort();
+        problemAbortRef.current = null;
+      }
       stopSession();
     };
   }, [stopSession]);
@@ -362,10 +394,10 @@ export function useLiveCameraTutor({
       const json = (await resp.json()) as {
         success?: boolean;
         data?: LiveTutorSessionResponse;
-        error?: { message?: string };
+        error?: string | { message?: string };
       } & Partial<LiveTutorSessionResponse>;
       if (!resp.ok) {
-        throw new Error(json.error?.message || `HTTP ${resp.status}`);
+        throw new Error(extractApiError(json, resp.status));
       }
       sessionInfo = (json.data ?? json) as LiveTutorSessionResponse;
     } catch (err) {
@@ -537,6 +569,7 @@ export function useLiveCameraTutor({
       if (isStale() || wsRef.current !== ws) return;
       try {
         const raw = typeof event.data === 'string' ? event.data : await event.data.text();
+        if (isStale() || wsRef.current !== ws) return;
         const msg = JSON.parse(raw) as Record<string, unknown>;
 
         if ('setupComplete' in msg) {
@@ -780,7 +813,14 @@ export function useLiveCameraTutor({
         return;
       }
 
-      // Provider-neutral turn-based multimodal fallback
+      // Provider-neutral turn-based multimodal fallback (single-flight + abortable on teardown)
+      if (turnBusyRef.current) return;
+      const attemptId = sessionAttemptRef.current;
+      const isStale = () => !mountedRef.current || sessionAttemptRef.current !== attemptId;
+
+      const controller = new AbortController();
+      turnAbortRef.current = controller;
+      turnBusyRef.current = true;
       setTurnBusy(true);
       setErrorMessage(null);
       appendMessage('user', text);
@@ -789,6 +829,7 @@ export function useLiveCameraTutor({
         const resp = await fetch('/api/live-tutor/turn', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             action: 'tutor-turn',
             topic: cur.topic,
@@ -805,10 +846,11 @@ export function useLiveCameraTutor({
           data?: { reply?: string; whiteboardOps?: WhiteboardOp[] };
           reply?: string;
           whiteboardOps?: WhiteboardOp[];
-          error?: { message?: string };
+          error?: string | { message?: string };
         };
+        if (isStale() || controller.signal.aborted) return;
         if (!resp.ok) {
-          throw new Error(json.error?.message || `HTTP ${resp.status}`);
+          throw new Error(extractApiError(json, resp.status));
         }
         const payload = json.data ?? json;
         const reply = payload.reply ?? '';
@@ -825,17 +867,28 @@ export function useLiveCameraTutor({
           cur.onWhiteboardOps?.(payload.whiteboardOps);
         }
       } catch (err) {
+        if (isStale() || controller.signal.aborted) return;
         setErrorMessage(
           err instanceof Error ? err.message : 'Failed to evaluate notebook snapshot',
         );
       } finally {
-        setTurnBusy(false);
+        if (turnAbortRef.current === controller) {
+          turnAbortRef.current = null;
+          turnBusyRef.current = false;
+          if (mountedRef.current) {
+            setTurnBusy(false);
+          }
+        }
       }
     },
     [appendMessage, captureFrameDataUrl, messages, transportMode],
   );
 
   const generatePracticeProblem = useCallback(async () => {
+    if (turnBusyRef.current) return;
+    const controller = new AbortController();
+    problemAbortRef.current = controller;
+    turnBusyRef.current = true;
     setTurnBusy(true);
     setErrorMessage(null);
     try {
@@ -843,6 +896,7 @@ export function useLiveCameraTutor({
       const resp = await fetch('/api/live-tutor/turn', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           action: 'generate-problem',
           topic: cur.topic,
@@ -853,9 +907,10 @@ export function useLiveCameraTutor({
       const json = (await resp.json()) as {
         data?: { problem?: PracticeProblem };
         problem?: PracticeProblem;
-        error?: { message?: string };
+        error?: string | { message?: string };
       };
-      if (!resp.ok) throw new Error(json.error?.message || `HTTP ${resp.status}`);
+      if (!mountedRef.current || controller.signal.aborted) return;
+      if (!resp.ok) throw new Error(extractApiError(json, resp.status));
       const nextProblem = (json.data ?? json).problem;
       if (nextProblem) {
         cur.onProblemAssigned?.(nextProblem);
@@ -890,9 +945,16 @@ export function useLiveCameraTutor({
         }
       }
     } catch (err) {
+      if (!mountedRef.current || controller.signal.aborted) return;
       setErrorMessage(err instanceof Error ? err.message : 'Failed to generate problem');
     } finally {
-      setTurnBusy(false);
+      if (problemAbortRef.current === controller) {
+        problemAbortRef.current = null;
+        turnBusyRef.current = false;
+        if (mountedRef.current) {
+          setTurnBusy(false);
+        }
+      }
     }
   }, []);
 
@@ -916,15 +978,36 @@ export function useLiveCameraTutor({
     const next = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(next);
     if (status === 'live' && videoSource === 'camera') {
-      await startCameraStream(next, { audio: false, preserveExistingAudio: true });
+      const attemptId = sessionAttemptRef.current;
+      try {
+        const stream = await startCameraStream(next, {
+          audio: false,
+          preserveExistingAudio: true,
+        });
+        if (!mountedRef.current || sessionAttemptRef.current !== attemptId) {
+          stream.getTracks().forEach((t) => t.stop());
+          if (mediaStreamRef.current === stream) mediaStreamRef.current = null;
+          if (videoRef.current && videoRef.current.srcObject === stream) {
+            videoRef.current.srcObject = null;
+          }
+        }
+      } catch (err) {
+        if (!mountedRef.current || sessionAttemptRef.current !== attemptId) return;
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to switch camera');
+      }
     }
   }, [facingMode, startCameraStream, status, videoSource]);
 
   const toggleScreenShare = useCallback(async () => {
     if (!canShareScreen) return;
     if (videoSource === 'camera') {
+      const attemptId = sessionAttemptRef.current;
       try {
         const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        if (!mountedRef.current || sessionAttemptRef.current !== attemptId) {
+          screen.getTracks().forEach((t) => t.stop());
+          return;
+        }
         screenStreamRef.current = screen;
         setVideoSource('screen');
         if (videoRef.current) {
@@ -932,7 +1015,10 @@ export function useLiveCameraTutor({
           await videoRef.current.play().catch(() => {});
         }
         screen.getVideoTracks()[0]?.addEventListener('ended', () => {
-          screenStreamRef.current = null;
+          if (screenStreamRef.current === screen) {
+            screenStreamRef.current = null;
+          }
+          if (!mountedRef.current || sessionAttemptRef.current !== attemptId) return;
           setVideoSource('camera');
           if (videoRef.current && mediaStreamRef.current) {
             videoRef.current.srcObject = mediaStreamRef.current;

@@ -141,10 +141,12 @@ export function HelpMeLearnView() {
       const json = (await resp.json()) as {
         data?: { plan?: HelpMeLearnPlan };
         plan?: HelpMeLearnPlan;
-        error?: { message?: string };
+        error?: string | { message?: string };
       };
       if (!resp.ok) {
-        throw new Error(json.error?.message || `HTTP ${resp.status}`);
+        const errMsg =
+          typeof json.error === 'string' ? json.error : json.error?.message || `HTTP ${resp.status}`;
+        throw new Error(errMsg);
       }
       const generated = (json.data ?? json).plan;
       if (!generated) throw new Error('Empty study plan');

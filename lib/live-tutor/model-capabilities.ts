@@ -39,6 +39,14 @@ export function isLikelyTextOnlyModel(modelId: string | null | undefined): boole
   return TEXT_ONLY_MODEL_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
+export function modelSupportsVision(
+  modelId: string | null | undefined,
+  cataloguedVision?: boolean,
+): boolean {
+  if (typeof cataloguedVision === 'boolean') return cataloguedVision;
+  return !isLikelyTextOnlyModel(modelId);
+}
+
 export function getCameraTutorCapabilities(
   view: ModelSettingsView | null | undefined,
 ): CameraTutorCapabilities {
@@ -77,9 +85,7 @@ export function getCameraTutorCapabilities(
   const cataloguedModel = modelId
     ? provider?.capabilities?.chat?.models?.find((m) => m.id === modelId)
     : undefined;
-  const cataloguedVision = cataloguedModel?.capabilities?.vision;
-  const supportsVision =
-    typeof cataloguedVision === 'boolean' ? cataloguedVision : !isLikelyTextOnlyModel(modelId);
+  const supportsVision = modelSupportsVision(modelId, cataloguedModel?.capabilities?.vision);
 
   return {
     providerPreset: preset,
