@@ -77,10 +77,14 @@ export function getCameraTutorCapabilities(
   const preset = provider?.preset ?? eff.providerId;
   const providerName = provider?.presetName ?? eff.providerId;
   const modelId = eff.modelId ?? null;
+  const authorizedChatModels = provider?.capabilities?.chat?.models ?? [];
+  const deploymentAllowsLiveModel =
+    provider?.source !== 'deployment' ||
+    authorizedChatModels.some((m) => /\blive\b|-live\b/i.test(m.id));
   const supportsLiveStreaming =
     preset === 'google' &&
     provider?.hasCustomBaseUrl !== true &&
-    provider?.liveStreamingAuthorized !== false &&
+    deploymentAllowsLiveModel &&
     isOfficialGoogleBaseUrl(provider?.baseUrl);
 
   const cataloguedModel = modelId

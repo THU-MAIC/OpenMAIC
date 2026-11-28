@@ -97,6 +97,7 @@ export function useLiveCameraTutor({
   const nextPlayTimeRef = useRef<number>(0);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const frameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const setupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
   const sessionAttemptRef = useRef(0);
   const cameraAcquireSeqRef = useRef(0);
@@ -305,6 +306,10 @@ export function useLiveCameraTutor({
       clearInterval(frameTimerRef.current);
       frameTimerRef.current = null;
     }
+    if (setupTimeoutRef.current) {
+      clearTimeout(setupTimeoutRef.current);
+      setupTimeoutRef.current = null;
+    }
     if (wsRef.current) {
       const ws = wsRef.current;
       wsRef.current = null;
@@ -366,7 +371,8 @@ export function useLiveCameraTutor({
     };
   }, [stopSession]);
 
-  const startSession = useCallback(async () => {
+  const startSession = useCallback(async (options?: { source?: 'camera' | 'screen' }) => {
+    const requestedSource = options?.source ?? 'camera';
     const attemptId = ++sessionAttemptRef.current;
     const isStale = () => !mountedRef.current || sessionAttemptRef.current !== attemptId;
 
@@ -396,7 +402,7 @@ export function useLiveCameraTutor({
       void audioCtxRef.current.resume().catch(() => {});
     }
 
-    // Negotiate transport first so turn-based snapshot fallback only requests camera (not mic)
+    // Negotiate transport first so turn-based snapshot fallback only requests video (not mic)
     let sessionInfo: LiveTutorSessionResponse;
     try {
       const resp = await fetch('/api/live-tutor/session', {
@@ -425,29 +431,95 @@ export function useLiveCameraTutor({
     if (isStale()) return;
 
     const needsMic = sessionInfo.mode === 'gemini-live';
-    let stream: MediaStream | null;
-    try {
-      stream = await startCameraStream(facingMode, { audio: needsMic });
-    } catch {
-      if (isStale()) return;
-      setStatus('error');
-      setErrorMessage(
-        needsMic
-          ? 'Camera and microphone permissions are required.'
-          : 'Camera permission is required.',
-      );
-      return;
-    }
+    let audioStream: MediaStream | null = null;
 
-    if (!stream || isStale()) {
-      stream?.getTracks().forEach((t) => t.stop());
-      if (stream && mediaStreamRef.current === stream) {
-        mediaStreamRef.current = null;
+    if (requestedSource === 'screen') {
+      let screen: MediaStream;
+      try {
+        screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      } catch {
+        if (isStale()) return;
+        stopSession();
+        setStatus('error');
+        setErrorMessage('Screen sharing permission is required.');
+        return;
       }
-      if (stream && videoRef.current && videoRef.current.srcObject === stream) {
-        videoRef.current.srcObject = null;
+      if (isStale()) {
+        screen.getTracks().forEach((t) => t.stop());
+        return;
       }
-      return;
+
+      if (needsMic) {
+        try {
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            video: false,
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+          });
+        } catch {
+          screen.getTracks().forEach((t) => t.stop());
+          if (isStale()) return;
+          stopSession();
+          setStatus('error');
+          setErrorMessage('Microphone permission is required for live voice tutoring.');
+          return;
+        }
+        if (isStale()) {
+          screen.getTracks().forEach((t) => t.stop());
+          audioStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        mediaStreamRef.current = audioStream;
+      }
+
+      screenStreamRef.current = screen;
+      setVideoSource('screen');
+      if (videoRef.current) {
+        videoRef.current.srcObject = screen;
+        await videoRef.current.play().catch(() => {});
+      }
+      screen.getVideoTracks()[0]?.addEventListener('ended', () => {
+        if (screenStreamRef.current === screen) {
+          screenStreamRef.current = null;
+        }
+        if (isStale()) return;
+        const hasCameraVideo = (mediaStreamRef.current?.getVideoTracks().length ?? 0) > 0;
+        if (hasCameraVideo && mediaStreamRef.current) {
+          setVideoSource('camera');
+          if (videoRef.current) {
+            videoRef.current.srcObject = mediaStreamRef.current;
+            void videoRef.current.play().catch(() => {});
+          }
+        } else {
+          stopSession();
+        }
+      });
+    } else {
+      let stream: MediaStream | null;
+      try {
+        stream = await startCameraStream(facingMode, { audio: needsMic });
+      } catch {
+        if (isStale()) return;
+        stopSession();
+        setStatus('error');
+        setErrorMessage(
+          needsMic
+            ? 'Camera and microphone permissions are required.'
+            : 'Camera permission is required.',
+        );
+        return;
+      }
+
+      if (!stream || isStale()) {
+        stream?.getTracks().forEach((t) => t.stop());
+        if (stream && mediaStreamRef.current === stream) {
+          mediaStreamRef.current = null;
+        }
+        if (stream && videoRef.current && videoRef.current.srcObject === stream) {
+          videoRef.current.srcObject = null;
+        }
+        return;
+      }
+      audioStream = stream;
     }
 
     if (sessionInfo.mode === 'turn-based') {
@@ -463,6 +535,14 @@ export function useLiveCameraTutor({
     setTransportMode('gemini-live');
     const ws = new WebSocket(sessionInfo.wsUrl);
     wsRef.current = ws;
+
+    // Enforce a handshake timeout so a stalled socket never captures media indefinitely
+    setupTimeoutRef.current = setTimeout(() => {
+      if (isStale() || wsRef.current !== ws) return;
+      stopSession();
+      setStatus('error');
+      setErrorMessage('Live tutor connection timed out. Please try again.');
+    }, 15_000);
 
     ws.onopen = () => {
       if (isStale() || wsRef.current !== ws) {
@@ -588,6 +668,10 @@ export function useLiveCameraTutor({
         const msg = JSON.parse(raw) as Record<string, unknown>;
 
         if ('setupComplete' in msg) {
+          if (setupTimeoutRef.current) {
+            clearTimeout(setupTimeoutRef.current);
+            setupTimeoutRef.current = null;
+          }
           setStatus('live');
 
           // Start 1 fps notebook/slide JPEG frame loop
@@ -612,8 +696,8 @@ export function useLiveCameraTutor({
 
           // Start 16 kHz PCM16 microphone loop
           const aCtx = audioCtxRef.current;
-          if (aCtx) {
-            const source = aCtx.createMediaStreamSource(stream);
+          if (aCtx && audioStream && audioStream.getAudioTracks().length > 0) {
+            const source = aCtx.createMediaStreamSource(audioStream);
             const processor = aCtx.createScriptProcessor(4096, 1, 1);
             const silent = aCtx.createGain();
             silent.gain.value = 0;

@@ -214,7 +214,6 @@ describe('live-tutor model capabilities', () => {
           presetName: 'Google Gemini',
           presetKind: 'single',
           source: 'deployment',
-          liveStreamingAuthorized: false,
           capabilities: {
             chat: {
               models: [

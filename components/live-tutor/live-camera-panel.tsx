@@ -257,19 +257,50 @@ export function LiveCameraPanel({
       {/* Primary Camera & Voice Controls */}
       <div className="flex flex-wrap items-center gap-2 shrink-0">
         {!isLive ? (
-          <Button
-            type="button"
-            disabled={isConnecting}
-            onClick={() => void startSession()}
-            className="flex-1 h-10 rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2"
-          >
-            {isConnecting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Camera className="size-4" />
-            )}
-            {isConnecting ? t('liveTutor.connecting') : t('liveTutor.startCameraHelp')}
-          </Button>
+          isConnecting ? (
+            <>
+              <Button
+                type="button"
+                disabled
+                className="flex-1 h-10 rounded-xl bg-violet-600 text-white gap-2"
+              >
+                <Loader2 className="size-4 animate-spin" />
+                {t('liveTutor.connecting')}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={stopSession}
+                className="h-10 px-3 rounded-xl gap-1.5"
+              >
+                <VideoOff className="size-4" />
+                {t('liveTutor.stopSession')}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                onClick={() => void startSession({ source: 'camera' })}
+                className="flex-1 h-10 rounded-xl bg-violet-600 hover:bg-violet-700 text-white gap-2"
+              >
+                <Camera className="size-4" />
+                {t('liveTutor.startCameraHelp')}
+              </Button>
+              {canShareScreen && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void startSession({ source: 'screen' })}
+                  title={t('liveTutor.shareSlide')}
+                  className="h-10 px-3 rounded-xl gap-1.5"
+                >
+                  <MonitorUp className="size-4" />
+                  <span className="hidden sm:inline">{t('liveTutor.shareSlide')}</span>
+                </Button>
+              )}
+            </>
+          )
         ) : (
           <>
             <Button

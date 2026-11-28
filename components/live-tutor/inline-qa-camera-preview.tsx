@@ -306,20 +306,38 @@ function InlineQACameraLiveBody({
       {/* Controls */}
       <div className="p-2.5 bg-black/60 border-t border-white/10 space-y-2">
         {!isLive ? (
-          <button
-            type="button"
-            data-testid="inline-qa-start-live-button"
-            disabled={isConnecting}
-            onClick={handleStart}
-            className="w-full h-9 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors"
-          >
-            {isConnecting ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
+          isConnecting ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="inline-qa-start-live-button"
+                disabled
+                className="flex-1 h-9 rounded-xl bg-violet-600/80 text-white text-xs font-semibold inline-flex items-center justify-center gap-2"
+              >
+                <Loader2 className="size-4 animate-spin" />
+                {t('liveTutor.connecting')}
+              </button>
+              <button
+                type="button"
+                onClick={stopSession}
+                title={t('liveTutor.stopSession')}
+                className="h-9 px-3 rounded-xl bg-red-600/85 hover:bg-red-600 text-white text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <VideoOff className="size-3.5" />
+                {t('liveTutor.stopSession')}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-testid="inline-qa-start-live-button"
+              onClick={handleStart}
+              className="w-full h-9 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+            >
               <Camera className="size-4" />
-            )}
-            {isConnecting ? t('liveTutor.connecting') : t('liveTutor.startCameraHelp')}
-          </button>
+              {t('liveTutor.startCameraHelp')}
+            </button>
+          )
         ) : (
           <>
             <div className="flex items-center gap-1.5">
