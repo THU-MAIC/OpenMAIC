@@ -19,6 +19,7 @@ import { validateClientBaseUrl } from '@/lib/server/ssrf-guard';
 import type { ProviderId, ThinkingConfig } from '@/lib/types/provider';
 
 import { isPiGeminiCompatibleRoute, PiGeminiNativeRequiredError } from './pi-gemini-route';
+import { serverAdapterModel, serverLanguageModelAdapter } from './server-adapters';
 import { checkRequirement, type ResolvedModelTarget, type SlotResolution } from './resolve-slot';
 import { lookupStage, requestMayChoose, SlotDisabledError, SlotUnassignedError } from './runtime';
 
@@ -64,6 +65,15 @@ export async function languageModelFor(
       'MODEL_CONFIG_INVALID',
       `The ${target.presetId} preset has no chat adapter`,
     );
+  }
+  const adapter = serverLanguageModelAdapter(registryId);
+  if (adapter) {
+    return serverAdapterModel(adapter, {
+      registryId,
+      modelId,
+      thinkingConfig,
+      contextWindow: target.declaredContextWindow,
+    });
   }
   const userEndpoint = target.providerSource === 'workspace';
   if (userEndpoint) {
@@ -175,6 +185,9 @@ export async function slotLanguageModel(
     throw new PiGeminiNativeRequiredError();
   }
   const resolved = await languageModelFor(resolution, resolution.thinking);
+  // A subscription authorizes calls on the connected account. Automatically
+  // switching to another provider would change who pays for the request.
+  if (serverLanguageModelAdapter(resolution.registryId)) return { ...resolved, resolution };
   // Retries go to the slot's fallback and nowhere else: none attached means none.
   const { fallback } = resolution;
   const fallbackUnmet =

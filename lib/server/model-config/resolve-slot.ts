@@ -23,9 +23,9 @@ import type { ConfiguredTTSVoice } from '@/lib/audio/types';
 import { DEFAULT_WEB_FETCH_PROVIDER } from '@/lib/web-fetch/registry';
 import { officialRegionalEndpoint } from '@/lib/config/official-endpoints';
 import {
-  assertDeploymentModelAuthorized,
   deploymentDefaultModel,
-  usesServerCredentials,
+  ModelAuthorizationError,
+  providerModelAllowlist,
   selectsUpstreamModel,
 } from './model-authorization';
 import { getModelInfo } from '@/lib/ai/providers';
@@ -238,18 +238,17 @@ function resolveTarget(
   const effectiveModel =
     modelId ?? target.defaultModel ?? deploymentDefaultModel(provider.preset, capability);
   if (
-    found.source === 'deployment' &&
     selectsUpstreamModel(provider.preset, capability) &&
     !providerOnly &&
-    usesServerCredentials(provider) &&
     (effectiveModel !== undefined || capability === 'chat')
   ) {
-    assertDeploymentModelAuthorized(
+    const allowed = providerModelAllowlist(
       layers.find((layer) => layer.source === 'deployment')?.config,
       providerId,
-      effectiveModel ?? '',
+      target.registryId,
       capability,
     );
+    if (allowed && !allowed.includes(effectiveModel ?? '')) throw new ModelAuthorizationError();
   }
   // A service whose official endpoint is per region (Azure Speech) names its
   // region with an endpoint of its own: one on the official host is the

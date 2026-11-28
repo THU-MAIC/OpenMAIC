@@ -2,6 +2,7 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import { getModelInfo } from '@/lib/ai/providers';
 import type { ProviderId } from '@/lib/types/provider';
 
+import { serverLanguageModelAdapter } from '@/lib/server/model-config/server-adapters';
 import { slotLanguageModel } from '@/lib/server/model-config/llm';
 import {
   lookupSlot,
@@ -118,9 +119,11 @@ export async function resolveAgentDriverModel(workspaceId: string | null = null)
   piModel.maxTokens = reservedOutputTokens;
   const capacity = (value: number | undefined) =>
     value !== undefined && Number.isFinite(value) && value >= 1 ? Math.floor(value) : undefined;
-  const fallback = resolution.fallbackRequirements?.some((check) => check.status === 'unmet')
-    ? undefined
-    : resolution.fallback;
+  const fallback =
+    serverLanguageModelAdapter(resolution.registryId) ||
+    resolution.fallbackRequirements?.some((check) => check.status === 'unmet')
+      ? undefined
+      : resolution.fallback;
   const fallbackInfo =
     fallback?.catalogue !== false && fallback?.modelId
       ? getModelInfo(fallback.registryId as ProviderId, fallback.modelId)

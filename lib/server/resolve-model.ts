@@ -9,6 +9,7 @@ import type { NextRequest } from 'next/server';
 import {
   assertDeploymentModelAuthorized,
   ModelAuthorizationError,
+  providerModelAllowlist,
   usesServerCredentials,
 } from '@/lib/server/model-config/model-authorization';
 import {
@@ -28,6 +29,10 @@ import { validateClientBaseUrl, validateUrlForSSRF } from '@/lib/server/ssrf-gua
 import { fetchWithRedirectValidation } from '@/lib/server/fetch-with-redirect-validation';
 import { clientBaseUrlLlmFetch } from '@/lib/server/llm-provider-fetch';
 import { getUserStageRoute, type LlmStage, type UserStageRoute } from '@/lib/server/model-routes';
+import {
+  serverAdapterModel,
+  serverLanguageModelAdapter,
+} from '@/lib/server/model-config/server-adapters';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -142,6 +147,23 @@ export async function resolveRequestedModel(
   // — except a *user* route, which supplies its own connection for the routed
   // provider (server-managed providers ignore it regardless).
   const routed = Boolean(stageModel);
+  // A provider the server signs in to takes nothing from the request.
+  const adapter = serverLanguageModelAdapter(providerId);
+  if (adapter) {
+    const { deploymentConfig } = await import('@/lib/server/model-config/runtime');
+    const allowed = providerModelAllowlist(
+      deploymentConfig().layer?.config,
+      providerId,
+      providerId,
+      'chat',
+    );
+    if (allowed && !allowed.includes(modelId)) throw new ModelAuthorizationError();
+    return serverAdapterModel(adapter, {
+      registryId: providerId,
+      modelId,
+      thinkingConfig: routed ? userRoute?.thinking : params.thinkingConfig,
+    });
+  }
   const clientApiKey = routed ? userRoute?.apiKey : params.apiKey;
   const clientProviderType = routed ? userRoute?.providerType : params.providerType;
   const clientBaseUrlParam = routed ? userRoute?.baseUrl : params.baseUrl;

@@ -505,4 +505,12 @@ export type StatelessEvent =
         directorState?: DirectorState;
       };
     }
-  | { type: 'error'; data: { message: string } };
+  | {
+      type: 'error';
+      data: {
+        message: string;
+        errorCode?: 'PROVIDER_ACTION_REQUIRED';
+        reason?: string;
+        messageKey?: string;
+      };
+    };

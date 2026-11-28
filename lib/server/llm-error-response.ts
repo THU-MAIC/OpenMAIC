@@ -107,3 +107,34 @@ export function isUpstreamQuotaExhausted(error: unknown, seen = new Set<unknown>
     isUpstreamQuotaExhausted(error.cause, seen) || isUpstreamQuotaExhausted(error.lastError, seen)
   );
 }
+
+/** Adapter-authored recovery text, deliberately safe for API and run responses. */
+interface PublicProviderFailure {
+  message: string;
+  statusCode: number;
+  reason?: string;
+  messageKey?: string;
+}
+const publicFailures = new WeakMap<Error, PublicProviderFailure>();
+
+export function markPublicProviderFailure<T extends Error>(
+  error: T,
+  statusCode: number,
+  reason?: string,
+  messageKey?: string,
+): T {
+  publicFailures.set(error, { message: error.message, statusCode, reason, messageKey });
+  return error;
+}
+
+/** Keep only the marked error's fixed message, even when an SDK or generation step wraps it. */
+export function publicProviderFailure(error: unknown): PublicProviderFailure | undefined {
+  const seen = new Set<Error>();
+  while (error instanceof Error && !seen.has(error)) {
+    const failure = publicFailures.get(error);
+    if (failure) return failure;
+    seen.add(error);
+    error = RetryError.isInstance(error) ? error.lastError : error.cause;
+  }
+  return undefined;
+}

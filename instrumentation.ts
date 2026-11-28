@@ -51,6 +51,9 @@ export async function register(): Promise<void> {
   const { warnIfDeprecatedWorkbenchFlagIsUsed } =
     await import('@/lib/server/workbench-flag-deprecation');
   warnIfDeprecatedWorkbenchFlagIsUsed();
+  const { warnAboutChatGPTPlanConfiguration } =
+    await import('@/lib/server/chatgpt-plan/availability');
+  warnAboutChatGPTPlanConfiguration();
 
   const { validateServerConfig } = await import('@/lib/server/config-validation');
   validateServerConfig();

@@ -153,6 +153,8 @@ export interface GenerationRunFailure {
   errorCode?: string;
   /** The provider's HTTP status, for a provider's refusal. */
   statusCode?: number;
+  /** The translation of a provider's recovery message, when available. */
+  messageKey?: string;
   /** In a run's own snapshot: the seq of the `step_failed` event that reported it. */
   failureSeq?: number;
   /** Where `retry` resumes a run that stopped without a step. */

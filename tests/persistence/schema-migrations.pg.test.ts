@@ -19,6 +19,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 const exitOnBootFailure = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/server/boot-failure', () => ({ exitOnBootFailure }));
 
+import { ensureChatGPTPlanSchema } from '@/lib/persistence/chatgpt-plan';
 import { ensureSandboxEnvironmentSchema } from '@/lib/persistence/sandbox-environments';
 import { ensureGenerationRunSchema } from '@/lib/persistence/generation-runs';
 import { ensureRenderJobSchema } from '@/lib/persistence/render-jobs';
@@ -84,6 +85,7 @@ describe.skipIf(!contractUrl)('versioned schema migrations at boot (PostgreSQL)'
       await withSchemaBootstrapLock(locked, ensureGenerationRunSchema);
       await withSchemaBootstrapLock(locked, ensureSandboxEnvironmentSchema);
       await withSchemaBootstrapLock(locked, ensureRenderJobSchema);
+      await withSchemaBootstrapLock(locked, ensureChatGPTPlanSchema);
     } finally {
       await pool.end().catch(() => {});
     }

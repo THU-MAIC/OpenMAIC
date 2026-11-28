@@ -86,6 +86,7 @@ jobs:
         run: |
           pnpm exec vitest run --maxWorkers=2 --testTimeout=30000 --hookTimeout=30000 \
             tests/pbl/v3/runtime.pg.test.ts \
+            tests/chatgpt-plan/session.pg.test.ts \
             tests/sandbox/checkpoint-schema.pg.test.ts \
             tests/sandbox/checkpoint-storage.pg.test.ts \
             tests/sandbox/settings.pg.test.ts \

@@ -48,7 +48,10 @@ import { useClassroomSession } from '@/lib/classroom/use-classroom-session';
 import { useEditModeFreshness } from '@/lib/classroom/use-edit-mode-freshness';
 import { applySceneDeepLink } from '@/lib/classroom/scene-deep-link';
 import { useRunCourse } from '@/lib/generation-run-client/use-run-course';
-import { pendingSceneFailureKey } from '@/lib/generation-run-client/failure-message';
+import {
+  pendingSceneFailureText,
+  translateFailureText,
+} from '@/lib/generation-run-client/failure-message';
 import { PblActivityProvider } from '@/components/scene-renderers/pbl/v3/activity-provider';
 
 const log = createLogger('Classroom');
@@ -292,7 +295,7 @@ function ClassroomSurfaceContent({
   // The pending scene's failure card shows the first outline not yet produced;
   // the run's guidance belongs there only when that is the scene it stopped at.
   const pendingOutlineId = useStageStore((s) => s.generatingOutlines[0]?.id);
-  const failureKey = pendingSceneFailureKey(runCourse.failure, pendingOutlineId);
+  const failureText = pendingSceneFailureText(runCourse.failure, pendingOutlineId);
 
   const view = resolveClassroomSurfaceView({
     variant,
@@ -379,7 +382,7 @@ function ClassroomSurfaceContent({
           ) : (
             <Stage
               classroomId={classroomId}
-              generationFailureMessage={failureKey ? t(failureKey) : undefined}
+              generationFailureMessage={failureText && translateFailureText(failureText, t)}
               onRetryOutline={mayGenerate && runCourse.runId ? runCourse.retryOutline : undefined}
             />
           )}

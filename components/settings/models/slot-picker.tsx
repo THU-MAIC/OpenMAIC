@@ -1,4 +1,6 @@
 'use client';
+import { useChatPickerProviders } from '../use-llm-picker-groups';
+import { CHATGPT_PLAN_PROVIDER_ID } from '@/lib/chatgpt-plan/shared';
 import { registryIdsFor, registryInfoFor } from '@/components/settings/service-display';
 
 import { useState } from 'react';
@@ -244,7 +246,9 @@ export function SlotPicker({
   const [message, setMessage] = useState<string | null>(null);
   const current = currentChoice(slot);
   const parent = slot.parent ? findSlot(view, slot.parent) : undefined;
-  const providers = providersFor(view, slot.capability);
+  const chatProviders = useChatPickerProviders(slot.capability === 'chat' ? view : null);
+  const providers =
+    slot.capability === 'chat' ? chatProviders : providersFor(view, slot.capability);
   const providerOnly = PROVIDER_ONLY_CAPABILITIES.includes(slot.capability);
   const chat = slot.capability === 'chat';
   const text = lineText(view, slot, t);
@@ -274,7 +278,7 @@ export function SlotPicker({
   const thinkingCapability = (() => {
     if (current.kind !== 'model') return undefined;
     const { providerId, modelId } = splitRef(current.model);
-    const capability = view.providers
+    const capability = chatProviders
       .find((provider) => provider.id === providerId)
       ?.capabilities.chat?.models.find((model) => model.id === modelId)?.capabilities?.thinking;
     return slotRefusesThinkingEffort(slot.slot)
@@ -479,7 +483,7 @@ export function SlotPicker({
                     </Row>
                   );
                 })}
-                {chat && models.length === 0 && (
+                {chat && models.length === 0 && provider.preset !== CHATGPT_PLAN_PROVIDER_ID && (
                   <TypedModel providerId={provider.id} onUse={pick} disabled={!!busy} t={t} />
                 )}
               </div>
@@ -561,7 +565,7 @@ export function SlotPicker({
               <SelectItem value={NO_FALLBACK} className="text-xs">
                 {t(`${MS}.picker.noFallback`)}
               </SelectItem>
-              {providersFor(view, 'chat').map((provider) => (
+              {chatProviders.map((provider) => (
                 <SelectGroup key={provider.id}>
                   <SelectLabel className="text-[11px]">
                     {providerLabel(view, provider.id, t)}

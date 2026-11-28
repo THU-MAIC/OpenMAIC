@@ -1,0 +1,44 @@
+---
+title: ChatGPT plan
+description: Sign in with ChatGPT and use your ChatGPT plan for model requests on a personal installation.
+---
+
+Sign in with ChatGPT to use your plan for model requests on a personal OpenMAIC installation. OpenAI currently offers this integration for open-source apps as a preview.
+
+## Requirements
+
+- A personal installation with single-user sign-in (`OWNER_SINGLE_USER=true`). If the host registers identity methods, `singleUser` must be the only one. Anyone you give access to this installation, including anyone who knows its `ACCESS_CODE`, can use the connected account’s plan.
+- `OPENMAIC_CHATGPT_PLAN_ENABLED=true` in the server environment.
+- PostgreSQL and the instance secret, as for every installation. The instance secret encrypts the stored sign-in.
+
+When the flag is set on an installation that is not a personal one, the provider stays off and startup logs a warning that explains why.
+
+## Connect your account
+
+1. In the model settings, open the chat services and select **ChatGPT plan**.
+2. Choose **Continue with ChatGPT** and allow plan usage for OpenMAIC in the new tab.
+3. After the first successful connection, review the usage link and dismiss the confirmation.
+4. OpenMAIC adds the models your account offers to the provider. Assign them to model slots as usual; **Refresh models** updates the list later.
+
+### Signing in from another machine
+
+When OpenMAIC runs on another machine (a VPS, a home server, a Docker host you reach by its address), ChatGPT cannot return the browser to the server directly. After you approve, it opens an `http://127.0.0.1:<port>/auth/callback` address that does not load. Copy the full address from that tab and paste it into the settings, and OpenMAIC finishes the sign-in. Each address works once, within ten minutes.
+
+## Usage and limits
+
+- Requests use the usage your plan allows for apps like OpenMAIC. **Manage usage** in the settings opens [chatgpt.com/settings/usage](https://chatgpt.com/settings/usage), where you can review it.
+- When the limit is reached, the request stops and links to ChatGPT usage settings. You can select another provider yourself.
+- Requests are streamed and sent with `store: false`, so OpenAI does not keep responses for later retrieval.
+- Settings that plan usage does not accept (temperature, top-p, maximum output length) are left out of the request, with a warning. Tools are sent as function tools in one namespace.
+
+## Disconnect
+
+**Disconnect** revokes the connection with OpenAI and removes the stored sign-in. If OpenAI does not confirm the revocation, the settings say so, and you can also disconnect OpenMAIC in your ChatGPT settings.
+
+Disconnecting keeps the current registration for the next sign-in. To change your ChatGPT account or workspace, disconnect, choose **Use a different account**, and confirm. Then sign in and select the intended account and workspace. The installation keeps its host ID.
+
+## Security
+
+- The sign-in (access and refresh tokens) is encrypted with the instance secret. If the instance secret changes, the settings ask you to sign in again.
+- Sign-in uses PKCE, a single-use state and a nonce, and the ID token is verified against OpenAI's published keys.
+- The access token is sent to `https://api.openai.com/v1` only, and redirects are refused.

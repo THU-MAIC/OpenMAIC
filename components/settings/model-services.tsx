@@ -7,6 +7,8 @@ import { registryIdsFor } from '@/components/settings/service-display';
  * workspace's model configuration on the server; keys are written there and
  * never come back, and services the server configures are shown read-only.
  */
+import { useChatGPTPlanStatus } from '@/lib/chatgpt-plan/client';
+import { CHATGPT_PLAN_PROVIDER_ID } from '@/lib/chatgpt-plan/shared';
 import { useMemo, useState } from 'react';
 import {
   Box,
@@ -145,11 +147,25 @@ export function ModelServicesPanel({
   const capability = TAB_CAPABILITY[tab];
   const entries = useMemo(() => {
     const list = serviceEntries(view, capability, registryIdsFor(view, capability));
+    // With no editable chat services this tab opens solely for the owner's sign-in.
+    if (capability === 'chat' && !canAddService(view, capability)) {
+      const accounts = list.filter(
+        (entry) => entry.state === 'deployment' && entry.provider?.accountModelsUrl,
+      );
+      if (accounts.length) return accounts;
+    }
     // Kimi 推广位：置顶于内置服务之首（其他账号/自定义服务在前，其余保持原顺序）。
     const rank = (entry: ServiceEntry) =>
       entry.provider && !entry.serviceId ? 0 : entry.id === PINNED_PROVIDER_ID ? 1 : 2;
     return capability === 'chat' ? [...list].sort((a, b) => rank(a) - rank(b)) : list;
   }, [view, capability]);
+  const planAccount = useChatGPTPlanStatus(
+    entries.some((item) => item.registryId === CHATGPT_PLAN_PROVIDER_ID),
+  );
+  const configuredFor = (item: ServiceEntry) =>
+    capability === 'chat' && item.registryId === CHATGPT_PLAN_PROVIDER_ID
+      ? !!planAccount.status?.available && planAccount.status.state === 'connected'
+      : isEntryConfigured(item, capability);
   const [selected, setSelected] = useState<Partial<Record<ServiceTab, string>>>({});
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [deleting, setDeleting] = useState<ServiceEntry | null>(null);
@@ -166,7 +182,7 @@ export function ModelServicesPanel({
     if (!entry) return null;
     const name = entryName(entry, capability, t);
     const icon = entryIcon(entry, capability);
-    const configured = isEntryConfigured(entry, capability);
+    const configured = configuredFor(entry);
     // "Fill in credentials" only where this service can be set up here.
     const settable = canAdd && entry.state !== 'server-only' && entry.state !== 'deployment';
     return (
@@ -190,11 +206,18 @@ export function ModelServicesPanel({
             )}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{name}</p>
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <p className="truncate text-sm font-medium">{name}</p>
+              {capability === 'chat' && entry.registryId === CHATGPT_PLAN_PROVIDER_ID && (
+                <Badge variant="outline" className="text-muted-foreground">
+                  {t('settings.chatgptPlan.preview')}
+                </Badge>
+              )}
+            </div>
             <p className="text-[11px] text-muted-foreground">
               {configured
                 ? t('settings.modelServices.configuredHint')
-                : settable
+                : settable && entry.registryId !== CHATGPT_PLAN_PROVIDER_ID
                   ? t('settings.modelServices.notConfiguredHint')
                   : t('settings.modelServices.notConfigured')}
             </p>
@@ -287,7 +310,7 @@ export function ModelServicesPanel({
               name: entryName(item, capability, t),
               icon: entryIcon(item, capability),
               registryId: item.serviceId ?? item.registryId,
-              configured: isEntryConfigured(item, capability),
+              configured: configuredFor(item),
             }))}
             selectedProviderId={entry?.id ?? ''}
             onSelect={select}
@@ -301,7 +324,9 @@ export function ModelServicesPanel({
           {header()}
           {panelProps && (
             <div className="mt-4" key={`${tab}:${entry!.id}`}>
-              {tab === 'providers' && <ProviderConfigPanel {...panelProps} />}
+              {tab === 'providers' && (
+                <ProviderConfigPanel {...panelProps} planAccount={planAccount} />
+              )}
               {tab === 'image' && <ImageSettings {...panelProps} />}
               {tab === 'video' && <VideoSettings {...panelProps} />}
               {tab === 'tts' && <TTSSettings {...panelProps} />}

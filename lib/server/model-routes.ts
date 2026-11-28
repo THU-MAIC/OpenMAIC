@@ -16,25 +16,17 @@
  */
 
 import { createLogger } from '@/lib/logger';
-import type {
-  ThinkingConfig,
-  ThinkingEffort,
-  ThinkingLevel,
-  ThinkingMode,
+import {
+  THINKING_EFFORTS,
+  type ThinkingConfig,
+  type ThinkingEffort,
+  type ThinkingLevel,
+  type ThinkingMode,
 } from '@/lib/types/provider';
 
 const log = createLogger('model-routes');
 
 export const VALID_MODES: readonly ThinkingMode[] = ['default', 'disabled', 'enabled', 'auto'];
-export const VALID_EFFORTS: readonly ThinkingEffort[] = [
-  'none',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-];
 export const VALID_LEVELS: readonly ThinkingLevel[] = ['minimal', 'low', 'medium', 'high'];
 
 /**
@@ -85,7 +77,7 @@ function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
   };
   const mode = checkEnum<ThinkingMode>('mode', o.mode, VALID_MODES);
   if (mode) out.mode = mode;
-  const effort = checkEnum<ThinkingEffort>('effort', o.effort, VALID_EFFORTS);
+  const effort = checkEnum<ThinkingEffort>('effort', o.effort, THINKING_EFFORTS);
   if (effort) out.effort = effort;
   const level = checkEnum<ThinkingLevel>('level', o.level, VALID_LEVELS);
   if (level) out.level = level;

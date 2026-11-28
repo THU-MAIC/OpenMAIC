@@ -28,7 +28,8 @@ import {
 import { getProviderPreset } from '@/lib/config/provider-presets';
 import { deploymentAuthorizedModels } from './model-authorization';
 import { retiredPresetReason } from '@/lib/config/preset-ids';
-import { VALID_EFFORTS, VALID_LEVELS, VALID_MODES } from '@/lib/server/model-routes';
+import { VALID_LEVELS, VALID_MODES } from '@/lib/server/model-routes';
+import { THINKING_EFFORTS } from '@/lib/types/provider';
 
 export const DEFAULT_MODEL_CONFIG_FILE = 'openmaic.yml';
 
@@ -50,7 +51,7 @@ const UNCLOSED_ENV_REF = /\$\{[^}]*$/;
 const thinkingSchema = z
   .object({
     mode: z.enum(VALID_MODES as [string, ...string[]]).optional(),
-    effort: z.enum(VALID_EFFORTS as [string, ...string[]]).optional(),
+    effort: z.enum(THINKING_EFFORTS).optional(),
     level: z.enum(VALID_LEVELS as [string, ...string[]]).optional(),
     enabled: z.boolean().optional(),
     budgetTokens: z.number().int().positive().optional(),

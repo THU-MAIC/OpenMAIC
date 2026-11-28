@@ -15,7 +15,8 @@ const streamLLMMock = vi.fn();
 vi.mock('@/lib/ai/llm', () => ({
   streamLLM: (...args: unknown[]) => streamLLMMock(...args),
 }));
-vi.mock('@/lib/server/llm-fallback', () => ({
+vi.mock(import('@/lib/server/llm-fallback'), async (importOriginal) => ({
+  ...(await importOriginal()),
   resolveFallbackModel: vi.fn(),
   shouldFallbackFor: () => false,
   logFallbackFired: vi.fn(),

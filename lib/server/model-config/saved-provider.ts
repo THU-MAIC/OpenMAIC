@@ -92,13 +92,14 @@ export function savedProviderResponse(error: unknown, what: string): Response | 
 export async function savedChatEndpoint(
   req: OwnerAuthRequest,
   providerId: string,
-): Promise<{ baseUrl?: string; apiKey: string }> {
+): Promise<{ registryId: string; baseUrl?: string; apiKey: string }> {
   const target = await savedProviderTarget(providerId, 'chat', await requestWorkspaceId(req), {
     workspaceOnly: true,
     providerOnly: true,
   });
   const registered = getProvider(target.registryId as ProviderId);
   return {
+    registryId: target.registryId,
     baseUrl: target.baseUrl ?? registered?.defaultBaseUrl,
     apiKey: target.apiKey ?? '',
   };

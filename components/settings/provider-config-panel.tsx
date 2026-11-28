@@ -35,6 +35,8 @@ import { PROVIDERS, type ProviderId } from '@/lib/ai/providers';
 import type { CatalogueModel } from '@/lib/config/provider-presets';
 import { formatContextWindow } from './utils';
 import { PROVIDER_SIGNUP_LINKS } from './provider-links';
+import { ChatGPTPlanAccount } from './chatgpt-plan-account';
+import type { PlanAccountState } from '@/lib/chatgpt-plan/client';
 import { ModelEditDialog } from './model-edit-dialog';
 import {
   ApiKeyField,
@@ -52,7 +54,12 @@ import { cn } from '@/lib/utils';
  * server lets a workspace set one, and its models. A service the server
  * configures is shown read-only.
  */
-export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
+export function ProviderConfigPanel({
+  view,
+  apply,
+  entry,
+  planAccount,
+}: ServicePanelProps & { planAccount?: PlanAccountState }) {
   const { t } = useI18n();
   const registry = PROVIDERS[entry.registryId as ProviderId];
   const provider = entry.provider;
@@ -72,6 +79,8 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
     () => provider?.capabilities.chat?.models ?? entry.preset?.capabilities.chat?.models ?? [],
     [provider, entry.preset],
   );
+  const visibleModels =
+    registry?.serverAdapter && planAccount?.status?.state !== 'connected' ? [] : models;
   // A provider's own model list narrows (or names) what it serves.
   const pinned = !!provider?.models?.length;
   // Only the workspace's own endpoint may be changed, and only for chat services.
@@ -142,6 +151,11 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
             .replace('{added}', String(additions.length))
             .replace('{total}', String(ids.length)),
         );
+      } else if (data.errorCode === 'PROVIDER_ACTION_REQUIRED') {
+        setFetchStatus('error');
+        setFetchMessage(
+          data.messageKey ? t(data.messageKey, { defaultValue: data.error }) : data.error,
+        );
       } else if (response.status === 404) {
         setFetchStatus('error');
         setFetchMessage(t('settings.fetchModelsNoEndpoint'));
@@ -172,12 +186,19 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
   return (
     <div className="space-y-6 max-w-3xl">
       {/* Server-configured notice */}
-      {serverConfigured && <ServerConfiguredNotice view={view} capability="chat" />}
+      {serverConfigured && !provider?.accountModelsUrl && (
+        <ServerConfiguredNotice view={view} capability="chat" />
+      )}
       {entry.state === 'server-only' && <ServerOnlyNotice noUserKeys={!view.allowUserKeys} />}
+
+      {/* A provider the server signs in to shows its account instead. */}
+      {(editable || provider?.accountModelsUrl) && planAccount && registry?.serverAdapter && (
+        <ChatGPTPlanAccount save={editable ? save : undefined} account={planAccount} />
+      )}
 
       {/* The server's providers are the operator's: their key and endpoint
           are neither shown nor editable here. */}
-      {editable && (
+      {editable && !registry?.serverAdapter && (
         <>
           {/* 推广位（如 Kimi）：获取 API key 的国内/海外双链接。 */}
           {signupLinks && (
@@ -331,7 +352,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
       )}
 
       {/* Models - No selection state, just list for management */}
-      <div className="space-y-3">
+      <div className="space-y-3" hidden={registry?.serverAdapter && visibleModels.length === 0}>
         {entry.registryId === 'azure' && (
           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
             {t('settings.azureDeploymentHint')}
@@ -346,7 +367,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
               </span>
             )}
           </div>
-          {editable && (
+          {editable && !registry?.serverAdapter && (
             <div className="flex items-center gap-2 flex-wrap">
               {pinned && entry.preset?.capabilities.chat?.models.length ? (
                 <Button
@@ -402,7 +423,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
         )}
 
         <div className="space-y-1.5">
-          {models.map((model, index) => {
+          {visibleModels.map((model, index) => {
             return (
               <div
                 key={model.id}
@@ -451,7 +472,7 @@ export function ProviderConfigPanel({ view, apply, entry }: ServicePanelProps) {
                 </div>
 
                 {/* Edit/Delete Buttons — only for the workspace's own services */}
-                {editable && (
+                {editable && !registry?.serverAdapter && (
                   <div className="flex items-center gap-1">
                     <Button
                       variant="outline"

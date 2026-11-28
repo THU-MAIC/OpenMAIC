@@ -10,6 +10,7 @@
  * The types are imported from the server module as types only: nothing of it
  * runs in the browser.
  */
+import { loadAccountModelDetails } from './account-models';
 import type {
   ModelSettingsChange,
   ModelSettingsView,
@@ -116,6 +117,19 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
     for (const listener of listeners) listener();
   };
 
+  function showView(next: ModelSettingsState) {
+    setState(next);
+    const view = next.view;
+    if (next.phase !== 'ready' || !view?.providers?.some((provider) => provider.accountModelsUrl))
+      return;
+    // A slow provider cannot hold up the settings or replace a newer workspace/view.
+    const started = sequence;
+    void loadAccountModelDetails(view, fetchImpl).then((enriched) => {
+      if (enriched && started === sequence && state.view === view)
+        setState({ ...state, view: enriched });
+    });
+  }
+
   async function fetchView(): Promise<ModelSettingsState> {
     try {
       const response = await fetchImpl(MODEL_SETTINGS_ENDPOINT, { cache: 'no-store' });
@@ -145,7 +159,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
       workspace++;
       loading = null;
     }
-    setState(view ? { phase: 'ready', view } : idle);
+    showView(view ? { phase: 'ready', view } : idle);
   }
 
   /**
@@ -167,7 +181,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
             ? !newer(next.view, number)
             : number < latestRead || number < latestAdopted;
         if (!superseded) {
-          setState(next);
+          showView(next);
           return next;
         }
         // The newest read settles the phase; an older one leaves the state alone.

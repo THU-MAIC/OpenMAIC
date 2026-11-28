@@ -482,62 +482,79 @@ describe('runPiSingleRequest', () => {
     }
   });
 
-  it('fails the turn on a stream error without waiting for a drawing that is still loading', async () => {
-    // The drawing never finishes loading.
-    const projection = new Promise<void>(() => {});
-    const events = [
-      { type: 'text_delta', data: { content: 'First part.' } },
-      { type: 'whiteboard', data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 } },
-      { type: 'text_delta', data: { content: 'Second part.' } },
-      { type: 'error', data: { message: 'Provider failed mid-turn' } },
-    ];
-    // Like the real consumer, an error event throws.
-    const onEvent = vi.fn((event: StatelessEvent) => {
-      if (event.type === 'whiteboard' && event.data.kind === 'projection') return projection;
-      if (event.type === 'error') throw new Error(event.data.message);
-    });
-    const onIterationEnd = vi.fn(async () => null);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')),
-      ),
-    );
-
-    try {
-      await expect(
-        runPiSingleRequest(
-          'session-1',
-          {
-            messages: [],
-            storeState: {
-              stage: null,
-              scenes: [],
-              currentSceneId: null,
-              mode: 'autonomous',
-              whiteboardOpen: false,
-            },
-            config: { agentIds: ['teacher'] },
-          },
-          new AbortController(),
-          'qa',
-          () => ({ onEvent, onIterationEnd }),
-          vi.fn(),
-          vi.fn(),
-          vi.fn(),
-          vi.fn(),
-          {},
-          (key) => key,
+  it.each([
+    { error: { message: 'Provider failed mid-turn' }, displayed: 'Provider failed mid-turn' },
+    {
+      error: {
+        message: 'Check your plan usage.',
+        errorCode: 'PROVIDER_ACTION_REQUIRED',
+        messageKey: 'settings.chatgptPlan.usageLimit',
+      },
+      displayed: 'settings.chatgptPlan.usageLimit',
+    },
+  ])(
+    'fails the turn with $displayed without waiting for a drawing that is still loading',
+    async ({ error, displayed }) => {
+      // The drawing never finishes loading.
+      const projection = new Promise<void>(() => {});
+      const events = [
+        { type: 'text_delta', data: { content: 'First part.' } },
+        { type: 'whiteboard', data: { kind: 'projection', stageId: 'stage-1', lastSeq: 0 } },
+        { type: 'text_delta', data: { content: 'Second part.' } },
+        { type: 'error', data: error },
+      ];
+      // Like the real consumer, an error event throws.
+      const onEvent = vi.fn((event: StatelessEvent) => {
+        if (event.type === 'whiteboard' && event.data.kind === 'projection') return projection;
+        if (event.type === 'error') throw new Error(event.data.message);
+      });
+      const onIterationEnd = vi.fn(async () => null);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('')),
         ),
-      ).rejects.toThrow('Provider failed mid-turn');
-      // Narration queued behind the drawing is not presented.
-      expect(onEvent.mock.calls.map(([event]) => event)).toEqual([events[0], events[1], events[3]]);
-      expect(onIterationEnd).not.toHaveBeenCalled();
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
+      );
+
+      try {
+        await expect(
+          runPiSingleRequest(
+            'session-1',
+            {
+              messages: [],
+              storeState: {
+                stage: null,
+                scenes: [],
+                currentSceneId: null,
+                mode: 'autonomous',
+                whiteboardOpen: false,
+              },
+              config: { agentIds: ['teacher'] },
+            },
+            new AbortController(),
+            'qa',
+            () => ({ onEvent, onIterationEnd }),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            {},
+            (key) => key,
+          ),
+        ).rejects.toThrow(displayed);
+        // Narration queued behind the drawing is not presented.
+        expect(onEvent.mock.calls.map(([event]) => event)).toEqual([
+          events[0],
+          events[1],
+          { type: 'error', data: { ...error, message: displayed } },
+        ]);
+        expect(onIterationEnd).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it.each([
     ['qa', 'tool_calling_required', 'toolCallingRequired'],
@@ -1161,6 +1178,51 @@ describe('runPiSingleRequest fixed notices', () => {
     expect(clearAfterError).toHaveBeenCalledWith('session-1', 'chat.error.teacherNoResponse');
     expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'error' }));
   });
+
+  it.each(['http', 'stream'] as const)(
+    'shows localized provider guidance for a %s refusal before any output',
+    async (transport) => {
+      const reason = 'subscription_sharing_usage_limit_exceeded';
+      const recovery = {
+        errorCode: 'PROVIDER_ACTION_REQUIRED',
+        reason,
+        messageKey: 'settings.chatgptPlan.usageLimit',
+        message: 'Check your plan usage.',
+      } as const;
+      vi.stubGlobal('fetch', async () =>
+        transport === 'http'
+          ? Response.json({ ...recovery, error: recovery.message }, { status: 429 })
+          : new Response(sse([{ type: 'error', data: recovery }])),
+      );
+      const clearAfterError = vi.fn();
+      const onStop = vi.fn();
+      await runPiSingleRequest(
+        'session-1',
+        {
+          messages: [],
+          storeState: {
+            stage: null,
+            scenes: [],
+            currentSceneId: null,
+            mode: 'autonomous',
+            whiteboardOpen: false,
+          },
+          config: { agentIds: ['teacher-1'] },
+        },
+        new AbortController(),
+        'qa',
+        () => ({ onEvent: vi.fn(), onIterationEnd: vi.fn() }),
+        clearAfterError,
+        vi.fn(),
+        vi.fn(),
+        vi.fn(),
+        { current: onStop },
+        (key) => (key === 'settings.chatgptPlan.usageLimit' ? '请查看套餐用量。' : key),
+      );
+      expect(clearAfterError).toHaveBeenCalledWith('session-1', '请查看套餐用量。');
+      expect(onStop).toHaveBeenCalledWith({ sessionId: 'session-1', source: 'error' });
+    },
+  );
 
   it('keeps the existing error path once classroom output was shown', async () => {
     const onEvent = vi.fn((event: StatelessEvent) => {

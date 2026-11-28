@@ -7,15 +7,30 @@
  */
 import type { GenerationRunFailure } from '@/lib/server/generation/run/types';
 
-export type FailureText = { key: string } | { text: string };
+export type FailureText = { key: string; fallback?: string } | { text: string };
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+export function translateFailureText(text: FailureText, t: Translate): string {
+  return 'key' in text ? t(text.key, { defaultValue: text.fallback }) : text.text;
+}
 
 /**
  * The guidance for a provider's exhausted plan or balance, in the preview and
  * in the classroom. A host's own quota code is the host's to word: its message
  * is kept.
  */
-export function providerQuotaKey(errorCode: string | undefined): string | undefined {
-  return errorCode === 'PROVIDER_QUOTA_EXHAUSTED' ? 'generation.quotaExhausted' : undefined;
+export function providerFailureText(failure: {
+  errorCode?: string;
+  messageKey?: string;
+  message?: string;
+}): FailureText | undefined {
+  if (failure.errorCode === 'PROVIDER_ACTION_REQUIRED' && failure.message) {
+    return failure.messageKey
+      ? { key: failure.messageKey, fallback: failure.message }
+      : { text: failure.message };
+  }
+  if (failure.errorCode === 'PROVIDER_QUOTA_EXHAUSTED') return { key: 'generation.quotaExhausted' };
 }
 
 /**
@@ -24,23 +39,30 @@ export function providerQuotaKey(errorCode: string | undefined): string | undefi
  * scene the run went on past failed for its own reason and keeps the generic
  * text.
  */
-export function pendingSceneFailureKey(
-  failure: { readonly errorCode?: string; readonly outlineId: string | null } | null | undefined,
+export function pendingSceneFailureText(
+  failure:
+    | (Pick<GenerationRunFailure, 'errorCode' | 'messageKey'> & {
+        readonly message?: string;
+        readonly outlineId: string | null;
+      })
+    | null
+    | undefined,
   pendingOutlineId: string | undefined,
-): string | undefined {
+): FailureText | undefined {
   if (!failure?.outlineId || failure.outlineId !== pendingOutlineId) return undefined;
-  return providerQuotaKey(failure.errorCode);
+  return providerFailureText(failure);
 }
 
 /** The classic mapping of a scene step's failure (content, actions) to a sentence. */
 export function sceneFailureText(failure: {
   message?: string;
   errorCode?: string;
+  messageKey?: string;
   statusCode?: number;
 }): FailureText {
   const { errorCode, statusCode } = failure;
-  const quotaKey = providerQuotaKey(errorCode);
-  if (quotaKey) return { key: quotaKey };
+  const provider = providerFailureText(failure);
+  if (provider) return provider;
   if (errorCode === 'MISSING_API_KEY' || statusCode === 401 || statusCode === 403) {
     return { key: 'generation.sceneGenerateAuthFailed' };
   }
@@ -56,12 +78,15 @@ export function sceneFailureText(failure: {
 }
 
 export function runFailureText(
-  failure: Pick<GenerationRunFailure, 'step' | 'message' | 'errorCode' | 'statusCode'>,
+  failure: Pick<
+    GenerationRunFailure,
+    'step' | 'message' | 'errorCode' | 'messageKey' | 'statusCode'
+  >,
 ): FailureText {
   if (failure.errorCode === 'QWEN_VC_RECLONE_REQUIRED')
     return { key: 'generation.qwenCloneNewGenerationHint' };
-  const quotaKey = providerQuotaKey(failure.errorCode);
-  if (quotaKey) return { key: quotaKey };
+  const provider = providerFailureText(failure);
+  if (provider) return provider;
   const step = failure.step ?? '';
   if (step === 'material-analysis') return { key: 'generation.courseMaterialParseFailed' };
   if (step === 'research') {

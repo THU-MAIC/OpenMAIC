@@ -1,6 +1,10 @@
 'use client';
 
 import { sampleInteractiveState } from '@/lib/interactive/chat-observation';
+import {
+  providerFailureText,
+  translateFailureText,
+} from '@/lib/generation-run-client/failure-message';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import {
@@ -409,6 +413,10 @@ export async function runPiSingleRequest(
   onResponseAccepted?: (response: Response) => void,
 ): Promise<void> {
   const consumer = createConsumer(sessionId, controller, sessionType);
+  const endWithError = (message: string) => {
+    clearLiveSessionAfterError(sessionId, message);
+    onStopSessionRef.current?.({ sessionId, source: 'error' });
+  };
   // Every send re-samples the current Scene, including a follow-up with no reference.
   const interactiveState = await sampleInteractiveState(
     requestTemplate.storeState,
@@ -439,6 +447,11 @@ export async function runPiSingleRequest(
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => null);
+    const provider = providerFailureText({ ...errorBody, message: errorBody?.error });
+    if (provider) {
+      endWithError(translateFailureText(provider, t));
+      return;
+    }
     if (
       reference?.kind === 'whiteboard_element' &&
       errorBody?.reason === 'whiteboard_reference_changed'
@@ -463,7 +476,6 @@ export async function runPiSingleRequest(
   let sseBuffer = '';
   let sawDoneEvent = false;
   let sawAgentOutput = false;
-  let failedWithoutOutput = false;
   let presentation: Promise<void> | undefined;
   let presentationFailure: { error: unknown } | undefined;
 
@@ -479,13 +491,18 @@ export async function runPiSingleRequest(
       const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
       if (!dataLine) continue;
       const event = JSON.parse(dataLine.slice(6)) as StatelessEvent;
-      if (failedWithoutOutput) continue;
-      // A server-side failure (e.g. the Director's own provider) before any
-      // classroom output gets the same fixed notice as a turn with no response,
-      // instead of the raw error. Errors after visible output keep the old path.
-      if (event.type === 'error' && !sawAgentOutput) {
-        log.error('[ChatArea] Pi stream error before classroom output:', event.data.message);
-        failedWithoutOutput = true;
+      // Handle an error immediately, even while a drawing is loading.
+      if (event.type === 'error') {
+        const provider = providerFailureText(event.data);
+        const guidance = provider && translateFailureText(provider, t);
+        if (!sawAgentOutput) {
+          endWithError(guidance ?? t('chat.error.teacherNoResponse'));
+          void reader.cancel().catch(() => {});
+          return;
+        }
+        consumer.onEvent(
+          guidance ? { ...event, data: { ...event.data, message: guidance } } : event,
+        );
         continue;
       }
       if (isVisibleAgentOutput(event)) sawAgentOutput = true;
@@ -494,14 +511,6 @@ export async function runPiSingleRequest(
       // The Native child waits for visibility replies. Keep reading and answer
       // these queries even while a previous drawing is being loaded.
       if (event.type === 'whiteboard' && event.data.kind === 'visibility_query') {
-        consumer.onEvent(event);
-        continue;
-      }
-
-      // A stream error ends the turn. Handle it now instead of after a drawing
-      // that is still loading, so the turn is cleaned up and its remaining
-      // speech stops without waiting for that drawing.
-      if (event.type === 'error') {
         consumer.onEvent(event);
         continue;
       }
@@ -524,11 +533,6 @@ export async function runPiSingleRequest(
   if (presentation) await presentation;
   if (controller.signal.aborted) return;
   if (presentationFailure) throw presentationFailure.error;
-  if (failedWithoutOutput) {
-    clearLiveSessionAfterError(sessionId, t('chat.error.teacherNoResponse'));
-    onStopSessionRef.current?.({ sessionId, source: 'error' });
-    return;
-  }
 
   const doneData = sawDoneEvent ? await consumer.onIterationEnd() : null;
 
@@ -536,8 +540,7 @@ export async function runPiSingleRequest(
 
   const outcome = getPiSingleRequestOutcome(doneData);
   if (outcome.type === 'error') {
-    clearLiveSessionAfterError(sessionId, t(outcome.messageKey));
-    onStopSessionRef.current?.({ sessionId, source: 'error' });
+    endWithError(t(outcome.messageKey));
     return;
   }
   // Partial answer after a failed or empty teacher/assistant call: keep the

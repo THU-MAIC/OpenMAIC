@@ -3,7 +3,7 @@
 Run with a configured provider and explicit model:
 
 ```sh
-EVAL_DIRECTOR_MODEL=provider:model EVAL_SAMPLES=3 pnpm exec tsx --conditions=import eval/orchestration/child-failure-runner.ts
+EVAL_DIRECTOR_MODEL=provider:model EVAL_SAMPLES=3 node --import tsx --import ./eval/shared/node-conditions.mjs eval/orchestration/child-failure-runner.ts
 ```
 
 `EVAL_SCENARIO` optionally selects `error`, `timeout`, `empty`,

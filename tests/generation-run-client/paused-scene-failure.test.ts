@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pendingSceneFailureKey } from '@/lib/generation-run-client/failure-message';
+import { pendingSceneFailureText } from '@/lib/generation-run-client/failure-message';
 import { applyRunEvent, viewFromSnapshot } from '@/lib/generation-run-client/reducer';
 import {
   failedOutlinesOfRun,
@@ -46,20 +46,20 @@ describe('the provider quota guidance of a paused run, in the classroom', () => 
     const failure = { errorCode: view.error?.errorCode, outlineId: stopped?.id ?? null };
     // Scene 1 is the first scene not produced, so its card is the pending one:
     // it keeps the generic text.
-    expect(pendingSceneFailureKey(failure, 'o2')).toBeUndefined();
+    expect(pendingSceneFailureText(failure, 'o2')).toBeUndefined();
     // Once scene 1 is there, scene 3's card says why it failed.
-    expect(pendingSceneFailureKey(failure, 'o4')).toBe('generation.quotaExhausted');
-    expect(pendingSceneFailureKey(failure, undefined)).toBeUndefined();
-    expect(pendingSceneFailureKey(null, 'o4')).toBeUndefined();
+    expect(pendingSceneFailureText(failure, 'o4')).toEqual({ key: 'generation.quotaExhausted' });
+    expect(pendingSceneFailureText(failure, undefined)).toBeUndefined();
+    expect(pendingSceneFailureText(null, 'o4')).toBeUndefined();
   });
 
   it('is only the provider quota’s', () => {
     expect(
-      pendingSceneFailureKey({ errorCode: 'RATE_LIMITED', outlineId: 'o4' }, 'o4'),
+      pendingSceneFailureText({ errorCode: 'RATE_LIMITED', outlineId: 'o4' }, 'o4'),
     ).toBeUndefined();
     // A host's own quota code is worded by the host.
     expect(
-      pendingSceneFailureKey({ errorCode: 'QUOTA_EXHAUSTED', outlineId: 'o4' }, 'o4'),
+      pendingSceneFailureText({ errorCode: 'QUOTA_EXHAUSTED', outlineId: 'o4' }, 'o4'),
     ).toBeUndefined();
   });
 
@@ -78,7 +78,7 @@ describe('the provider quota guidance of a paused run, in the classroom', () => 
     view = applyRunEvent(view, event(3, 'state', { state: 'paused', step: 'agents' }));
     expect(pausedOutlineOfRun(view, outlines)).toBeNull();
     expect(
-      pendingSceneFailureKey({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED', outlineId: null }, 'o1'),
+      pendingSceneFailureText({ errorCode: 'PROVIDER_QUOTA_EXHAUSTED', outlineId: null }, 'o1'),
     ).toBeUndefined();
   });
 });

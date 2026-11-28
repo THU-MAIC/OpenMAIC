@@ -39,6 +39,17 @@ vi.mock('@/lib/server/ssrf-guard', () => ({
   validateClientBaseUrl: async () => null,
 }));
 
+vi.mock('@/lib/server/chatgpt-plan/availability', () => ({
+  chatGPTPlanAvailability: () => ({ available: true }),
+}));
+vi.mock('@/lib/server/chatgpt-plan/model', () => ({
+  listChatGPTPlanModels: async () => [
+    { id: 'listed', name: 'Listed' },
+    { id: 'other', name: 'Other' },
+  ],
+  chatGPTPlanLanguageModel: (id: string) => ({ modelId: id }),
+}));
+
 const operator: ModelConfigLayer = {
   source: 'deployment',
   config: { providers: { openai: { preset: 'openai', apiKey: 'sk-operator' } } },
@@ -153,6 +164,20 @@ describe('resolveModel', () => {
   });
 
   describe('the model a request names (deprecated)', () => {
+    it('uses the operator plan limits for the legacy registry id, including a differently named declaration', async () => {
+      const { resolveModel } = await import('@/lib/server/resolve-model');
+      const choose = (id: string) => resolveModel({ modelString: `chatgpt-plan:${id}` });
+      await expect(choose('other')).resolves.toMatchObject({ modelId: 'other' });
+      for (const id of ['personal', 'chatgpt-plan']) {
+        mocks.deployment.layer = {
+          source: 'deployment',
+          config: { providers: { [id]: { preset: 'chatgpt-plan', models: ['listed'] } } },
+        };
+        await expect(choose('listed')).resolves.toMatchObject({ modelId: 'listed' });
+        await expect(choose('other')).rejects.toMatchObject({ code: 'PROVIDER_DISABLED' });
+      }
+    });
+
     it('keeps the client connection and thinking for its own model', async () => {
       const { resolveModel } = await import('@/lib/server/resolve-model');
       const r = await resolveModel({

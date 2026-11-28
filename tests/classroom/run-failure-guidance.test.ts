@@ -139,6 +139,14 @@ describe('a paused run’s failure, in its classroom', () => {
     expect(run.stageProps?.generationFailureMessage).toBe('generation.quotaExhausted');
   });
 
+  it('shows the adapter’s recovery instruction on the paused scene', async () => {
+    const message = 'Review your connected account at https://chatgpt.com/settings/usage.';
+    run.view = pausedRun({ message, errorCode: 'PROVIDER_ACTION_REQUIRED', statusCode: 429 });
+    run.generatingOutlines = [outline(4)];
+    await renderClassroom();
+    expect(run.stageProps?.generationFailureMessage).toBe(message);
+  });
+
   it('keeps the generic text on a scene the run went on past', async () => {
     // Scene 1 (o2) failed earlier and was skipped: its card is the pending one.
     run.view = pausedRun();

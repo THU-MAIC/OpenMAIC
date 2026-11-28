@@ -24,7 +24,7 @@
 import { APICallError, RetryError } from 'ai';
 import type { LanguageModel } from 'ai';
 import { createLogger } from '@/lib/logger';
-import { isUpstreamQuotaExhausted } from '@/lib/server/llm-error-response';
+import { isUpstreamQuotaExhausted, publicProviderFailure } from '@/lib/server/llm-error-response';
 import {
   isNonRetryableHostFailure,
   isProviderQuotaRefusal,
@@ -114,6 +114,12 @@ export function isRetryableLlmError(error: unknown): boolean {
   }
 
   return NETWORK_ERROR_RE.test(err.message);
+}
+
+/** A provider's explicit same-model retry decision; otherwise the step uses its usual policy. */
+export function providerRetryOverride(error: unknown): boolean | undefined {
+  if (isUpstreamQuotaExhausted(error)) return false;
+  if (publicProviderFailure(error)) return isRetryableLlmError(error);
 }
 
 /**

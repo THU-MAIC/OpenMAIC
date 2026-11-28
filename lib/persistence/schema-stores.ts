@@ -19,6 +19,7 @@ import { USER_SKILL_PG_MIGRATIONS } from '@openmaic/storage/skill/pg';
 
 import { OWNER_AGENT_MIGRATIONS } from '@/lib/server/agents/store';
 
+import { CHATGPT_PLAN_MIGRATIONS } from './chatgpt-plan';
 import { GENERATION_RUN_MIGRATIONS } from './generation-runs';
 import { LEGACY_CLASSROOM_IMPORT_MIGRATIONS } from './legacy-classroom-imports';
 import { LEGACY_IMPORT_BINDING_MIGRATIONS } from './legacy-import-bindings';
@@ -52,4 +53,5 @@ export const APP_SCHEMA_STORES: readonly SchemaMigrationSet[] = [
   PBL_PROJECT_MIGRATIONS,
   PBL_MIGRATIONS,
   RENDER_JOB_MIGRATIONS,
+  CHATGPT_PLAN_MIGRATIONS,
 ];

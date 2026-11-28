@@ -50,6 +50,7 @@ import {
   type CourseMaterialMessage,
 } from '@/lib/generation-run-client/use-course-materials';
 import { ModelPicker } from '@/components/settings/model-picker';
+import { CHATGPT_PLAN_PROVIDER_ID, CHATGPT_USAGE_SETTINGS_URL } from '@/lib/chatgpt-plan/shared';
 import { useLLMPickerGroups } from '@/components/settings/use-llm-picker-groups';
 
 import {
@@ -453,6 +454,23 @@ export function GenerationToolbar({
           </Tooltip>
         )
       )}
+
+      {llm?.registryId === CHATGPT_PLAN_PROVIDER_ID &&
+        llmPickerGroups.some(
+          (group) => group.id === providerId && group.models.some((model) => model.id === modelId),
+        ) && (
+          <span className="inline-flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
+            {t('settings.chatgptPlan.usingPlan')}
+            <a
+              href={CHATGPT_USAGE_SETTINGS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              {t('settings.chatgptPlan.manageUsage')}
+            </a>
+          </span>
+        )}
 
       {materialView === 'entry' ? (
         materialTrigger

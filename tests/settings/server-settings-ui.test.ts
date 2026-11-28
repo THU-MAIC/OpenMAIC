@@ -62,8 +62,10 @@ vi.mock('@/components/ui/select', async () => {
 });
 
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
+import { ChatGPTPlanAccount } from '@/components/settings/chatgpt-plan-account';
 import { ModelServicesPanel } from '@/components/settings/model-services';
 import { ModelMap } from '@/components/settings/models/model-map';
+import { SlotPicker } from '@/components/settings/models/slot-picker';
 import { llmPickerGroups } from '@/components/settings/use-llm-picker-groups';
 import { ProviderConfigPanel } from '@/components/settings/provider-config-panel';
 import { TokenPlanSettings } from '@/components/settings/token-plan-settings';
@@ -94,8 +96,11 @@ beforeAll(() => {
 });
 
 const roots: Root[] = [];
-afterEach(() => {
+function unmountAll() {
   for (const root of roots.splice(0)) act(() => root.unmount());
+}
+afterEach(() => {
+  unmountAll();
   document.body.replaceChildren();
   vi.unstubAllGlobals();
 });
@@ -229,6 +234,267 @@ describe('Model Services → provider changes', () => {
     click(byText('settings.serverConfig.removeKey'));
     await flush();
     expect(changes).toEqual([{ kind: 'provider', id: 'acme', preset: 'acme', apiKey: '' }]);
+  });
+
+  it('shows the marked account recovery message when refreshing the ChatGPT models', async () => {
+    const message = 'Review the limit at https://chatgpt.com/settings/usage.';
+    vi.stubGlobal('fetch', async () =>
+      Response.json(
+        { success: false, errorCode: 'PROVIDER_ACTION_REQUIRED', error: message },
+        { status: 429 },
+      ),
+    );
+    mount(
+      createElement(ChatGPTPlanAccount, {
+        save: vi.fn(),
+        account: {
+          status: { available: true, state: 'connected', noticeAcknowledged: true },
+          statusFailed: false,
+          loadStatus: vi.fn(),
+        },
+      }),
+    );
+    click(byText('settings.chatgptPlan.refreshModels'));
+    await flush();
+    expect(document.body.textContent).toContain(message);
+  });
+
+  it('shows a disconnected ChatGPT account as unconfigured and only offers account models', async () => {
+    const preset = {
+      ...chatPreset,
+      id: 'chatgpt-plan',
+      name: 'ChatGPT plan',
+      capabilities: { chat: { models: [] } },
+    };
+    const view = makeView({ presets: [preset] });
+    let state = 'disconnected';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          success: true,
+          status: { available: true, state, noticeAcknowledged: true },
+        }),
+      ),
+    );
+    const { apply } = recordingApply(() => view);
+    mount(
+      createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+    );
+    const serviceNames = [...document.querySelectorAll('button[aria-pressed] img')].map((icon) =>
+      icon.getAttribute('alt'),
+    );
+    expect(serviceNames).toContain('OpenAI');
+    expect(serviceNames[serviceNames.indexOf('OpenAI') + 1]).toBe('ChatGPT plan');
+    click(byText('ChatGPT'));
+    expect(document.body.textContent).not.toContain('settings.modelServices.ready');
+    await flush();
+    expect(document.body.textContent).toContain('settings.chatgptPlan.signIn');
+    expect(document.body.textContent).toContain('settings.chatgptPlan.signInHint');
+    expect(document.body.textContent).toContain('settings.chatgptPlan.preview');
+    expect(document.body.textContent).not.toContain('settings.addNewModel');
+    const visibleLabels = [...document.querySelectorAll('label')].filter(
+      (el) => !el.closest('[hidden]'),
+    );
+    expect(visibleLabels.some((label) => label.textContent === 'settings.models')).toBe(false);
+    for (state of ['connected', 'reauth-required', 'sharing-disabled', 'disconnected']) {
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flush();
+      expect(document.body.textContent?.includes('settings.modelServices.ready')).toBe(
+        state === 'connected',
+      );
+    }
+  });
+
+  it('warns when upstream revocation is unconfirmed and explicitly confirms a registration change', async () => {
+    const { toast } = await import('sonner');
+    let state = 'reauth-required';
+    let registered = true;
+    const fetchMock = vi.fn(async (path: string) => {
+      if (path.endsWith('/disconnect')) {
+        state = 'disconnected';
+        return Response.json({ success: true, revoked: false });
+      }
+      if (path.endsWith('/forget-registration')) registered = false;
+      return Response.json({
+        success: true,
+        status: {
+          available: true,
+          state,
+          noticeAcknowledged: true,
+          canForgetRegistration: state === 'disconnected' && registered,
+        },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const view = makeView({
+      presets: [{ ...chatPreset, id: 'chatgpt-plan', capabilities: { chat: { models: [] } } }],
+    });
+    mount(
+      createElement(ModelServicesPanel, {
+        view,
+        apply: recordingApply(() => view).apply,
+        tab: 'providers',
+        onTabChange: () => {},
+      }),
+    );
+    click(byText('ChatGPT'));
+    await flush();
+    click(byText('settings.chatgptPlan.disconnect'));
+    const dialogAction = () =>
+      document.querySelector<HTMLElement>('[role="alertdialog"] button:last-child')!;
+    click(dialogAction());
+    await flush();
+    expect(toast.warning).toHaveBeenCalledWith('settings.chatgptPlan.notRevoked');
+    expect(byText('settings.chatgptPlan.signIn').hasAttribute('data-oai-siwc-button')).toBe(true);
+    expect(document.body.textContent).toContain('settings.chatgptPlan.reconnectHint');
+    click(byText('settings.chatgptPlan.differentAccount'));
+    click(byText('common.cancel'));
+    expect(registered).toBe(true);
+    click(byText('settings.chatgptPlan.differentAccount'));
+    click(dialogAction());
+    await flush();
+    expect(registered).toBe(false);
+    expect(document.body.textContent).not.toContain('settings.chatgptPlan.differentAccount');
+    expect(document.body.textContent).not.toContain('settings.chatgptPlan.reconnectHint');
+  });
+  it.each([
+    ['sign-in-denied', 'errorDenied'],
+    ['account-mismatch', 'errorAccountMismatch'],
+    ['sharing-disabled', 'sharingDisabled'],
+    ['cancel', 'sharingDisabled'],
+  ])(
+    'ends a loopback retry whose account state does not change: %s',
+    async (outcome, expectedMessage) => {
+      vi.spyOn(window, 'open').mockReturnValue(null);
+      const calls = vi.fn(async (path: string) =>
+        Response.json(
+          path.endsWith('/sign-in')
+            ? {
+                success: true,
+                signIn: {
+                  authorizationUrl: 'https://example.invalid/approve',
+                  attemptId: 'receipt',
+                  flow: 'loopback',
+                  expiresAt: Date.now() + 60000,
+                },
+              }
+            : { success: true, outcome: outcome === 'cancel' ? 'sign-in-denied' : outcome },
+        ),
+      );
+      vi.stubGlobal('fetch', calls);
+      const status = {
+        available: true,
+        state: 'sharing-disabled' as const,
+        noticeAcknowledged: true,
+      };
+      mount(
+        createElement(ChatGPTPlanAccount, {
+          save: vi.fn(),
+          account: { status, statusFailed: false, loadStatus: vi.fn(async () => status) },
+        }),
+      );
+      vi.useFakeTimers();
+      try {
+        await act(async () => {
+          byText('settings.chatgptPlan.signInAgain').click();
+        });
+        expect(document.body.textContent).toContain('settings.chatgptPlan.waiting');
+        if (outcome === 'cancel') {
+          await act(async () => {
+            byText('common.cancel').click();
+          });
+        } else {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(2000);
+          });
+        }
+        expect(calls).toHaveBeenCalledWith(
+          '/api/chatgpt-plan/attempt',
+          expect.objectContaining({
+            body: JSON.stringify(
+              outcome === 'cancel'
+                ? { attemptId: 'receipt', cancel: true }
+                : { attemptId: 'receipt' },
+            ),
+          }),
+        );
+        expect(document.body.textContent).not.toContain('settings.chatgptPlan.waiting');
+        expect(document.body.textContent).toContain(`settings.chatgptPlan.${expectedMessage}`);
+      } finally {
+        vi.useRealTimers();
+        vi.mocked(window.open).mockRestore();
+      }
+    },
+  );
+
+  it('shows a failed welcome acknowledgement in the dialog and still lets the user reach disconnect', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ success: false }, { status: 503 })),
+    );
+    mount(
+      createElement(ChatGPTPlanAccount, {
+        save: vi.fn(),
+        account: {
+          status: { available: true, state: 'connected', noticeAcknowledged: false },
+          statusFailed: false,
+          loadStatus: vi.fn(),
+        },
+      }),
+    );
+    click(byText('settings.chatgptPlan.noticeAccept'));
+    await flush();
+    expect(document.querySelector('[role="alertdialog"] [role="alert"]')?.textContent).toBe(
+      'settings.chatgptPlan.errorFailed',
+    );
+    click(byText('common.close'));
+    expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+    click(byText('settings.chatgptPlan.disconnect'));
+    expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain(
+      'settings.chatgptPlan.disconnectConfirm',
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('welcomes the first successful connection once, even after disconnect and reconnect', async () => {
+    const preset = { ...chatPreset, id: 'chatgpt-plan', capabilities: { chat: { models: [] } } };
+    const view = makeView({ presets: [preset] });
+    let state = 'disconnected';
+    let acknowledged = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (path) => {
+        if (path === '/api/chatgpt-plan/notice') acknowledged = true;
+        return Response.json({
+          success: true,
+          status: { available: true, state, noticeAcknowledged: acknowledged },
+        });
+      }),
+    );
+    const { apply } = recordingApply(() => view);
+    mount(
+      createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+    );
+    click(byText('ChatGPT'));
+    await flush();
+    expect(document.body.textContent).toContain('settings.chatgptPlan.signIn');
+    for (const next of ['sharing-disabled', 'connected', 'disconnected', 'connected']) {
+      state = next;
+      act(() => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flush();
+      const welcome = document.querySelector('[role="alertdialog"]');
+      if (next === 'connected' && !acknowledged) {
+        expect(welcome?.querySelector('a')?.href).toBe('https://chatgpt.com/settings/usage');
+        click(byText('settings.chatgptPlan.noticeAccept'));
+        await flush();
+        expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+      } else expect(welcome).toBeNull();
+    }
   });
 
   it("shows the server's providers read-only and says what only the server can set up", () => {
@@ -470,6 +736,109 @@ describe("the server's providers wherever chat models are offered", () => {
     return flush().then(() => {
       expect(changes.at(-1)).toEqual({ kind: 'slots', set: { llm: 'gateway:gpt-5.4-mini' } });
     });
+  });
+
+  it('offers the assigned ChatGPT model and its usage link only while the account is connected', async () => {
+    const plan: PresetView = {
+      ...chatPreset,
+      id: 'chatgpt-plan',
+      capabilities: {
+        chat: {
+          models: [
+            {
+              id: 'gpt',
+              name: 'Account model',
+              capabilities: {
+                vision: true,
+                thinking: {
+                  control: 'effort',
+                  requestAdapter: 'openai',
+                  effortValues: ['low', 'high'],
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+    const view = withLlm(
+      makeView({ providers: [workspaceProvider('personal', plan)], presets: [plan] }),
+      'personal:gpt',
+    );
+    let state = 'connected';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          success: true,
+          status: { available: true, state, noticeAcknowledged: true },
+        }),
+      ),
+    );
+    const llm = view.slots.find((slot) => slot.slot === 'llm')!.effective;
+    if (llm.status !== 'assigned') throw new Error('Expected assigned model');
+    llm.registryId = 'chatgpt-plan';
+    modelSettingsClient.adopt(view);
+    try {
+      mount(
+        createElement(GenerationToolbar, {
+          courseMaterials: [],
+          onCourseMaterialsAdd: () => {},
+          onCourseMaterialRemove: () => {},
+          onPdfError: () => {},
+        }),
+      );
+      const { apply } = recordingApply(() => view);
+      mount(
+        createElement(ModelServicesPanel, { view, apply, tab: 'providers', onTabChange: () => {} }),
+      );
+      mount(
+        createElement(SlotPicker, {
+          view,
+          slot: view.slots.find(({ slot }) => slot === 'llm')!,
+          apply,
+          t: (key: string) => key,
+          onDone: () => {},
+        }),
+      );
+      expect(
+        vi.mocked(fetch).mock.calls.filter(([path]) => path === '/api/chatgpt-plan/status'),
+      ).toHaveLength(1);
+      await flush();
+      click(document.querySelector<HTMLElement>('button[aria-label$="/ gpt"]')!);
+      for (const next of [
+        'connected',
+        'disconnected',
+        'reauth-required',
+        'sharing-disabled',
+        'connected',
+      ]) {
+        state = next;
+        act(() => {
+          window.dispatchEvent(new Event('focus'));
+        });
+        await flush();
+        const active = next === 'connected';
+        expect(document.body.textContent?.includes('settings.chatgptPlan.usingPlan')).toBe(active);
+        expect(
+          [...document.querySelectorAll('[role="button"]')].some((el) =>
+            el.textContent?.includes('Account model'),
+          ),
+        ).toBe(active);
+        expect(!!document.querySelector('[title="settings.capabilities.vision"]')).toBe(active);
+        const efforts = document.querySelectorAll<HTMLOptionElement>(
+          '[aria-label="settings.modelSettings.picker.thinking"] option:not([value=""])',
+        );
+        expect([...efforts].map((option) => option.value)).toEqual(active ? ['low', 'high'] : []);
+        expect(modelSettingsClient.getState().view).toBe(view);
+      }
+      expect(byText('settings.chatgptPlan.manageUsage', 'a').getAttribute('href')).toBe(
+        'https://chatgpt.com/settings/usage',
+      );
+    } finally {
+      unmountAll();
+      modelSettingsClient.adopt(null);
+    }
   });
 
   it('offers them in the home toolbar', () => {
