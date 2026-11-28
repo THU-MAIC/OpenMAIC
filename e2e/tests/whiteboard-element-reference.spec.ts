@@ -58,7 +58,7 @@ test('selects a panned/zoomed whiteboard element, sends its identity, and retain
   await classroom.goto(stageId);
   await classroom.waitForLoaded();
   await page.getByTitle('Open Whiteboard', { exact: true }).click();
-  const fact = page.locator('[id="screen-element-board-fact"] > div').first();
+  const fact = page.locator('[id="screen-element-board-fact"] .base-element-text').first();
   await expect(fact).toBeVisible();
   await fact.hover();
   await page.mouse.wheel(0, -150);

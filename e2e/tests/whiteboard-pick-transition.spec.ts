@@ -132,7 +132,8 @@ const referenceButton = (page: Page) =>
   page.getByRole('button', { name: 'Reference content', exact: true });
 const slidePicker = (page: Page) => page.getByTestId('slide-element-pick-overlay');
 const boardPicker = (page: Page) => page.getByTestId('whiteboard-element-pick-overlay');
-const boardFact = (page: Page) => page.locator('[id="screen-element-board-fact"] > div').first();
+const boardFact = (page: Page) =>
+  page.locator('[id="screen-element-board-fact"] .base-element-text').first();
 
 test('closing the whiteboard manually ends an armed whiteboard picker', async ({ page }) => {
   await seedSlideWithBoard(page, []);
