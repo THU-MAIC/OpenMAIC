@@ -16,6 +16,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, modelAuthorizationResponse } from '@/lib/server/api-response';
 import {
   assertDeploymentModelAuthorized,
+  deploymentAuthorizedModels,
   ModelAuthorizationError,
 } from '@/lib/server/model-config/model-authorization';
 import { deploymentConfig } from '@/lib/server/model-config/runtime';
@@ -56,8 +57,9 @@ export async function POST(req: NextRequest) {
       const now = Date.now();
       const expireTime = new Date(now + 30 * 60 * 1000).toISOString();
       const newSessionExpireTime = new Date(now + 2 * 60 * 1000).toISOString();
-      const liveModel = normalizeLiveModelName(process.env.GEMINI_LIVE_MODEL);
-      const bareLiveModel = liveModel.replace(/^models\//, '');
+      const envLiveModel = process.env.GEMINI_LIVE_MODEL?.trim();
+      let liveModel = normalizeLiveModelName(envLiveModel);
+      let bareLiveModel = liveModel.replace(/^models\//, '');
 
       // Enforce deployment model allowlist before spending deployment credentials on the Live model
       // (workspace BYOK providers use the user's own API key, not the deployment allowlist).
@@ -73,6 +75,19 @@ export async function POST(req: NextRequest) {
         const { layer: deployment } = deploymentConfig();
         if (deployment?.config) {
           const deploymentProviderId = resolution?.providerId ?? resolved.providerId;
+          const authorizedModels = deploymentAuthorizedModels(
+            deployment.config,
+            deploymentProviderId,
+            'chat',
+          );
+          if (!authorizedModels.includes(bareLiveModel) && !envLiveModel) {
+            // If no explicit GEMINI_LIVE_MODEL env override is pinned, adopt an allowlisted Live model
+            const allowlistedLive = authorizedModels.find((m) => /\blive\b|-live\b/i.test(m));
+            if (allowlistedLive) {
+              bareLiveModel = allowlistedLive;
+              liveModel = normalizeLiveModelName(allowlistedLive);
+            }
+          }
           try {
             assertDeploymentModelAuthorized(
               deployment.config,

@@ -402,6 +402,29 @@ export function useLiveCameraTutor({
       void audioCtxRef.current.resume().catch(() => {});
     }
 
+    // For screen-share startup, open the display picker immediately inside the user-gesture turn
+    // before awaiting session negotiation (prevents browser transient-activation InvalidStateError).
+    let preAcquiredScreen: MediaStream | null = null;
+    if (requestedSource === 'screen') {
+      try {
+        preAcquiredScreen = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false,
+        });
+      } catch {
+        if (isStale()) return;
+        stopSession();
+        setStatus('error');
+        setErrorMessage('Screen sharing permission is required.');
+        return;
+      }
+      if (isStale()) {
+        preAcquiredScreen.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      screenStreamRef.current = preAcquiredScreen;
+    }
+
     // Negotiate transport first so turn-based snapshot fallback only requests video (not mic)
     let sessionInfo: LiveTutorSessionResponse;
     try {
@@ -421,6 +444,7 @@ export function useLiveCameraTutor({
       }
       sessionInfo = (json.data ?? json) as LiveTutorSessionResponse;
     } catch (err) {
+      preAcquiredScreen?.getTracks().forEach((t) => t.stop());
       if (isStale()) return;
       stopSession();
       setStatus('error');
@@ -428,27 +452,16 @@ export function useLiveCameraTutor({
       return;
     }
 
-    if (isStale()) return;
+    if (isStale()) {
+      preAcquiredScreen?.getTracks().forEach((t) => t.stop());
+      return;
+    }
 
     const needsMic = sessionInfo.mode === 'gemini-live';
     let audioStream: MediaStream | null = null;
 
-    if (requestedSource === 'screen') {
-      let screen: MediaStream;
-      try {
-        screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
-      } catch {
-        if (isStale()) return;
-        stopSession();
-        setStatus('error');
-        setErrorMessage('Screen sharing permission is required.');
-        return;
-      }
-      if (isStale()) {
-        screen.getTracks().forEach((t) => t.stop());
-        return;
-      }
-
+    if (requestedSource === 'screen' && preAcquiredScreen) {
+      const screen = preAcquiredScreen;
       if (needsMic) {
         try {
           audioStream = await navigator.mediaDevices.getUserMedia({
@@ -471,7 +484,6 @@ export function useLiveCameraTutor({
         mediaStreamRef.current = audioStream;
       }
 
-      screenStreamRef.current = screen;
       setVideoSource('screen');
       if (videoRef.current) {
         videoRef.current.srcObject = screen;
@@ -482,7 +494,8 @@ export function useLiveCameraTutor({
           screenStreamRef.current = null;
         }
         if (isStale()) return;
-        const hasCameraVideo = (mediaStreamRef.current?.getVideoTracks().length ?? 0) > 0;
+        const hasCameraVideo =
+          mediaStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live') ?? false;
         if (hasCameraVideo && mediaStreamRef.current) {
           setVideoSource('camera');
           if (videoRef.current) {
@@ -1138,13 +1151,32 @@ export function useLiveCameraTutor({
         screenStreamRef.current.getTracks().forEach((t) => t.stop());
         screenStreamRef.current = null;
       }
-      setVideoSource('camera');
-      if (videoRef.current && mediaStreamRef.current) {
-        videoRef.current.srcObject = mediaStreamRef.current;
-        await videoRef.current.play().catch(() => {});
+      const hasCameraVideo =
+        mediaStreamRef.current?.getVideoTracks().some((t) => t.readyState === 'live') ?? false;
+      if (hasCameraVideo && mediaStreamRef.current) {
+        setVideoSource('camera');
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStreamRef.current;
+          await videoRef.current.play().catch(() => {});
+        }
+      } else {
+        // Screen-only session (started without webcam): try acquiring camera, or stop cleanly
+        const attemptId = sessionAttemptRef.current;
+        try {
+          const cam = await startCameraStream(facingMode, {
+            audio: false,
+            preserveExistingAudio: true,
+          });
+          if (!cam || !mountedRef.current || sessionAttemptRef.current !== attemptId) return;
+          setVideoSource('camera');
+        } catch {
+          if (mountedRef.current && sessionAttemptRef.current === attemptId) {
+            stopSession();
+          }
+        }
       }
     }
-  }, [canShareScreen, videoSource]);
+  }, [canShareScreen, facingMode, startCameraStream, stopSession, videoSource]);
 
   const bindVideoElement = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;

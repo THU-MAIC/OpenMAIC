@@ -1925,12 +1925,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const [cameraTabHost, setCameraTabHost] = useState<HTMLDivElement | null>(null);
     const [recentQaTranscript, setRecentQaTranscript] = useState('');
 
-    // Keep an active camera tutor visible across desktop <-> mobile breakpoint transitions
+    const prevMobileRef = useRef(mobile);
+
+    // Keep an active camera tutor visible across actual desktop <-> mobile breakpoint transitions
     useEffect(() => {
-      if (!cameraTutorMounted) return;
+      const wasMobile = prevMobileRef.current;
+      prevMobileRef.current = mobile;
+      if (wasMobile === mobile || !cameraTutorMounted) return;
       if (mobile && desktopCameraTabActive) {
         setMobileCameraTutorOpen(true);
       } else if (!mobile && mobileCameraTutorOpen) {
+        setMobileCameraTutorOpen(false);
         setChatAreaCollapsed(false);
         chatAreaRef.current?.switchToTab('camera');
       }
