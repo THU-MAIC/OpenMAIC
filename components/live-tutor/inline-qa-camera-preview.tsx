@@ -19,6 +19,7 @@ import {
   VideoOff,
   X,
 } from 'lucide-react';
+import { getElementRange } from '@openmaic/renderer';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore, useStageStore } from '@/lib/store';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
@@ -120,21 +121,7 @@ function InlineQACameraLiveBody({
         // and append tutor steps cleanly below them within the renderer's max 1000px height.
         let occupiedBottom = 0;
         for (const el of preservedElements) {
-          if (el.type === 'line') {
-            const maxRelY = Math.max(
-              el.start[1],
-              el.end[1],
-              el.broken?.[1] ?? 0,
-              el.broken2?.[1] ?? 0,
-              el.curve?.[1] ?? 0,
-              el.cubic?.[0]?.[1] ?? 0,
-              el.cubic?.[1]?.[1] ?? 0,
-            );
-            occupiedBottom = Math.max(occupiedBottom, el.top + maxRelY);
-          } else {
-            const elHeight = 'height' in el && typeof el.height === 'number' ? el.height : 40;
-            occupiedBottom = Math.max(occupiedBottom, el.top + elHeight);
-          }
+          occupiedBottom = Math.max(occupiedBottom, getElementRange(el).maxY);
         }
 
         // If preserved elements already fill past y=844, proportionally fit them into the
