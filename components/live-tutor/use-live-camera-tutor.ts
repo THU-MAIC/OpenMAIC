@@ -109,7 +109,21 @@ export function useLiveCameraTutor({
   const camPausedRef = useRef(false);
   const tutorBufRef = useRef('');
   const userBufRef = useRef('');
+  const lastSentSceneKeyRef = useRef('');
   const stopSessionRef = useRef<() => void>(() => {});
+
+  const buildLiveSceneContextText = (cur: {
+    topic?: string;
+    problem?: PracticeProblem | null;
+    sceneContext?: string;
+  }) =>
+    [
+      cur.topic ? `Current topic: ${cur.topic}.` : '',
+      cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
+      cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(-1800)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
 
   const latestPropsRef = useRef({
     topic,
@@ -299,6 +313,24 @@ export function useLiveCameraTutor({
         }
       });
 
+      // Handle unexpected microphone disconnect / permission revocation during live voice sessions
+      if (!preserveExistingAudio) {
+        const audioTrack = stream.getAudioTracks()[0];
+        audioTrack?.addEventListener('ended', () => {
+          if (
+            !mountedRef.current ||
+            !mediaStreamRef.current?.getAudioTracks().includes(audioTrack)
+          ) {
+            return;
+          }
+          stopSessionRef.current();
+          if (mountedRef.current) {
+            setStatus('error');
+            setErrorMessage('Microphone stream ended. Please restart the session.');
+          }
+        });
+      }
+
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
@@ -311,6 +343,7 @@ export function useLiveCameraTutor({
   const stopSession = useCallback(() => {
     sessionAttemptRef.current += 1;
     cameraAcquireSeqRef.current += 1;
+    lastSentSceneKeyRef.current = '';
     if (sessionAbortRef.current) {
       sessionAbortRef.current.abort();
       sessionAbortRef.current = null;
@@ -537,6 +570,21 @@ export function useLiveCameraTutor({
           return;
         }
         mediaStreamRef.current = audioStream;
+        const screenAudioTrack = audioStream.getAudioTracks()[0];
+        screenAudioTrack?.addEventListener('ended', () => {
+          if (
+            !mountedRef.current ||
+            isStale() ||
+            !mediaStreamRef.current?.getAudioTracks().includes(screenAudioTrack)
+          ) {
+            return;
+          }
+          stopSessionRef.current();
+          if (mountedRef.current) {
+            setStatus('error');
+            setErrorMessage('Microphone stream ended. Please restart the session.');
+          }
+        });
       }
 
       setVideoSource('screen');
@@ -611,6 +659,8 @@ export function useLiveCameraTutor({
         return;
       }
       const cur = latestPropsRef.current;
+      const initialSceneContextText = buildLiveSceneContextText(cur);
+      lastSentSceneKeyRef.current = initialSceneContextText;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
         cur.language ? `Always speak and write whiteboard steps in locale "${cur.language}".` : '',
@@ -618,9 +668,7 @@ export function useLiveCameraTutor({
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
         'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters). Whenever a visual sketch (labeled right triangle, angle arc, light rays, forces, coordinate axes, shapes, or arrows) helps explain the concept, call draw_whiteboard_diagram with a clean SVG (viewBox="0 0 600 340", white/light background, clear dark strokes and readable labels).',
-        cur.topic ? `Current topic: ${cur.topic}.` : '',
-        cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
-        cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(-1800)}` : '',
+        initialSceneContextText,
         cur.whiteboardStepsText?.length
           ? `Current whiteboard items:\n- ${cur.whiteboardStepsText.slice(-8).join('\n- ')}`
           : '',
@@ -1246,6 +1294,37 @@ export function useLiveCameraTutor({
       }
     }
   }, [canShareScreen, facingMode, startCameraStream, stopSession, videoSource]);
+
+  // Push updated slide/quiz/lesson context into an active Gemini Live session when the learner navigates scenes
+  useEffect(() => {
+    if (status !== 'live' || transportMode !== 'gemini-live') return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const nextContext = buildLiveSceneContextText({ topic, problem, sceneContext });
+    if (!nextContext || nextContext === lastSentSceneKeyRef.current) return;
+    lastSentSceneKeyRef.current = nextContext;
+    try {
+      ws.send(
+        JSON.stringify({
+          clientContent: {
+            turns: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    text: `[Classroom context updated — use this for future guidance]\n${nextContext}`,
+                  },
+                ],
+              },
+            ],
+            turnComplete: false,
+          },
+        }),
+      );
+    } catch {
+      // ignore socket send race
+    }
+  }, [problem, sceneContext, status, topic, transportMode]);
 
   const bindVideoElement = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;

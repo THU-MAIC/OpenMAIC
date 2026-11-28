@@ -66,6 +66,11 @@ function collectVisibleChatTranscript(): string {
   return '';
 }
 
+const cachedTutorStepsByStage = new Map<
+  string,
+  { lastSeq: number; steps: WhiteboardStepItem[] }
+>();
+
 function InlineQACameraLiveBody({
   visible = true,
   onClose,
@@ -81,14 +86,30 @@ function InlineQACameraLiveBody({
   const modelView = useModelSettingsView();
   const caps = getCameraTutorCapabilities(modelView);
 
-  const [wbSteps, setWbSteps] = useState<WhiteboardStepItem[]>([]);
+  const initialHydratedSteps = useMemo(() => {
+    if (!stageId) return [];
+    const cached = cachedTutorStepsByStage.get(stageId);
+    const proj = useCanvasStore.getState().runtimeWhiteboardProjection;
+    if (
+      cached &&
+      proj?.stageId === stageId &&
+      proj.whiteboard?.id === `classroom-live-wb-${stageId}` &&
+      proj.lastSeq === cached.lastSeq
+    ) {
+      return cached.steps;
+    }
+    cachedTutorStepsByStage.delete(stageId);
+    return [];
+  }, [stageId]);
+
+  const [wbSteps, setWbSteps] = useState<WhiteboardStepItem[]>(initialHydratedSteps);
   const [textQuestion, setTextQuestion] = useState('');
   const [boardPage, setBoardPage] = useState<'tutor' | 'classroom'>('tutor');
   const [hasPaginatedClassroomBoard, setHasPaginatedClassroomBoard] = useState(false);
   const savedClassroomBoardRef = useRef<Whiteboard | null>(null);
   const savedClassroomSeqRef = useRef<number | null>(null);
   const savedHadRuntimeProjectionRef = useRef(false);
-  const hasTutorProjectionRef = useRef(false);
+  const hasTutorProjectionRef = useRef(initialHydratedSteps.length > 0);
   const runtimeProjection = useCanvasStore((s) => s.runtimeWhiteboardProjection);
 
   // Discard cached pagination and tutor steps whenever Chat/Pi commits a newer
@@ -118,6 +139,7 @@ function InlineQACameraLiveBody({
           runtimeProjection.whiteboard?.id !== expectedTutorId)
       ) {
         hasTutorProjectionRef.current = false;
+        if (stageId) cachedTutorStepsByStage.delete(stageId);
         setWbSteps([]);
       }
     }
@@ -136,6 +158,7 @@ function InlineQACameraLiveBody({
       hasTutorProjectionRef.current = false;
 
       if (!stageId || !savedBoard || savedSeq === null) return;
+      cachedTutorStepsByStage.delete(stageId);
       useCanvasStore.setState((prev) => {
         const proj = prev.runtimeWhiteboardProjection;
         if (
@@ -207,7 +230,8 @@ function InlineQACameraLiveBody({
         }
 
         const projectionSeq = sameStageProjection?.lastSeq ?? -1;
-        const shouldPaginate = !clearedByTutor && occupiedBottom > 844;
+        // Reserve room for 16px gap + 34px diagram caption + 120px min diagram height within 980px max supported Y (980 - 170 = 810).
+        const shouldPaginate = !clearedByTutor && occupiedBottom > 810;
         if (shouldPaginate && currentProjected && preservedElements.length > 0) {
           if (!savedClassroomBoardRef.current) {
             savedClassroomBoardRef.current = {
@@ -239,6 +263,11 @@ function InlineQACameraLiveBody({
           effectiveOccupiedBottom > 0 ? Math.min(1, (effectiveOccupiedBottom + 20) / 1000) : 0.5625;
 
         hasTutorProjectionRef.current = true;
+        if (nextSteps.length > 0 && !shouldPaginate && !savedClassroomBoardRef.current) {
+          cachedTutorStepsByStage.set(stageId, { lastSeq: projectionSeq, steps: nextSteps });
+        } else {
+          cachedTutorStepsByStage.delete(stageId);
+        }
         return {
           whiteboardOpen: true,
           runtimeWhiteboardProjection: {
