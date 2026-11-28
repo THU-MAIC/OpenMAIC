@@ -193,7 +193,9 @@ function resolveCoursePath(doc: CourseDocument, rawPath?: string): ResolvedPath 
   if (!token) return `Invalid JSON Pointer escape in ${JSON.stringify(path)}. ${LEGAL_PATHS}`;
   let scene: Scene | undefined;
   if (/^[1-9]\d*$/.test(token)) {
-    scene = doc.scenes.find((item) => item.order === Number(token));
+    // The n-th page in page order, not `order === n`: an imported course
+    // numbers its scenes from 0, so matching the stored value would be off by one.
+    scene = [...doc.scenes].sort((a, b) => a.order - b.order)[Number(token) - 1];
   } else if (/^scene[-_]/.test(token)) {
     scene = doc.scenes.find((item) => item.id === token);
   } else {

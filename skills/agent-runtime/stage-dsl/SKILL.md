@@ -54,12 +54,12 @@ reorder, and retitle pages with `edit_deck`.
 | --- | --- |
 | `""` or omitted | the whole stage |
 | `/outline` | the persisted outline snapshot |
-| `/scenes/3` | the scene whose `order` is 3 |
+| `/scenes/3` | the third page, counted in `order` |
 | `/scenes/scene_abc` | the scene with that stable id |
 | `/scenes/scene-abc` | the historical hyphenated scene-id form |
 | `/scenes/3/actions` | only scene 3's action array |
 
-Orders are 1-based. Array indices inside source JSON are 0-based.
+Page numbers are 1-based. Array indices inside source JSON are 0-based.
 
 `detail:"tree"` is the compact structural inventory. It reports scene id,
 order, type, title, element/question/project counts, and action counts. It is
