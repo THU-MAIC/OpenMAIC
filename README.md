@@ -262,6 +262,22 @@ docker compose up --build
 
 Open **http://localhost:3000**. The stack is two containers, the app and PostgreSQL. Courses, generated media and runtime sessions live in the named volumes `openmaic-postgres` and `openmaic-data`, which survive `docker compose down` and rebuilds; `docker compose down -v` deletes them. To configure models with `openmaic.yml`, create it from `openmaic.example.yml` and uncomment its mount in `docker-compose.yml`; otherwise connect a model service in the model settings once the app is running.
 
+#### Prebuilt image from GHCR
+
+Pushes to `main` and `v*` tags publish a production image through the [`Publish main image to GHCR`](.github/workflows/publish-ghcr.yml) workflow. The canonical image from upstream is:
+
+```bash
+docker pull ghcr.io/thu-maic/openmaic:latest
+```
+
+The workflow derives the image name from the repository it runs in, so a fork publishes to and is pulled from its own namespace instead:
+
+```bash
+docker pull ghcr.io/<your-account>/<your-repository>:latest
+```
+
+Every build also gets a `sha-<commit>` tag, and `v*` tags are published under the same version string. If the package is private, run `docker login ghcr.io -u <your-account>` with a token that has `read:packages`. The runtime configuration is the same as for a locally built image (see the [Deployment guide](packages/docs/content/docs/deployment.mdx)).
+
 The Compose file is a **personal installation**: it runs in [single-user mode](#server-backed-persistence-postgresql) (every browser sees one shared library) and listens on `127.0.0.1:3000` only. To serve other machines, protect it first:
 
 1. Set a long random `ACCESS_CODE` in `.env.local` ([details](#optional-access_code-shared-deployments)). Without it, anyone who can reach the port owns, edits and can delete the whole library.
