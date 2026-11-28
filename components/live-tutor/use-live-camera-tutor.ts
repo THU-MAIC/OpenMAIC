@@ -110,20 +110,51 @@ export function useLiveCameraTutor({
   const tutorBufRef = useRef('');
   const userBufRef = useRef('');
   const lastSentSceneKeyRef = useRef('');
+  const modelTurnActiveRef = useRef(false);
+  const pendingLiveContextRef = useRef<string | null>(null);
   const stopSessionRef = useRef<() => void>(() => {});
 
   const buildLiveSceneContextText = (cur: {
     topic?: string;
     problem?: PracticeProblem | null;
     sceneContext?: string;
+    language?: string;
   }) =>
     [
+      cur.language ? `Always speak and write whiteboard steps in locale "${cur.language}".` : '',
       cur.topic ? `Current topic: ${cur.topic}.` : '',
       cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
       cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(-1800)}` : '',
     ]
       .filter(Boolean)
       .join('\n');
+
+  const sendLiveContextUpdate = useCallback((ws: WebSocket, contextText: string) => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    lastSentSceneKeyRef.current = contextText;
+    pendingLiveContextRef.current = null;
+    try {
+      ws.send(
+        JSON.stringify({
+          clientContent: {
+            turns: [
+              {
+                role: 'user',
+                parts: [
+                  {
+                    text: `[Classroom context updated — use this for future guidance]\n${contextText}`,
+                  },
+                ],
+              },
+            ],
+            turnComplete: false,
+          },
+        }),
+      );
+    } catch {
+      // ignore socket send race
+    }
+  }, []);
 
   const latestPropsRef = useRef({
     topic,
@@ -344,6 +375,8 @@ export function useLiveCameraTutor({
     sessionAttemptRef.current += 1;
     cameraAcquireSeqRef.current += 1;
     lastSentSceneKeyRef.current = '';
+    modelTurnActiveRef.current = false;
+    pendingLiveContextRef.current = null;
     if (sessionAbortRef.current) {
       sessionAbortRef.current.abort();
       sessionAbortRef.current = null;
@@ -663,7 +696,6 @@ export function useLiveCameraTutor({
       lastSentSceneKeyRef.current = initialSceneContextText;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
-        cur.language ? `Always speak and write whiteboard steps in locale "${cur.language}".` : '',
         'Never claim you can see a notebook or written work unless it is actually visible in the camera frame; if you do not see a notebook yet, kindly ask the student to point the camera at their notebook.',
         'Praise what the student did right first. Never blurt out the final answer immediately — point to the specific line or step to check and ask one gentle guiding question.',
         'Keep every spoken reply concise (1 to 3 sentences).',
@@ -847,6 +879,7 @@ export function useLiveCameraTutor({
             ? `Greet the student warmly in one short sentence, invite them to start working on "${curProb}", and ask them to show their notebook to the camera when they are ready.${langSuffix}`
             : `Greet the student warmly in one short sentence and ask them to show their notebook to the camera or tell you what question they would like help with.${langSuffix}`;
 
+          modelTurnActiveRef.current = true;
           ws.send(
             JSON.stringify({
               clientContent: {
@@ -927,11 +960,24 @@ export function useLiveCameraTutor({
         if (!serverContent) return;
 
         if (serverContent.interrupted) {
+          modelTurnActiveRef.current = false;
           stopPlayback();
           if (tutorBufRef.current) {
             appendMessage('assistant', sanitizeLiveCaption(tutorBufRef.current));
             tutorBufRef.current = '';
           }
+          if (pendingLiveContextRef.current && wsRef.current === ws) {
+            sendLiveContextUpdate(ws, pendingLiveContextRef.current);
+          }
+        }
+
+        if (
+          !serverContent.turnComplete &&
+          !serverContent.interrupted &&
+          ((serverContent.modelTurn?.parts?.length ?? 0) > 0 ||
+            Boolean(serverContent.outputTranscription?.text))
+        ) {
+          modelTurnActiveRef.current = true;
         }
 
         for (const p of serverContent.modelTurn?.parts ?? []) {
@@ -956,6 +1002,7 @@ export function useLiveCameraTutor({
         }
 
         if (serverContent.turnComplete) {
+          modelTurnActiveRef.current = false;
           if (userBufRef.current) {
             appendMessage('user', userBufRef.current);
             userBufRef.current = '';
@@ -963,6 +1010,9 @@ export function useLiveCameraTutor({
           if (tutorBufRef.current) {
             appendMessage('assistant', sanitizeLiveCaption(tutorBufRef.current));
             tutorBufRef.current = '';
+          }
+          if (pendingLiveContextRef.current && wsRef.current === ws) {
+            sendLiveContextUpdate(ws, pendingLiveContextRef.current);
           }
         }
       } catch {
@@ -985,6 +1035,7 @@ export function useLiveCameraTutor({
     captureFrameDataUrl,
     facingMode,
     playPcm24k,
+    sendLiveContextUpdate,
     startCameraStream,
     stopPlayback,
     stopSession,
@@ -1023,6 +1074,7 @@ export function useLiveCameraTutor({
         }
         appendMessage('user', text);
         tutorBufRef.current = '';
+        modelTurnActiveRef.current = true;
         wsRef.current.send(
           JSON.stringify({
             clientContent: {
@@ -1149,6 +1201,13 @@ export function useLiveCameraTutor({
         }
 
         if (wsRef.current?.readyState === WebSocket.OPEN) {
+          lastSentSceneKeyRef.current = buildLiveSceneContextText({
+            ...cur,
+            problem: nextProblem,
+          });
+          pendingLiveContextRef.current = null;
+          modelTurnActiveRef.current = true;
+          const langSuffix = cur.language ? ` Speak in locale "${cur.language}".` : '';
           wsRef.current.send(
             JSON.stringify({
               clientContent: {
@@ -1157,7 +1216,7 @@ export function useLiveCameraTutor({
                     role: 'user',
                     parts: [
                       {
-                        text: `New practice problem assigned: "${nextProblem.statement}". Briefly read the problem to the student and invite them to start step 1 in their notebook.`,
+                        text: `New practice problem assigned: "${nextProblem.statement}". Briefly read the problem to the student and invite them to start step 1 in their notebook.${langSuffix}`,
                       },
                     ],
                   },
@@ -1295,36 +1354,20 @@ export function useLiveCameraTutor({
     }
   }, [canShareScreen, facingMode, startCameraStream, stopSession, videoSource]);
 
-  // Push updated slide/quiz/lesson context into an active Gemini Live session when the learner navigates scenes
+  // Push updated slide/quiz/lesson/locale context into an active Gemini Live session,
+  // deferring while Gemini is mid-turn so clientContent never interrupts active speech.
   useEffect(() => {
     if (status !== 'live' || transportMode !== 'gemini-live') return;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const nextContext = buildLiveSceneContextText({ topic, problem, sceneContext });
+    const nextContext = buildLiveSceneContextText({ topic, problem, sceneContext, language });
     if (!nextContext || nextContext === lastSentSceneKeyRef.current) return;
-    lastSentSceneKeyRef.current = nextContext;
-    try {
-      ws.send(
-        JSON.stringify({
-          clientContent: {
-            turns: [
-              {
-                role: 'user',
-                parts: [
-                  {
-                    text: `[Classroom context updated — use this for future guidance]\n${nextContext}`,
-                  },
-                ],
-              },
-            ],
-            turnComplete: false,
-          },
-        }),
-      );
-    } catch {
-      // ignore socket send race
+    if (modelTurnActiveRef.current) {
+      pendingLiveContextRef.current = nextContext;
+      return;
     }
-  }, [problem, sceneContext, status, topic, transportMode]);
+    sendLiveContextUpdate(ws, nextContext);
+  }, [language, problem, sceneContext, sendLiveContextUpdate, status, topic, transportMode]);
 
   const bindVideoElement = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
