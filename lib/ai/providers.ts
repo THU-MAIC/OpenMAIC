@@ -2844,6 +2844,10 @@ export function getProvider(providerId: ProviderId): ProviderConfig | undefined 
  * documents 1024k / 1024k and image input, but callers send `outputWindow` as
  * `max_tokens` without subtracting the prompt, which exceeds Ark's
  * input+output limit, so that ceiling is omitted.
+ *
+ * Xiaomi MiMo Token Plan (subscription page, 2026-11-23): UltraSpeed comes with
+ * the Pro and Max tiers; the pay-as-you-go API offers it only on request.
+ * Windows and capabilities are the model page's shared V2.6 row.
  */
 const PLAN_ONLY_MODELS: Partial<Record<ProviderId, readonly ModelInfo[]>> = {
   kimi: [
@@ -2918,6 +2922,15 @@ const PLAN_ONLY_MODELS: Partial<Record<ProviderId, readonly ModelInfo[]>> = {
       id: 'kimi-k2.8-preview',
       name: 'Kimi K2.8 Preview',
       contextWindow: 1048576,
+      capabilities: { streaming: true, tools: true, vision: true },
+    },
+  ],
+  xiaomi: [
+    {
+      id: 'mimo-v2.6-pro-ultraspeed',
+      name: 'MiMo V2.6 Pro UltraSpeed',
+      contextWindow: 1048576,
+      outputWindow: 131072,
       capabilities: { streaming: true, tools: true, vision: true },
     },
   ],

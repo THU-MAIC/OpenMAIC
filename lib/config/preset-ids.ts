@@ -19,11 +19,13 @@ export const PRESET_ID_OVERRIDES: Partial<Record<SlotCapability, Record<string, 
 /**
  * Token plans whose id matches another preset, so the plan gets its own preset
  * id and the other preset keeps its id: the Kimi coding plan is not the
- * Moonshot open platform, and the DeepSeek plan's provider stays apart from a
- * personal DeepSeek provider on the same endpoint.
+ * Moonshot open platform, the Xiaomi MiMo plan is not the pay-as-you-go API,
+ * and the DeepSeek plan's provider stays apart from a personal DeepSeek
+ * provider on the same endpoint.
  */
 export const TOKEN_PLAN_ID_OVERRIDES: Record<string, string> = {
   kimi: 'kimi-coding-plan',
+  xiaomi: 'xiaomi-token-plan',
   deepseek: 'deepseek-token-plan',
 };
 

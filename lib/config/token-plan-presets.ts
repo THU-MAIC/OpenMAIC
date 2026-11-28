@@ -124,13 +124,14 @@ export const MODALITY_ORDER: TokenPlanModality[] = [
  * - TokenDance: LLM/image/video/TTS/web-search through one gateway key.
  * - MiniMax: LLM/image/video/TTS/web-search adapters.
  * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
+ * - Xiaomi MiMo Token Plan: LLM/TTS/ASR via the plan key.
  * - Kimi Coding Plan: LLM/web-search/web-fetch via the plan key.
  * - DeepSeek: LLM/TTS/ASR/document OCR/web-search/web-fetch via one platform API key.
  *
- * MiniMax and Kimi each have an international plan beside the domestic one,
- * on the international site's endpoints (MiniMax's domestic endpoints reject
- * an international key). TokenDance and Ark have no international counterpart
- * a plan key reaches; DeepSeek has one global endpoint.
+ * MiniMax, Xiaomi MiMo and Kimi each have an international plan beside the
+ * domestic one, on the international endpoints (MiniMax's domestic endpoints
+ * reject an international key). TokenDance and Ark have no international
+ * counterpart a plan key reaches; DeepSeek has one global endpoint.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // ── Gateway token plan (one key, vendor wire formats) ─────────────────────
@@ -376,6 +377,81 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         baseUrl: 'https://openspeech.bytedance.com/api/v3/plan/tts',
         defaultModelId: 'seed-tts-2.0',
         defaultModels: ['seed-tts-2.0'],
+      },
+    },
+  },
+  // ── Xiaomi MiMo Token Plan ──────────────────────────────────────────────
+  // The plan key (`tp-` / `ttp-`) authenticates only against the plan's own
+  // hosts; the pay-as-you-go host (api.xiaomimimo.com) takes a separate `sk-`
+  // key, so the plan gets its own `xiaomi-token-plan` preset beside a personal
+  // `xiaomi` provider. The plan's console shows each subscription its base URL
+  // on one of three clusters: mainland China (token-plan-cn), Singapore
+  // (token-plan-sgp) or Europe (token-plan-ams), all with the OpenAI-compatible
+  // `/v1` path used here
+  // (https://mimo.mi.com/static/docs/tokenplan/Token%20Plan/quick-access.md).
+  // Chat, TTS and ASR share that base, so a provider in openmaic.yml can set
+  // its `baseUrl` to another cluster for all three. UltraSpeed comes with the
+  // Pro and Max tiers only. The voice clone and voice design TTS models have
+  // no adapter. Image, video and search are not declared and stay untouched.
+  {
+    id: 'xiaomi',
+    name: 'Xiaomi MiMo',
+    websiteUrl: 'https://mimo.mi.com',
+    apiKeyPlaceholder: 'tp-...',
+    icon: '/logos/xiaomi.svg',
+    category: 'token_plan',
+    region: 'domestic',
+    modalities: {
+      llm: {
+        providerId: 'xiaomi',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        apiFormat: 'openai',
+        defaultModels: ['mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro-ultraspeed'],
+        defaultModelId: 'mimo-v2.6-pro',
+      },
+      tts: {
+        providerId: 'xiaomi-tts',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        defaultModelId: 'mimo-v2.5-tts',
+        defaultModels: ['mimo-v2.5-tts'],
+      },
+      asr: {
+        providerId: 'xiaomi-asr',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+        defaultModelId: 'mimo-v2.5-asr',
+        defaultModels: ['mimo-v2.5-asr'],
+      },
+    },
+  },
+  {
+    // The same plan on the Singapore cluster, for subscriptions outside
+    // mainland China. A Europe subscription has no preset of its own yet.
+    id: 'xiaomi-intl',
+    name: 'Xiaomi MiMo',
+    websiteUrl: 'https://mimo.mi.com',
+    apiKeyPlaceholder: 'tp-...',
+    icon: '/logos/xiaomi.svg',
+    category: 'token_plan',
+    region: 'international',
+    modalities: {
+      llm: {
+        providerId: 'xiaomi',
+        baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        apiFormat: 'openai',
+        defaultModels: ['mimo-v2.6-pro', 'mimo-v2.6-flash', 'mimo-v2.6-pro-ultraspeed'],
+        defaultModelId: 'mimo-v2.6-pro',
+      },
+      tts: {
+        providerId: 'xiaomi-tts',
+        baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        defaultModelId: 'mimo-v2.5-tts',
+        defaultModels: ['mimo-v2.5-tts'],
+      },
+      asr: {
+        providerId: 'xiaomi-asr',
+        baseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1',
+        defaultModelId: 'mimo-v2.5-asr',
+        defaultModels: ['mimo-v2.5-asr'],
       },
     },
   },

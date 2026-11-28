@@ -714,3 +714,45 @@ describe('DeepSeek token plan', () => {
     expect(slotsHeldByHigherPlans(view, 'kimi-coding-plan').size).toBe(0);
   });
 });
+
+describe('Xiaomi MiMo token plan', () => {
+  it('lights chat, TTS and ASR with one key and leaves a personal Xiaomi provider untouched', async () => {
+    const initial = await configure(
+      { kind: 'provider', id: 'xiaomi', preset: 'xiaomi', apiKey: 'sk-personal-0001' },
+      { kind: 'slots', set: { llm: 'xiaomi:mimo-v2.6-flash', image: null, video: null } },
+    );
+    const view = viewOf(initial);
+    // A personal Xiaomi key is not the plan: the plan is not connected yet.
+    const preset = view.presets.find((entry) => entry.id === 'xiaomi-token-plan')!;
+    expect(view.providers.some((provider) => provider.preset === preset.id)).toBe(false);
+
+    const server = serverApply(initial);
+    const result = await connectTokenPlan(server.apply, view, preset, 'tp-plan-0001', 'overwrite');
+    expect(result).toMatchObject({ status: 'done', providerId: 'xiaomi-token-plan' });
+    expect(server.config()?.slots).toEqual({
+      llm: 'xiaomi-token-plan:mimo-v2.6-pro',
+      image: null,
+      video: null,
+      tts: 'xiaomi-token-plan:mimo-v2.5-tts',
+      asr: 'xiaomi-token-plan:mimo-v2.5-asr',
+    });
+    const { resolveSlot } = await import('@/lib/server/model-config/resolve-slot');
+    const layers = [{ source: 'workspace' as const, config: server.config()! }];
+    for (const [slot, registryId] of [
+      ['llm', 'xiaomi'],
+      ['tts', 'xiaomi-tts'],
+      ['asr', 'xiaomi-asr'],
+    ] as const) {
+      expect(resolveSlot(slot, layers), slot).toMatchObject({
+        status: 'assigned',
+        registryId,
+        apiKey: 'tp-plan-0001',
+        baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+      });
+    }
+
+    await server.apply({ kind: 'remove-provider', id: 'xiaomi-token-plan' });
+    expect(server.config()?.providers).toEqual(initial.providers);
+    expect(server.config()?.slots).toEqual({ image: null, video: null });
+  });
+});

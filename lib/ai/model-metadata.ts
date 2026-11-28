@@ -463,6 +463,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
 
   [getModelMetadataKey('xiaomi', 'mimo-v2.6-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.6-flash')]: toggleCapability('xiaomi'),
+  // Token Plan 的 Pro / Max 档模型 id，思考开关同 V2.6 系列。
+  [getModelMetadataKey('xiaomi', 'mimo-v2.6-pro-ultraspeed')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5')]: toggleCapability('xiaomi'),
 
