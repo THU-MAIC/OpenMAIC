@@ -36,7 +36,7 @@ export {
 export { measureSpotlightRect } from './utils/spotlight-rect';
 export { cn } from './utils/cn';
 export { getElementRange, getLineElementPath, getTableSubThemeColor } from './utils/element';
-export { createTextProseStyles } from './styles';
+export { SLIDE_RENDERER_STYLES, createTextProseStyles } from './styles';
 export {
   INLINE_MATH_ATTRIBUTE,
   INLINE_MATH_ROOT_ATTRIBUTE,

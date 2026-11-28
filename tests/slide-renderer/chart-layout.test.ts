@@ -2,7 +2,6 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import * as echarts from 'echarts/core';
 import type { ComponentModel } from 'echarts/core';
 
-import { getChartOption as getAppChartOption } from '@/components/slide-renderer/components/element/ChartElement/chartOption';
 import { getChartOption as getPackageChartOption } from '@/packages/@openmaic/renderer/src/elements/chart/chartOption';
 import { loadChartRuntime } from '@/packages/@openmaic/renderer/src/elements/chart/chartRuntime';
 
@@ -71,167 +70,167 @@ function expectInside(rect: Rect, width: number, height: number) {
   expect(rect.y + rect.height).toBeLessThanOrEqual(height + 1);
 }
 
-describe.each([
-  ['app', getAppChartOption],
-  ['SDK', getPackageChartOption],
-] as const)('%s Cartesian chart layout', (_, getChartOption) => {
-  describe.each(chartTypes)('%s', (type) => {
-    it('preserves at least the baseline plot height at normal size with multiple series', () => {
-      const size = { width: 800, height: 450 };
-      const chart = render(getChartOption({ type, data, themeColors }), size);
-      try {
-        // Main's default ECharts grid reserves 65px above and 80px below the plot.
-        expect(plotRect(chart).height).toBeGreaterThanOrEqual(size.height - 65 - 80);
-      } finally {
-        chart.dispose();
-      }
-    });
-
-    it.each(sizes)('fits the plot, axes and legend in $width x $height', ({ width, height }) => {
-      for (const seriesCount of [1, 2]) {
-        const chart = render(
-          getChartOption({
-            type,
-            data: { ...data, series: data.series.slice(0, seriesCount) },
-            themeColors,
-          }),
-          { width, height },
-        );
+describe.each([['SDK', getPackageChartOption]] as const)(
+  '%s Cartesian chart layout',
+  (_, getChartOption) => {
+    describe.each(chartTypes)('%s', (type) => {
+      it('preserves at least the baseline plot height at normal size with multiple series', () => {
+        const size = { width: 800, height: 450 };
+        const chart = render(getChartOption({ type, data, themeColors }), size);
         try {
-          const plot = plotRect(chart);
-          expect(plot.height).toBeGreaterThan(height * 0.3);
-          expect(plot.width).toBeGreaterThan(width * 0.4);
-          expectInside(plot, width, height);
-          const xAxis = componentRect(chart, 'xAxis');
-          expectInside(xAxis, width, height);
-          expectInside(componentRect(chart, 'yAxis'), width, height);
-          if (type !== 'scatter' && seriesCount > 1) {
-            const legend = componentRect(chart, 'legend');
-            expectInside(legend, width, height);
-            expect(xAxis.y + xAxis.height).toBeLessThanOrEqual(legend.y);
-          }
-          expect(chart.renderToSVGString()).toContain('<path');
-          for (const element of chart.getZr().storage.getDisplayList()) {
-            if (element.type !== 'tspan' || element.invisible) continue;
-            const rect = element.getBoundingRect().clone();
-            const transform = element.getComputedTransform();
-            if (transform) rect.applyTransform(transform);
-            expectInside(rect, width, height);
-          }
+          // Main's default ECharts grid reserves 65px above and 80px below the plot.
+          expect(plotRect(chart).height).toBeGreaterThanOrEqual(size.height - 65 - 80);
         } finally {
           chart.dispose();
         }
-      }
-    });
-
-    it('reflows when resized from tall to short and back without rebuilding options', () => {
-      const chart = render(getChartOption({ type, data, themeColors }), {
-        width: 560,
-        height: 300,
       });
-      try {
-        for (const size of [...sizes, sizes[0]]) {
-          chart.resize(size);
-          const fresh = render(getChartOption({ type, data, themeColors }), size);
-          try {
-            expect(plotRect(chart).height).toBeGreaterThan(size.height * 0.3);
-            expect(plotRect(chart)).toEqual(plotRect(fresh));
-          } finally {
-            fresh.dispose();
-          }
-        }
-      } finally {
-        chart.dispose();
-      }
-    });
 
-    it.each([{ values: [5000, 10000] }, { values: [100000, 100000] }])(
-      'keeps large endpoint values visible on render and resize ($values)',
-      ({ values }) => {
-        const chart = render(
-          getChartOption({
-            type,
-            data: { labels: ['A', 'B'], legends: ['Value'], series: [values] },
-            themeColors,
-          }),
-          { width: 280, height: 300 },
-        );
-        try {
-          for (const size of [{ width: 280, height: 300 }, ...sizes]) {
-            chart.resize(size);
-            chart.renderToSVGString();
-            expectInside(componentRect(chart, 'xAxis'), size.width, size.height);
-            expectInside(componentRect(chart, 'yAxis'), size.width, size.height);
+      it.each(sizes)('fits the plot, axes and legend in $width x $height', ({ width, height }) => {
+        for (const seriesCount of [1, 2]) {
+          const chart = render(
+            getChartOption({
+              type,
+              data: { ...data, series: data.series.slice(0, seriesCount) },
+              themeColors,
+            }),
+            { width, height },
+          );
+          try {
+            const plot = plotRect(chart);
+            expect(plot.height).toBeGreaterThan(height * 0.3);
+            expect(plot.width).toBeGreaterThan(width * 0.4);
+            expectInside(plot, width, height);
+            const xAxis = componentRect(chart, 'xAxis');
+            expectInside(xAxis, width, height);
+            expectInside(componentRect(chart, 'yAxis'), width, height);
+            if (type !== 'scatter' && seriesCount > 1) {
+              const legend = componentRect(chart, 'legend');
+              expectInside(legend, width, height);
+              expect(xAxis.y + xAxis.height).toBeLessThanOrEqual(legend.y);
+            }
+            expect(chart.renderToSVGString()).toContain('<path');
             for (const element of chart.getZr().storage.getDisplayList()) {
               if (element.type !== 'tspan' || element.invisible) continue;
               const rect = element.getBoundingRect().clone();
               const transform = element.getComputedTransform();
               if (transform) rect.applyTransform(transform);
-              expectInside(rect, size.width, size.height);
+              expectInside(rect, width, height);
+            }
+          } finally {
+            chart.dispose();
+          }
+        }
+      });
+
+      it('reflows when resized from tall to short and back without rebuilding options', () => {
+        const chart = render(getChartOption({ type, data, themeColors }), {
+          width: 560,
+          height: 300,
+        });
+        try {
+          for (const size of [...sizes, sizes[0]]) {
+            chart.resize(size);
+            const fresh = render(getChartOption({ type, data, themeColors }), size);
+            try {
+              expect(plotRect(chart).height).toBeGreaterThan(size.height * 0.3);
+              expect(plotRect(chart)).toEqual(plotRect(fresh));
+            } finally {
+              fresh.dispose();
             }
           }
         } finally {
           chart.dispose();
         }
-      },
-    );
-  });
+      });
 
-  it('keeps many long legend entries in a single scrollable row', () => {
-    const chart = render(
-      getChartOption({
-        type: 'bar',
-        themeColors,
-        data: {
-          labels: ['A', 'B'],
-          legends: Array.from({ length: 8 }, (_, i) => `Long series name ${i}`),
-          series: Array.from({ length: 8 }, () => [1, 2]),
+      it.each([{ values: [5000, 10000] }, { values: [100000, 100000] }])(
+        'keeps large endpoint values visible on render and resize ($values)',
+        ({ values }) => {
+          const chart = render(
+            getChartOption({
+              type,
+              data: { labels: ['A', 'B'], legends: ['Value'], series: [values] },
+              themeColors,
+            }),
+            { width: 280, height: 300 },
+          );
+          try {
+            for (const size of [{ width: 280, height: 300 }, ...sizes]) {
+              chart.resize(size);
+              chart.renderToSVGString();
+              expectInside(componentRect(chart, 'xAxis'), size.width, size.height);
+              expectInside(componentRect(chart, 'yAxis'), size.width, size.height);
+              for (const element of chart.getZr().storage.getDisplayList()) {
+                if (element.type !== 'tspan' || element.invisible) continue;
+                const rect = element.getBoundingRect().clone();
+                const transform = element.getComputedTransform();
+                if (transform) rect.applyTransform(transform);
+                expectInside(rect, size.width, size.height);
+              }
+            }
+          } finally {
+            chart.dispose();
+          }
         },
-      }),
-    );
-    try {
-      expect(chart.getOption().legend).toMatchObject([{ type: 'scroll', orient: 'horizontal' }]);
-      expect(plotRect(chart).height).toBeGreaterThan(42);
-      expect(chart.renderToSVGString()).toContain('<clipPath');
-    } finally {
-      chart.dispose();
-    }
-  });
+      );
+    });
 
-  it.each(['bar', 'line'] as const)(
-    'keeps padded %s category labels centered and separate',
-    (type) => {
-      const labels = ['First long label', 'Second long label'];
+    it('keeps many long legend entries in a single scrollable row', () => {
       const chart = render(
         getChartOption({
-          type,
-          data: { labels, legends: ['Value'], series: [[1, 2]] },
+          type: 'bar',
           themeColors,
+          data: {
+            labels: ['A', 'B'],
+            legends: Array.from({ length: 8 }, (_, i) => `Long series name ${i}`),
+            series: Array.from({ length: 8 }, () => [1, 2]),
+          },
         }),
       );
       try {
-        const rects = chart
-          .getZr()
-          .storage.getDisplayList()
-          .filter(
-            (element) => element.type === 'tspan' && labels.includes(String(element.style.text)),
-          )
-          .map((element) => {
-            const rect = element.getBoundingRect().clone();
-            const transform = element.getComputedTransform();
-            if (transform) rect.applyTransform(transform);
-            return rect;
-          })
-          .sort((a, b) => a.x - b.x);
-        expect(rects).toHaveLength(2);
-        for (const rect of rects) expectInside(rect, 280, 140);
-        expect(rects[0].x + rects[0].width).toBeLessThan(rects[1].x);
+        expect(chart.getOption().legend).toMatchObject([{ type: 'scroll', orient: 'horizontal' }]);
+        expect(plotRect(chart).height).toBeGreaterThan(42);
+        expect(chart.renderToSVGString()).toContain('<clipPath');
       } finally {
         chart.dispose();
       }
-    },
-  );
-});
+    });
+
+    it.each(['bar', 'line'] as const)(
+      'keeps padded %s category labels centered and separate',
+      (type) => {
+        const labels = ['First long label', 'Second long label'];
+        const chart = render(
+          getChartOption({
+            type,
+            data: { labels, legends: ['Value'], series: [[1, 2]] },
+            themeColors,
+          }),
+        );
+        try {
+          const rects = chart
+            .getZr()
+            .storage.getDisplayList()
+            .filter(
+              (element) => element.type === 'tspan' && labels.includes(String(element.style.text)),
+            )
+            .map((element) => {
+              const rect = element.getBoundingRect().clone();
+              const transform = element.getComputedTransform();
+              if (transform) rect.applyTransform(transform);
+              return rect;
+            })
+            .sort((a, b) => a.x - b.x);
+          expect(rects).toHaveLength(2);
+          for (const rect of rects) expectInside(rect, 280, 140);
+          expect(rects[0].x + rects[0].width).toBeLessThan(rects[1].x);
+        } finally {
+          chart.dispose();
+        }
+      },
+    );
+  },
+);
 
 it.each(chartTypes)('preserves an imported %s plot area on render and resize', (type) => {
   const plotArea = { x: 0.02, y: 0.05, w: 0.96, h: 0.8 };

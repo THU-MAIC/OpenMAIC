@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
 import { describe, expect, it } from 'vitest';
 import type { PPTShapeElement } from '@openmaic/dsl';
-import { BaseShapeElement as WhiteboardShape } from '@/components/slide-renderer/components/element/ShapeElement/BaseShapeElement';
 import { BaseShapeElement as SDKShape } from '@openmaic/renderer/elements';
 
 const base: PPTShapeElement = {
@@ -19,7 +18,7 @@ const base: PPTShapeElement = {
   fill: '#5b9bd5',
   fixedRatio: false,
 };
-describe('current whiteboard and shared SDK shape rendering', () => {
+describe('whiteboard custom shape rendering through the shared SDK', () => {
   it.each([
     base,
     { ...base, path: 'M0 0 L4 0 L4 2 L2 3 L0 2 Z' },
@@ -31,9 +30,8 @@ describe('current whiteboard and shared SDK shape rendering', () => {
       fill: 'transparent',
       outline: { color: '#333333', width: 2, style: 'dashed' as const },
     },
-  ])('renders path $path with identical scaling, rotation, fill and stroke', (element) => {
-    const current = renderToStaticMarkup(createElement(WhiteboardShape, { elementInfo: element }));
-    expect(current).toBe(renderToStaticMarkup(createElement(SDKShape, { elementInfo: element })));
+  ])('renders path $path with its scaling, rotation, fill and stroke', (element) => {
+    const current = renderToStaticMarkup(createElement(SDKShape, { elementInfo: element }));
     const { document } = parseHTML(current);
     expect(document.querySelector('.rotate-wrapper')?.getAttribute('style')).toContain(
       `rotate(${element.rotate}deg)`,

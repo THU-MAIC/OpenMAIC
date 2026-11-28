@@ -231,10 +231,9 @@ function SurfaceStateRunner({
  *
  * **Callback identity (`onInvoke`, `popoverContent`) is intentionally
  * NOT compared.** Per-render closure rebinding is normal and would
- * trip equality every render. Today this is safe because slide is the
- * only registered surface and its `floatingActions` is `[]` — the only
- * `onInvoke` set the chrome reads is on `InsertPaletteItem`, which is
- * a stable module-level closure from `buildInsertItems`. A future
+ * trip equality every render. Today this is safe because the registered
+ * surfaces return no callbacks the chrome reads: the slide surface's
+ * `insertItems` and `floatingActions` are both `[]`. A future
  * surface that returns non-empty `floatingActions` with closures
  * capturing per-render state must fold its own change signal (a
  * content ref / version counter) into the comparison, otherwise the

@@ -49,6 +49,11 @@ export interface SlideElementProps {
   idPrefix?: string;
   /** Compositor-only offset used by the editing surface during a move gesture. */
   dragOffset?: { x: number; y: number };
+  /**
+   * Let the viewer select and copy the element's text with the pointer. The
+   * element takes pointer input, and a code block stops drag-scrolling.
+   */
+  selectable?: boolean;
 }
 
 type SlideElementContentProps = Pick<
@@ -61,6 +66,7 @@ type SlideElementContentProps = Pick<
   | 'renderShapeLabel'
   | 'renderTable'
   | 'videoInteractive'
+  | 'selectable'
 >;
 
 const SlideElementContent = memo(function SlideElementContent({
@@ -72,6 +78,7 @@ const SlideElementContent = memo(function SlideElementContent({
   renderShapeLabel,
   renderTable,
   videoInteractive,
+  selectable,
 }: SlideElementContentProps) {
   const Component = useMemo(() => {
     switch (elementInfo.type) {
@@ -136,7 +143,7 @@ const SlideElementContent = memo(function SlideElementContent({
         <BaseAudioElement elementInfo={elementInfo as PPTAudioElement} />
       )}
       {Component === 'code' && elementInfo.type === 'code' && (
-        <BaseCodeElement elementInfo={elementInfo} animate={animate} />
+        <BaseCodeElement elementInfo={elementInfo} animate={animate} selectable={selectable} />
       )}
     </>
   );
@@ -156,6 +163,7 @@ export const SlideElement = memo(function SlideElement({
   onElementClick,
   idPrefix = 'slide-element-',
   dragOffset,
+  selectable,
 }: SlideElementProps) {
   const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
   const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
@@ -177,7 +185,7 @@ export const SlideElement = memo(function SlideElement({
       <div
         className="slide-element-hit-target"
         style={{
-          pointerEvents: onElementClick ? 'auto' : undefined,
+          pointerEvents: onElementClick || selectable ? 'auto' : undefined,
           transform: dragOffset
             ? `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`
             : undefined,
@@ -193,6 +201,7 @@ export const SlideElement = memo(function SlideElement({
           renderShapeLabel={renderShapeLabel}
           renderTable={renderTable}
           videoInteractive={videoInteractive}
+          selectable={selectable}
         />
       </div>
     </div>

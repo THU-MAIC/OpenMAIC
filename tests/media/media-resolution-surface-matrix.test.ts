@@ -1,20 +1,14 @@
 import { createElement } from 'react';
-import type { ComponentProps, ComponentType, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PPTImageElement, PPTVideoElement, Slide } from '@openmaic/dsl';
-import {
-  resolveImageSrc,
-  useResolvedImageSrc,
-} from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
-import { ImageElement } from '@/components/slide-renderer/components/element/ImageElement';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
-import { BaseVideoElement } from '@/components/slide-renderer/components/element/VideoElement/BaseVideoElement';
-import { VideoElement } from '@/components/slide-renderer/components/element/VideoElement';
+import {
+  PlaybackImageContent,
+  PlaybackVideoContent,
+} from '@/components/slide-renderer/Editor/RendererScreenCanvas';
 import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
-import { useResolvedVideoMedia } from '@/components/slide-renderer/components/element/VideoElement/useResolvedVideoMedia';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
-import { SceneProvider } from '@/lib/contexts/scene-context';
 import { resolvePptxMediaBinding } from '@/lib/export/use-export-pptx';
 import {
   MISSING_ASSET_LEASE,
@@ -88,10 +82,6 @@ vi.mock('@/lib/store/media-generation', () => {
   );
   return { useMediaGenerationStore };
 });
-
-const SceneProviderWithOptionalChildren = SceneProvider as ComponentType<
-  Omit<ComponentProps<typeof SceneProvider>, 'children'> & { children?: ReactNode }
->;
 
 type Presentation = 'concrete' | 'empty' | 'skeleton' | 'disabled';
 
@@ -256,27 +246,55 @@ function stageStoreWith(element: PPTVideoElement): StageStore {
   } as unknown as StageStore;
 }
 
-function renderInMediaScene(
+/**
+ * The binding every slide surface shares: thumbnails, playback, the editor
+ * canvas and the whiteboard all resolve media through `useResolvedSlideMedia`,
+ * which reads the live task store and the asset leases into this state.
+ */
+function resolvedBinding(
   element: PPTImageElement | PPTVideoElement,
-  child: ReturnType<typeof createElement>,
-): string {
-  const sceneData = { type: 'slide' as const, canvas: slideWith(element) };
+  tasks: Record<string, MediaTask>,
+  options: Parameters<typeof resolveSlideMediaState>[3] = {},
+) {
+  const resolved = resolveSlideMediaState(slideWith(element), stageId, tasks, {
+    imageGenerationDisabled: !generation.image,
+    videoGenerationDisabled: !generation.video,
+    ...options,
+  });
+  const painted = resolved.slide.elements[0] as PPTImageElement | PPTVideoElement;
+  return {
+    src: painted.src ?? '',
+    poster: painted.type === 'video' ? painted.poster : undefined,
+    media: resolved.byElementId[element.id]!,
+  };
+}
+
+/** Render the playback media content the renderer draws for one element. */
+function renderPlayback(source: PPTImageElement | PPTVideoElement): string {
+  const resolved = resolveSlideMediaState(slideWith(source), stageId, componentStores.media.tasks, {
+    imageGenerationDisabled: !generation.image,
+    videoGenerationDisabled: !generation.video,
+  });
+  const element = resolved.slide.elements[0] as PPTImageElement | PPTVideoElement;
+  const media = resolved.byElementId[source.id];
   return renderToStaticMarkup(
     createElement(
       MediaStageProvider,
       { value: stageId },
-      createElement(
-        SceneProviderWithOptionalChildren,
-        {
-          controller: {
+      element.type === 'image'
+        ? createElement(PlaybackImageContent, {
+            element,
+            defaultContent: createElement('img', { src: element.src }),
+            media,
             sceneId: 'scene-1',
-            sceneType: 'slide',
-            getSnapshot: () => sceneData,
-            updateSceneData: () => undefined,
-          },
-        },
-        child,
-      ),
+            slideId: 'slide-1',
+          })
+        : createElement(PlaybackVideoContent, {
+            element,
+            media,
+            sceneId: 'scene-1',
+            slideId: 'slide-1',
+          }),
     ),
   );
 }
@@ -284,9 +302,8 @@ function renderInMediaScene(
 /**
  * Vitest runs this project in plain Node, so this matrix cannot assert DOM media
  * attributes or browser playback. It executes each distinct production binding
- * seam once: the shared image resolver, the direct video components' media-ref
- * glue plus the useResolvedMediaRef state machine and renderable URL boundary,
- * and the resolved-slide path shared by thumbnail and renderer consumers.
+ * seam once: the resolved-slide path shared by thumbnail, renderer, editor and
+ * whiteboard consumers for images and videos, and the action video binding.
  * Focused component tests remain responsible for renderer DOM structure.
  */
 const componentSurfaces: readonly {
@@ -299,54 +316,22 @@ const componentSurfaces: readonly {
   };
 }[] = [
   {
-    name: 'shared image-element binding (base and editor)',
+    name: 'resolved-slide image binding (thumbnail, renderer and whiteboard)',
     run: (entry: ResolutionCase) => {
-      const binding = resolveImageSrc(
-        imageElement(entry.ref),
+      const element = imageElement(entry.ref);
+      const mediaTask = fullTask(entry.ref, entry.task, 'image');
+      const binding = resolveSlideMediaState(
+        slideWith(element),
         stageId,
-        fullTask(entry.ref, entry.task, 'image'),
-        entry.lease?.status === 'resolved' ? entry.lease.url : undefined,
-        entry.disabled,
+        mediaTask ? { [entry.ref]: mediaTask } : {},
+        {
+          assetLeases: { [entry.ref]: entry.lease ?? MISSING_ASSET_LEASE },
+          imageGenerationDisabled: entry.disabled,
+        },
       );
-      return { src: binding.resolvedSrc, resolution: binding.resolution };
-    },
-  },
-  {
-    name: 'direct video-element binding (base and editor)',
-    resolvesPoster: true,
-    run: (entry: ResolutionCase) => {
-      const element = videoElement(entry.ref);
-      hookLeases.current = {
-        [entry.ref]: entry.lease ?? MISSING_ASSET_LEASE,
-        [posterRef]: posterLease,
-      };
-      function DirectVideoBindingProbe() {
-        const binding = useResolvedVideoMedia(
-          element,
-          entry.task ? { [entry.ref]: fullTask(entry.ref, entry.task, 'video')! } : {},
-          stageId,
-          entry.disabled ?? false,
-        );
-        const payload = Buffer.from(
-          JSON.stringify({
-            src: binding.resolvedSrc ?? '',
-            resolution: binding.resolution,
-            poster: binding.resolvedPoster,
-          } satisfies {
-            src: string;
-            resolution: MediaResolution;
-            poster?: string;
-          }),
-        ).toString('base64url');
-        return createElement('div', { 'data-binding': payload });
-      }
-      const markup = renderToStaticMarkup(createElement(DirectVideoBindingProbe));
-      const encoded = /data-binding="([^"]+)"/.exec(markup)?.[1];
-      if (!encoded) throw new Error('Direct video binding did not render');
-      return JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as {
-        src: string;
-        resolution: MediaResolution;
-        poster?: string;
+      return {
+        src: (binding.slide.elements[0] as PPTImageElement).src,
+        resolution: binding.byElementId['image-1'].resolution,
       };
     },
   },
@@ -408,53 +393,31 @@ describe('real media consumer matrix', () => {
     const reviewerRepro = { src: 'https://cdn.example/direct.mp4', mediaRef: 'ast_opaque' };
     const element = { ...videoElement(reviewerRepro.src), ...reviewerRepro };
 
-    function DirectVideoBindingProbe() {
-      const binding = useResolvedVideoMedia(element, {}, stageId, false);
-      return createElement('div', {
-        'data-resolution': binding.resolution.kind,
-        'data-src': binding.resolvedSrc,
-      });
-    }
-
-    const markup = renderToStaticMarkup(createElement(DirectVideoBindingProbe));
-    expect(markup).toContain('data-resolution="raw"');
-    expect(markup).toContain('data-src="https://cdn.example/direct.mp4"');
-    expect(markup).not.toContain('placeholder');
+    const binding = resolvedBinding(element, {});
+    expect(binding.media.resolution.kind).toBe('raw');
+    expect(binding.src).toBe('https://cdn.example/direct.mp4');
   });
 
-  it('useResolvedImageSrc prefers element-keyed fork progress over the shared source task', () => {
+  it('an image prefers element-keyed fork progress over the shared source task', () => {
     const ref = 'ast_shared_image';
     const element = imageElement(ref);
     const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-image' }), 'image');
     const targeted = fullTask(ref, task('pending'), 'image');
     if (!source || !targeted) throw new Error('Expected media tasks');
     setMediaGeneration({ image: true });
-    useMediaGenerationStore.setState({
-      tasks: {
-        [ref]: source,
-        [element.id]: { ...targeted, elementId: element.id },
-      },
+
+    const binding = resolvedBinding(element, {
+      [ref]: source,
+      [element.id]: { ...targeted, elementId: element.id },
     });
-
-    function ImageBindingProbe() {
-      const binding = useResolvedImageSrc(element);
-      return createElement('div', {
-        'data-resolution': binding.resolution.kind,
-        'data-src': binding.resolvedSrc,
-      });
-    }
-
-    const markup = renderToStaticMarkup(
-      createElement(MediaStageProvider, { value: stageId }, createElement(ImageBindingProbe)),
-    );
-    expect(markup).toContain('data-resolution="pending"');
-    expect(markup).not.toContain('blob:shared-image');
+    expect(binding.media.resolution.kind).toBe('pending');
+    expect(binding.src).not.toContain('blob:shared-image');
   });
 
-  it('BaseVideoElement prefers element-keyed fork progress over the shared source task', () => {
-    const ref = 'ast_shared_base_video';
+  it('a video prefers element-keyed fork progress over the shared source task', () => {
+    const ref = 'ast_shared_video';
     const element = videoElement(ref);
-    const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-base-video' }), 'video');
+    const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-video' }), 'video');
     const targeted = fullTask(ref, task('pending'), 'video');
     if (!source || !targeted) throw new Error('Expected media tasks');
     setMediaGeneration({ video: true });
@@ -465,37 +428,15 @@ describe('real media consumer matrix', () => {
       },
     });
 
-    const markup = renderInMediaScene(
-      element,
-      createElement(BaseVideoElement, { elementInfo: element }),
-    );
-    expect(markup).toContain('vid-pulse-ring');
-    expect(markup).not.toContain('blob:shared-base-video');
-  });
-
-  it('VideoElement prefers element-keyed fork progress over the shared source task', () => {
-    const ref = 'ast_shared_editor_video';
-    const element = videoElement(ref);
-    const source = fullTask(ref, task('done', { objectUrl: 'blob:shared-editor-video' }), 'video');
-    const targeted = fullTask(ref, task('pending'), 'video');
-    if (!source || !targeted) throw new Error('Expected media tasks');
-    setMediaGeneration({ video: true });
-    useMediaGenerationStore.setState({
-      tasks: {
-        [ref]: source,
-        [element.id]: { ...targeted, elementId: element.id },
-      },
-    });
-
-    const markup = renderInMediaScene(
-      element,
-      createElement(VideoElement, { elementInfo: element }),
-    );
+    const binding = resolvedBinding(element, componentStores.media.tasks);
+    expect(binding.media.resolution.kind).toBe('pending');
+    expect(binding.src).not.toContain('blob:shared-video');
+    const markup = renderPlayback(element);
     expect(markup).toContain('animate-pulse');
-    expect(markup).not.toContain('blob:shared-editor-video');
+    expect(markup).not.toContain('blob:shared-video');
   });
 
-  it('recovered legacy video tasks bind identically in playback and edit mode', () => {
+  it('recovered legacy video tasks bind to their placeholder', () => {
     const element = videoElement('gen_vid_1');
     const recovered = fullTask(
       'gen_vid_unique_legacy',
@@ -510,19 +451,9 @@ describe('real media consumer matrix', () => {
       },
     });
 
-    const playback = renderInMediaScene(
-      element,
-      createElement(BaseVideoElement, { elementInfo: element }),
-    );
-    const editor = renderInMediaScene(
-      element,
-      createElement(VideoElement, { elementInfo: element }),
-    );
-
-    expect(playback).toContain('src="blob:recovered-video"');
-    expect(editor).toContain('src="blob:recovered-video"');
-    expect(playback).not.toContain('vid-pulse-ring');
-    expect(editor).not.toContain('animate-pulse');
+    const markup = renderPlayback(element);
+    expect(markup).toContain('src="blob:recovered-video"');
+    expect(markup).not.toContain('animate-pulse');
   });
 
   for (const surface of componentSurfaces) {
@@ -574,17 +505,16 @@ describe('real media consumer matrix', () => {
 });
 
 /**
- * What a failed media task says, on the three surfaces that draw a Retry.
+ * What a failed media task says on the surfaces that draw a Retry.
  *
  * A full asset store is retryable — an operator raises the ceiling and the
  * Retry re-attempts the upload from bytes that were kept — so those surfaces
  * say which condition they are waiting on; a bare Retry would read as an
- * ordinary failure. A refusal a retry cannot change draws neither, exactly as
- * it did before: these surfaces have never explained a failure they offer no
- * action for, and a notice here would change what a browser-only deck looks
- * like, which nothing in this work is allowed to do.
+ * ordinary failure. A refusal a retry cannot change never draws a Retry. The
+ * thumbnail draws nothing else for it; playback says why instead of a Retry
+ * that would fail the same way.
  */
-describe('a failed media task explains itself beside a Retry, and only there', () => {
+describe('a failed media task explains itself beside a Retry', () => {
   const quotaTask = (ref: string, type: 'image' | 'video') =>
     fullTask(ref, task('failed', { errorCode: 'ASSET_QUOTA_EXCEEDED' }), type);
   const refusedTask = (ref: string, type: 'image' | 'video') =>
@@ -595,73 +525,53 @@ describe('a failed media task explains itself beside a Retry, and only there', (
     return value;
   }
 
-  it('VideoElement pairs the storage-full notice with the Retry', () => {
+  it('playback video pairs the storage-full notice with the Retry', () => {
     const ref = 'gen_vid_quota';
     const element = videoElement(ref);
     setMediaGeneration({ video: true });
     useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(quotaTask(ref, 'video')) } });
 
-    const markup = renderInMediaScene(
-      element,
-      createElement(VideoElement, { elementInfo: element }),
-    );
+    const markup = renderPlayback(element);
 
     expect(markup).toContain('settings.mediaStorageFull');
     expect(markup).toContain('settings.mediaRetry');
   });
 
-  it('VideoElement draws neither for a refusal a retry cannot change', () => {
+  it('playback video explains a refusal a retry cannot change, without a Retry', () => {
     const ref = 'gen_vid_refused';
     const element = videoElement(ref);
     setMediaGeneration({ video: true });
     useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'video')) } });
 
-    const markup = renderInMediaScene(
-      element,
-      createElement(VideoElement, { elementInfo: element }),
-    );
+    const markup = renderPlayback(element);
 
-    // The failed state is painted, and it is the box it has always been --
-    // asserted as the exact class attribute, because a notice-shaped container
-    // with nothing in it would render identically and still be a change to
-    // browser-only output.
-    expect(markup).toContain(
-      'class="flex h-full w-full items-center justify-center rounded bg-red-50 dark:bg-red-900/20"',
-    );
-    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).toContain('bg-red-50');
+    expect(markup).toContain('settings.mediaContentSensitive');
     expect(markup).not.toContain('settings.mediaRetry');
   });
 
-  it('ImageElement pairs the storage-full notice with the Retry', () => {
+  it('playback image pairs the storage-full notice with the Retry', () => {
     const ref = 'gen_img_quota';
     const element = imageElement(ref);
     setMediaGeneration({ image: true });
     useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(quotaTask(ref, 'image')) } });
 
-    const markup = renderInMediaScene(
-      element,
-      createElement(ImageElement, { elementInfo: element }),
-    );
+    const markup = renderPlayback(element);
 
     expect(markup).toContain('settings.mediaStorageFull');
     expect(markup).toContain('settings.mediaRetry');
   });
 
-  it('ImageElement draws neither for a refusal a retry cannot change', () => {
+  it('playback image explains a refusal a retry cannot change, without a Retry', () => {
     const ref = 'gen_img_refused';
     const element = imageElement(ref);
     setMediaGeneration({ image: true });
     useMediaGenerationStore.setState({ tasks: { [ref]: requireTask(refusedTask(ref, 'image')) } });
 
-    const markup = renderInMediaScene(
-      element,
-      createElement(ImageElement, { elementInfo: element }),
-    );
+    const markup = renderPlayback(element);
 
-    expect(markup).toContain(
-      '<div class="flex h-full w-full items-center justify-center bg-red-50" data-media-state="failed">',
-    );
-    expect(markup).not.toContain('settings.mediaContentSensitive');
+    expect(markup).toContain('data-media-state="failed"');
+    expect(markup).toContain('settings.mediaContentSensitive');
     expect(markup).not.toContain('settings.mediaRetry');
   });
 
@@ -749,14 +659,9 @@ describe('a completed pool-backed task renders before the document catches up', 
   const allocated = 'ast_window_video';
 
   function bindingFor(element: PPTVideoElement, tasks: Record<string, MediaTask>): string {
-    function WindowProbe() {
-      const binding = useResolvedVideoMedia(element, tasks, stageId, false);
-      return createElement('div', {
-        'data-kind': binding.resolution.kind,
-        'data-src': binding.resolvedSrc ?? '',
-      });
-    }
-    return renderToStaticMarkup(createElement(WindowProbe));
+    setMediaGeneration({ video: true });
+    const binding = resolvedBinding(element, tasks, { assetLeases: hookLeases.current });
+    return `data-kind="${binding.media.resolution.kind}" data-src="${binding.src}"`;
   }
 
   it('leases the id the frame carried while the element still holds the placeholder', () => {

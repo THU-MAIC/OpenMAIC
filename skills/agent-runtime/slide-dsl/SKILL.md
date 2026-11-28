@@ -31,7 +31,7 @@ against it, then read the page back and check what you wrote is what is there.
 3. [The canvas](#the-canvas) — viewport, theme, background, animations, paint order
 4. [How an edit reaches the JSON](#how-an-edit-reaches-the-json) — three ops, pointer rules
 5. [What the structure schema refuses](#what-the-structure-schema-refuses) — the only hard boundary
-6. [Two renderers paint your page](#two-renderers-paint-your-page) — playback vs. preview
+6. [One renderer paints your page](#one-renderer-paints-your-page) — thumbnails vs. classroom
 7. [Fields every element carries](#fields-every-element-carries)
 8. [The ten element types](#the-ten-element-types) — one section each
 9. [The rendering truth of `content` HTML](#the-rendering-truth-of-content-html) — the most important section
@@ -152,7 +152,7 @@ the renderer.
 `[{ id, elId, effect, type, duration, trigger }, …]`, `type` one of `in` / `out` /
 `attention`, `trigger` one of `click` / `meantime` / `auto`.
 
-**Nothing plays them in playback.** Neither renderer reads `canvas.animations`;
+**Nothing plays them in playback.** The renderer does not read `canvas.animations`;
 the only consumer is the Pro-mode editor's animation panel. They are stored,
 validated and preserved — treat them as data you must not destroy, never as a way
 to make something move on a learner's screen. Deleting an element deletes the
@@ -279,34 +279,25 @@ no contrast rule, no check that `html` agrees with `latex`, no check that a char
 render returns nothing, `html` is removed instead. Nothing else in the document is
 touched, ever.
 
-## Two renderers paint your page
+## One renderer paints your page
 
-The same JSON is drawn by two different implementations, and knowing which is
-which explains most "it looks right in one place and wrong in another" reports.
+Every surface draws the page with `@openmaic/renderer`: page thumbnails
+(`components/slide-renderer/SlideThumbnail.tsx`), classroom playback, the
+whiteboard, and the editor through `@openmaic/editor`. The renderer ships its own
+`.slide-renderer-prose` stylesheet for rich text (see
+[the HTML section](#the-rendering-truth-of-content-html)).
 
-| | **Legacy playback renderer** | **Preview and default playback renderer** |
-| --- | --- | --- |
-| Code | the in-app element components (`components/slide-renderer/components/element/*`, mounted by `components/slide-renderer/Editor/ScreenElement.tsx`) | `@openmaic/renderer`'s `SlideCanvas` |
-| Where it runs | classroom playback when built with `NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED=false` | page thumbnails (`components/slide-renderer/SlideThumbnail.tsx`), and classroom playback by default |
-| Stylesheet for rich text | **none** — only the global CSS reset, browser defaults, and your inline styles | ships its own `.slide-renderer-prose` rules with the canvas |
+Thumbnails and the classroom differ only in sizing. Classroom playback, the
+whiteboard and the editor keep the sizing that classroom slides have always had:
 
-They agree on every field that matters most (geometry, fills, precedence,
-`html`-over-`latex`). Where they differ, this manual says so, and the rule is
-always the same: **write for the intersection.** In the comparisons below, “playback” refers to legacy playback and “preview” to the package renderer. The known divergences are
-
-- **list markers** — restored by the preview renderer's stylesheet, absent in
-  playback (see [the HTML section](#the-rendering-truth-of-content-html));
-- **`paragraphSpace` on a text element** — honoured by the preview renderer, inert
-  in playback;
-- **`vAlign` on a text element and per-side `borders` on a table cell** — honoured
-  by the preview renderer, ignored in playback;
-- **a plain-text `content` with newlines** — the preview renderer sets
-  `white-space: pre-line` when the string contains no markup at all, so the
-  newlines become line breaks; playback does not, so they collapse to spaces;
-- **`audio` elements** — drawn as a click-to-play button by the preview renderer,
-  **not rendered at all** in playback;
-- **formula sizing** — thumbnails only shrink formulas to fit. Both classroom playback
-  renderers also enlarge a formula to fill its box.
+- **`vAlign` on a text element** — honoured on thumbnails; the classroom keeps the
+  text at the top of its box;
+- **imported text insets** — a text element whose `content` carries its own insets
+  is drawn without the default 10 px padding on thumbnails, and with it in the
+  classroom;
+- **formula sizing** — thumbnails only shrink a formula to fit. The classroom also
+  enlarges a formula to fill its box;
+- **image sizing** — the classroom keeps a picture within its box's width.
 
 ## Fields every element carries
 
@@ -320,7 +311,7 @@ always the same: **write for the intersection.** In the comparisons below, “pl
   line is an unknown-field rejection.
 - `lock`, `groupId` and `name` are editor bookkeeping — no renderer reads them.
   Preserve them; do not expect them to change a pixel.
-- `link` is likewise **not painted by either renderer**. An element-level
+- `link` is likewise **not painted by the renderer**. An element-level
   hyperlink is stored and exported, not clickable in playback.
 - Rotation is applied to a wrapper *inside* the positioned box, so `left` / `top` /
   `width` / `height` always describe the **unrotated** box. To reason about the
@@ -343,11 +334,11 @@ common geometry.
 | `outline`        | `{ style?, width?, color? }`     | none                | A rectangular SVG stroke at the box bounds                                     |
 | `lineHeight`     | number (multiplier)              | `1.5`               | `line-height` on the content box                                               |
 | `wordSpace`      | number (px)                      | `0`                 | `letter-spacing` on the content box                                            |
-| `paragraphSpace` | number (px)                      | `5`                 | **Playback ignores it** (see below); the preview renderer uses it as the `<p>` bottom margin |
+| `paragraphSpace` | number (px)                      | none (no gap)       | Bottom margin of every `<p>` except the last (see below)                        |
 | `opacity`        | number `0`–`1`                   | `1`                 | Opacity of the whole box including `fill`                                      |
 | `shadow`         | `{ h, v, blur, color }`          | none                | `text-shadow` on the glyphs                                                    |
 | `vertical`       | boolean                          | `false`             | `writing-mode: vertical-rl`, and swaps which of width/height is auto            |
-| `vAlign`         | `top` / `middle` / `bottom`      | `top`               | Preview renderer only — vertical anchor inside the box. **Inert in playback**   |
+| `vAlign`         | `top` / `middle` / `bottom`      | `top`               | Vertical anchor inside the box on thumbnails. **Classroom playback keeps text at the top** |
 | `textType`       | `title` / `subtitle` / `content` / `item` / `itemTitle` / `notes` / `header` / `footer` / `partNumber` / `itemNumber` | none | Authoring metadata. **No renderer reads it** |
 
 Words live in **`content`**.
@@ -366,10 +357,10 @@ Words live in **`content`**.
    the declared `height`, which is what makes the overflow obvious once you look.
    Text that no longer fits needs a smaller `font-size` or a bigger `height`, not a
    hope that it will be cropped.
-4. **`paragraphSpace` is inert in playback.** Playback sets it as a CSS variable
-   that no rule reads, so stacked `<p>` tags sit with zero gap. If you need
-   breathing room between paragraphs in playback, put `margin-bottom` in the `<p>`'s
-   own inline style.
+4. **`paragraphSpace` is the only gap between paragraphs.** The renderer's
+   stylesheet puts it below every `<p>` but the last; without it, stacked `<p>` tags
+   sit with zero gap. A `margin-bottom` in a `<p>`'s own inline style beats it for
+   that paragraph.
 
 ### shape
 
@@ -411,14 +402,14 @@ winner.
 | `align`         | yes      | —       | `top` / `middle` / `bottom` — the **vertical** anchor, not horizontal   |
 | `lineHeight`    | no       | `1.625` | Multiplier                                                             |
 | `wordSpace`     | no       | `0`     | px                                                                     |
-| `paragraphSpace`| no       | `5`     | px — **honoured in playback here**, unlike on a text element            |
+| `paragraphSpace`| no       | `5`     | px — the gap below every paragraph but the last                         |
 | `type`          | no       | —       | Same authoring metadata as `textType`; unread by renderers              |
 
 A shape with no `text` object has no words at all; giving it one means supplying
 the whole object (`content`, `defaultFontName`, `defaultColor`, `align` are all
 required). Horizontal alignment comes from `text-align` inside the HTML, never from
-`align`. The label sits inside 10 px of padding in playback and flush to the box
-edges in the preview renderer — keep a margin of your own if a tight fit matters.
+`align`. The label sits inside 10 px of padding, except a label imported with its
+own insets, which keeps those instead.
 
 ### image
 
@@ -433,7 +424,7 @@ edges in the preview renderer — keep a margin of your own if a tight fit matte
 | `flipH` / `flipV` | boolean                                      | Mirrors the picture                                                                     |
 | `shadow`       | `{ h, v, blur, color }`                         | `drop-shadow` filter                                                                    |
 | `colorMask`    | colour string                                   | A flat colour layer painted over the picture — an opaque value hides the picture entirely |
-| `softEdge`     | number (px)                                     | Preview renderer only — feathers the edges. **Inert in playback**                        |
+| `softEdge`     | number (px)                                     | Feathers the edges                                                                      |
 | `imageType`    | `pageFigure` / `itemFigure` / `background`       | Authoring metadata. **No renderer reads it**                                            |
 | `fixedRatio`   | boolean                                         | Editor resize constraint; no visual effect                                              |
 
@@ -545,45 +536,33 @@ Words live in **`data[row][col].text`**. One cell is one path:
 the grid, and every id, `colspan`, `rowspan` and per-cell style around it survives
 untouched — a `colspan` you drop takes the table's shape with it.
 
-**Cell text is its own dialect.** Playback runs the cell's `text` through a
-transform before injecting it as HTML: every `\n` becomes `<br/>` and **every space
-becomes `&nbsp;`**. That has three consequences you must design around:
+**Cell text is injected as HTML, as it is.** Unlike a text element's `content`,
+it gets no `white-space` handling, so:
 
-1. `\n` in a cell **is** a line break — the one place in the DSL where a raw newline
-   renders.
-2. **Inline `style` attributes inside a cell do not work.** `style="color: red"`
-   becomes `style="color:&nbsp;red"`, which is not a valid declaration, so the colour
-   is dropped. Same for any attribute value with a space in it, and for a
-   two-class `class`. Cell appearance comes from `cell.style`, not from markup.
-3. Text with spaces will **not wrap** at those spaces. Playback's
-   `word-break: break-word` can still re-flow long prose, but it may break in the
-   middle of a word instead of at the spaces as the preview renderer does.
-
-So: put plain text in a cell, use `\n` for breaks, use `cell.style` for appearance,
-and reach for attribute-free tags (`<strong>`, `<br/>`) only if you must. The preview
-renderer skips the space transform, which is exactly why a cell that looks fine in a
-thumbnail can look wrong in playback.
+1. A raw `\n` in a cell collapses to a space. Use `<br/>` for a line break.
+2. Inline `style` attributes inside a cell work, but cell appearance belongs in
+   `cell.style`, which the PPTX export also reads.
+3. Text wraps at spaces like any other HTML text.
 
 **`theme` banding**, when present: `rowHeader` paints row 0 in `theme.color` with
 white text; `rowFooter` does the same to the last row; `colHeader` / `colFooter`
 paint the first / last column in `theme.color` at 30 % alpha; every other even row
 gets it at 10 %. A cell's own `style.backcolor` and `style.color` beat all of it.
 
-**Field playback ignores** (preview renderer honours it): `cell.borders` — playback
-always draws the table-level `outline` on all four sides. Both renderers honour
-`cell.padding`. `cell.vAlign` only aligns text inside the declared row-height
+**`cell.borders`**, when a cell has one, draws each side it defines and leaves the
+others bare; a cell without it gets the table-level `outline` on all four sides.
+`cell.vAlign` only aligns text inside the declared row-height
 content box; if the browser stretches the row, that box remains centred in the
 full cell.
 
 `cell.padding` has no implicit default: omit it for no inset, or provide a CSS
-padding string such as `5px` or `3px 6px`. Both renderers use `line-height: 1`
-for cell text.
+padding string such as `5px` or `3px 6px`. Cell text uses `line-height: 1`.
 
-**Merged cells are fragile.** Both renderers expect `data[r]` to contain only the
-top-left cell of each merge, with the spanned positions absent, and playback's
-hidden-cell computation compares data indices against grid coordinates — which
-mis-hides a cell in tables with mixed spans. Prefer un-merged tables; if you inherit
-merges, change only `text` and never the span numbers.
+**Merged cells are fragile.** The renderer expects `data[r]` to contain only the
+top-left cell of each merge, with the spanned positions absent, and lets the
+browser's table layout place the spans; a spanned position left in `data` pushes
+the rest of its row out of place. Prefer un-merged tables; if you inherit merges,
+change only `text` and never the span numbers.
 
 ### latex
 
@@ -667,10 +646,8 @@ generation lands.
 **Required**: `src`, `fixedRatio`, `color`, `loop`, `autoplay`, plus the common
 geometry. Optional `ext`. No teaching text.
 
-**Playback does not render audio elements at all** — the element type is simply not
-in playback's dispatch table, so the element occupies its box invisibly. The preview
-renderer draws a click-to-play speaker button, honours `loop`, and does **not** honour
-`autoplay` there either.
+The renderer draws a click-to-play speaker button in `color`, honours `loop`, and
+does **not** honour `autoplay`.
 
 Do not use an audio element to make a page speak. A page's spoken narration is the
 scene's actions, not an element.
@@ -694,15 +671,15 @@ means concretely:
 2. **There is no tag allow-list and no CSS property allow-list.** Any tag the HTML
    parser accepts is in the DOM; any declaration the browser understands takes
    effect. You are not writing for a filter, you are writing for a browser.
-3. **In playback there is no stylesheet for this HTML at all.** No author rules
-   target the injected content. Its appearance is decided by exactly four things,
-   in cascade order: the global CSS reset, browser defaults the reset does not
-   override, styles inherited from the element container (`defaultColor`,
-   `defaultFontName`, `lineHeight`, `wordSpace`, `writing-mode`), and **your own
-   inline styles**, which beat everything above them.
-4. **Which means an inline style always wins.** The reset uses no `!important`, so
-   any declaration in a `style` attribute overrides it. That is the lever for
-   anything the reset has flattened.
+3. **The renderer adds one small stylesheet for this HTML.** It sets the gap below
+   each `<p>` to `paragraphSpace` and gives lists back their markers and indent.
+   Everything else is decided, in cascade order, by the global CSS reset, browser
+   defaults the reset does not override, styles inherited from the element
+   container (`defaultColor`, `defaultFontName`, `lineHeight`, `wordSpace`,
+   `writing-mode`), and **your own inline styles**.
+4. **An inline style wins, with one exception.** The reset uses no `!important`,
+   so a declaration in a `style` attribute overrides it, and it overrides the
+   paragraph gap too. The list rules are `!important`: see the list case below.
 
 ### The global reset — what it flattens
 
@@ -713,10 +690,10 @@ did nothing":
 | Markup            | After the reset                                                                                |
 | ----------------- | ---------------------------------------------------------------------------------------------- |
 | `<h1>`–`<h6>`     | **Inert.** `font-size: inherit`, `font-weight: inherit` — a heading is a `<p>` with a longer name |
-| `<ul>` / `<ol>`   | `list-style: none` **and** zero padding — **no marker, no indent**                              |
-| `<li>`            | Still `display: list-item`, but with no marker to show                                          |
+| `<ul>` / `<ol>`   | `list-style: none` and zero padding — **restored by the renderer's stylesheet** (see below)     |
+| `<li>`            | `display: list-item`, with the restored marker                                                  |
 | `<blockquote>`    | No margin, no padding, no border — a plain block                                                |
-| `<p>`             | No margin — stacked paragraphs touch, with **zero gap**                                          |
+| `<p>`             | No margin of its own — the gap below it is `paragraphSpace`                                     |
 | `<a>`             | `color: inherit`, `text-decoration: inherit` — **looks exactly like body text**                  |
 | `<table>`         | `border-collapse: collapse`, no borders                                                        |
 | `<img>` / `<video>` | `display: block`, `max-width: 100%`, `height: auto`                                           |
@@ -737,19 +714,14 @@ browser default alone:
 | `<br>`             | A line break                                                                 |
 | `<span>` / `<div>` | Nothing of their own — pure carriers for your inline styles                   |
 
-**The list case, spelled out.** `<ul><li>甲</li><li>乙</li></ul>` renders in playback
-as two bare, unindented lines. The preview renderer restores markers with its own
-stylesheet, so the same page shows bullets in a thumbnail and none in the
-classroom — that divergence is the reset, not a bug in your JSON. Two ways out, and
-`slide-craft` prefers the first:
-
-- Write one `<p>` per item with the marker in the text (`<p>· 甲</p>`), which renders
-  identically everywhere.
-- Or force the list back with inline style on the `<ul>` itself:
-  `<ul style="list-style: disc inside">`. Inline beats the reset, and `inside` keeps
-  the marker within the padding box where zeroed padding would otherwise leave an
-  `outside` marker flush against the edge. *This follows from the cascade; it has not
-  been checked against a rendered page.*
+**The list case, spelled out.** `<ul><li>A</li><li>B</li></ul>` renders with
+bullets on every surface: the renderer's stylesheet puts a disc (`<ol>`: a number)
+outside a 1.5 rem indent. These rules are `!important`, so an inline `padding` does
+not move the indent and the `list-style` shorthand does not change the marker. To
+change the marker, set `list-style-type` in the list's own `style`
+(`<ul style="list-style-type: circle">`); a list that carries it keeps its own. For
+full control over markers and indent, write one `<p>` per item with the marker in
+the text (`<p>· A</p>`).
 
 ### Inline CSS — there is no property list, only a cascade
 
@@ -768,14 +740,14 @@ properties you will actually reach for, and what to expect:
 | `line-height`                             | Applied on the tag that carries it; beats the element's `lineHeight`                            |
 | `letter-spacing`                          | Applied; beats the element's `wordSpace`                                                       |
 | `text-align`                              | Applied — this is the **only** horizontal alignment control. Neither element has a field for it |
-| `margin`, `margin-bottom`, `padding`      | Applied, and the only way to get paragraph spacing in playback                                  |
+| `margin`, `margin-bottom`, `padding`      | Applied; on a `<p>`, beats `paragraphSpace`. Not on a list's indent (see above)                 |
 | `text-indent`                             | Applied                                                                                       |
 | `background-color`                        | Applied — a highlight behind a run of text                                                     |
 | `white-space` (`pre-wrap`, `pre-line`)    | Applied — the way to make newlines inside a tag render as breaks                                |
-| `list-style`, `padding-inline-start`      | Applied, and needed to undo the reset on a list                                                 |
+| `list-style-type`                         | Applied on a list, replacing the restored marker                                                |
 | `opacity`, `text-transform`, `vertical-align` | Applied                                                                                    |
 | `display`, `position`, `width`, `height`, `overflow` | Applied. They work, and they are also how a page ends up with content clipped or stacked where you did not intend |
-| `background` with a gradient, `-webkit-text-fill-color`, `mask-image` | Applied by the browser. Effective in playback; **not reproduced by the PPTX export** |
+| `background` with a gradient, `-webkit-text-fill-color`, `mask-image` | Applied by the browser on screen; **not reproduced by the PPTX export** |
 
 **Colour formats.** Any CSS colour works — `#rgb`, `#rrggbb`, `#rrggbbaa`,
 `rgb()`, `rgba()`, `hsl()`, and the named colours. The renderer never parses colour
@@ -851,7 +823,7 @@ There is no filter to catch a mistake and no normaliser to tidy one. So the loop
 | `latex`   | `latex` (source)         | `align` `color`; **`html` is what paints**             | `left` `top` `width` `height` `rotate`                | `…/N/latex` · `…/N/align` · `…/N/width`                                                        |
 | `code`    | `lines[].content` (plain) | `language` `fontSize` `showLineNumbers` `fileName`   | `left` `top` `width` `height` `rotate`                | `…/N/lines/1/content` · `…/N/language` · `…/N/fontSize`                                        |
 | `video`   | — none                   | `poster`                                             | `left` `top` `width` `height` `rotate`                | `…/N/src` · `…/N/poster` · `…/N/width`                                                         |
-| `audio`   | — none                   | `color` (**invisible in playback**)                   | `left` `top` `width` `height` `rotate`                | `…/N/src` · `…/N/loop` · `…/N/left`                                                            |
+| `audio`   | — none                   | `color` (the speaker button)                         | `left` `top` `width` `height` `rotate`                | `…/N/src` · `…/N/loop` · `…/N/left`                                                            |
 
 Page-level paths worth remembering: `/content/canvas/background/color`,
 `/content/canvas/background/gradient/colors/0/color`, `/content/canvas/theme/fontColor`,

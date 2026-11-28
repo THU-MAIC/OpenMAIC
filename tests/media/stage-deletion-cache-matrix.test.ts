@@ -292,7 +292,6 @@ describe('stage deletion: document references and the local media cache', () => 
   });
 
   it.each([
-    ['canvas element deletion', 'lib/hooks/use-canvas-operations.ts'],
     ['slide-surface element deletion', 'components/edit/surfaces/slide/use-slide-surface.ts'],
     ['speech-cue deletion and audio supersession', 'components/edit/ActionsBar/ActionsBar.tsx'],
     ['scene deletion and undo', 'components/edit/SlideNavRail/SlideNavRail.tsx'],

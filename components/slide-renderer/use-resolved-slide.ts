@@ -50,6 +50,26 @@ function leaseFor(
   );
 }
 
+function isPoolLeasable(ref: string | undefined): ref is string {
+  return !!ref && !isConcreteMediaAddress(ref) && mayNameAPoolAsset(ref);
+}
+
+/**
+ * The reference whose lease paints an element's media. Normally the element's
+ * own; but between a completion frame and the document catching up, the
+ * element still names the generation placeholder, which the pool cannot hold,
+ * while the task already names the allocated id. Leasing that id lets the media
+ * show when the frame arrives instead of when the sync lands (#1522). It is only
+ * ever a second choice: a leasable document reference always counts first.
+ */
+function paintLeaseRef(
+  sourceRef: string | undefined,
+  task: MediaTask | undefined,
+): string | undefined {
+  if (isPoolLeasable(sourceRef)) return sourceRef;
+  return isPoolLeasable(task?.objectUrl) ? task.objectUrl : sourceRef;
+}
+
 export function resolveSlideMediaState(
   slide: Slide,
   stageId: string | undefined,
@@ -111,7 +131,7 @@ export function resolveSlideMediaState(
       resolveMediaRef(
         sourceRef,
         task,
-        leaseFor(sourceRef, options.assetLeases, options.assetUrls),
+        leaseFor(paintLeaseRef(sourceRef, task), options.assetLeases, options.assetUrls),
         element.type === 'image'
           ? options.imageGenerationDisabled
           : options.videoGenerationDisabled,
@@ -195,11 +215,16 @@ export function poolLeasableSlideRefs(
   for (const element of slide.elements) {
     if (element.type === 'audio') consider(element.src);
     if (element.type === 'image') {
-      consider(mediaTaskRefForElement(element) ?? element.src);
+      const ref = mediaTaskRefForElement(element) ?? element.src;
+      consider(ref);
+      if (!isPoolLeasable(ref)) {
+        consider(resolveMediaTaskForElement(tasks, element, stageId)?.objectUrl);
+      }
     }
     if (element.type === 'video') {
       const binding = resolveVideoMediaForElement(tasks, element, stageId);
       consider(binding.sourceRef);
+      if (!isPoolLeasable(binding.sourceRef)) consider(binding.task?.objectUrl);
       consider(binding.posterRef);
     }
   }
@@ -242,10 +267,11 @@ export function useResolvedSlideMedia(slide: Slide): ResolvedSlideMedia {
       .join('');
   });
 
-  const refs = useMemo(
-    () => poolLeasableSlideRefs(slide, stageId, useMediaGenerationStore.getState().tasks),
-    [slide, stageId],
-  );
+  // The signature names each task's objectUrl, which may be the pool id to lease.
+  const refs = useMemo(() => {
+    void signature;
+    return poolLeasableSlideRefs(slide, stageId, useMediaGenerationStore.getState().tasks);
+  }, [slide, stageId, signature]);
   const assetLeases = useAssetUrlLeases(refs);
   const mayGenerate = useMayGenerateForStage(stageId);
 

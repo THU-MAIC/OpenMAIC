@@ -26,7 +26,7 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
     switch (scene.type) {
       case 'slide':
         if (scene.content.type !== 'slide') return <div>Invalid slide content</div>;
-        return <SlideRenderer mode={mode} />;
+        return <SlideRenderer />;
       case 'quiz':
         if (scene.content.type !== 'quiz') return <div>Invalid quiz content</div>;
         return (

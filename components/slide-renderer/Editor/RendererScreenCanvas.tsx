@@ -19,7 +19,7 @@ import { SCREEN_ELEMENT_ID_PREFIX } from '../element-dom';
 
 const log = createLogger('RendererScreenCanvas');
 
-function PlaybackVideoContent({
+export function PlaybackVideoContent({
   element,
   media,
   sceneId,

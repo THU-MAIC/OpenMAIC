@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { getChartOption as getAppChartOption } from '@/components/slide-renderer/components/element/ChartElement/chartOption';
 import { getChartOption as getPackageChartOption } from '@/packages/@openmaic/renderer/src/elements/chart/chartOption';
 
-const chartOptionFactories = [getAppChartOption, getPackageChartOption];
+const chartOptionFactories = [getPackageChartOption];
 
 describe('Chart category axis labels', () => {
   it.each(chartOptionFactories)(

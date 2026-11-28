@@ -13,15 +13,61 @@ import {
 } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
 import { normalizeWhiteboardViewportRatio } from '@/lib/whiteboard/viewport';
-import { ElementTypes, type PPTElement, type Whiteboard } from '@openmaic/dsl';
+import {
+  ElementTypes,
+  type PPTElement,
+  type PPTImageElement,
+  type PPTVideoElement,
+  type Slide,
+  type SlideTheme,
+  type Whiteboard,
+} from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { createTextProseStyles } from '@openmaic/renderer';
+import { SLIDE_RENDERER_STYLES, SlideElement, SlideRendererProvider } from '@openmaic/renderer';
+import { useSceneData, useSceneSelector } from '@/lib/contexts/scene-context';
+import type { SceneContent } from '@/lib/types/stage';
+import {
+  useResolvedSlideMedia,
+  type ResolvedSlideMediaEntry,
+} from '@/components/slide-renderer/use-resolved-slide';
+import {
+  PlaybackImageContent,
+  PlaybackVideoContent,
+} from '@/components/slide-renderer/Editor/RendererScreenCanvas';
+import {
+  SCREEN_ELEMENT_ID_PREFIX,
+  maicElementIdAttributes,
+} from '@/components/slide-renderer/element-dom';
 
-const WHITEBOARD_SHAPE_PROSE_STYLES = createTextProseStyles(
-  '.whiteboard-screen-canvas .screen-element .slide-renderer-prose',
-);
+/**
+ * The text color and font the board's elements fall back to when they set
+ * neither: the current slide's theme, as on the slide itself.
+ */
+type WhiteboardTextTheme = Pick<SlideTheme, 'fontColor' | 'fontName'>;
+
+const FALLBACK_THEME: SlideTheme = {
+  backgroundColor: '#ffffff',
+  themeColors: [],
+  fontColor: '#333333',
+  fontName: 'Microsoft YaHei',
+};
+
+type HostSlide = { readonly slideId: string; readonly theme: SlideTheme };
+
+function selectHostSlide(content: SceneContent): HostSlide {
+  return content?.type === 'slide'
+    ? { slideId: content.canvas.id, theme: content.canvas.theme ?? FALLBACK_THEME }
+    : { slideId: '', theme: FALLBACK_THEME };
+}
+
+/** What the board's elements need from the scene that hosts it. */
+type WhiteboardElementHost = {
+  readonly media: Readonly<Record<string, ResolvedSlideMediaEntry>>;
+  readonly sceneId: string;
+  readonly slideId: string;
+  readonly theme: WhiteboardTextTheme;
+};
 
 export type WhiteboardCanvasHandle = {
   resetView: () => void;
@@ -36,6 +82,7 @@ type InteractiveWhiteboardCanvasProps = {
   containerHeight: number;
   containerScale: number;
   elements: PPTElement[];
+  host: WhiteboardElementHost;
   isClearing: boolean;
   onViewModifiedChange?: (modified: boolean) => void;
   onZoomChange?: (zoom: number) => void;
@@ -45,15 +92,41 @@ type InteractiveWhiteboardCanvasProps = {
 
 function AnimatedElementBase({
   element,
+  host,
   index,
   isClearing,
   totalElements,
 }: {
   element: PPTElement;
+  host: WhiteboardElementHost;
   index: number;
   isClearing: boolean;
   totalElements: number;
 }) {
+  const { media, sceneId, slideId, theme } = host;
+  const renderImage = useCallback(
+    (image: PPTImageElement, _src: string, defaultContent: React.ReactNode) => (
+      <PlaybackImageContent
+        element={image}
+        defaultContent={defaultContent}
+        media={media[image.id]}
+        sceneId={sceneId}
+        slideId={slideId}
+      />
+    ),
+    [media, sceneId, slideId],
+  );
+  const renderVideo = useCallback(
+    (video: PPTVideoElement) => (
+      <PlaybackVideoContent
+        element={video}
+        media={media[video.id]}
+        sceneId={sceneId}
+        slideId={slideId}
+      />
+    ),
+    [media, sceneId, slideId],
+  );
   const clearDelay = isClearing ? (totalElements - 1 - index) * 0.055 : 0;
   const clearRotate = isClearing ? (index % 2 === 0 ? 1 : -1) * (2 + index * 0.4) : 0;
   const isSelectable = element.type === ElementTypes.TEXT || element.type === ElementTypes.CODE;
@@ -100,14 +173,20 @@ function AnimatedElementBase({
       <div
         className={isSelectable ? 'select-text cursor-text' : undefined}
         style={{ pointerEvents: isClearing ? 'none' : 'auto' }}
+        {...maicElementIdAttributes(element.id)}
         onPointerDown={isSelectable ? (e) => e.stopPropagation() : undefined}
         onDoubleClick={isSelectable ? (e) => e.stopPropagation() : undefined}
       >
-        <ScreenElement
+        <SlideElement
           elementInfo={element}
           elementIndex={index}
+          theme={theme}
           animate
-          selectable={isSelectable}
+          selectable={isSelectable && !isClearing}
+          idPrefix={SCREEN_ELEMENT_ID_PREFIX}
+          renderImage={renderImage}
+          renderVideo={renderVideo}
+          videoInteractive
         />
       </div>
     </motion.div>
@@ -115,7 +194,7 @@ function AnimatedElementBase({
 }
 
 // Memoized so whiteboard pan/zoom state changes (which rerender the parent
-// on every pointer/wheel event) do not cascade into ScreenElement rerenders.
+// on every pointer/wheel event) do not cascade into SlideElement rerenders.
 // Without this, motion's projection system inside CodeLineRow remeasures
 // against the panning parent transform and animates the diff, making code
 // content visibly lag behind the surrounding element box during a pan.
@@ -132,6 +211,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
     containerHeight,
     containerScale,
     elements,
+    host,
     isClearing,
     onViewModifiedChange,
     onZoomChange,
@@ -449,6 +529,7 @@ const InteractiveWhiteboardCanvas = forwardRef<
               <AnimatedElement
                 key={element.id}
                 element={element}
+                host={host}
                 index={index}
                 isClearing={isClearing}
                 totalElements={elements.length}
@@ -477,15 +558,41 @@ export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCan
     const containerRef = useRef<HTMLDivElement>(null);
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
+    const { sceneId } = useSceneData();
+    const { slideId, theme } = useSceneSelector<SceneContent, HostSlide>(selectHostSlide);
+
     const rawElements = whiteboard?.elements;
-    const elements = useMemo(() => rawElements ?? [], [rawElements]);
 
     const canvasWidth = whiteboard?.viewportSize ?? 1000;
     // viewportRatio is height/width; normalize into the plausible band so an
     // inverted persisted ratio (16:9 written as width/height) can never render
     // a sheet taller than it is wide, even if it bypassed the runtime repair.
-    const canvasHeight =
-      canvasWidth * normalizeWhiteboardViewportRatio(whiteboard?.viewportRatio ?? 0.5625);
+    const viewportRatio = normalizeWhiteboardViewportRatio(whiteboard?.viewportRatio ?? 0.5625);
+    const canvasHeight = canvasWidth * viewportRatio;
+
+    // The board is drawn by the slide renderer, so it is given to it as a
+    // slide: the scene's theme, and media resolved the way a slide's is.
+    const boardSlide = useMemo<Slide>(
+      () => ({
+        id: whiteboard?.id ?? 'whiteboard',
+        viewportSize: canvasWidth,
+        viewportRatio,
+        theme,
+        elements: rawElements ?? [],
+      }),
+      [whiteboard?.id, canvasWidth, viewportRatio, theme, rawElements],
+    );
+    const resolved = useResolvedSlideMedia(boardSlide);
+    const elements = resolved.slide.elements;
+    const host = useMemo<WhiteboardElementHost>(
+      () => ({
+        media: resolved.byElementId,
+        sceneId,
+        slideId,
+        theme: { fontColor: theme.fontColor, fontName: theme.fontName },
+      }),
+      [resolved.byElementId, sceneId, slideId, theme.fontColor, theme.fontName],
+    );
 
     const containerScale = useMemo(() => {
       if (containerSize.width === 0 || containerSize.height === 0) return 1;
@@ -517,21 +624,24 @@ export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCan
 
     return (
       <div ref={containerRef} className="whiteboard-screen-canvas w-full h-full overflow-hidden">
-        <style dangerouslySetInnerHTML={{ __html: WHITEBOARD_SHAPE_PROSE_STYLES }} />
-        <InteractiveWhiteboardCanvas
-          ref={ref}
-          canvasHeight={canvasHeight}
-          canvasWidth={canvasWidth}
-          containerWidth={containerSize.width}
-          containerHeight={containerSize.height}
-          containerScale={containerScale}
-          elements={elements}
-          isClearing={isClearing}
-          onViewModifiedChange={onViewModifiedChange}
-          onZoomChange={onZoomChange}
-          readyHintText={t('whiteboard.readyHint')}
-          readyText={t('whiteboard.ready')}
-        />
+        <style dangerouslySetInnerHTML={{ __html: SLIDE_RENDERER_STYLES }} />
+        <SlideRendererProvider slide={resolved.slide} classroomSizing>
+          <InteractiveWhiteboardCanvas
+            ref={ref}
+            canvasHeight={canvasHeight}
+            canvasWidth={canvasWidth}
+            containerWidth={containerSize.width}
+            containerHeight={containerSize.height}
+            containerScale={containerScale}
+            elements={elements}
+            host={host}
+            isClearing={isClearing}
+            onViewModifiedChange={onViewModifiedChange}
+            onZoomChange={onZoomChange}
+            readyHintText={t('whiteboard.readyHint')}
+            readyText={t('whiteboard.ready')}
+          />
+        </SlideRendererProvider>
       </div>
     );
   },

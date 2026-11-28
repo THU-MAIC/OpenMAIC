@@ -1,7 +1,47 @@
 import { describe, it, expect } from 'vitest';
 import type { PPTImageElement } from '@openmaic/dsl';
 import type { MediaTask } from '@/lib/store/media-generation';
-import { resolveImageSrc } from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
+import { resolveSlideMediaState } from '@/components/slide-renderer/use-resolved-slide';
+import { isGeneratedMediaPlaceholder } from '@/lib/media/media-ref';
+
+/**
+ * How a slide image element's src resolves for the renderer: the generation
+ * task, the asset pool lease and the generation switch, through the same
+ * resolver `useResolvedSlideMedia` uses for playback and the whiteboard.
+ */
+function resolveImageSrc(
+  elementInfo: PPTImageElement,
+  stageId: string | undefined,
+  mediaTask: MediaTask | undefined,
+  assetUrl?: string | null,
+  imageGenerationDisabled = false,
+) {
+  // Outside a classroom the hook reads no tasks at all.
+  const tasks = stageId && mediaTask ? { [mediaTask.elementId]: mediaTask } : {};
+  const resolved = resolveSlideMediaState(
+    {
+      id: 'slide-1',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      theme: { backgroundColor: '#fff', themeColors: [], fontColor: '#333', fontName: 'Arial' },
+      elements: [elementInfo],
+    },
+    stageId,
+    tasks,
+    {
+      assetUrls: assetUrl ? { [elementInfo.src]: assetUrl } : undefined,
+      imageGenerationDisabled,
+    },
+  );
+  const entry = resolved.byElementId[elementInfo.id]!;
+  return {
+    resolvedSrc: (resolved.slide.elements[0] as PPTImageElement).src,
+    isPlaceholder: !!stageId && isGeneratedMediaPlaceholder(elementInfo.src),
+    resolvedFromAsset: entry.resolution.kind === 'url',
+    task: entry.task,
+    resolution: entry.resolution,
+  };
+}
 
 const STAGE = 'stage-a';
 
@@ -36,7 +76,7 @@ function task(over: Partial<MediaTask>): MediaTask {
   };
 }
 
-describe('resolveImageSrc (pure)', () => {
+describe('slide image src resolution', () => {
   it('returns the objectUrl when the placeholder task is done', () => {
     const r = resolveImageSrc(
       PLACEHOLDER,

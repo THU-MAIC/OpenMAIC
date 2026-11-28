@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Provider configuration (1.6.0): migrate provider environment variables, `server-providers.yml`, `DEFAULT_MODEL`, `MODEL_FALLBACK` and `MODEL_ROUTES` to `openmaic.yml` or Model Settings. Startup logs the names of detected legacy settings at error level and continues so a workspace without a model can open first-run setup. Existing `${VAR}` references and operator force-off settings still work.
 - API clients: remove deprecated provider headers such as `x-api-key` and `x-model`. The server returns HTTP 400 with migration instructions. `/api/health` ignores deprecated provider headers. Replace `/api/server-providers` with `/api/generate-classroom/capabilities` for generation capabilities or `/api/health` for scene concurrency. [Migration guide](packages/docs/content/docs/configuration.mdx#migrating-from-the-legacy-configuration)
 
+### Behavior Changes
+
+- Slides: the old in-app slide canvas and element renderers are removed, together with the `NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED` and `NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED` build flags. Classroom playback and the slide editor always use `@openmaic/renderer` and `@openmaic/editor`; a build that set either flag to `false` now gets the package canvases. The whiteboard also renders through `@openmaic/renderer`, keeping its entrance and clear animations, code typing, selectable text and code, and generated-media states. A generated image or video now shows as soon as its completion arrives on every slide surface, instead of after the course syncs. `@openmaic/renderer` 0.2.5 adds a `selectable` option to `SlideElement` and exports `SLIDE_RENDERER_STYLES` for hosts that draw elements outside `SlideCanvas`. [#2441](https://github.com/THU-MAIC/OpenMAIC/issues/2441)
+
 ### Other Changes
 
 - Models: remove retired video models from the built-in catalogs (existing saved IDs remain user-managed): [#2424](https://github.com/THU-MAIC/OpenMAIC/pull/2424)

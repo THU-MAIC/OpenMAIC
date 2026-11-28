@@ -2,22 +2,19 @@
  * Canvas element hit-testing and measurement — the DOM half of element picking,
  * shared by the cue picker, the lasso picker and the reference pin layer.
  *
- * Two things were renderer-specific and are now not:
+ * Two things differ between hosts:
  *
- * 1. WHICH attribute names an element. Only the `@openmaic/editor` package
- *    renderer emits `data-element-id` / `data-select-element-id` /
- *    `data-context-element-id`, and it is behind a flag — so on the DEFAULT
- *    legacy canvas (and on every playback screen) the hit-test found nothing
- *    and picking looked broken. `data-maic-element-id`, stamped by both
- *    app-owned hosts, is the renderer-agnostic answer; the package attributes
- *    stay in the list so the flagged path keeps working.
+ * 1. WHICH attribute names an element. The `@openmaic/editor` package emits
+ *    `data-element-id` / `data-select-element-id` / `data-context-element-id`;
+ *    app-owned hosts such as the whiteboard stamp the renderer-agnostic
+ *    `data-maic-element-id`. The hit-test accepts all of them.
  *
  * 2. WHICH node carries the geometry. The `#editable-element-{id}` /
- *    `#screen-element-{id}` host is a zero-size absolutely-positioned wrapper
- *    (it only holds a z-index). The painted box is the renderer's
- *    `.slide-element-hit-target > .base-element-*` or, in the app renderers,
- *    `.element-content`. Measuring the wrapper collapses every outline to a
- *    0×0 rect at the canvas origin.
+ *    `#screen-element-{id}` host is a full-canvas or zero-size wrapper (it
+ *    holds a z-index). The painted box is the renderer's
+ *    `.slide-element-hit-target > .base-element-*`, or `.element-content` in a
+ *    host without that structure. Measuring the wrapper collapses every outline
+ *    to a 0×0 rect at the canvas origin.
  */
 import {
   MAIC_ELEMENT_ID_ATTRIBUTE,
@@ -27,8 +24,8 @@ import {
 
 /**
  * Element-id attributes a hit-test accepts, most specific first. The app's own
- * marker leads: when both are present (a flagged renderer inside the editor)
- * they agree, and when only one is, the walk finds it either way.
+ * marker leads: when both are present they agree, and when only one is, the
+ * walk finds it either way.
  */
 export const INTERACTION_ELEMENT_ID_ATTRIBUTES = [
   MAIC_ELEMENT_ID_ATTRIBUTE,

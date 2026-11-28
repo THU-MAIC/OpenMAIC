@@ -73,21 +73,6 @@ export function isMaicEditorEnabled(): boolean {
   return isWorkbenchEnabled() || readBoolean(process.env.NEXT_PUBLIC_MAIC_EDITOR_ENABLED);
 }
 
-// Docker builds pass an empty string for an omitted public build argument.
-function readRendererFlag(value: string | undefined): boolean {
-  return value === undefined || value === '' || readBoolean(value);
-}
-
-/** Select the package playback canvas unless the deployment opts out. */
-export function isPlaybackRendererEnabled(): boolean {
-  return readRendererFlag(process.env.NEXT_PUBLIC_MAIC_PLAYBACK_RENDERER_ENABLED);
-}
-
-/** Select the package editor canvas unless the deployment opts out. */
-export function isEditorRendererEnabled(): boolean {
-  return readRendererFlag(process.env.NEXT_PUBLIC_MAIC_EDITOR_RENDERER_ENABLED);
-}
-
 /**
  * Unified playback courseware-reference gate for PPT and Interactive scenes.
  * Default OFF and independently disableable while Pi chat remains available.
