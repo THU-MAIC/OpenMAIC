@@ -120,7 +120,7 @@ export function createModelSettingsClient(fetchImpl: Fetch) {
   function showView(next: ModelSettingsState) {
     setState(next);
     const view = next.view;
-    if (next.phase !== 'ready' || !view?.providers.some((provider) => provider.accountModelsUrl))
+    if (next.phase !== 'ready' || !view?.providers?.some((provider) => provider.accountModelsUrl))
       return;
     // A slow provider cannot hold up the settings or replace a newer workspace/view.
     const started = sequence;

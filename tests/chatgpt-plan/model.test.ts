@@ -38,6 +38,7 @@ vi.mock('@/lib/server/chatgpt-plan/session', () => ({
 
 import { NextRequest } from 'next/server';
 import { runFailureCode } from '@/lib/server/generation/run/failure-code';
+import { withRouteRetry } from '@/lib/server/generation/run/retry';
 import { runFailureText } from '@/lib/generation-run-client/failure-message';
 import { Type } from 'typebox';
 vi.mock('@/lib/server/model-config/saved-provider', async (original) => ({
@@ -490,6 +491,38 @@ describe('ChatGPT plan failures', () => {
 
 describe('ChatGPT plan models', () => {
   const modelList = (id: string) => json(200, { models: [{ slug: id, visibility: 'list' }] });
+
+  it.each(['invalid catalogue', 'missing assignment', 'temporary outage'])(
+    'uses the adapter retry policy when a generation step resolves its model (%s)',
+    async (scenario) => {
+      answer = (_, index) => {
+        if (scenario === 'invalid catalogue') return json(200, { models: [{}] });
+        if (scenario === 'missing assignment') return modelList('another-model');
+        return index === 0
+          ? json(503, { error: { code: 'subscription_sharing_usage_unavailable' } })
+          : modelList('plan-model');
+      };
+      const resolve = vi.fn(() =>
+        resolveEvalModel('EVAL_PLAN_TEST_MODEL', 'chatgpt-plan:plan-model'),
+      );
+      const sleep = vi.fn(async () => {});
+      const step = withRouteRetry(resolve, {
+        label: 'scene content',
+        maxRetries: 2,
+        refusalStatus: 500,
+        sleep,
+      });
+      if (scenario === 'temporary outage') {
+        await expect(step).resolves.toMatchObject({ modelId: 'plan-model' });
+        expect(resolve).toHaveBeenCalledTimes(2);
+        expect(sleep).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(step).rejects.toThrow();
+        expect(resolve).toHaveBeenCalledTimes(1);
+        expect(sleep).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it('offers the advertised ultra reasoning level and sends it only when selected', async () => {
     answer = ({ url }) =>

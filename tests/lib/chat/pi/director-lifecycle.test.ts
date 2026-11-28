@@ -111,11 +111,17 @@ async function run(
     },
   });
 }
-async function runRoute(events: StatelessEvent[], mode: 'native' | 'legacy' = 'legacy') {
+async function runRoute(
+  events: StatelessEvent[],
+  mode: 'native' | 'legacy' = 'legacy',
+  agents = [teacher],
+) {
   vi.stubEnv('OPENMAIC_ENABLE_PI_NATIVE_CHILD_RUNTIME', String(mode === 'native'));
   mocks.resolveModel.mockResolvedValue({ model, apiKey: 'offline', providerId: 'openai' });
   const { POST } = await import('@/app/api/chat/pi/route');
   const request = body();
+  request.config.agentIds = agents.map((agent) => agent.id);
+  request.config.agentConfigs = agents;
   request.config.piEnableWhiteboardTools = true;
   const response = await POST(
     new Request('http://localhost/api/chat/pi', {
@@ -264,6 +270,50 @@ describe('Pi Director completion and request cancellation', () => {
       });
       expect(events.some((event) => event.type === 'done')).toBe(false);
       expect(turn).toBe(1);
+    },
+  );
+  it.each(['legacy', 'native'] as const)(
+    'surfaces a %s student refusal after the teacher has spoken',
+    async (mode) => {
+      const student: AgentConfig = {
+        ...teacher,
+        role: 'student',
+        id: 'student-1',
+        name: 'Student',
+      };
+      const failure = markPublicProviderFailure(
+        new Error('Shorten the request.'),
+        413,
+        'request-too-large',
+        'settings.chatgptPlan.requestTooLarge',
+      );
+      let directors = 0;
+      let children = 0;
+      mocks.streamLLM.mockImplementation((_p, source) => {
+        if (source !== 'pi-chat-director')
+          return ++children === 1
+            ? speech('Teacher example')
+            : result([{ type: 'error', error: failure }]);
+        directors++;
+        if (directors === 1) return result([invoke('t'), finish('tool-calls')]);
+        if (directors === 2)
+          return result([
+            call('call_agent', 's', { agentId: student.id, instruction: 'Give it a try.' }),
+            finish('tool-calls'),
+          ]);
+        return speech('Done');
+      });
+      const events: StatelessEvent[] = [];
+      await runRoute(events, mode, [teacher, student]);
+      expect(
+        events.some((e) => e.type === 'text_delta' && e.data.content === 'Teacher example'),
+      ).toBe(true);
+      expect(events).toContainEqual({
+        type: 'error',
+        data: expect.objectContaining({ messageKey: 'settings.chatgptPlan.requestTooLarge' }),
+      });
+      expect(events.some((e) => e.type === 'done')).toBe(false);
+      expect(directors).toBe(2);
     },
   );
   it.each(['legacy', 'native'] as const)(

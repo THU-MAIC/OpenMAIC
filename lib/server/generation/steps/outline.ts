@@ -14,7 +14,7 @@ import { attachedModelFallback, fallbackMaxOutputTokens } from '@/lib/ai/model-f
 import { streamLLM } from '@/lib/ai/llm';
 import {
   type FallbackResolution,
-  isRetryableLlmError,
+  providerRetryOverride,
   shouldFallbackFor,
   logFallbackFired,
 } from '@/lib/server/llm-fallback';
@@ -42,7 +42,6 @@ import { resolveServerGenerationCapabilities } from '@/lib/server/generation-cap
 import {
   classifyHostFailure,
   isNonRetryableHostFailure,
-  isProviderQuotaRefusal,
 } from '@/lib/server/generation-run-hooks/runtime';
 import { publicProviderFailure } from '@/lib/server/llm-error-response';
 import { sortDocumentImagesForVision } from '@/lib/document/bundle';
@@ -791,9 +790,7 @@ async function streamOutlines(
         `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
       );
 
-      const retrySameModel =
-        host?.retryable ??
-        (!isProviderQuotaRefusal(error) && (!provider || isRetryableLlmError(error)));
+      const retrySameModel = host?.retryable ?? providerRetryOverride(error) ?? true;
       if (retrySameModel && !fellBack && attempt <= MAX_STREAM_RETRIES) {
         log.warn(`Stream error (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}), retrying...`, error);
         emit({ type: 'retry', attempt, maxAttempts: MAX_STREAM_RETRIES + 1 });

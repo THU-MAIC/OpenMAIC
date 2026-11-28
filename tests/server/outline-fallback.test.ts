@@ -16,7 +16,10 @@ const fallbackMocks = vi.hoisted(() => ({
   logFallbackFired: vi.fn(),
 }));
 
-vi.mock('@/lib/server/llm-fallback', () => fallbackMocks);
+vi.mock(import('@/lib/server/llm-fallback'), async (importOriginal) => ({
+  ...(await importOriginal()),
+  ...fallbackMocks,
+}));
 
 import { generateOutlines } from '@/lib/server/generation/steps/outline';
 
