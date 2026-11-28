@@ -120,8 +120,21 @@ function InlineQACameraLiveBody({
         // and append tutor steps cleanly below them within the renderer's max 1000px height.
         let occupiedBottom = 0;
         for (const el of preservedElements) {
-          const elHeight = 'height' in el && typeof el.height === 'number' ? el.height : 40;
-          occupiedBottom = Math.max(occupiedBottom, el.top + elHeight);
+          if (el.type === 'line') {
+            const maxRelY = Math.max(
+              el.start[1],
+              el.end[1],
+              el.broken?.[1] ?? 0,
+              el.broken2?.[1] ?? 0,
+              el.curve?.[1] ?? 0,
+              el.cubic?.[0]?.[1] ?? 0,
+              el.cubic?.[1]?.[1] ?? 0,
+            );
+            occupiedBottom = Math.max(occupiedBottom, el.top + maxRelY);
+          } else {
+            const elHeight = 'height' in el && typeof el.height === 'number' ? el.height : 40;
+            occupiedBottom = Math.max(occupiedBottom, el.top + elHeight);
+          }
         }
 
         // If preserved elements already fill past y=844, proportionally fit them into the
@@ -130,17 +143,39 @@ function InlineQACameraLiveBody({
         let effectiveOccupiedBottom = occupiedBottom;
         if (occupiedBottom > 844) {
           const scale = 460 / occupiedBottom;
-          laidOutPreserved = preservedElements.map((el) => ({
-            ...el,
-            left: Math.round(el.left * scale),
-            top: Math.round(el.top * scale),
-            ...('width' in el && typeof el.width === 'number'
-              ? { width: Math.max(20, Math.round(el.width * scale)) }
-              : {}),
-            ...('height' in el && typeof el.height === 'number'
-              ? { height: Math.max(20, Math.round(el.height * scale)) }
-              : {}),
-          }));
+          const scalePt = ([x, y]: [number, number]): [number, number] => [
+            Math.round(x * scale),
+            Math.round(y * scale),
+          ];
+          laidOutPreserved = preservedElements.map((el) => {
+            if (el.type === 'line') {
+              return {
+                ...el,
+                left: Math.round(el.left * scale),
+                top: Math.round(el.top * scale),
+                start: scalePt(el.start),
+                end: scalePt(el.end),
+                ...(el.broken ? { broken: scalePt(el.broken) } : {}),
+                ...(el.broken2 ? { broken2: scalePt(el.broken2) } : {}),
+                ...(el.curve ? { curve: scalePt(el.curve) } : {}),
+                ...(el.cubic
+                  ? {
+                      cubic: [scalePt(el.cubic[0]), scalePt(el.cubic[1])] as [
+                        [number, number],
+                        [number, number],
+                      ],
+                    }
+                  : {}),
+              };
+            }
+            return {
+              ...el,
+              left: Math.round(el.left * scale),
+              top: Math.round(el.top * scale),
+              width: Math.max(20, Math.round(el.width * scale)),
+              height: Math.max(20, Math.round(el.height * scale)),
+            };
+          });
           effectiveOccupiedBottom = 460;
         }
 
