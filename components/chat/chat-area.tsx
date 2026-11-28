@@ -17,8 +17,9 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
 import { buildLectureNotes } from '@/lib/chat/lecture-notes';
-import { PanelRightClose, BookOpen, MessageSquare } from 'lucide-react';
+import { PanelRightClose, BookOpen, Camera, MessageSquare } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { InlineQACameraPreview } from '@/components/live-tutor/inline-qa-camera-preview';
 import {
   useChatSessions,
   MANUAL_STOP_END_OPTIONS,
@@ -68,6 +69,14 @@ interface ChatAreaProps {
   currentActionIndex?: number | null;
   canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;
   onJumpToAction?: (sceneId: string, actionIndex: number) => void;
+  /** Pauses classroom playback/discussion audio when Gemini Live starts in the Camera tab. */
+  onActivateCameraLive?: () => void;
+  /** Optional portal host callback so a parent (PlaybackChromeRoot) can own one persistent tutor across desktop/mobile layouts. */
+  onCameraTabHost?: (host: HTMLDivElement | null) => void;
+  /** Notifies parent when the desktop Camera tab becomes active or inactive. */
+  onCameraTabActiveChange?: (active: boolean) => void;
+  /** Streams the latest Q&A transcript to the parent so a hoisted camera tutor stays in sync. */
+  onRecentQaTranscriptChange?: (transcript: string) => void;
 }
 
 export type SpeechSource = 'lecture' | 'reply' | 'question';
@@ -92,7 +101,10 @@ export interface ChatAreaRef {
   resumeBuffer: (sessionId: string) => void;
   pauseActiveLiveBuffer: () => boolean;
   resumeActiveLiveBuffer: () => void;
-  switchToTab: (tab: 'lecture' | 'chat', options?: { followLatest?: boolean }) => void;
+  switchToTab: (
+    tab: 'lecture' | 'chat' | 'camera',
+    options?: { followLatest?: boolean; silent?: boolean },
+  ) => void;
 }
 
 const DEFAULT_WIDTH = 340;
@@ -127,6 +139,10 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       currentActionIndex,
       canJumpToAction,
       onJumpToAction,
+      onActivateCameraLive,
+      onCameraTabHost,
+      onCameraTabActiveChange,
+      onRecentQaTranscriptChange,
     },
     ref,
   ) => {
@@ -169,7 +185,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       shouldHoldAfterReveal,
     });
 
-    const [activeTab, setActiveTab] = useState<'lecture' | 'chat'>('lecture');
+    const [activeTab, setActiveTab] = useState<'lecture' | 'chat' | 'camera'>('lecture');
+    const [cameraEverVisited, setCameraEverVisited] = useState(false);
     const [noteTarget, setNoteTarget] = useState<{ sceneId: string; actionIndex: number } | null>(
       null,
     );
@@ -211,6 +228,28 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         : currentAgentReplies?.at(-1)
       )?.id ?? null;
     const quickReplyHost = mobileQuickReply?.host;
+
+    // Extract recent Q&A messages so Gemini Live in the Camera tab shares classroom context
+    const recentQaTranscript = useMemo(() => {
+      const lines: string[] = [];
+      for (const s of chatSessions.slice(-2)) {
+        for (const m of s.messages.slice(-8)) {
+          const speaker = m.metadata?.senderName || (m.role === 'user' ? 'Student' : 'AI Teacher');
+          const text = m.parts
+            .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+            .map((p) => p.text)
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (text) lines.push(`${speaker}: ${text}`);
+        }
+      }
+      return lines.slice(-8).join('\n').slice(-1500);
+    }, [chatSessions]);
+
+    useEffect(() => {
+      onRecentQaTranscriptChange?.(recentQaTranscript);
+    }, [onRecentQaTranscriptChange, recentQaTranscript]);
 
     // On phones the panel owns scrolling across sessions. Stream updates may
     // follow its bottom, but must not move it while someone reads older replies.
@@ -274,17 +313,23 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
     }, [chatSessions, continueSoftClosingSession]);
 
     const switchToTab = useCallback(
-      (tab: 'lecture' | 'chat', { followLatest = false }: { followLatest?: boolean } = {}) => {
-        if (mobile && tab === 'chat' && followLatest) {
+      (
+        tab: 'lecture' | 'chat' | 'camera',
+        { followLatest = false, silent = false }: { followLatest?: boolean; silent?: boolean } = {},
+      ) => {
+        if (mobile && tab === 'camera') return;
+        if (mobile && tab === 'chat' && followLatest && !silent) {
           followReplies.current = true;
           scrollChatToBottom();
         }
         setNoteTarget(null);
         setMessageTarget(null);
+        if (tab === 'camera') setCameraEverVisited(true);
         setActiveTab(tab);
-        onTabChange?.(tab);
+        onCameraTabActiveChange?.(tab === 'camera');
+        if (tab !== 'camera' && !silent) onTabChange?.(tab);
       },
-      [mobile, onTabChange, scrollChatToBottom],
+      [mobile, onCameraTabActiveChange, onTabChange, scrollChatToBottom],
     );
 
     useImperativeHandle(ref, () => ({
@@ -398,7 +443,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
         <div className={cn('flex flex-col w-full h-full overflow-hidden', collapsed && 'hidden')}>
           <Tabs
             value={activeTab}
-            onValueChange={(v) => switchToTab(v as 'lecture' | 'chat')}
+            onValueChange={(v) => switchToTab(v as 'lecture' | 'chat' | 'camera')}
             className="flex flex-col h-full gap-0"
           >
             {/* Tab header row */}
@@ -419,6 +464,16 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                     </span>
                   )}
                 </TabsTrigger>
+                {!mobile && (
+                  <TabsTrigger
+                    value="camera"
+                    data-testid="sidebar-camera-tab"
+                    className="text-xs gap-1 flex-1"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    {t('liveTutor.classroomButton')}
+                  </TabsTrigger>
+                )}
               </TabsList>
 
               {onCollapseChange && (
@@ -505,6 +560,33 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                 )}
               </div>
             </TabsContent>
+
+            {/* Persistent Camera Tutor Tab (desktop slot; when onCameraTabHost is supplied, PlaybackChromeRoot portals one persistent tutor here so layout switches never drop an active session) */}
+            {!mobile && onCameraTabHost && (
+              <div
+                ref={onCameraTabHost}
+                className={cn(
+                  'flex-1 min-h-0 flex flex-col p-3 overflow-hidden',
+                  activeTab !== 'camera' && 'hidden',
+                )}
+              />
+            )}
+            {!mobile && !onCameraTabHost && (cameraEverVisited || activeTab === 'camera') && (
+              <div
+                className={cn(
+                  'flex-1 min-h-0 flex flex-col p-3 overflow-hidden',
+                  activeTab !== 'camera' && 'hidden',
+                )}
+              >
+                <InlineQACameraPreview
+                  embedded
+                  open
+                  onClose={() => switchToTab('chat')}
+                  onActivateLive={onActivateCameraLive}
+                  recentClassroomSpeech={recentQaTranscript}
+                />
+              </div>
+            )}
           </Tabs>
         </div>
       </div>

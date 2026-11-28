@@ -94,7 +94,8 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, Camera, X } from 'lucide-react';
+import { InlineQACameraPreview } from '@/components/live-tutor/inline-qa-camera-preview';
 import { VisuallyHidden } from 'radix-ui';
 import type { PPTElement } from '@openmaic/dsl';
 import {
@@ -1918,6 +1919,59 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // `null` is the classroom (roundtable) tab. The choice persists across scenes,
     // so notes and chat keep following playback.
     const [mobilePanel, setMobilePanel] = useState<ClassroomPanel | null>(null);
+    const [mobileCameraTutorOpen, setMobileCameraTutorOpen] = useState(false);
+    const [desktopCameraTabActive, setDesktopCameraTabActive] = useState(false);
+    const [cameraTutorMounted, setCameraTutorMounted] = useState(false);
+    const [cameraTabHost, setCameraTabHost] = useState<HTMLDivElement | null>(null);
+    const [recentQaTranscript, setRecentQaTranscript] = useState('');
+
+    const prevMobileRef = useRef(mobile);
+
+    // Keep an active camera tutor visible across actual desktop <-> mobile breakpoint transitions
+    useEffect(() => {
+      const wasMobile = prevMobileRef.current;
+      prevMobileRef.current = mobile;
+      if (wasMobile === mobile || !cameraTutorMounted) return;
+      if (mobile && desktopCameraTabActive) {
+        setMobileCameraTutorOpen(true);
+      } else if (!mobile && mobileCameraTutorOpen) {
+        setMobileCameraTutorOpen(false);
+        setChatAreaCollapsed(false);
+        chatAreaRef.current?.switchToTab('camera');
+      }
+    }, [cameraTutorMounted, desktopCameraTabActive, mobile, mobileCameraTutorOpen]);
+
+    const closeMobileCameraTutor = useCallback(() => {
+      setMobileCameraTutorOpen(false);
+      setCameraTutorMounted(false);
+      if (desktopCameraTabActive) {
+        setDesktopCameraTabActive(false);
+        // Reset only when Camera was the latent desktop tab, preserving Lecture/Chat otherwise
+        chatAreaRef.current?.switchToTab('chat', { silent: true });
+      }
+    }, [desktopCameraTabActive]);
+
+    const toggleMobileCameraTutor = useCallback(() => {
+      if (mobileCameraTutorOpen) {
+        closeMobileCameraTutor();
+      } else {
+        setCameraTutorMounted(true);
+        setMobileCameraTutorOpen(true);
+      }
+    }, [closeMobileCameraTutor, mobileCameraTutorOpen]);
+    const handleActivateCameraLive = useCallback(() => {
+      if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
+        const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
+        if (paused) {
+          discussionTTS.pause();
+          setIsDiscussionPaused(true);
+        }
+      }
+      if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
+        engineRef.current.pause();
+      }
+    }, [chatSessionType, discussionTTS, engineMode]);
+
     // Entering a quiz returns to the classroom tab, so the quiz has the room it needs.
     const [mobilePanelSceneId, setMobilePanelSceneId] = useState(currentSceneId);
     if (mobilePanelSceneId !== currentSceneId) {
@@ -2339,6 +2393,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 onToggleChat={
                   mobile ? mobileToggleChat : () => setChatAreaCollapsed(!chatAreaCollapsed)
                 }
+                onOpenCameraTab={() => {
+                  if (mobile) {
+                    toggleMobileCameraTutor();
+                  } else {
+                    setCameraTutorMounted(true);
+                    setChatAreaCollapsed(false);
+                    chatAreaRef.current?.switchToTab('camera');
+                  }
+                }}
                 onPrevSlide={handlePreviousScene}
                 onNextSlide={handleNextScene}
                 onWhiteboardClose={handleWhiteboardToggle}
@@ -2476,13 +2539,46 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             onStopSession={handleSessionStop}
             onSegmentSealed={discussionTTS.handleSegmentSealed}
             shouldHoldAfterReveal={discussionTTS.shouldHold}
+            onActivateCameraLive={handleActivateCameraLive}
+            onCameraTabHost={setCameraTabHost}
+            onCameraTabActiveChange={(active) => {
+              setDesktopCameraTabActive(active);
+              if (active) setCameraTutorMounted(true);
+            }}
+            onRecentQaTranscriptChange={setRecentQaTranscript}
           />
         </div>
         {mobile && (
           <>
             <div className="mobile-classroom-composer" ref={setMobileComposerHost} />
+            <button
+              type="button"
+              data-testid="mobile-classroom-camera-tutor-button"
+              onClick={toggleMobileCameraTutor}
+              title={t('liveTutor.classroomButtonHint')}
+              className="fixed right-3 bottom-20 z-40 inline-flex items-center gap-1.5 rounded-full bg-violet-600 text-white px-3.5 py-2 text-xs font-semibold shadow-lg"
+            >
+              <Camera className="size-4" />
+              <span>{t('liveTutor.classroomButton')}</span>
+            </button>
           </>
         )}
+        {/* Single persistent classroom camera tutor instance owned across desktop/mobile layout switches */}
+        <InlineQACameraPreview
+          open={cameraTutorMounted}
+          visible={mobile ? mobileCameraTutorOpen : desktopCameraTabActive}
+          embedded={!mobile && Boolean(cameraTabHost)}
+          portalTarget={!mobile ? cameraTabHost : isPresenting ? stageRef.current : null}
+          onClose={() => {
+            if (mobile) {
+              closeMobileCameraTutor();
+            } else {
+              chatAreaRef.current?.switchToTab('chat');
+            }
+          }}
+          onActivateLive={handleActivateCameraLive}
+          recentClassroomSpeech={recentQaTranscript}
+        />
 
         {/* Scene switch confirmation dialog */}
         <AlertDialog

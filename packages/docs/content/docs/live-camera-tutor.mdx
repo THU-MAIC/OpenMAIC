@@ -1,0 +1,169 @@
+---
+title: Live Camera Tutor & Help Me Learn
+description: Real-time multimodal notebook tutoring over Gemini Live with synchronized whiteboard drawing, classroom sidebar integration, and the Help Me Learn studio.
+---
+
+The **Live Camera Tutor** lets students point their camera at a physical notebook (or share their screen) and talk through problems step by step with an AI Socratic teacher who writes steps, LaTeX formulas, and labeled vector diagrams directly onto OpenMAIC's native whiteboard.
+
+> **Current Provider Support — Gemini Live Only for Real-Time Streaming:**
+> Full real-time bidirectional voice + live video streaming (`gemini-live` transport) **currently works only with Google Gemini Live** when the `classroom` (or fallback `llm`) model slot resolves to the `google` provider on the official `generativelanguage.googleapis.com` endpoint.
+>
+> - **Other vision-capable providers** (OpenAI, Anthropic, Qwen-VL, etc.) automatically fall back to **turn-based snapshot mode** (`/api/live-tutor/turn`): single JPEG snapshots on demand with text responses and browser speech synthesis — not continuous live audio/video streaming.
+> - **Text-only models** (e.g., `deepseek-chat`, `o1-mini`, `o3-mini`, non-VL Qwen/Llama/Mistral/GLM models) cannot inspect camera frames; OpenMAIC detects this and surfaces a warning in the camera panel and in **Settings → Model Services**.
+
+---
+
+## Why It Is Required
+
+Text-only AI tutoring breaks down whenever learning happens on paper or visually:
+
+1. **Transcription friction:** Students solving algebra, calculus, geometry, physics, or chemistry problems should not have to type multi-line equations or describe hand-drawn diagrams in a chat box just to ask *"Where did I go wrong?"*
+2. **Pinpointing the exact step:** Seeing the student's notebook in real time lets the tutor praise what is already correct, spot the exact line with a sign or reasoning mistake, and ask one guiding question instead of dumping a full solution.
+3. **Synchronized visual teaching:** Spoken explanations alone are hard to follow for spatial or symbolic subjects. Giving the live tutor direct whiteboard tools (`write_whiteboard_step`, `write_whiteboard_formula`, `draw_whiteboard_diagram`) lets it sketch triangles, ray diagrams, force arrows, and KaTeX equations in lockstep with its voice.
+4. **Seamless classroom continuity:** Students can switch from watching a generated OpenMAIC lesson to showing their notebook in the same classroom without losing slide, quiz, or Q&A context.
+
+---
+
+## Scenarios It Helps In
+
+- **Handwritten STEM problem solving:** Point a phone, tablet, or webcam at a notebook while working through equations, derivations, geometry proofs, free-body diagrams, or circuit sketches.
+- **Homework & textbook questions:** Snap or upload a photo of a printed problem in **Help Me Learn**, choose whether to review the underlying theory first or jump straight into solving, and get Socratic coaching on paper.
+- **In-lesson practice & Q&A:** Pause a generated OpenMAIC classroom at any slide or quiz question, open the **Camera** tab, and work through the concept on paper with the tutor aware of the current slide and recent chat transcript.
+- **Guided exam prep:** Click **New Problem** in the studio to generate fresh practice problems with optional collapsible hints and live whiteboard scaffolding.
+- **Screen-share walkthroughs:** Switch from camera to screen share (`getDisplayMedia`) to walk through a PDF, slide deck, or interactive diagram on screen.
+
+---
+
+## Feature Surfaces
+
+The Live Camera Tutor is integrated into four places across OpenMAIC:
+
+### 1. Original Classroom View — Camera Button beside Chat
+In the classroom roundtable bar (`components/roundtable/index.tsx`), a **Camera** button sits directly next to the **Chat** toggle (in both the main roundtable toolbar and the over-stage controls):
+- On **desktop**, clicking it expands the right sidebar and switches directly to the **Camera** tab.
+- On **mobile** (or standalone roundtable views without a sidebar handler), clicking it opens a floating camera preview overlay (`InlineQACameraPreview`), alongside a dedicated mobile floating camera button in `PlaybackChromeRoot`.
+
+### 2. Right Sidebar — Dedicated `Camera` Tab
+In `components/chat/chat-area.tsx`, the right classroom sidebar now has three tabs: **Lecture**, **Chat**, and **Camera**:
+- Renders `InlineQACameraPreview` in embedded mode so the camera feed stays docked beside the lesson stage and whiteboard.
+- **Automatic audio handoff:** Starting a live camera session pauses active classroom lecture playback and discussion TTS (`onActivateCameraLive`) so voices never overlap.
+- **Shared classroom context:** Automatically passes the active course name, current slide title, current quiz question (if on a quiz scene), and recent Q&A messages into the Gemini Live system instruction.
+- **Native classroom whiteboard sync:** Any `write_whiteboard_step`, `write_whiteboard_formula`, `draw_whiteboard_diagram`, or `clear_whiteboard` tool call opens and updates OpenMAIC's native classroom whiteboard (`useCanvasStore.runtimeWhiteboardProjection`).
+- Includes live Talk/Mic mute, Camera pause, Front/Rear camera flip, Whiteboard toggle, Check Notebook button, and a text follow-up input.
+
+### 3. Learn & Practice Video Studio (`/help-me-learn`)
+Accessible from the **Help Me Learn** card on the classic home page (`app/classic-home.tsx`) or directly at `/help-me-learn` (`app/help-me-learn/page.tsx`, `components/live-tutor/help-me-learn-view.tsx`):
+- **Topic & photo intake:** Enter any topic/question and optionally attach a photo of a textbook or handwritten problem (automatically downscaled client-side to ≤1280 px JPEG).
+- **Two learning modes:**
+  - **Theory → Solve (`theory-then-solve`):** Generates 3–4 concise theory slides (summary, key points, KaTeX formula, worked example, and browser read-aloud) followed by a guided practice problem.
+  - **Solve Directly (`solve-only`):** Extracts or creates the target problem immediately and jumps straight into the whiteboard + camera studio.
+- **Split Learn & Practice workspace:**
+  - **Left pane:** OpenMAIC's native `WhiteboardFrame` (wrapped in a standalone `SceneProvider` + `SceneDataController`) showing the problem, steps, KaTeX formulas, and sanitized SVG diagrams, with a quick Clear button.
+  - **Right pane (`LiveCameraPanel`):** Assigned practice problem card with collapsible hint and **New Problem** generator, live camera/screen-share viewport with mic level meter and sanitized live captions, model capability notices, and Talk/Check/text controls.
+
+### 4. Model Settings Capability Indicator
+In **Settings → Model Services** (`components/settings/models/index.tsx`), a **Camera & Live Tutor** status card inspects the active `classroom` (or `llm`) slot via `getCameraTutorCapabilities()` and shows whether the deployment is:
+- **Gemini Live** (real-time bidirectional audio + video streaming)
+- **Snapshot Mode** (provider-neutral vision fallback)
+- **No Vision** (warning banner when a text-only model is assigned)
+
+---
+
+## Configuration & How to Use
+
+### 1. Configure Google Gemini for Real-Time Live Streaming
+
+Add your Google Gemini API key to `.env.local` (and optionally override the Live model ID):
+
+```env title=".env.local"
+GOOGLE_API_KEY=your-google-api-key
+# Optional: defaults to models/gemini-3.8-live
+# GEMINI_LIVE_MODEL=models/gemini-3.8-live
+```
+
+Assign Google Gemini to your `llm` or `classroom` slot in `openmaic.yml` (or via **Settings → Model Services**) using the official `generativelanguage.googleapis.com` endpoint, and include the Live model ID in `providers.google.models` so server-managed deployments authorize it:
+
+```yaml title="openmaic.yml"
+providers:
+  google:
+    preset: google
+    apiKey: ${GOOGLE_API_KEY}
+    models: [gemini-2.5-flash, gemini-3.8-live]
+
+slots:
+  llm: google:gemini-2.5-flash
+```
+
+> **Notes:**
+> - For server-managed (`openmaic.yml`) Google providers, `/api/live-tutor/session` enforces OpenMAIC's deployment model allowlist before minting an ephemeral token. If you override `GEMINI_LIVE_MODEL` in `.env.local`, include that exact model ID (without the `models/` prefix) in `providers.google.models`, otherwise sessions fall back to turn-based snapshot mode.
+> - Custom third-party Google proxy URLs cannot mint official `v1alpha/auth_tokens` ephemeral tokens and will automatically fall back to turn-based snapshot mode.
+
+### 2. Using It Inside a Classroom
+
+1. Open any OpenMAIC classroom lesson.
+2. Click the **Camera** icon next to the **Chat** button in the roundtable bar, or click the **Camera** tab in the right sidebar.
+3. Click **Start Live Tutor** and grant camera + microphone permissions.
+4. Point your camera at your notebook and speak naturally (or click **Check Notebook** / type a question).
+5. Watch the AI teacher respond in real time and draw guiding steps, formulas, and diagrams on the classroom whiteboard.
+
+### 3. Using the Learn & Practice Studio (`/help-me-learn`)
+
+1. Click the **Help Me Learn** card on the home page (or navigate to `/help-me-learn`).
+2. Type a topic/problem and/or attach a photo of a question.
+3. Choose **Theory → Solve** or **Solve Directly**, then start the session.
+4. If reviewing theory slides, step through them (optionally using Read Aloud) and click **Start Solving**.
+5. Start the camera tutor in the right panel, show your notebook, and work through the problem step by step alongside the live whiteboard.
+
+---
+
+## Technical Architecture
+
+```
+Browser (useLiveCameraTutor)
+  │
+  ├─ 1. POST /api/live-tutor/session
+  │       └─ Resolves `classroom` / `chat-adapter` slot
+  │          ├─ Google official endpoint → POST generativelanguage.googleapis.com/v1alpha/auth_tokens
+  │          │    (uses: 1, expireTime: +30m, newSessionExpireTime: +2m)
+  │          │    returns { mode: "gemini-live", wsUrl, model, expiresAt }
+  │          └─ Any other provider / relay / token failure →
+  │               returns { mode: "turn-based", providerId, modelId }
+  │
+  ├─ 2a. Gemini Live Path (Direct Browser ↔ Google WebSocket)
+  │       ├─ Endpoint: wss://generativelanguage.googleapis.com/.../BidiGenerateContentConstrained?access_token=<ephemeral>
+  │       ├─ Uplink: 16 kHz PCM16 mic audio + 1 fps JPEG frames (≤768 px, quality 0.72)
+  │       ├─ Downlink: 24 kHz PCM audio playback (with barge-in interruption) + input/output transcriptions
+  │       ├─ Context compression: triggerTokens=16000, slidingWindow targetTokens=8000
+  │       └─ Tool calls: write_whiteboard_step | write_whiteboard_formula | draw_whiteboard_diagram | clear_whiteboard
+  │
+  ├─ 2b. Turn-Based Fallback Path (Provider-Neutral)
+  │       └─ POST /api/live-tutor/turn (action: "tutor-turn" | "generate-problem")
+  │            └─ Sends JPEG snapshot + conversation history through `callLLM` (`chat-adapter`)
+  │               returns { reply, whiteboardOps } → spoken via Web Speech API
+  │
+  └─ 3. Whiteboard Projection Pipeline (lib/live-tutor/whiteboard-elements.ts)
+          └─ applyWhiteboardOps()
+               ├─ sanitizeSvgDiagram() strips scripts, foreignObject, iframes, event handlers, external URLs
+               ├─ renderSafeLatexHtml() renders KaTeX with OpenMAIC's `safeKatexOptions`
+               └─ buildWhiteboardFromSteps() emits `@openmaic/dsl` Whiteboard
+                    ├─ Classroom: updates `useCanvasStore.runtimeWhiteboardProjection`
+                    └─ Studio (/help-me-learn): renders inside standalone `WhiteboardFrame`
+```
+
+### Security & Reliability Details
+
+- **No API key exposure:** The server's `GOOGLE_API_KEY` never reaches the browser. `/api/live-tutor/session` mints a single-use short-lived ephemeral token (`v1alpha/auth_tokens`) scoped to one constrained WebSocket session.
+- **Strict SVG sanitization:** `sanitizeSvgDiagram()` extracts only `<svg>...</svg>`, strips `<script>`, `<foreignObject>`, `<iframe>`, `<object>`, `<embed>`, `<use>`, `<image>`, `<link>`, inline `on*` handlers, `href`/`xlink:href`, and external `url(http...)` references, and encodes the result as a self-contained `data:image/svg+xml` image element on the whiteboard.
+- **Caption sanitization:** `sanitizeLiveCaption()` strips any accidental fenced code blocks or raw SVG/XML tags echoed alongside tool calls so student-facing captions stay clean.
+- **Payload limits:** Snapshot uploads to `/api/live-tutor/turn` and `/api/help-me-learn/plan` enforce an 8 MB payload cap, and client-side image capture downscales frames before sending.
+- **Model authorization:** All API routes (`session`, `turn`, `plan`) resolve models through `resolveModelFromRequest` and respect OpenMAIC's server-managed provider authorization (`modelAuthorizationResponse`).
+
+### Key Files
+
+| Area | Files |
+| --- | --- |
+| **API Routes** | `app/api/live-tutor/session/route.ts`, `app/api/live-tutor/turn/route.ts`, `app/api/help-me-learn/plan/route.ts` |
+| **Core Library** | `lib/live-tutor/types.ts`, `lib/live-tutor/model-capabilities.ts`, `lib/live-tutor/whiteboard-elements.ts` |
+| **Client Hook & UI** | `components/live-tutor/use-live-camera-tutor.ts`, `components/live-tutor/inline-qa-camera-preview.tsx`, `components/live-tutor/live-camera-panel.tsx`, `components/live-tutor/help-me-learn-view.tsx`, `app/help-me-learn/page.tsx` |
+| **Classroom & Home Integration** | `components/roundtable/index.tsx`, `components/chat/chat-area.tsx`, `components/edit/PlaybackChromeRoot.tsx`, `app/classic-home.tsx`, `components/settings/models/index.tsx` |
+| **Localization & Tests** | `lib/i18n/locales/*.json` (12 locales), `tests/live-tutor-whiteboard.test.ts` |

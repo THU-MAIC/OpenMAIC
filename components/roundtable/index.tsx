@@ -13,6 +13,7 @@ import {
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  Camera,
   Mic,
   MicOff,
   Send,
@@ -49,6 +50,7 @@ import {
   VoiceWaveformBars,
 } from '@/components/roundtable/speech-input';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
+import { InlineQACameraPreview } from '@/components/live-tutor/inline-qa-camera-preview';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { DEFAULT_TEACHER_AVATAR, DEFAULT_USER_AVATAR } from '@/components/roundtable/constants';
@@ -123,6 +125,7 @@ interface RoundtableProps {
   readonly chatCollapsed?: boolean;
   readonly onToggleSidebar?: () => void;
   readonly onToggleChat?: () => void;
+  readonly onOpenCameraTab?: () => void;
   readonly onPrevSlide?: () => void;
   readonly onNextSlide?: () => void;
   readonly onWhiteboardClose?: () => void;
@@ -207,6 +210,7 @@ export function Roundtable({
   chatCollapsed,
   onToggleSidebar,
   onToggleChat,
+  onOpenCameraTab,
   onPrevSlide,
   onNextSlide,
   onWhiteboardClose,
@@ -240,6 +244,7 @@ export function Roundtable({
   // Phone sound settings also control recorded course audio without a TTS provider.
   const soundControlsEnabled = mobile || ttsEnabled;
   const asrEnabled = useASRAvailable();
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
   const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
   const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
@@ -1154,6 +1159,28 @@ export function Roundtable({
                         )}
                       >
                         <MessageSquare className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="roundtable-camera-button-overstage"
+                        aria-label={t('liveTutor.classroomButton')}
+                        title={t('liveTutor.classroomButtonHint')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onOpenCameraTab) {
+                            onOpenCameraTab();
+                          } else {
+                            setIsCameraOpen((v) => !v);
+                          }
+                        }}
+                        className={cn(
+                          'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
+                          isCameraOpen
+                            ? 'bg-emerald-600 text-white'
+                            : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/10',
+                        )}
+                      >
+                        <Camera className="w-4 h-4" />
                       </button>
                     </>
                   )}
@@ -2342,6 +2369,28 @@ export function Roundtable({
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
                     </button>
+                    <button
+                      type="button"
+                      data-testid="roundtable-camera-button"
+                      aria-label={t('liveTutor.classroomButton')}
+                      title={t('liveTutor.classroomButtonHint')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onOpenCameraTab) {
+                          onOpenCameraTab();
+                        } else {
+                          setIsCameraOpen((v) => !v);
+                        }
+                      }}
+                      className={cn(
+                        'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
+                        isCameraOpen
+                          ? 'bg-emerald-600 dark:bg-emerald-500 border-emerald-600 dark:border-emerald-500 text-white shadow-emerald-200 dark:shadow-emerald-800'
+                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 hover:border-emerald-200 dark:hover:border-emerald-700',
+                      )}
+                    >
+                      <Camera className="w-3.5 h-3.5" />
+                    </button>
                   </>
                 )}
               </div>
@@ -2405,6 +2454,18 @@ export function Roundtable({
         </div>
         {/* close interaction row */}
       </div>
+      <InlineQACameraPreview
+        open={isCameraOpen}
+        onClose={() => setIsCameraOpen(false)}
+        onActivateLive={onInputActivate}
+        recentClassroomSpeech={[
+          userMessage ? `Student: ${userMessage}` : '',
+          currentSpeech ? `AI Teacher: ${currentSpeech}` : '',
+          !currentSpeech && lectureSpeech ? `Lesson narration: ${lectureSpeech}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n')}
+      />
     </>
   );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useRef, useDeferredValue, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -30,6 +31,8 @@ import {
   Upload,
   Sparkles,
   Atom,
+  Compass,
+  Camera,
   X,
   Presentation,
   Loader2,
@@ -1006,6 +1009,36 @@ function HomePage() {
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Help Me Learn guided study & camera tutor card */}
+        <div className="mt-3 w-full flex justify-center">
+          <Link
+            href="/help-me-learn"
+            data-testid="home-help-me-learn"
+            className="w-full flex items-center justify-between gap-3 rounded-2xl border border-violet-200/70 dark:border-violet-800/50 bg-white/75 dark:bg-slate-900/70 hover:bg-violet-50/70 dark:hover:bg-violet-950/30 backdrop-blur-md px-4 py-3 shadow-xs transition-all group"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="size-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <Compass className="size-4" />
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs sm:text-sm font-semibold text-foreground">
+                    {t('helpMeLearn.homeCardTitle')}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 dark:bg-violet-900/50 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300">
+                    <Camera className="size-2.5" />
+                    {t('helpMeLearn.homeCardBadge')}
+                  </span>
+                </div>
+                <p className="text-[11px] sm:text-xs text-muted-foreground truncate">
+                  {t('helpMeLearn.homeCardDesc')}
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="size-4 text-muted-foreground group-hover:text-violet-600 dark:group-hover:text-violet-400 group-hover:translate-x-0.5 transition-all shrink-0" />
+          </Link>
         </div>
 
         {showVocationalTestUi && (
