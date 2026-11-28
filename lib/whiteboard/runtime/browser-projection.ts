@@ -33,7 +33,11 @@ export async function refreshWhiteboardRuntimeProjection(
     if (
       current?.stageId === stageId &&
       current.lastSeq !== null &&
-      (state.lastSeq === null || current.lastSeq > state.lastSeq)
+      (state.lastSeq === null ||
+        current.lastSeq > state.lastSeq ||
+        (current.lastSeq === state.lastSeq &&
+          minimumLastSeq === undefined &&
+          current.whiteboard?.id === `classroom-live-wb-${stageId}`))
     ) {
       return false;
     }

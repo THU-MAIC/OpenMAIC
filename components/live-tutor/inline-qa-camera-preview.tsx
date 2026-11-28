@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react';
 import { getElementRange } from '@openmaic/renderer';
+import type { Whiteboard } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCanvasStore, useStageStore } from '@/lib/store';
 import { useModelSettingsView } from '@/lib/model-settings/use-model-settings';
@@ -82,6 +83,9 @@ function InlineQACameraLiveBody({
 
   const [wbSteps, setWbSteps] = useState<WhiteboardStepItem[]>([]);
   const [textQuestion, setTextQuestion] = useState('');
+  const [boardPage, setBoardPage] = useState<'tutor' | 'classroom'>('tutor');
+  const [hasPaginatedClassroomBoard, setHasPaginatedClassroomBoard] = useState(false);
+  const savedClassroomBoardRef = useRef<Whiteboard | null>(null);
 
   const sceneContext = useMemo(() => {
     const parts: string[] = [];
@@ -117,55 +121,31 @@ function InlineQACameraLiveBody({
           ? []
           : (currentProjected?.elements ?? []).filter((el) => !el.id.startsWith('lt-wb-'));
 
-        // Always retain existing classroom elements (unless clear_whiteboard was called)
-        // and append tutor steps cleanly below them within the renderer's max 1000px height.
+        // Always retain existing classroom elements (unless clear_whiteboard was called).
+        // When space remains below existing content (<= 844px), append directly underneath;
+        // when the classroom board is already full, paginate onto a dedicated tutor page
+        // while keeping the untouched classroom board accessible via the page toggle.
         let occupiedBottom = 0;
         for (const el of preservedElements) {
           occupiedBottom = Math.max(occupiedBottom, getElementRange(el).maxY);
         }
 
-        // If preserved elements already fill past y=844, proportionally fit them into the
-        // upper half (0..460px) so tutor output sits cleanly below with zero overlap or clipping.
-        let laidOutPreserved = preservedElements;
-        let effectiveOccupiedBottom = occupiedBottom;
-        if (occupiedBottom > 844) {
-          const scale = 460 / occupiedBottom;
-          const scalePt = ([x, y]: [number, number]): [number, number] => [
-            Math.round(x * scale),
-            Math.round(y * scale),
-          ];
-          laidOutPreserved = preservedElements.map((el) => {
-            if (el.type === 'line') {
-              return {
-                ...el,
-                left: Math.round(el.left * scale),
-                top: Math.round(el.top * scale),
-                start: scalePt(el.start),
-                end: scalePt(el.end),
-                ...(el.broken ? { broken: scalePt(el.broken) } : {}),
-                ...(el.broken2 ? { broken2: scalePt(el.broken2) } : {}),
-                ...(el.curve ? { curve: scalePt(el.curve) } : {}),
-                ...(el.cubic
-                  ? {
-                      cubic: [scalePt(el.cubic[0]), scalePt(el.cubic[1])] as [
-                        [number, number],
-                        [number, number],
-                      ],
-                    }
-                  : {}),
-              };
-            }
-            return {
-              ...el,
-              left: Math.round(el.left * scale),
-              top: Math.round(el.top * scale),
-              width: Math.max(20, Math.round(el.width * scale)),
-              height: Math.max(20, Math.round(el.height * scale)),
-            };
-          });
-          effectiveOccupiedBottom = 460;
+        const shouldPaginate = !clearedByTutor && occupiedBottom > 844;
+        if (shouldPaginate && currentProjected && preservedElements.length > 0) {
+          savedClassroomBoardRef.current = {
+            ...currentProjected,
+            elements: preservedElements,
+          };
+          setHasPaginatedClassroomBoard(true);
+          setBoardPage('tutor');
+        } else if (clearedByTutor) {
+          savedClassroomBoardRef.current = null;
+          setHasPaginatedClassroomBoard(false);
+          setBoardPage('tutor');
         }
 
+        const effectiveOccupiedBottom = shouldPaginate ? 0 : occupiedBottom;
+        const laidOutPreserved = shouldPaginate ? [] : preservedElements;
         const startY = effectiveOccupiedBottom > 0 ? effectiveOccupiedBottom + 16 : undefined;
         const tutorWb = buildWhiteboardFromSteps(
           nextSteps,
@@ -195,6 +175,34 @@ function InlineQACameraLiveBody({
     },
     [stageId],
   );
+
+  const toggleBoardPage = useCallback(() => {
+    if (!stageId || !savedClassroomBoardRef.current) return;
+    const nextPage = boardPage === 'tutor' ? 'classroom' : 'tutor';
+    setBoardPage(nextPage);
+    useCanvasStore.setState((prev) => {
+      const sameStageProjection =
+        prev.runtimeWhiteboardProjection?.stageId === stageId
+          ? prev.runtimeWhiteboardProjection
+          : null;
+      const targetBoard =
+        nextPage === 'classroom'
+          ? {
+              ...savedClassroomBoardRef.current!,
+              id: `classroom-live-wb-${stageId}`,
+            }
+          : buildWhiteboardFromSteps(wbSteps, `classroom-live-wb-${stageId}`);
+      return {
+        whiteboardOpen: true,
+        runtimeWhiteboardProjection: {
+          stageId,
+          lastSeq: sameStageProjection?.lastSeq ?? -1,
+          whiteboard: targetBoard,
+        },
+        runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
+      };
+    });
+  }, [boardPage, stageId, wbSteps]);
 
   const handleWhiteboardOps = useCallback(
     (ops: WhiteboardOp[]) => {
@@ -290,6 +298,15 @@ function InlineQACameraLiveBody({
         </span>
 
         <div className="flex items-center gap-1 shrink-0">
+          {hasPaginatedClassroomBoard && (
+            <button
+              type="button"
+              onClick={toggleBoardPage}
+              className="px-2 py-1 rounded-lg text-[10px] font-medium text-violet-200 bg-violet-500/20 hover:bg-violet-500/30 border border-violet-400/30 transition-colors"
+            >
+              {boardPage === 'tutor' ? '2/2' : '1/2'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
