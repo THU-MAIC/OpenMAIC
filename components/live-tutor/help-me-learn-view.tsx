@@ -183,6 +183,13 @@ export function HelpMeLearnView() {
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
   };
 
+  const enterSolveStage = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setActiveStage('solve');
+  }, []);
+
   const resetToTopicPicker = () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -246,12 +253,7 @@ export function HelpMeLearnView() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                    window.speechSynthesis.cancel();
-                  }
-                  setActiveStage('solve');
-                }}
+                onClick={enterSolveStage}
                 className={cn(
                   'px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors inline-flex items-center gap-1.5',
                   activeStage === 'solve'
@@ -529,7 +531,7 @@ export function HelpMeLearnView() {
                 ) : (
                   <Button
                     type="button"
-                    onClick={() => setActiveStage('solve')}
+                    onClick={enterSolveStage}
                     className="rounded-xl h-11 px-6 bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-semibold"
                   >
                     <PencilLine className="size-4" />

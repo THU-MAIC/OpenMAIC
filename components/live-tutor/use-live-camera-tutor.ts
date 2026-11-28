@@ -1062,8 +1062,18 @@ export function useLiveCameraTutor({
     }
   }, [canShareScreen, videoSource]);
 
+  const bindVideoElement = useCallback((el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    if (!el) return;
+    const activeStream = screenStreamRef.current ?? mediaStreamRef.current;
+    if (activeStream && el.srcObject !== activeStream) {
+      el.srcObject = activeStream;
+      void el.play().catch(() => {});
+    }
+  }, []);
+
   return {
-    videoRef,
+    videoRef: bindVideoElement,
     canvasRef,
     status,
     transportMode,

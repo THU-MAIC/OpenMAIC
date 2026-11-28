@@ -1923,6 +1923,28 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const [desktopCameraTabActive, setDesktopCameraTabActive] = useState(false);
     const [cameraTutorMounted, setCameraTutorMounted] = useState(false);
     const [cameraTabHost, setCameraTabHost] = useState<HTMLDivElement | null>(null);
+    const [recentQaTranscript, setRecentQaTranscript] = useState('');
+
+    // Keep an active desktop Camera tab visible if the viewport crosses into mobile layout
+    useEffect(() => {
+      if (mobile && desktopCameraTabActive && cameraTutorMounted) {
+        setMobileCameraTutorOpen(true);
+      }
+    }, [cameraTutorMounted, desktopCameraTabActive, mobile]);
+
+    const toggleMobileCameraTutor = useCallback(() => {
+      setMobileCameraTutorOpen((prev) => {
+        const next = !prev;
+        if (next) {
+          setCameraTutorMounted(true);
+        } else {
+          // Manual close on mobile unmounts the tutor so active streams/WebSocket stop immediately
+          setCameraTutorMounted(false);
+          setDesktopCameraTabActive(false);
+        }
+        return next;
+      });
+    }, []);
     const handleActivateCameraLive = useCallback(() => {
       if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
         const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
@@ -2358,10 +2380,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   mobile ? mobileToggleChat : () => setChatAreaCollapsed(!chatAreaCollapsed)
                 }
                 onOpenCameraTab={() => {
-                  setCameraTutorMounted(true);
                   if (mobile) {
-                    setMobileCameraTutorOpen((v) => !v);
+                    toggleMobileCameraTutor();
                   } else {
+                    setCameraTutorMounted(true);
                     setChatAreaCollapsed(false);
                     chatAreaRef.current?.switchToTab('camera');
                   }
@@ -2509,6 +2531,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               setDesktopCameraTabActive(active);
               if (active) setCameraTutorMounted(true);
             }}
+            onRecentQaTranscriptChange={setRecentQaTranscript}
           />
         </div>
         {mobile && (
@@ -2517,10 +2540,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             <button
               type="button"
               data-testid="mobile-classroom-camera-tutor-button"
-              onClick={() => {
-                setCameraTutorMounted(true);
-                setMobileCameraTutorOpen((v) => !v);
-              }}
+              onClick={toggleMobileCameraTutor}
               title={t('liveTutor.classroomButtonHint')}
               className="fixed right-3 bottom-20 z-40 inline-flex items-center gap-1.5 rounded-full bg-violet-600 text-white px-3.5 py-2 text-xs font-semibold shadow-lg"
             >
@@ -2534,15 +2554,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           open={cameraTutorMounted}
           visible={mobile ? mobileCameraTutorOpen : desktopCameraTabActive}
           embedded={!mobile && Boolean(cameraTabHost)}
-          portalTarget={!mobile ? cameraTabHost : null}
+          portalTarget={!mobile ? cameraTabHost : isPresenting ? stageRef.current : null}
           onClose={() => {
             if (mobile) {
               setMobileCameraTutorOpen(false);
+              setCameraTutorMounted(false);
+              setDesktopCameraTabActive(false);
             } else {
               chatAreaRef.current?.switchToTab('chat');
             }
           }}
           onActivateLive={handleActivateCameraLive}
+          recentClassroomSpeech={recentQaTranscript}
         />
 
         {/* Scene switch confirmation dialog */}

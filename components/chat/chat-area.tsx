@@ -75,6 +75,8 @@ interface ChatAreaProps {
   onCameraTabHost?: (host: HTMLDivElement | null) => void;
   /** Notifies parent when the desktop Camera tab becomes active or inactive. */
   onCameraTabActiveChange?: (active: boolean) => void;
+  /** Streams the latest Q&A transcript to the parent so a hoisted camera tutor stays in sync. */
+  onRecentQaTranscriptChange?: (transcript: string) => void;
 }
 
 export type SpeechSource = 'lecture' | 'reply' | 'question';
@@ -140,6 +142,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onActivateCameraLive,
       onCameraTabHost,
       onCameraTabActiveChange,
+      onRecentQaTranscriptChange,
     },
     ref,
   ) => {
@@ -243,6 +246,10 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       }
       return lines.slice(-8).join('\n').slice(0, 1500);
     }, [chatSessions]);
+
+    useEffect(() => {
+      onRecentQaTranscriptChange?.(recentQaTranscript);
+    }, [onRecentQaTranscriptChange, recentQaTranscript]);
 
     // On phones the panel owns scrolling across sessions. Stream updates may
     // follow its bottom, but must not move it while someone reads older replies.
