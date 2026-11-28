@@ -81,19 +81,22 @@ GOOGLE_API_KEY=your-google-api-key
 # GEMINI_LIVE_MODEL=models/gemini-3.8-live
 ```
 
-Assign Google Gemini to your `llm` or `classroom` slot in `openmaic.yml` (or via **Settings → Model Services**) using the official `generativelanguage.googleapis.com` endpoint:
+Assign Google Gemini to your `llm` or `classroom` slot in `openmaic.yml` (or via **Settings → Model Services**) using the official `generativelanguage.googleapis.com` endpoint, and include the Live model ID in `providers.google.models` so server-managed deployments authorize it:
 
 ```yaml title="openmaic.yml"
 providers:
   google:
     preset: google
     apiKey: ${GOOGLE_API_KEY}
+    models: [gemini-2.5-flash, gemini-3.8-live]
 
 slots:
   llm: google:gemini-2.5-flash
 ```
 
-> **Note:** Custom third-party Google proxy URLs cannot mint official `v1alpha/auth_tokens` ephemeral tokens and will automatically fall back to turn-based snapshot mode.
+> **Notes:**
+> - For server-managed (`openmaic.yml`) Google providers, `/api/live-tutor/session` enforces OpenMAIC's deployment model allowlist before minting an ephemeral token. If you override `GEMINI_LIVE_MODEL` in `.env.local`, include that exact model ID (without the `models/` prefix) in `providers.google.models`, otherwise sessions fall back to turn-based snapshot mode.
+> - Custom third-party Google proxy URLs cannot mint official `v1alpha/auth_tokens` ephemeral tokens and will automatically fall back to turn-based snapshot mode.
 
 ### 2. Using It Inside a Classroom
 
