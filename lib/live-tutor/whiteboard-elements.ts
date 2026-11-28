@@ -174,16 +174,19 @@ function measureStep(step: WhiteboardStepItem): MeasuredStep {
 export function buildWhiteboardFromSteps(
   steps: WhiteboardStepItem[],
   whiteboardId = 'live-tutor-whiteboard',
+  startY = BOARD_TOP_PADDING,
 ): Whiteboard {
+  const topPadding = Math.max(BOARD_TOP_PADDING, Math.min(startY, BOARD_MAX_Y - 120));
+  const availableHeight = Math.max(120, BOARD_MAX_Y - topPadding);
   const measured = steps.map(measureStep);
 
-  // Keep the most recent window of steps that fits within the visible board height
+  // Keep the most recent window of steps that fits within the remaining board height
   const selected: MeasuredStep[] = [];
   let usedHeight = 0;
   for (let i = measured.length - 1; i >= 0; i--) {
     const item = measured[i];
     const cost = selected.length === 0 ? item.captionHeight + item.bodyHeight : item.totalHeight;
-    if (selected.length > 0 && usedHeight + cost > BOARD_AVAILABLE_HEIGHT) {
+    if (selected.length > 0 && usedHeight + cost > availableHeight) {
       break;
     }
     selected.unshift(item);
@@ -195,13 +198,13 @@ export function buildWhiteboardFromSteps(
   if (
     latestHeading &&
     !selected.includes(latestHeading) &&
-    usedHeight + latestHeading.totalHeight <= BOARD_AVAILABLE_HEIGHT
+    usedHeight + latestHeading.totalHeight <= availableHeight
   ) {
     selected.unshift(latestHeading);
   }
 
   const elements: PPTElement[] = [];
-  let cursorY = BOARD_TOP_PADDING;
+  let cursorY = topPadding;
 
   for (const item of selected) {
     const { step } = item;

@@ -1944,10 +1944,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const closeMobileCameraTutor = useCallback(() => {
       setMobileCameraTutorOpen(false);
       setCameraTutorMounted(false);
-      setDesktopCameraTabActive(false);
-      // Reset any latent desktop Camera tab selection without triggering mobile panel navigation to Chat
-      chatAreaRef.current?.switchToTab('chat', { silent: true });
-    }, []);
+      if (desktopCameraTabActive) {
+        setDesktopCameraTabActive(false);
+        // Reset only when Camera was the latent desktop tab, preserving Lecture/Chat otherwise
+        chatAreaRef.current?.switchToTab('chat', { silent: true });
+      }
+    }, [desktopCameraTabActive]);
 
     const toggleMobileCameraTutor = useCallback(() => {
       if (mobileCameraTutorOpen) {

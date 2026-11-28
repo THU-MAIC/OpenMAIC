@@ -20,6 +20,7 @@ import {
   ModelAuthorizationError,
 } from '@/lib/server/model-config/model-authorization';
 import { deploymentConfig } from '@/lib/server/model-config/runtime';
+import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { LiveTutorSessionResponse } from '@/lib/live-tutor/types';
 
@@ -65,7 +66,9 @@ export async function POST(req: NextRequest) {
       // (workspace BYOK providers use the user's own API key, not the deployment allowlist).
       let liveModelAuthorized = true;
       const resolution = (
-        resolved as { resolution?: { providerId?: string; providerSource?: string } }
+        resolved as {
+          resolution?: { providerId?: string; providerSource?: string; proxy?: string };
+        }
       ).resolution;
       const usesDeploymentCreds = resolution?.providerSource
         ? resolution.providerSource === 'deployment'
@@ -110,11 +113,12 @@ export async function POST(req: NextRequest) {
 
       if (liveModelAuthorized) {
         try {
-          const tokenResp = await fetch(
+          const tokenResp = await proxyFetch(
             `${GOOGLE_DEFAULT_ORIGIN}/v1alpha/auth_tokens?key=${encodeURIComponent(resolved.apiKey)}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
+              signal: req.signal,
               body: JSON.stringify({
                 uses: 1,
                 expireTime,
@@ -124,6 +128,7 @@ export async function POST(req: NextRequest) {
                 },
               }),
             },
+            resolution?.proxy ? { proxy: resolution.proxy } : undefined,
           );
 
           if (tokenResp.ok) {

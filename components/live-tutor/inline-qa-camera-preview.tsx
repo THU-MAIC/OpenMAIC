@@ -103,24 +103,43 @@ function InlineQACameraLiveBody({
   const syncStepsToClassroomWhiteboard = useCallback(
     (nextSteps: WhiteboardStepItem[], clearedByTutor: boolean) => {
       if (!stageId) return;
-      const tutorWb = buildWhiteboardFromSteps(nextSteps, `classroom-live-wb-${stageId}`);
       useCanvasStore.setState((prev) => {
-        const rawProjected =
+        const sameStageProjection =
           prev.runtimeWhiteboardProjection?.stageId === stageId
-            ? prev.runtimeWhiteboardProjection.whiteboard
-            : useStageStore.getState().stage?.whiteboard;
+            ? prev.runtimeWhiteboardProjection
+            : null;
+        const rawProjected = sameStageProjection
+          ? sameStageProjection.whiteboard
+          : useStageStore.getState().stage?.whiteboard;
         const currentProjected = Array.isArray(rawProjected) ? rawProjected[0] : rawProjected;
         const preservedElements = clearedByTutor
           ? []
           : (currentProjected?.elements ?? []).filter((el) => !el.id.startsWith('lt-wb-'));
+
+        // Offset tutor steps below existing classroom elements so they never overlap
+        let occupiedBottom = 0;
+        for (const el of preservedElements) {
+          const elHeight = 'height' in el && typeof el.height === 'number' ? el.height : 40;
+          occupiedBottom = Math.max(occupiedBottom, el.top + elHeight);
+        }
+        const canAppendBelow = occupiedBottom > 0 && occupiedBottom + 16 <= 420;
+        const keptPreserved = canAppendBelow ? preservedElements : [];
+        const startY = canAppendBelow ? occupiedBottom + 16 : undefined;
+        const tutorWb = buildWhiteboardFromSteps(
+          nextSteps,
+          `classroom-live-wb-${stageId}`,
+          startY,
+        );
+
         return {
           whiteboardOpen: true,
           runtimeWhiteboardProjection: {
             stageId,
-            lastSeq: (prev.runtimeWhiteboardProjection?.lastSeq ?? 0) + 1,
+            // Preserve the existing persisted sequence without fabricating N+1 so Pi updates are never suppressed
+            lastSeq: sameStageProjection ? sameStageProjection.lastSeq : null,
             whiteboard: {
               ...tutorWb,
-              elements: [...preservedElements, ...tutorWb.elements],
+              elements: [...keptPreserved, ...tutorWb.elements],
             },
           },
           runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
@@ -226,7 +245,10 @@ function InlineQACameraLiveBody({
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
-            onClick={() => useCanvasStore.setState((s) => ({ whiteboardOpen: !s.whiteboardOpen }))}
+            onClick={() => {
+              const { whiteboardOpen, setWhiteboardOpenManually } = useCanvasStore.getState();
+              setWhiteboardOpenManually(!whiteboardOpen);
+            }}
             title={t('liveTutor.toggleWhiteboard')}
             className="p-1.5 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-colors"
           >

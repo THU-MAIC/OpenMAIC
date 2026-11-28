@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     if (body.action === 'generate-problem') {
       const contextText = [
         body.topic ? `Topic: ${body.topic}` : '',
-        body.sceneContext ? `Lesson context:\n${body.sceneContext.slice(0, 2000)}` : '',
+        body.sceneContext ? `Lesson context:\n${body.sceneContext.slice(-2000)}` : '',
       ]
         .filter(Boolean)
         .join('\n\n');
@@ -144,7 +144,7 @@ Reply with valid JSON only:
       const contextLines = [
         body.topic ? `Topic: ${body.topic}` : '',
         body.problem ? `Assigned problem: ${body.problem}` : '',
-        body.sceneContext ? `Lesson context: ${body.sceneContext.slice(0, 1500)}` : '',
+        body.sceneContext ? `Lesson context: ${body.sceneContext.slice(-1500)}` : '',
         body.whiteboardSteps?.length
           ? `Current whiteboard items:\n- ${body.whiteboardSteps.slice(-8).join('\n- ')}`
           : '',

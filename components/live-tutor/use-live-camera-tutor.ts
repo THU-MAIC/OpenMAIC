@@ -620,7 +620,7 @@ export function useLiveCameraTutor({
         'Whenever writing a step, key hint, or LaTeX formula on the whiteboard helps the student follow along, call write_whiteboard_step or write_whiteboard_formula (without surrounding $ delimiters). Whenever a visual sketch (labeled right triangle, angle arc, light rays, forces, coordinate axes, shapes, or arrows) helps explain the concept, call draw_whiteboard_diagram with a clean SVG (viewBox="0 0 600 340", white/light background, clear dark strokes and readable labels).',
         cur.topic ? `Current topic: ${cur.topic}.` : '',
         cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
-        cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(0, 1800)}` : '',
+        cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(-1800)}` : '',
         cur.whiteboardStepsText?.length
           ? `Current whiteboard items:\n- ${cur.whiteboardStepsText.slice(-8).join('\n- ')}`
           : '',
