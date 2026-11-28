@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Camera,
@@ -67,6 +68,7 @@ interface RoundtableProps {
   readonly onMobileBack?: () => void;
   readonly mobile?: boolean;
   readonly mobileComposerHost?: HTMLElement | null;
+  readonly mobileQuickReplyHost?: HTMLElement | null;
   /** Mobile classroom tabs, rendered between the playback toolbar and the roundtable. */
   readonly onRevealSpeech?: ChatAreaRef['revealSpeech'];
   readonly onQuestionFocus?: () => void;
@@ -158,6 +160,7 @@ export function Roundtable({
   onMobileBack,
   mobile = false,
   mobileComposerHost,
+  mobileQuickReplyHost,
   mobileNav,
   onQuestionFocus,
   onRevealSpeech,
@@ -1300,13 +1303,17 @@ export function Roundtable({
         onToggleFocus={() => onToggleMobileFocus?.()}
         onOpenChat={onToggleChat}
         quickReplies={
-          showSuggestedReplies ? (
-            <QuickReplyOptions
-              labels={quickReplyLabels}
-              disabled={isSendCooldown}
-              onPick={handleQuickReply}
-            />
-          ) : null
+          showSuggestedReplies && mobileQuickReplyHost
+            ? createPortal(
+                <QuickReplyOptions
+                  labels={quickReplyLabels}
+                  disabled={isSendCooldown}
+                  onPick={handleQuickReply}
+                  full
+                />,
+                mobileQuickReplyHost,
+              )
+            : null
         }
         referencePill={referencePill}
         participantDescription={(id) => getAgentConfig(id)?.persona}

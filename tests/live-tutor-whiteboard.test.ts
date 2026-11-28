@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { ModelSettingsView } from '@/lib/model-settings/client';
+import { getCameraTutorCapabilities } from '@/lib/live-tutor/model-capabilities';
 import {
   applyWhiteboardOps,
   buildWhiteboardFromSteps,
@@ -98,5 +100,108 @@ describe('live-tutor whiteboard projection', () => {
     expect(
       sanitizeLiveCaption('Look at the angle <polygon points="100,280 460,280" stroke="#4f46e5"'),
     ).toBe('Look at the angle');
+  });
+
+  it('keeps all generated elements within the declared 1000x562.5 whiteboard viewport', () => {
+    const ops = [
+      { op: 'add_heading' as const, content: 'Trigonometry Walkthrough' },
+      ...Array.from({ length: 12 }, (_, idx) => ({
+        op: 'add_step' as const,
+        content: `Step ${idx + 1}: Check the ratio of opposite over hypotenuse for triangle ${idx + 1}.`,
+      })),
+      {
+        op: 'add_diagram' as const,
+        content:
+          '<svg viewBox="0 0 600 340"><polygon points="100,280 460,280 460,80" fill="#eef2ff" stroke="#4f46e5"/></svg>',
+        caption: 'Final Triangle',
+      },
+      { op: 'add_formula' as const, content: '\\sin(\\theta) = \\frac{3}{5}' },
+    ];
+    const steps = applyWhiteboardOps([], ops);
+    const wb = buildWhiteboardFromSteps(steps, 'wb-bounded');
+    const maxBoardHeight = wb.viewportSize * wb.viewportRatio;
+
+    expect(wb.elements.length).toBeGreaterThan(0);
+    for (const el of wb.elements) {
+      expect(el.top).toBeGreaterThanOrEqual(0);
+      if ('height' in el) {
+        expect(el.top + el.height).toBeLessThanOrEqual(maxBoardHeight);
+      }
+    }
+    const lastEl = wb.elements[wb.elements.length - 1];
+    expect(lastEl.type).toBe('latex');
+  });
+});
+
+describe('live-tutor model capabilities', () => {
+  it('prefers catalogued model vision metadata over name heuristics', () => {
+    const view = {
+      providers: [
+        {
+          id: 'ollama',
+          preset: 'ollama',
+          presetName: 'Ollama',
+          presetKind: 'single',
+          source: 'deployment',
+          capabilities: {
+            chat: {
+              models: [
+                {
+                  id: 'llama3.3',
+                  name: 'Llama 3.3',
+                  capabilities: { streaming: true, tools: true, vision: false },
+                },
+              ],
+            },
+          },
+        },
+      ],
+      slots: [
+        {
+          slot: 'classroom',
+          effective: { status: 'assigned', providerId: 'ollama', modelId: 'llama3.3' },
+        },
+      ],
+    } as unknown as ModelSettingsView;
+
+    const caps = getCameraTutorCapabilities(view);
+    expect(caps.supportsLiveStreaming).toBe(false);
+    expect(caps.supportsVision).toBe(false);
+  });
+
+  it('disables live streaming when a deployment Google provider uses a hidden custom baseUrl', () => {
+    const view = {
+      providers: [
+        {
+          id: 'google',
+          preset: 'google',
+          presetName: 'Google Gemini',
+          presetKind: 'single',
+          source: 'deployment',
+          hasCustomBaseUrl: true,
+          capabilities: {
+            chat: {
+              models: [
+                {
+                  id: 'gemini-2.5-flash',
+                  name: 'Gemini 2.5 Flash',
+                  capabilities: { streaming: true, tools: true, vision: true },
+                },
+              ],
+            },
+          },
+        },
+      ],
+      slots: [
+        {
+          slot: 'classroom',
+          effective: { status: 'assigned', providerId: 'google', modelId: 'gemini-2.5-flash' },
+        },
+      ],
+    } as unknown as ModelSettingsView;
+
+    const caps = getCameraTutorCapabilities(view);
+    expect(caps.supportsLiveStreaming).toBe(false);
+    expect(caps.supportsVision).toBe(true);
   });
 });

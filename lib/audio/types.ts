@@ -122,6 +122,8 @@ export interface TTSProviderConfig {
   requiresApiKey: boolean;
   /** The provider can list cloud voices when the caller supplies the account. */
   supportsAccountVoices?: boolean;
+  /** Retry a rejected voice when workspace settings are reloaded, even if masked credentials look identical. */
+  scopeVoiceRejectionsToSettings?: boolean;
   defaultBaseUrl?: string;
   icon?: string;
   /**

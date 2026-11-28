@@ -13,13 +13,20 @@ import type { ModelMessage } from 'ai';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess, modelAuthorizationResponse } from '@/lib/server/api-response';
-import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest, type ResolvedModel } from '@/lib/server/resolve-model';
+import { isLikelyTextOnlyModel } from '@/lib/live-tutor/model-capabilities';
 import type {
   HelpMeLearnPlan,
   LearningMode,
   PracticeProblem,
   TheorySlide,
 } from '@/lib/live-tutor/types';
+
+function resolvedModelSupportsVision(resolved: ResolvedModel): boolean {
+  const cataloguedVision = resolved.modelInfo?.capabilities?.vision;
+  if (typeof cataloguedVision === 'boolean') return cataloguedVision;
+  return !isLikelyTextOnlyModel(resolved.modelId);
+}
 
 const log = createLogger('HelpMeLearnPlan');
 
@@ -61,13 +68,29 @@ export async function POST(req: NextRequest) {
     }
 
     const mode: LearningMode = body.mode === 'solve-only' ? 'solve-only' : 'theory-then-solve';
-    const stage = mode === 'theory-then-solve' ? 'scene-content:slide' : 'chat-adapter';
+    let stage: 'scene-content:slide' | 'chat-adapter' =
+      mode === 'theory-then-solve' ? 'scene-content:slide' : 'chat-adapter';
 
-    const {
-      model: languageModel,
-      thinkingConfig,
-      serverManaged,
-    } = await resolveModelFromRequest(req, body, stage);
+    let resolved = await resolveModelFromRequest(req, body, stage);
+
+    if (hasImage && !resolvedModelSupportsVision(resolved)) {
+      if (stage === 'scene-content:slide') {
+        const classroomResolved = await resolveModelFromRequest(req, body, 'chat-adapter');
+        if (resolvedModelSupportsVision(classroomResolved)) {
+          stage = 'chat-adapter';
+          resolved = classroomResolved;
+        }
+      }
+      if (!resolvedModelSupportsVision(resolved)) {
+        return apiError(
+          'INVALID_REQUEST',
+          400,
+          'The configured model does not support photo inputs. Choose a vision-capable model in Settings → Model Services or type your problem as text.',
+        );
+      }
+    }
+
+    const { model: languageModel, thinkingConfig, serverManaged } = resolved;
 
     const langHint = body.language
       ? `Write all student-facing text in locale "${body.language}".`

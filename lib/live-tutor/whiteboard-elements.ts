@@ -124,18 +124,87 @@ export function applyWhiteboardOps(
   return next;
 }
 
+const BOARD_VIEWPORT_SIZE = 1000;
+const BOARD_VIEWPORT_RATIO = 0.5625;
+const BOARD_HEIGHT = Math.floor(BOARD_VIEWPORT_SIZE * BOARD_VIEWPORT_RATIO); // 562
+const BOARD_TOP_PADDING = 28;
+const BOARD_BOTTOM_PADDING = 20;
+const BOARD_MAX_Y = BOARD_HEIGHT - BOARD_BOTTOM_PADDING; // 542
+const BOARD_AVAILABLE_HEIGHT = BOARD_MAX_Y - BOARD_TOP_PADDING; // 514
+
+interface MeasuredStep {
+  step: WhiteboardStepItem;
+  captionHeight: number;
+  bodyHeight: number;
+  gapAfter: number;
+  totalHeight: number;
+}
+
+function measureStep(step: WhiteboardStepItem): MeasuredStep {
+  if (step.kind === 'diagram') {
+    const captionHeight = step.caption ? 34 : 0;
+    const bodyHeight = 250;
+    const gapAfter = 14;
+    return {
+      step,
+      captionHeight,
+      bodyHeight,
+      gapAfter,
+      totalHeight: captionHeight + bodyHeight + gapAfter,
+    };
+  }
+  if (step.kind === 'latex') {
+    const bodyHeight = 68;
+    const gapAfter = 12;
+    return { step, captionHeight: 0, bodyHeight, gapAfter, totalHeight: bodyHeight + gapAfter };
+  }
+  const isHeading = step.kind === 'heading';
+  const fontSize = isHeading ? 21 : 17;
+  const approxLines = Math.max(1, Math.ceil(step.content.length / 66));
+  const bodyHeight = Math.max(isHeading ? 42 : 38, approxLines * (fontSize + 12) + 10);
+  const gapAfter = 10;
+  return { step, captionHeight: 0, bodyHeight, gapAfter, totalHeight: bodyHeight + gapAfter };
+}
+
 /**
  * Projects structured tutor steps onto an OpenMAIC `@openmaic/dsl` Whiteboard
- * so `WhiteboardFrame` / `WhiteboardCanvas` renders text, LaTeX, and vector diagrams natively.
+ * so `WhiteboardFrame` / `WhiteboardCanvas` renders text, LaTeX, and vector diagrams natively
+ * while keeping every element strictly within the declared 1000×562.5 board viewport.
  */
 export function buildWhiteboardFromSteps(
   steps: WhiteboardStepItem[],
   whiteboardId = 'live-tutor-whiteboard',
 ): Whiteboard {
-  const elements: PPTElement[] = [];
-  let cursorY = 44;
+  const measured = steps.map(measureStep);
 
-  for (const step of steps) {
+  // Keep the most recent window of steps that fits within the visible board height
+  const selected: MeasuredStep[] = [];
+  let usedHeight = 0;
+  for (let i = measured.length - 1; i >= 0; i--) {
+    const item = measured[i];
+    const cost = selected.length === 0 ? item.captionHeight + item.bodyHeight : item.totalHeight;
+    if (selected.length > 0 && usedHeight + cost > BOARD_AVAILABLE_HEIGHT) {
+      break;
+    }
+    selected.unshift(item);
+    usedHeight += cost;
+  }
+
+  // If the most recent heading scrolled off the top, keep it pinned when space permits
+  const latestHeading = [...measured].reverse().find((m) => m.step.kind === 'heading');
+  if (
+    latestHeading &&
+    !selected.includes(latestHeading) &&
+    usedHeight + latestHeading.totalHeight <= BOARD_AVAILABLE_HEIGHT
+  ) {
+    selected.unshift(latestHeading);
+  }
+
+  const elements: PPTElement[] = [];
+  let cursorY = BOARD_TOP_PADDING;
+
+  for (const item of selected) {
+    const { step } = item;
     if (step.kind === 'diagram') {
       if (step.caption) {
         const captionEl: PPTTextElement = {
@@ -144,40 +213,42 @@ export function buildWhiteboardFromSteps(
           left: 60,
           top: cursorY,
           width: 880,
-          height: 36,
+          height: 30,
           rotate: 0,
           content: paragraphHtml(step.caption, 16, true),
           defaultFontName: 'Inter',
           defaultColor: '#4f46e5',
         };
         elements.push(captionEl);
-        cursorY += 40;
+        cursorY += item.captionHeight;
       }
+      const clampedHeight = Math.max(120, Math.min(item.bodyHeight, BOARD_MAX_Y - cursorY));
       const imgEl: PPTImageElement = {
         id: step.id,
         type: 'image',
-        left: 110,
+        left: 130,
         top: cursorY,
-        width: 780,
-        height: 340,
+        width: 740,
+        height: clampedHeight,
         rotate: 0,
         fixedRatio: true,
         src: svgToDataUrl(step.content),
         radius: 12,
       };
       elements.push(imgEl);
-      cursorY += 356;
+      cursorY += clampedHeight + item.gapAfter;
       continue;
     }
 
     if (step.kind === 'latex') {
+      const clampedHeight = Math.max(44, Math.min(item.bodyHeight, BOARD_MAX_Y - cursorY));
       const latexEl: PPTLatexElement = {
         id: step.id,
         type: 'latex',
         left: 72,
         top: cursorY,
         width: 856,
-        height: 76,
+        height: clampedHeight,
         rotate: 0,
         latex: step.content,
         html: renderSafeLatexHtml(step.content, true),
@@ -185,14 +256,13 @@ export function buildWhiteboardFromSteps(
         fixedRatio: true,
       };
       elements.push(latexEl);
-      cursorY += 92;
+      cursorY += clampedHeight + item.gapAfter;
       continue;
     }
 
     const isHeading = step.kind === 'heading';
-    const fontSize = isHeading ? 22 : 18;
-    const approxLines = Math.max(1, Math.ceil(step.content.length / 64));
-    const height = Math.max(isHeading ? 48 : 44, approxLines * (fontSize + 14) + 12);
+    const fontSize = isHeading ? 21 : 17;
+    const clampedHeight = Math.max(36, Math.min(item.bodyHeight, BOARD_MAX_Y - cursorY));
 
     const textEl: PPTTextElement = {
       id: step.id,
@@ -200,20 +270,20 @@ export function buildWhiteboardFromSteps(
       left: 60,
       top: cursorY,
       width: 880,
-      height,
+      height: clampedHeight,
       rotate: 0,
       content: paragraphHtml(step.content, fontSize, isHeading),
       defaultFontName: 'Inter',
       defaultColor: step.color ?? (isHeading ? '#4f46e5' : '#1f2937'),
     };
     elements.push(textEl);
-    cursorY += height + 14;
+    cursorY += clampedHeight + item.gapAfter;
   }
 
   return {
     id: whiteboardId,
-    viewportSize: 1000,
-    viewportRatio: 0.5625,
+    viewportSize: BOARD_VIEWPORT_SIZE,
+    viewportRatio: BOARD_VIEWPORT_RATIO,
     elements,
   };
 }

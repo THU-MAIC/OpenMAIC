@@ -271,6 +271,26 @@ describe('self-contained PBL project packages', () => {
       }
     },
   );
+  it('round-trips a role voice and ignores malformed legacy voice metadata on its own role', async () => {
+    const voice = { providerId: 'custom-tts-studio', modelId: 'studio-v1', voiceId: 'guide' };
+    const bundle = revised((files) => {
+      const descriptor = JSON.parse(files['project.json']);
+      descriptor.definition.agents.mentor.voiceConfig = voice;
+      descriptor.definition.agents.planner.voiceConfig = { ...voice, voiceId: ' ' };
+      descriptor.definition.agents.coder.voiceConfig = { ...voice, baseUrl: 'not a voice field' };
+      files['project.json'] = JSON.stringify(descriptor);
+    });
+    const [loaded] = await readClassroomProjects(await archive(bundle), [bundle.entry]);
+    for (const purpose of ['install', 'resolve'] as const) {
+      const { project } = validateProjectPackage(loaded, purpose);
+      const { mentor, discussion, planner, coder } = project.definition.agents;
+      expect(mentor.voiceConfig).toEqual(voice);
+      expect(discussion.voiceConfig).toBeUndefined();
+      expect(planner.voiceConfig).toBeUndefined();
+      expect(coder.voiceConfig).toBeUndefined();
+      expect(project.coursePackage?.bundle).toEqual(bundle);
+    }
+  });
   it('retains the pre-existing quiz answer range guard on both installation and resolution', () => {
     const bundle = revised((files) => {
       const spec = JSON.parse(files['project.json']);

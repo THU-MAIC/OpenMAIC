@@ -119,3 +119,73 @@ describe('Doubao TTS dual auth', () => {
     ).rejects.toThrow(/bad payload: \{"field":"text"\}/);
   });
 });
+
+describe('Doubao synthesis refusals', () => {
+  const speak = () =>
+    generateTTS({ providerId: 'doubao-tts', apiKey: 'test', voice: 'course-speaker' }, 'Hello');
+
+  it.each([
+    { status: 400, body: JSON.stringify({ message: 'Speaker not found' }) },
+    { status: 400, body: '[Invalid argument] speaker not found' },
+    {
+      status: 403,
+      body: JSON.stringify({
+        code: 45000000,
+        message: 'speaker permission denied: get resource id: access denied',
+      }),
+    },
+    {
+      status: 200,
+      body: JSON.stringify({
+        code: 45000000,
+        message: 'speaker permission denied: get resource id: access denied',
+      }),
+    },
+    {
+      status: 200,
+      body: JSON.stringify({ code: 45000001, message: '[Invalid argument] speaker not found' }),
+    },
+    {
+      status: 200,
+      body: JSON.stringify({
+        code: 55000000,
+        message: 'resource ID is mismatched with speaker related resource',
+      }),
+    },
+  ])(
+    'marks an explicit speaker refusal as unavailable ($status, $body)',
+    async ({ status, body }) => {
+      mockFetch.mockResolvedValueOnce(new Response(body, { status }));
+      await expect(speak()).rejects.toMatchObject({ code: 'TTS_VOICE_UNAVAILABLE' });
+    },
+  );
+
+  it.each([
+    [401, 'invalid credentials'],
+    [403, 'get resource id: access denied'],
+    [
+      400,
+      JSON.stringify({
+        code: 45000001,
+        message: '[Invalid argument] InvalidDialect',
+        text: 'Speaker not found',
+      }),
+    ],
+    [
+      200,
+      JSON.stringify({ code: 55000000, message: 'Request timeout: synthesis processing timeout' }),
+    ],
+    [502, 'Bad Gateway'],
+  ] as const)('keeps unrelated service errors distinct (%s, %s)', async (status, body) => {
+    mockFetch.mockResolvedValueOnce(new Response(body, { status }));
+    await expect(speak()).rejects.toThrow(/Doubao TTS (API )?error/);
+  });
+
+  it.each([
+    [429, 'Speaker not found'],
+    [200, JSON.stringify({ code: 45000000, message: 'quota exceeded for types: concurrency' })],
+  ] as const)('preserves rate limiting (%s, %s)', async (status, body) => {
+    mockFetch.mockResolvedValueOnce(new Response(body, { status }));
+    await expect(speak()).rejects.toMatchObject({ statusCode: 429 });
+  });
+});

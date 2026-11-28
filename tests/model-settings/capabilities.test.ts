@@ -19,6 +19,7 @@ import {
   ttsSelection,
 } from '@/lib/audio/tts-selection';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import { TTS_PROVIDERS } from '@/lib/audio/constants';
 
 import { modelSettingsViewFor } from '../helpers/model-settings-view';
 
@@ -173,6 +174,22 @@ describe('loadModelCapabilities', () => {
 });
 
 describe('speech synthesis from the tts slot', () => {
+  it('uses the registry policy to scope rejected voices to a settings view', () => {
+    const view = modelSettingsViewFor({ tts: { registryId: 'openai-tts' } });
+    expect(modelCapabilities(view).ttsVoiceRejectionScope).toBeUndefined();
+    const provider = TTS_PROVIDERS['openai-tts'];
+    const entry = vi.spyOn(TTS_PROVIDERS, 'openai-tts', 'get');
+    try {
+      entry.mockReturnValue({ ...provider, scopeVoiceRejectionsToSettings: true });
+      const scope = modelCapabilities(view).ttsVoiceRejectionScope;
+      expect(scope).toBeTruthy();
+      expect(modelCapabilities(view).ttsVoiceRejectionScope).toBe(scope);
+      expect(modelCapabilities({ ...view }).ttsVoiceRejectionScope).not.toBe(scope);
+    } finally {
+      entry.mockRestore();
+    }
+  });
+
   it('offers only the slot provider to the voice helpers', () => {
     const map = slotTTSProvidersConfig({
       providerId: 'tts',

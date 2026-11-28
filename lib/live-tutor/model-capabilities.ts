@@ -69,8 +69,17 @@ export function getCameraTutorCapabilities(
   const preset = provider?.preset ?? eff.providerId;
   const providerName = provider?.presetName ?? eff.providerId;
   const modelId = eff.modelId ?? null;
-  const supportsLiveStreaming = preset === 'google' && isOfficialGoogleBaseUrl(provider?.baseUrl);
-  const supportsVision = !isLikelyTextOnlyModel(modelId);
+  const supportsLiveStreaming =
+    preset === 'google' &&
+    provider?.hasCustomBaseUrl !== true &&
+    isOfficialGoogleBaseUrl(provider?.baseUrl);
+
+  const cataloguedModel = modelId
+    ? provider?.capabilities?.chat?.models?.find((m) => m.id === modelId)
+    : undefined;
+  const cataloguedVision = cataloguedModel?.capabilities?.vision;
+  const supportsVision =
+    typeof cataloguedVision === 'boolean' ? cataloguedVision : !isLikelyTextOnlyModel(modelId);
 
   return {
     providerPreset: preset,

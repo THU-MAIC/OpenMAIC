@@ -92,6 +92,8 @@ export interface ProviderView {
   /** Where it is declared: deployment providers are read-only. */
   source: 'deployment' | 'workspace';
   baseUrl?: string;
+  /** True when the provider overrides the preset's default endpoint (safe to expose even when deployment baseUrl is hidden). */
+  hasCustomBaseUrl?: boolean;
   models?: string[];
   /**
    * Context windows the provider declares per chat model (ids from `models`).
@@ -405,6 +407,23 @@ function officialEndpointOf(provider: Pick<Provider, 'preset' | 'baseUrl'>): str
     : undefined;
 }
 
+/** True when the provider configures a custom non-default base URL (safe boolean without leaking deployment URLs). */
+function providerHasCustomBaseUrl(provider: Pick<Provider, 'preset' | 'baseUrl'>): boolean {
+  if (!provider.baseUrl) return false;
+  if (officialEndpointOf(provider)) return false;
+  const preset = getProviderPreset(provider.preset);
+  const chatTarget = preset?.capabilities.chat;
+  const defaultUrl =
+    chatTarget?.baseUrl ??
+    (chatTarget ? registryDefaultBaseUrl('chat', chatTarget.registryId) : undefined);
+  if (!defaultUrl) return true;
+  try {
+    return new URL(provider.baseUrl).origin !== new URL(defaultUrl).origin;
+  } catch {
+    return true;
+  }
+}
+
 function workspacePresetProblem(preset: ProviderPreset): string | undefined {
   if (preset.capabilities.chat?.registryId === 'bedrock') {
     return 'Amazon Bedrock can only be configured by the deployment (openmaic.yml)';
@@ -548,6 +567,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         preset: provider.preset,
         ...presetLabel(provider.preset),
         source: 'deployment' as const,
+        ...(providerHasCustomBaseUrl(provider) ? { hasCustomBaseUrl: true } : {}),
         ...(provider.models ? { models: [...provider.models] } : {}),
         ...(provider.modelContextWindows
           ? { modelContextWindows: { ...provider.modelContextWindows } }
@@ -573,6 +593,7 @@ export function modelSettingsView(stored: StoredWorkspaceConfig | null): ModelSe
         ...presetLabel(provider.preset),
         source: 'workspace' as const,
         ...(provider.baseUrl ? { baseUrl: viewEndpoint(provider.baseUrl) } : {}),
+        ...(providerHasCustomBaseUrl(provider) ? { hasCustomBaseUrl: true } : {}),
         ...(provider.models ? { models: [...provider.models] } : {}),
         ...(provider.modelContextWindows
           ? { modelContextWindows: { ...provider.modelContextWindows } }

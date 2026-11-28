@@ -271,7 +271,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Cue user state (Issue 7)
     const [isCueUser, setIsCueUser] = useState(false);
-    const [cueUserOptions, setCueUserOptions] = useState<string[] | undefined>();
+    const [cueUserReplies, setCueUserReplies] = useState<{
+      labels: string[];
+      fromAgentId?: string;
+    }>();
 
     // End flash state (Issue 3)
     const [showEndFlash, setShowEndFlash] = useState(false);
@@ -513,7 +516,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       setSpeechProgress(null);
       setThinkingState(null);
       setIsCueUser(false);
-      setCueUserOptions(undefined);
+      setCueUserReplies(undefined);
       setIsTopicPending(false);
       setChatIsStreaming(false);
       setChatIsSoftClosing(false);
@@ -1917,6 +1920,19 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // so notes and chat keep following playback.
     const [mobilePanel, setMobilePanel] = useState<ClassroomPanel | null>(null);
     const [mobileCameraTutorOpen, setMobileCameraTutorOpen] = useState(false);
+    const handleActivateCameraLive = useCallback(() => {
+      if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
+        const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
+        if (paused) {
+          discussionTTS.pause();
+          setIsDiscussionPaused(true);
+        }
+      }
+      if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
+        engineRef.current.pause();
+      }
+    }, [chatSessionType, discussionTTS, engineMode]);
+
     // Entering a quiz returns to the classroom tab, so the quiz has the room it needs.
     const [mobilePanelSceneId, setMobilePanelSceneId] = useState(currentSceneId);
     if (mobilePanelSceneId !== currentSceneId) {
@@ -1924,6 +1940,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       if (currentScene?.type === 'quiz') setMobilePanel(null);
     }
     const [mobileComposerHost, setMobileComposerHost] = useState<HTMLDivElement | null>(null);
+    const [mobileQuickReplyHost, setMobileQuickReplyHost] = useState<HTMLDivElement | null>(null);
+    const showMobileQuickReplies = mobile && mobilePanel === 'chat' && !!cueUserReplies;
     // A user choice is scoped to this scene, not to global desktop dock preferences.
     const [mobileDockChoice, setMobileDockChoice] = useState<{
       sceneId: string | null;
@@ -2215,7 +2233,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 endFlashSessionType={endFlashSessionType}
                 thinkingState={thinkingState}
                 isCueUser={isCueUser}
-                cueUserOptions={cueUserOptions}
+                cueUserOptions={cueUserReplies?.labels}
+                mobileQuickReplyHost={showMobileQuickReplies ? mobileQuickReplyHost : null}
                 isSoftClosing={chatIsSoftClosing}
                 softCloseDeadline={softCloseDeadline}
                 isTopicPending={isTopicPending}
@@ -2265,10 +2284,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   } else {
                     void sendMessageWithElementReference(msg, elementReferenceSnapshot);
                   }
-                  // Auto-switch to chat tab when user sends a message
-                  chatAreaRef.current?.switchToTab('chat');
+                  // A send returns the learner to the latest messages on mobile.
+                  chatAreaRef.current?.switchToTab('chat', { followLatest: true });
                   setIsCueUser(false);
-                  setCueUserOptions(undefined);
+                  setCueUserReplies(undefined);
                   // Immediately mark streaming for synchronized stop button
                   setChatIsStreaming(true);
                   setChatSessionType(chatSessionType || 'qa');
@@ -2400,6 +2419,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           )}
           <ChatArea
             mobile={mobile}
+            mobileQuickReply={
+              showMobileQuickReplies
+                ? {
+                    fromAgentId: cueUserReplies?.fromAgentId,
+                    host: mobileQuickReplyHost,
+                    onHostChange: setMobileQuickReplyHost,
+                  }
+                : undefined
+            }
             onTabChange={mobile ? (panel) => setMobilePanel(panel) : undefined}
             ref={chatAreaRef}
             width={chatAreaWidth}
@@ -2450,8 +2478,9 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 setThinkingState(state);
               });
             }}
-            onCueUser={(_fromAgentId, _prompt, options) => {
-              setCueUserOptions(normalizeCueUserOptions(options));
+            onCueUser={(fromAgentId, _prompt, options) => {
+              const labels = normalizeCueUserOptions(options);
+              setCueUserReplies(labels ? { labels, fromAgentId } : undefined);
               setIsCueUser(true);
             }}
             onLiveSessionError={handleLiveSessionError}
@@ -2460,7 +2489,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               setThinkingState(null);
               setSpeechProgress(null);
               setIsCueUser(false);
-              setCueUserOptions(undefined);
+              setCueUserReplies(undefined);
               setActiveBubbleId(null);
             }}
             onSoftClosingChange={(softClosing, deadline) => {
@@ -2470,18 +2499,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             onStopSession={handleSessionStop}
             onSegmentSealed={discussionTTS.handleSegmentSealed}
             shouldHoldAfterReveal={discussionTTS.shouldHold}
-            onActivateCameraLive={() => {
-              if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
-                const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
-                if (paused) {
-                  discussionTTS.pause();
-                  setIsDiscussionPaused(true);
-                }
-              }
-              if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
-                engineRef.current.pause();
-              }
-            }}
+            onActivateCameraLive={handleActivateCameraLive}
           />
         </div>
         {mobile && (
@@ -2500,6 +2518,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             <InlineQACameraPreview
               open={mobileCameraTutorOpen}
               onClose={() => setMobileCameraTutorOpen(false)}
+              onActivateLive={handleActivateCameraLive}
             />
           </>
         )}

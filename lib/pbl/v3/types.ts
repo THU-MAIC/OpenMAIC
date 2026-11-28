@@ -1,3 +1,4 @@
+import type { AgentVoiceConfig } from '@openmaic/dsl';
 import type { PblSessionState } from './domain/orchestration/types';
 import type { AgentRole, StageDefinition } from './domain/project/project-schema';
 
@@ -57,6 +58,7 @@ export interface LearningView {
     stages: string[];
   }[];
   role: AgentRole | null;
+  roleVoices?: Partial<Record<AgentRole, AgentVoiceConfig>>;
   /** The deployment lets the learner start this project over (a testing aid). */
   canReset?: boolean;
   /**

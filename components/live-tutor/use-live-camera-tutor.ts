@@ -86,6 +86,9 @@ export function useLiveCameraTutor({
   const nextPlayTimeRef = useRef<number>(0);
   const activeSourcesRef = useRef<AudioBufferSourceNode[]>([]);
   const frameTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
+  const sessionAttemptRef = useRef(0);
+  const sessionAbortRef = useRef<AbortController | null>(null);
   const micMutedRef = useRef(false);
   const camPausedRef = useRef(false);
   const tutorBufRef = useRef('');
@@ -203,43 +206,85 @@ export function useLiveCameraTutor({
     return canvas.toDataURL('image/jpeg', 0.72);
   }, []);
 
-  const startCameraStream = useCallback(async (preferredFacing: 'environment' | 'user') => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: { ideal: preferredFacing },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
-    } catch {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    }
-    mediaStreamRef.current = stream;
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play().catch(() => {});
-    }
-    return stream;
-  }, []);
+  const startCameraStream = useCallback(
+    async (
+      preferredFacing: 'environment' | 'user',
+      options?: { audio?: boolean; preserveExistingAudio?: boolean },
+    ) => {
+      const wantAudio = options?.audio ?? true;
+      const preserveExistingAudio = options?.preserveExistingAudio ?? false;
+
+      const existingAudioTracks = preserveExistingAudio
+        ? (mediaStreamRef.current?.getAudioTracks().filter((t) => t.readyState === 'live') ?? [])
+        : [];
+
+      if (mediaStreamRef.current) {
+        if (preserveExistingAudio) {
+          mediaStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+        } else {
+          mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        }
+      }
+
+      const audioConstraint =
+        wantAudio && !preserveExistingAudio
+          ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          : false;
+
+      let acquired: MediaStream;
+      try {
+        acquired = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: preferredFacing },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: audioConstraint,
+        });
+      } catch {
+        acquired = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: wantAudio && !preserveExistingAudio,
+        });
+      }
+
+      const stream =
+        existingAudioTracks.length > 0
+          ? new MediaStream([...acquired.getVideoTracks(), ...existingAudioTracks])
+          : acquired;
+
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+      }
+      return stream;
+    },
+    [],
+  );
 
   const stopSession = useCallback(() => {
+    sessionAttemptRef.current += 1;
+    if (sessionAbortRef.current) {
+      sessionAbortRef.current.abort();
+      sessionAbortRef.current = null;
+    }
     if (frameTimerRef.current) {
       clearInterval(frameTimerRef.current);
       frameTimerRef.current = null;
     }
     if (wsRef.current) {
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
       try {
-        wsRef.current.close();
+        ws.close();
       } catch {
         // ignore
       }
-      wsRef.current = null;
     }
     if (audioCtxRef.current) {
       void audioCtxRef.current.close().catch(() => {});
@@ -260,23 +305,36 @@ export function useLiveCameraTutor({
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
-    setMicLevel(0);
-    setMicMuted(false);
-    setCamPaused(false);
     micMutedRef.current = false;
     camPausedRef.current = false;
-    setVideoSource('camera');
-    setStatus('idle');
-    setTransportMode(null);
+    if (mountedRef.current) {
+      setMicLevel(0);
+      setMicMuted(false);
+      setCamPaused(false);
+      setVideoSource('camera');
+      setStatus('idle');
+      setTransportMode(null);
+    }
   }, [stopPlayback]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       stopSession();
     };
   }, [stopSession]);
 
   const startSession = useCallback(async () => {
+    const attemptId = ++sessionAttemptRef.current;
+    const isStale = () => !mountedRef.current || sessionAttemptRef.current !== attemptId;
+
+    if (sessionAbortRef.current) {
+      sessionAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    sessionAbortRef.current = controller;
+
     setErrorMessage(null);
     setLiveCaption('');
     setStatus('connecting');
@@ -292,21 +350,14 @@ export function useLiveCameraTutor({
       void audioCtxRef.current.resume().catch(() => {});
     }
 
-    let stream: MediaStream;
-    try {
-      stream = await startCameraStream(facingMode);
-    } catch {
-      setStatus('error');
-      setErrorMessage('Camera and microphone permissions are required.');
-      return;
-    }
-
+    // Negotiate transport first so turn-based snapshot fallback only requests camera (not mic)
     let sessionInfo: LiveTutorSessionResponse;
     try {
       const resp = await fetch('/api/live-tutor/session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
+        signal: controller.signal,
       });
       const json = (await resp.json()) as {
         success?: boolean;
@@ -318,13 +369,46 @@ export function useLiveCameraTutor({
       }
       sessionInfo = (json.data ?? json) as LiveTutorSessionResponse;
     } catch (err) {
+      if (isStale()) return;
       stopSession();
       setStatus('error');
       setErrorMessage(err instanceof Error ? err.message : 'Failed to start session');
       return;
     }
 
+    if (isStale()) return;
+
+    const needsMic = sessionInfo.mode === 'gemini-live';
+    let stream: MediaStream;
+    try {
+      stream = await startCameraStream(facingMode, { audio: needsMic });
+    } catch {
+      if (isStale()) return;
+      setStatus('error');
+      setErrorMessage(
+        needsMic
+          ? 'Camera and microphone permissions are required.'
+          : 'Camera permission is required.',
+      );
+      return;
+    }
+
+    if (isStale()) {
+      stream.getTracks().forEach((t) => t.stop());
+      if (mediaStreamRef.current === stream) {
+        mediaStreamRef.current = null;
+      }
+      if (videoRef.current && videoRef.current.srcObject === stream) {
+        videoRef.current.srcObject = null;
+      }
+      return;
+    }
+
     if (sessionInfo.mode === 'turn-based') {
+      if (audioCtxRef.current) {
+        void audioCtxRef.current.close().catch(() => {});
+        audioCtxRef.current = null;
+      }
       setTransportMode('turn-based');
       setStatus('live');
       return;
@@ -335,6 +419,14 @@ export function useLiveCameraTutor({
     wsRef.current = ws;
 
     ws.onopen = () => {
+      if (isStale() || wsRef.current !== ws) {
+        try {
+          ws.close();
+        } catch {
+          // ignore
+        }
+        return;
+      }
       const cur = latestPropsRef.current;
       const sysLines = [
         'You are a warm, patient Socratic teacher watching a student work in their physical notebook (or shared lesson slide) and guiding them step by step using a shared classroom whiteboard.',
@@ -442,6 +534,7 @@ export function useLiveCameraTutor({
     };
 
     ws.onmessage = async (event) => {
+      if (isStale() || wsRef.current !== ws) return;
       try {
         const raw = typeof event.data === 'string' ? event.data : await event.data.text();
         const msg = JSON.parse(raw) as Record<string, unknown>;
@@ -636,11 +729,13 @@ export function useLiveCameraTutor({
     };
 
     ws.onerror = () => {
+      if (isStale() || wsRef.current !== ws) return;
       setStatus('error');
       setErrorMessage('Live tutor WebSocket error');
     };
 
     ws.onclose = () => {
+      if (wsRef.current !== ws) return;
       stopSession();
     };
   }, [
@@ -821,7 +916,7 @@ export function useLiveCameraTutor({
     const next = facingMode === 'environment' ? 'user' : 'environment';
     setFacingMode(next);
     if (status === 'live' && videoSource === 'camera') {
-      await startCameraStream(next);
+      await startCameraStream(next, { audio: false, preserveExistingAudio: true });
     }
   }, [facingMode, startCameraStream, status, videoSource]);
 

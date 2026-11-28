@@ -947,11 +947,13 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     id: 'doubao-tts',
     name: '豆包 TTS 2.0（火山引擎）',
     requiresApiKey: true,
+    scopeVoiceRejectionsToSettings: true,
     defaultBaseUrl: 'https://openspeech.bytedance.com/api/v3/tts',
     endpointPath: '/unidirectional',
     icon: '/logos/doubao.svg',
     models: [],
-    defaultModelId: '',
+    // Resource used by the native synthesis adapter when the host selects this provider.
+    defaultModelId: 'seed-tts-2.0',
     voices: [
       { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi 2.0', language: 'zh-CN', gender: 'female' },
       {

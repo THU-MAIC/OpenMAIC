@@ -1,4 +1,4 @@
-import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import { getTTSProvider, isKnownTTSProviderId, TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { BuiltInTTSProviderId } from '@/lib/audio/types';
 import { findSlot, type ModelSettingsView } from '@/lib/model-settings/client';
 import { knownDeviceOwnerKey } from '@/lib/device-storage/owner-key';
@@ -44,6 +44,23 @@ export interface VoiceAccount {
 export function ownedVoiceScope(service?: string): string | undefined {
   const owner = knownDeviceOwnerKey();
   return owner && service ? `${owner}:${service}` : undefined;
+}
+
+const rejectionScopes = new WeakMap<ModelSettingsView, string>();
+let nextRejectionScope = 0;
+
+export function voiceRejectionScopeFor(
+  view: ModelSettingsView | null | undefined,
+  registryId: string | undefined,
+): string | undefined {
+  if (!view || !registryId || !isKnownTTSProviderId(registryId)) return;
+  if (!getTTSProvider(registryId)?.scopeVoiceRejectionsToSettings) return;
+  let scope = rejectionScopes.get(view);
+  if (scope === undefined) {
+    scope = `tts-view:${++nextRejectionScope}`;
+    rejectionScopes.set(view, scope);
+  }
+  return scope;
 }
 
 const accounts = new WeakMap<ModelSettingsView, VoiceAccount>();
