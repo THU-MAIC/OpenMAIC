@@ -544,6 +544,12 @@ export function useLiveCameraTutor({
         videoRef.current.srcObject = screen;
         await videoRef.current.play().catch(() => {});
       }
+      if (isStale() || !isScreenStillLive(screen)) {
+        screen.getTracks().forEach((t) => t.stop());
+        audioStream?.getTracks().forEach((t) => t.stop());
+        if (!isStale()) stopSession();
+        return;
+      }
     } else {
       let stream: MediaStream | null;
       try {
@@ -615,6 +621,9 @@ export function useLiveCameraTutor({
         cur.topic ? `Current topic: ${cur.topic}.` : '',
         cur.problem?.statement ? `Assigned problem to solve: ${cur.problem.statement}` : '',
         cur.sceneContext ? `Lesson context:\n${cur.sceneContext.slice(0, 1800)}` : '',
+        cur.whiteboardStepsText?.length
+          ? `Current whiteboard items:\n- ${cur.whiteboardStepsText.slice(-8).join('\n- ')}`
+          : '',
       ]
         .filter(Boolean)
         .join('\n');

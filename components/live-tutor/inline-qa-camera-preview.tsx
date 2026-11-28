@@ -12,6 +12,7 @@ import {
   Loader2,
   Mic,
   MicOff,
+  MonitorUp,
   PencilLine,
   Send,
   SwitchCamera,
@@ -135,15 +136,18 @@ function InlineQACameraLiveBody({
     errorMessage,
     micMuted,
     camPaused,
+    videoSource,
     micLevel,
     liveCaption,
     turnBusy,
+    canShareScreen,
     startSession,
     stopSession,
     sendStudentTurn,
     toggleMic,
     toggleCam,
     flipCamera,
+    toggleScreenShare,
   } = useLiveCameraTutor({
     topic: currentScene?.title || stageName,
     sceneContext,
@@ -155,9 +159,9 @@ function InlineQACameraLiveBody({
   const isLive = status === 'live';
   const isConnecting = status === 'connecting';
 
-  const handleStart = () => {
+  const handleStart = (source: 'camera' | 'screen' = 'camera') => {
     onActivateLive?.();
-    void startSession();
+    void startSession({ source });
   };
 
   const handleClose = () => {
@@ -328,15 +332,28 @@ function InlineQACameraLiveBody({
               </button>
             </div>
           ) : (
-            <button
-              type="button"
-              data-testid="inline-qa-start-live-button"
-              onClick={handleStart}
-              className="w-full h-9 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors"
-            >
-              <Camera className="size-4" />
-              {t('liveTutor.startCameraHelp')}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="inline-qa-start-live-button"
+                onClick={() => handleStart('camera')}
+                className="flex-1 h-9 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+              >
+                <Camera className="size-4" />
+                {t('liveTutor.startCameraHelp')}
+              </button>
+              {canShareScreen && (
+                <button
+                  type="button"
+                  onClick={() => handleStart('screen')}
+                  title={t('liveTutor.shareSlide')}
+                  aria-label={t('liveTutor.shareSlide')}
+                  className="h-9 px-2.5 rounded-xl border border-white/15 bg-white/10 text-white hover:bg-white/20 flex items-center justify-center transition-colors shrink-0"
+                >
+                  <MonitorUp className="size-4" />
+                </button>
+              )}
+            </div>
           )
         ) : (
           <>
@@ -395,6 +412,22 @@ function InlineQACameraLiveBody({
               >
                 <SwitchCamera className="size-3.5" />
               </button>
+              {canShareScreen && (
+                <button
+                  type="button"
+                  onClick={() => void toggleScreenShare()}
+                  title={t('liveTutor.shareSlide')}
+                  aria-label={t('liveTutor.shareSlide')}
+                  className={cn(
+                    'size-8 rounded-xl border flex items-center justify-center transition-colors',
+                    videoSource === 'screen'
+                      ? 'border-violet-400/70 bg-violet-500/30 text-violet-200'
+                      : 'border-white/15 bg-white/10 text-white hover:bg-white/20',
+                  )}
+                >
+                  <MonitorUp className="size-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={stopSession}
