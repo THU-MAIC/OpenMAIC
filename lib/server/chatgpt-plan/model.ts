@@ -195,6 +195,8 @@ function shapeRequest(params: CallOptions, thinking?: ThinkingCapability): CallO
     }
     return {
       ...tool,
+      // Responses can make optional arguments required when strict is omitted.
+      strict: tool.strict ?? false,
       providerOptions: {
         ...tool.providerOptions,
         openai: { ...tool.providerOptions?.openai, namespace: TOOL_NAMESPACE },

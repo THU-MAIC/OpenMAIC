@@ -103,6 +103,7 @@ const makeSlide = tool({
     type: 'object',
     properties: { title: { type: 'string' } },
     required: ['title'],
+    additionalProperties: false,
   }),
 });
 
@@ -190,6 +191,31 @@ describe('ChatGPT plan requests', () => {
       tool_choice: 'required',
       tools: [{ type: 'namespace', tools: [{ name: 'make_slide' }] }],
     });
+  });
+
+  it('keeps optional tool arguments optional and honors explicitly strict tools', async () => {
+    const scene = tool({
+      inputSchema: jsonSchema({
+        type: 'object',
+        properties: { title: { type: 'string' }, widgetType: { type: 'string' } },
+        required: ['title'],
+      }),
+    });
+    await generateText({
+      model: chatGPTPlanLanguageModel('plan-model'),
+      prompt: 'Create a plain slide.',
+      tools: { generate_scene: scene, make_slide: { ...makeSlide, strict: true } },
+      maxRetries: 0,
+    });
+    expect(sent[0]?.body?.tools).toMatchObject([
+      {
+        type: 'namespace',
+        tools: [
+          { name: 'generate_scene', strict: false, parameters: { required: ['title'] } },
+          { name: 'make_slide', strict: true },
+        ],
+      },
+    ]);
   });
 
   it('resolves a plan slot from the live catalogue and cannot switch billing on failure', async () => {
