@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
@@ -86,6 +86,79 @@ function InlineQACameraLiveBody({
   const [boardPage, setBoardPage] = useState<'tutor' | 'classroom'>('tutor');
   const [hasPaginatedClassroomBoard, setHasPaginatedClassroomBoard] = useState(false);
   const savedClassroomBoardRef = useRef<Whiteboard | null>(null);
+  const savedClassroomSeqRef = useRef<number | null>(null);
+  const savedHadRuntimeProjectionRef = useRef(false);
+  const hasTutorProjectionRef = useRef(false);
+  const runtimeProjection = useCanvasStore((s) => s.runtimeWhiteboardProjection);
+
+  // Discard cached pagination and tutor steps whenever Chat/Pi commits a newer
+  // durable whiteboard or the stage changes.
+  useEffect(() => {
+    const expectedTutorId = stageId ? `classroom-live-wb-${stageId}` : null;
+    const isStillOurProjection =
+      Boolean(stageId) &&
+      runtimeProjection?.stageId === stageId &&
+      runtimeProjection?.whiteboard?.id === expectedTutorId &&
+      (savedClassroomSeqRef.current === null ||
+        runtimeProjection?.lastSeq === savedClassroomSeqRef.current);
+
+    if (!isStillOurProjection) {
+      if (savedClassroomBoardRef.current !== null) {
+        savedClassroomBoardRef.current = null;
+        savedClassroomSeqRef.current = null;
+        savedHadRuntimeProjectionRef.current = false;
+        setHasPaginatedClassroomBoard(false);
+        setBoardPage('tutor');
+      }
+      if (
+        hasTutorProjectionRef.current &&
+        (!stageId ||
+          !runtimeProjection ||
+          runtimeProjection.stageId !== stageId ||
+          runtimeProjection.whiteboard?.id !== expectedTutorId)
+      ) {
+        hasTutorProjectionRef.current = false;
+        setWbSteps([]);
+      }
+    }
+  }, [runtimeProjection, stageId]);
+
+  // Restore the paginated classroom board on unmount or stage switch so closing
+  // the camera never strands the user on a tutor-only page with page 1 unreachable.
+  useEffect(() => {
+    return () => {
+      const savedBoard = savedClassroomBoardRef.current;
+      const savedSeq = savedClassroomSeqRef.current;
+      const hadRuntime = savedHadRuntimeProjectionRef.current;
+      savedClassroomBoardRef.current = null;
+      savedClassroomSeqRef.current = null;
+      savedHadRuntimeProjectionRef.current = false;
+      hasTutorProjectionRef.current = false;
+
+      if (!stageId || !savedBoard || savedSeq === null) return;
+      useCanvasStore.setState((prev) => {
+        const proj = prev.runtimeWhiteboardProjection;
+        if (
+          !proj ||
+          proj.stageId !== stageId ||
+          proj.whiteboard?.id !== `classroom-live-wb-${stageId}` ||
+          proj.lastSeq !== savedSeq
+        ) {
+          return prev;
+        }
+        return {
+          runtimeWhiteboardProjection: hadRuntime
+            ? {
+                stageId,
+                lastSeq: savedSeq,
+                whiteboard: savedBoard,
+              }
+            : null,
+          runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
+        };
+      });
+    };
+  }, [stageId]);
 
   const sceneContext = useMemo(() => {
     const parts: string[] = [];
@@ -108,6 +181,9 @@ function InlineQACameraLiveBody({
   const syncStepsToClassroomWhiteboard = useCallback(
     (nextSteps: WhiteboardStepItem[], clearedByTutor: boolean) => {
       if (!stageId) return;
+      let nextPaginatedState: boolean | null = null;
+      let nextPageState: 'tutor' | 'classroom' | null = null;
+
       useCanvasStore.setState((prev) => {
         const sameStageProjection =
           prev.runtimeWhiteboardProjection?.stageId === stageId
@@ -130,18 +206,25 @@ function InlineQACameraLiveBody({
           occupiedBottom = Math.max(occupiedBottom, getElementRange(el).maxY);
         }
 
+        const projectionSeq = sameStageProjection?.lastSeq ?? -1;
         const shouldPaginate = !clearedByTutor && occupiedBottom > 844;
         if (shouldPaginate && currentProjected && preservedElements.length > 0) {
-          savedClassroomBoardRef.current = {
-            ...currentProjected,
-            elements: preservedElements,
-          };
-          setHasPaginatedClassroomBoard(true);
-          setBoardPage('tutor');
+          if (!savedClassroomBoardRef.current) {
+            savedClassroomBoardRef.current = {
+              ...currentProjected,
+              elements: preservedElements,
+            };
+            savedClassroomSeqRef.current = projectionSeq;
+            savedHadRuntimeProjectionRef.current = Boolean(sameStageProjection);
+          }
+          nextPaginatedState = true;
+          nextPageState = 'tutor';
         } else if (clearedByTutor) {
           savedClassroomBoardRef.current = null;
-          setHasPaginatedClassroomBoard(false);
-          setBoardPage('tutor');
+          savedClassroomSeqRef.current = null;
+          savedHadRuntimeProjectionRef.current = false;
+          nextPaginatedState = false;
+          nextPageState = 'tutor';
         }
 
         const effectiveOccupiedBottom = shouldPaginate ? 0 : occupiedBottom;
@@ -155,6 +238,7 @@ function InlineQACameraLiveBody({
         const minRatioForPreserved =
           effectiveOccupiedBottom > 0 ? Math.min(1, (effectiveOccupiedBottom + 20) / 1000) : 0.5625;
 
+        hasTutorProjectionRef.current = true;
         return {
           whiteboardOpen: true,
           runtimeWhiteboardProjection: {
@@ -162,7 +246,7 @@ function InlineQACameraLiveBody({
             // Use -1 on fresh boards (first durable runtime record is seq 0) so
             // getDisplayedWhiteboard() treats it as authoritative (-1 !== null)
             // without ever claiming Pi's seq 0 or N+1.
-            lastSeq: sameStageProjection?.lastSeq ?? -1,
+            lastSeq: projectionSeq,
             whiteboard: {
               ...tutorWb,
               viewportRatio: Math.max(tutorWb.viewportRatio, minRatioForPreserved),
@@ -172,19 +256,34 @@ function InlineQACameraLiveBody({
           runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
         };
       });
+
+      if (nextPaginatedState !== null) {
+        setHasPaginatedClassroomBoard(nextPaginatedState);
+      }
+      if (nextPageState !== null) {
+        setBoardPage(nextPageState);
+      }
     },
     [stageId],
   );
 
   const toggleBoardPage = useCallback(() => {
-    if (!stageId || !savedClassroomBoardRef.current) return;
+    if (!stageId || !savedClassroomBoardRef.current || savedClassroomSeqRef.current === null) return;
     const nextPage = boardPage === 'tutor' ? 'classroom' : 'tutor';
-    setBoardPage(nextPage);
+    let applied = false;
     useCanvasStore.setState((prev) => {
       const sameStageProjection =
         prev.runtimeWhiteboardProjection?.stageId === stageId
           ? prev.runtimeWhiteboardProjection
           : null;
+      // Refuse to overwrite if Chat/Pi has since committed a newer durable board.
+      if (
+        !sameStageProjection ||
+        sameStageProjection.whiteboard?.id !== `classroom-live-wb-${stageId}` ||
+        sameStageProjection.lastSeq !== savedClassroomSeqRef.current
+      ) {
+        return prev;
+      }
       const targetBoard =
         nextPage === 'classroom'
           ? {
@@ -192,16 +291,20 @@ function InlineQACameraLiveBody({
               id: `classroom-live-wb-${stageId}`,
             }
           : buildWhiteboardFromSteps(wbSteps, `classroom-live-wb-${stageId}`);
+      applied = true;
       return {
         whiteboardOpen: true,
         runtimeWhiteboardProjection: {
           stageId,
-          lastSeq: sameStageProjection?.lastSeq ?? -1,
+          lastSeq: savedClassroomSeqRef.current,
           whiteboard: targetBoard,
         },
         runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,
       };
     });
+    if (applied) {
+      setBoardPage(nextPage);
+    }
   }, [boardPage, stageId, wbSteps]);
 
   const handleWhiteboardOps = useCallback(
