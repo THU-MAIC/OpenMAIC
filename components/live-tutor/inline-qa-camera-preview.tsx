@@ -117,18 +117,41 @@ function InlineQACameraLiveBody({
           : (currentProjected?.elements ?? []).filter((el) => !el.id.startsWith('lt-wb-'));
 
         // Always retain existing classroom elements (unless clear_whiteboard was called)
-        // and append tutor steps cleanly below them, expanding the sheet ratio if needed.
+        // and append tutor steps cleanly below them within the renderer's max 1000px height.
         let occupiedBottom = 0;
         for (const el of preservedElements) {
           const elHeight = 'height' in el && typeof el.height === 'number' ? el.height : 40;
           occupiedBottom = Math.max(occupiedBottom, el.top + elHeight);
         }
-        const startY = occupiedBottom > 0 ? occupiedBottom + 16 : undefined;
+
+        // If preserved elements already fill past y=844, proportionally fit them into the
+        // upper half (0..460px) so tutor output sits cleanly below with zero overlap or clipping.
+        let laidOutPreserved = preservedElements;
+        let effectiveOccupiedBottom = occupiedBottom;
+        if (occupiedBottom > 844) {
+          const scale = 460 / occupiedBottom;
+          laidOutPreserved = preservedElements.map((el) => ({
+            ...el,
+            left: Math.round(el.left * scale),
+            top: Math.round(el.top * scale),
+            ...('width' in el && typeof el.width === 'number'
+              ? { width: Math.max(20, Math.round(el.width * scale)) }
+              : {}),
+            ...('height' in el && typeof el.height === 'number'
+              ? { height: Math.max(20, Math.round(el.height * scale)) }
+              : {}),
+          }));
+          effectiveOccupiedBottom = 460;
+        }
+
+        const startY = effectiveOccupiedBottom > 0 ? effectiveOccupiedBottom + 16 : undefined;
         const tutorWb = buildWhiteboardFromSteps(
           nextSteps,
           `classroom-live-wb-${stageId}`,
           startY,
         );
+        const minRatioForPreserved =
+          effectiveOccupiedBottom > 0 ? Math.min(1, (effectiveOccupiedBottom + 20) / 1000) : 0.5625;
 
         return {
           whiteboardOpen: true,
@@ -140,7 +163,8 @@ function InlineQACameraLiveBody({
             lastSeq: sameStageProjection?.lastSeq ?? -1,
             whiteboard: {
               ...tutorWb,
-              elements: [...preservedElements, ...tutorWb.elements],
+              viewportRatio: Math.max(tutorWb.viewportRatio, minRatioForPreserved),
+              elements: [...laidOutPreserved, ...tutorWb.elements],
             },
           },
           runtimeWhiteboardProjectionGeneration: prev.runtimeWhiteboardProjectionGeneration + 1,

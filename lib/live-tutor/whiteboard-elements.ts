@@ -294,7 +294,8 @@ export function buildWhiteboardFromSteps(
     cursorY += clampedHeight + item.gapAfter;
   }
 
-  const requiredRatio = (cursorY + BOARD_BOTTOM_PADDING) / BOARD_VIEWPORT_SIZE;
+  const requiredHeight = Math.max(topPadding, cursorY) + BOARD_BOTTOM_PADDING;
+  const requiredRatio = requiredHeight / BOARD_VIEWPORT_SIZE;
   return {
     id: whiteboardId,
     viewportSize: BOARD_VIEWPORT_SIZE,
